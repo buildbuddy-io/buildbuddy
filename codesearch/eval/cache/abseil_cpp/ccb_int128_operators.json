@@ -1,0 +1,2765 @@
+{
+ "query": "constexpr uint128 operator(\u003c\u003c|\u003e\u003e|\\+|-|\\*)",
+ "oss_project": "abseil",
+ "repo_name": "abseil-cpp",
+ "page_size": 50,
+ "fetched_at": "2026-06-17T23:23:14Z",
+ "response": {
+  "searchResults": [
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "abseil-cpp",
+        "ossProject": "abseil"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "absl/numeric/int128.h",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  constexpr uint128(int v);                 // NOLINT(runtime/explicit)",
+         "matchingRanges": {
+          "lineNumber": "115",
+          "columnRanges": [
+           {
+            "startIndex": 2,
+            "length": 9
+           },
+           {
+            "startIndex": 12,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "115",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 9
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 20,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 44,
+            "length": 27
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 2,
+           "length": 9
+          },
+          {
+           "startIndex": 12,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "  constexpr uint128(unsigned int v);        // NOLINT(runtime/explicit)",
+         "matchingRanges": {
+          "lineNumber": "116",
+          "columnRanges": [
+           {
+            "startIndex": 2,
+            "length": 9
+           },
+           {
+            "startIndex": 12,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "116",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 9
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 20,
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 29,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 44,
+            "length": 27
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 2,
+           "length": 9
+          },
+          {
+           "startIndex": 12,
+           "length": 7
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "constexpr uint128 Uint128Max() {",
+         "matchingRanges": {
+          "lineNumber": "257",
+          "columnRanges": [
+           {
+            "length": 9
+           },
+           {
+            "startIndex": 18,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "257",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 9
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "length": 9
+          },
+          {
+           "startIndex": 18,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "  return uint128((std::numeric_limits\u003cuint64_t\u003e::max)(),",
+         "matchingRanges": {
+          "lineNumber": "258"
+         },
+         "lineNumber": "258",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "constexpr uint128 MakeUint128(uint64_t high, uint64_t low) {",
+         "matchingRanges": {
+          "lineNumber": "571",
+          "columnRanges": [
+           {
+            "startIndex": 22,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "571",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 9
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 22,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "  return uint128(high, low);",
+         "matchingRanges": {
+          "lineNumber": "572"
+         },
+         "lineNumber": "572",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "constexpr uint128 operator\u003c\u003c(uint128 lhs, int amount);",
+         "matchingRanges": {
+          "lineNumber": "612",
+          "columnRanges": [
+           {
+            "startIndex": 18,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "612",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 9
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 18,
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 42,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 18,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "constexpr uint128 operator\u003e\u003e(uint128 lhs, int amount);",
+         "matchingRanges": {
+          "lineNumber": "613",
+          "columnRanges": [
+           {
+            "startIndex": 18,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "613",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 9
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 18,
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 42,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 18,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "constexpr uint128 operator+(uint128 lhs, uint128 rhs);",
+         "matchingRanges": {
+          "lineNumber": "614",
+          "columnRanges": [
+           {
+            "startIndex": 18,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "614",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 9
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 18,
+            "length": 8
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 18,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "constexpr uint128 operator-(uint128 lhs, uint128 rhs);",
+         "matchingRanges": {
+          "lineNumber": "615",
+          "columnRanges": [
+           {
+            "startIndex": 18,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "615",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 9
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 18,
+            "length": 8
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 18,
+           "length": 9
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 131
+    },
+    "resultToken": "CAASBAgBIAE46KjByprP5cMQQABIAA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "abseil-cpp",
+        "ossProject": "abseil"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "absl/numeric/int128_no_intrinsic.inc",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "constexpr uint64_t Int128Low64(int128 v) { return v.lo_; }",
+         "matchingRanges": {
+          "lineNumber": "20",
+          "columnRanges": [
+           {
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "20",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 9
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 43,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "length": 9
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "21"
+         },
+         "lineNumber": "21"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "constexpr int128::int128(uint128 v)",
+         "matchingRanges": {
+          "lineNumber": "41",
+          "columnRanges": [
+           {
+            "length": 9
+           },
+           {
+            "startIndex": 25,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "41",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 9
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "length": 9
+          },
+          {
+           "startIndex": 25,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "    : lo_{Uint128Low64(v)}, hi_{static_cast\u003cint64_t\u003e(Uint128High64(v))} {}",
+         "matchingRanges": {
+          "lineNumber": "42",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 7
+           },
+           {
+            "startIndex": 53,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "42",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 32,
+            "length": 11
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 7
+          },
+          {
+           "startIndex": 53,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "43"
+         },
+         "lineNumber": "43"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "constexpr int128 operator-(int128 v) {",
+         "matchingRanges": {
+          "lineNumber": "210",
+          "columnRanges": [
+           {
+            "startIndex": 17,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "210",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 9
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 17,
+            "length": 8
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 17,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "  return MakeInt128(~Int128High64(v) + (Int128Low64(v) == 0),",
+         "matchingRanges": {
+          "lineNumber": "211"
+         },
+         "lineNumber": "211",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 58,
+            "length": 1
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "}  // namespace int128_internal",
+         "matchingRanges": {
+          "lineNumber": "232"
+         },
+         "lineNumber": "232",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 3,
+            "length": 28
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "constexpr int128 operator+(int128 lhs, int128 rhs) {",
+         "matchingRanges": {
+          "lineNumber": "233",
+          "columnRanges": [
+           {
+            "startIndex": 17,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "233",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 9
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 17,
+            "length": 8
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 17,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "  return int128_internal::SignedAddResult(",
+         "matchingRanges": {
+          "lineNumber": "234"
+         },
+         "lineNumber": "234",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 55
+    },
+    "resultToken": "CAESAggBOOyJp5TM8fTRxQFAAEgB"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "abseil-cpp",
+        "ossProject": "abseil"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "absl/numeric/int128_have_intrinsic.inc",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// representation.",
+         "matchingRanges": {
+          "lineNumber": "23"
+         },
+         "lineNumber": "23",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 18
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "constexpr __int128 BitCastToSigned(unsigned __int128 v) {",
+         "matchingRanges": {
+          "lineNumber": "24",
+          "columnRanges": [
+           {
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "24",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 9
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 35,
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 44,
+            "length": 8
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "  // Casting an unsigned integer to a signed integer of the same",
+         "matchingRanges": {
+          "lineNumber": "25"
+         },
+         "lineNumber": "25",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 62
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "constexpr int128::int128(uint128 v) : v_{static_cast\u003c__int128\u003e(v)} {}",
+         "matchingRanges": {
+          "lineNumber": "82",
+          "columnRanges": [
+           {
+            "length": 9
+           },
+           {
+            "startIndex": 25,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "82",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 9
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 41,
+            "length": 11
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 53,
+            "length": 8
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "length": 9
+          },
+          {
+           "startIndex": 25,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "83"
+         },
+         "lineNumber": "83"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "constexpr int128 operator-(int128 v) { return -static_cast\u003c__int128\u003e(v); }",
+         "matchingRanges": {
+          "lineNumber": "233",
+          "columnRanges": [
+           {
+            "startIndex": 17,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "233",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 9
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 17,
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 39,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 47,
+            "length": 11
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 59,
+            "length": 8
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 17,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "234"
+         },
+         "lineNumber": "234"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "constexpr int128 operator+(int128 lhs, int128 rhs) {",
+         "matchingRanges": {
+          "lineNumber": "241",
+          "columnRanges": [
+           {
+            "startIndex": 17,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "241",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 9
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 17,
+            "length": 8
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 17,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "  return static_cast\u003c__int128\u003e(lhs) + static_cast\u003c__int128\u003e(rhs);",
+         "matchingRanges": {
+          "lineNumber": "242"
+         },
+         "lineNumber": "242",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 11
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 21,
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 38,
+            "length": 11
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 50,
+            "length": 8
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 50
+    },
+    "resultToken": "CAISAggBOMLyveqO8bCGvwFAAEgC"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "abseil-cpp",
+        "ossProject": "abseil"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "absl/container/internal/raw_hash_set_test.cc",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    SCOPED_TRACE(\"capacity=1 no alignment after generation\");",
+         "matchingRanges": {
+          "lineNumber": "110"
+         },
+         "lineNumber": "110",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 17,
+            "length": 42
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    constexpr size_t kSlotSize = 1;",
+         "matchingRanges": {
+          "lineNumber": "111",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "111",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 9
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 33,
+            "length": 1
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "    RawHashSetLayout layout(1, kSlotSize, /*slot_align=*/1,",
+         "matchingRanges": {
+          "lineNumber": "112"
+         },
+         "lineNumber": "112",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 28,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 42,
+            "length": 15
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 57,
+            "length": 1
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  int64_t operator*() const {",
+         "matchingRanges": {
+          "lineNumber": "919",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "919",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 22,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "    // Suppress erroneous uninitialized memory errors on GCC.",
+         "matchingRanges": {
+          "lineNumber": "920"
+         },
+         "lineNumber": "920",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 57
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  int64_t operator*() const {",
+         "matchingRanges": {
+          "lineNumber": "964",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "964",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 22,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "    if (sizeof(T) == sizeof(int64_t)) {",
+         "matchingRanges": {
+          "lineNumber": "965"
+         },
+         "lineNumber": "965",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 21,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "      ASSERT_LE(max_size, uint64_t{1} \u003c\u003c HashtableInlineData::kSizeBitCount);",
+         "matchingRanges": {
+          "lineNumber": "4907"
+         },
+         "lineNumber": "4907",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "startIndex": 16,
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 35,
+            "length": 1
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "      ASSERT_LT(absl::uint128(max_size) * slot_size, uint64_t{1} \u003c\u003c 63);",
+         "matchingRanges": {
+          "lineNumber": "4908",
+          "columnRanges": [
+           {
+            "startIndex": 22,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "4908",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 62,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 68,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 22,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "    }",
+         "matchingRanges": {
+          "lineNumber": "4909"
+         },
+         "lineNumber": "4909"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 46
+    },
+    "resultToken": "CAMSAggBOMbLw77jwZD_NUAASAM"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "abseil-cpp",
+        "ossProject": "abseil"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "absl/strings/numbers_test.cc",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  // in this case means multiplying it by five and dividing by 10.",
+         "matchingRanges": {
+          "lineNumber": "94"
+         },
+         "lineNumber": "94",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 64
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  constexpr int maxlen = 1100;  // worst case is actually 1030 or so.",
+         "matchingRanges": {
+          "lineNumber": "95",
+          "columnRanges": [
+           {
+            "startIndex": 2,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "95",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 9
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 25,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 32,
+            "length": 37
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 2,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "  char buf[maxlen + 5];",
+         "matchingRanges": {
+          "lineNumber": "96"
+         },
+         "lineNumber": "96",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 1
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  constexpr operator integer() const { return i; }",
+         "matchingRanges": {
+          "lineNumber": "143",
+          "columnRanges": [
+           {
+            "startIndex": 2,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "143",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 9
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 31,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 39,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 2,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "144"
+         },
+         "lineNumber": "144"
+        },
+        {
+         "lineText": "  constexpr MyInteger operator+(MyInteger other) const { return i + other.i; }",
+         "matchingRanges": {
+          "lineNumber": "145",
+          "columnRanges": [
+           {
+            "startIndex": 2,
+            "length": 9
+           },
+           {
+            "startIndex": 22,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "145",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 9
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 22,
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 49,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 57,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 2,
+           "length": 9
+          },
+          {
+           "startIndex": 22,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "  constexpr MyInteger operator-(MyInteger other) const { return i - other.i; }",
+         "matchingRanges": {
+          "lineNumber": "146",
+          "columnRanges": [
+           {
+            "startIndex": 2,
+            "length": 9
+           },
+           {
+            "startIndex": 22,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "146",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 9
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 22,
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 49,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 57,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 2,
+           "length": 9
+          },
+          {
+           "startIndex": 22,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "  constexpr MyInteger operator*(MyInteger other) const { return i * other.i; }",
+         "matchingRanges": {
+          "lineNumber": "147",
+          "columnRanges": [
+           {
+            "startIndex": 2,
+            "length": 9
+           },
+           {
+            "startIndex": 22,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "147",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 9
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 22,
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 49,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 57,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 2,
+           "length": 9
+          },
+          {
+           "startIndex": 22,
+           "length": 9
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "void CheckUInt128(absl::uint128 x) {",
+         "matchingRanges": {
+          "lineNumber": "217",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 7
+           },
+           {
+            "startIndex": 24,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "217",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 7
+          },
+          {
+           "startIndex": 24,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "  char buffer[absl::numbers_internal::kFastToBuffer128Size];",
+         "matchingRanges": {
+          "lineNumber": "218"
+         },
+         "lineNumber": "218",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 56
+    },
+    "resultToken": "CAQSBAgBIAE49Jyis6Ld5ekXQABIBA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "abseil-cpp",
+        "ossProject": "abseil"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "absl/random/internal/pcg_engine.h",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  static constexpr result_type(min)() {",
+         "matchingRanges": {
+          "lineNumber": "59",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "59",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 9
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "    return (std::numeric_limits\u003cresult_type\u003e::min)();",
+         "matchingRanges": {
+          "lineNumber": "60"
+         },
+         "lineNumber": "60",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "                                    std::basic_ostream\u003cCharT, Traits\u003e\u0026\u003e",
+         "matchingRanges": {
+          "lineNumber": "108"
+         },
+         "lineNumber": "108"
+        },
+        {
+         "lineText": "  operator\u003c\u003c(",
+         "matchingRanges": {
+          "lineNumber": "109",
+          "columnRanges": [
+           {
+            "startIndex": 2,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "109",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 8
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 2,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "      std::basic_ostream\u003cCharT, Traits\u003e\u0026 os,  // NOLINT(runtime/references)",
+         "matchingRanges": {
+          "lineNumber": "110"
+         },
+         "lineNumber": "110",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 46,
+            "length": 29
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    return absl::MakeUint128(kMultA, kMultB);",
+         "matchingRanges": {
+          "lineNumber": "225",
+          "columnRanges": [
+           {
+            "startIndex": 21,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "225",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 21,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "  }",
+         "matchingRanges": {
+          "lineNumber": "226"
+         },
+         "lineNumber": "226"
+        },
+        {
+         "lineText": "  static inline constexpr state_type increment() {",
+         "matchingRanges": {
+          "lineNumber": "227",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "227",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 16,
+            "length": 9
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "    return absl::MakeUint128(kIncA, kIncB);",
+         "matchingRanges": {
+          "lineNumber": "228",
+          "columnRanges": [
+           {
+            "startIndex": 21,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "228",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 21,
+           "length": 7
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 16
+    },
+    "resultToken": "CAUSAggBOMaO1M7Is-KaNkAASAU"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "abseil-cpp",
+        "ossProject": "abseil"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "absl/flags/flag_test.cc",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "struct VerifyConsteval {",
+         "matchingRanges": {
+          "lineNumber": "274"
+         },
+         "lineNumber": "274",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  friend consteval flags::FlagRegistrarEmpty operator+(",
+         "matchingRanges": {
+          "lineNumber": "275",
+          "columnRanges": [
+           {
+            "startIndex": 45,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "275",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 9
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 45,
+            "length": 8
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 45,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "      flags::FlagRegistrarEmpty, VerifyConsteval) {",
+         "matchingRanges": {
+          "lineNumber": "276"
+         },
+         "lineNumber": "276"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "ABSL_FLAG(absl::int128, test_flag_13, absl::MakeInt128(-1, 0), \"test flag 13\");",
+         "matchingRanges": {
+          "lineNumber": "298"
+         },
+         "lineNumber": "298",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "startIndex": 16,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "startIndex": 24,
+            "length": 12
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 56,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 59,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 63,
+            "length": 14
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "ABSL_FLAG(absl::uint128, test_flag_14, absl::MakeUint128(0, 0xFFFAAABBBCCCDDD),",
+         "matchingRanges": {
+          "lineNumber": "299",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 7
+           },
+           {
+            "startIndex": 49,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "299",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "startIndex": 16,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "startIndex": 25,
+            "length": 12
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 57,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 60,
+            "length": 17
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 7
+          },
+          {
+           "startIndex": 49,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "          \"test flag 14\");",
+         "matchingRanges": {
+          "lineNumber": "300"
+         },
+         "lineNumber": "300",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 10,
+            "length": 14
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "#if !ABSL_FLAGS_STRIP_HELP",
+         "matchingRanges": {
+          "lineNumber": "730"
+         },
+         "lineNumber": "730",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "TEST_F(FlagTest, TestNonConstexprHelp) {",
+         "matchingRanges": {
+          "lineNumber": "731",
+          "columnRanges": [
+           {
+            "startIndex": 24,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "731",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "startIndex": 7,
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "startIndex": 17,
+            "length": 20
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 24,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "  EXPECT_EQ(",
+         "matchingRanges": {
+          "lineNumber": "732"
+         },
+         "lineNumber": "732"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 19
+    },
+    "resultToken": "CAYSBAgBIAE4ivDQ7dGTka4ZQABIBg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "abseil-cpp",
+        "ossProject": "abseil"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "absl/hash/hash_test.cc",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  constexpr size_t kTotalSize = 1 \u003c\u003c 20;",
+         "matchingRanges": {
+          "lineNumber": "169",
+          "columnRanges": [
+           {
+            "startIndex": 2,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "169",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 9
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 32,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 37,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 2,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "  std::unique_ptr\u003cchar[]\u003e data(new char[kTotalSize]);",
+         "matchingRanges": {
+          "lineNumber": "170"
+         },
+         "lineNumber": "170",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 18,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 31,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 35,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  constexpr size_t kLog2NumValues = 5;",
+         "matchingRanges": {
+          "lineNumber": "171",
+          "columnRanges": [
+           {
+            "startIndex": 2,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "171",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 9
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 36,
+            "length": 1
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 2,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "  constexpr size_t kNumValues = 1 \u003c\u003c kLog2NumValues;",
+         "matchingRanges": {
+          "lineNumber": "172",
+          "columnRanges": [
+           {
+            "startIndex": 2,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "172",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 9
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 32,
+            "length": 1
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 2,
+           "length": 9
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  EXPECT_TRUE((is_hashable\u003c__uint128_t\u003e::value));",
+         "matchingRanges": {
+          "lineNumber": "409",
+          "columnRanges": [
+           {
+            "startIndex": 29,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "409",
+         "ranges": [
+          {
+           "startIndex": 29,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "410"
+         },
+         "lineNumber": "410"
+        },
+        {
+         "lineText": "  absl::flat_hash_map\u003csize_t, int\u003e hash_to_index;",
+         "matchingRanges": {
+          "lineNumber": "411"
+         },
+         "lineNumber": "411",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 30,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  std::vector\u003c__uint128_t\u003e values;",
+         "matchingRanges": {
+          "lineNumber": "412",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "412",
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 7
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  friend std::ostream\u0026 operator\u003c\u003c(std::ostream\u0026 o, Private p) {",
+         "matchingRanges": {
+          "lineNumber": "619",
+          "columnRanges": [
+           {
+            "startIndex": 23,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "619",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 23,
+            "length": 8
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 23,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "    return o \u003c\u003c p.i;",
+         "matchingRanges": {
+          "lineNumber": "620"
+         },
+         "lineNumber": "620",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 20
+    },
+    "resultToken": "CAcSAggBOPSTx7bs2uO3JkAASAc"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "abseil-cpp",
+        "ossProject": "abseil"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "absl/time/duration.cc",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "constexpr int64_t kint64max = std::numeric_limits\u003cint64_t\u003e::max();",
+         "matchingRanges": {
+          "lineNumber": "84",
+          "columnRanges": [
+           {
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "84",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 9
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "constexpr int64_t kint64min = std::numeric_limits\u003cint64_t\u003e::min();",
+         "matchingRanges": {
+          "lineNumber": "85",
+          "columnRanges": [
+           {
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "85",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 9
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "length": 9
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  uint32_t rep_lo;",
+         "matchingRanges": {
+          "lineNumber": "139"
+         },
+         "lineNumber": "139"
+        },
+        {
+         "lineText": "  const uint64_t h64 = Uint128High64(u128);",
+         "matchingRanges": {
+          "lineNumber": "140",
+          "columnRanges": [
+           {
+            "startIndex": 23,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "140",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 23,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "  const uint64_t l64 = Uint128Low64(u128);",
+         "matchingRanges": {
+          "lineNumber": "141",
+          "columnRanges": [
+           {
+            "startIndex": 23,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "141",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 23,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "  if (h64 == 0) {  // fastpath",
+         "matchingRanges": {
+          "lineNumber": "142"
+         },
+         "lineNumber": "142",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 13,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 19,
+            "length": 11
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "Duration\u0026 Duration::operator+=(Duration rhs) {",
+         "matchingRanges": {
+          "lineNumber": "417",
+          "columnRanges": [
+           {
+            "startIndex": 20,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "417",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 20,
+            "length": 8
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 20,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "  if (time_internal::IsInfiniteDuration(*this)) return *this;",
+         "matchingRanges": {
+          "lineNumber": "418"
+         },
+         "lineNumber": "418",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 41,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 48,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 56,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "Duration\u0026 Duration::operator-=(Duration rhs) {",
+         "matchingRanges": {
+          "lineNumber": "436",
+          "columnRanges": [
+           {
+            "startIndex": 20,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "436",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 20,
+            "length": 8
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 20,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "  if (time_internal::IsInfiniteDuration(*this)) return *this;",
+         "matchingRanges": {
+          "lineNumber": "437"
+         },
+         "lineNumber": "437",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 41,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 48,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 56,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 48
+    },
+    "resultToken": "CAgSAggBOKqTpajTtMCP_AFAAEgI"
+   }
+  ],
+  "estimatedResultCount": "9",
+  "exhaustive": true,
+  "requestToken": "Ciljb25zdGV4cHIgdWludDEyOCBvcGVyYXRvcig8PHw-PnxcK3wtfFwqKRIwKCBnaXQ6Z2l0aHViL2Fic2VpbC9hYnNlaWwtY3BwQG1hc3RlciBjYXNlOnllcyApGgwI4tjM0QYQusidhgIgDCoAMgBIAQ"
+ }
+}

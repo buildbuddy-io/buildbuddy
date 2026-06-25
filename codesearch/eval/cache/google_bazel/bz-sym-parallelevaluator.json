@@ -1,0 +1,3301 @@
+{
+ "query": "ParallelEvaluator",
+ "oss_project": "bazel",
+ "repo_name": "bazel",
+ "page_size": 50,
+ "fetched_at": "2026-06-11T22:26:45Z",
+ "response": {
+  "searchResults": [
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/skyframe/ParallelEvaluator.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": " * others) implemented, but as of 2020-01-15 this was the only implementation so we deleted that",
+         "matchingRanges": {
+          "lineNumber": "54"
+         },
+         "lineNumber": "54",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 96
+           }
+          }
+         ]
+        },
+        {
+         "lineText": " * interface. Now {@code ParallelEvaluator} could be called just {@code Evaluator}, but renaming it",
+         "matchingRanges": {
+          "lineNumber": "55",
+          "columnRanges": [
+           {
+            "startIndex": 25,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "55",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 99
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 25,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": " * is not worth the effort.",
+         "matchingRanges": {
+          "lineNumber": "56"
+         },
+         "lineNumber": "56",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 27
+           }
+          }
+         ]
+        },
+        {
+         "lineText": " */",
+         "matchingRanges": {
+          "lineNumber": "57"
+         },
+         "lineNumber": "57",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "public class ParallelEvaluator extends AbstractParallelEvaluator {",
+         "matchingRanges": {
+          "lineNumber": "58",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 17
+           },
+           {
+            "startIndex": 47,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "58",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 31,
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 17
+          },
+          {
+           "startIndex": 47,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "  private static final GoogleLogger logger = GoogleLogger.forEnclosingClass();",
+         "matchingRanges": {
+          "lineNumber": "59"
+         },
+         "lineNumber": "59",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 17,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  public ParallelEvaluator(",
+         "matchingRanges": {
+          "lineNumber": "65",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "65",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "      ProcessableGraph graph,",
+         "matchingRanges": {
+          "lineNumber": "66"
+         },
+         "lineNumber": "66"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 4
+    },
+    "resultToken": "CAASBAgBIAE40LqW5MmCxdH_AUAASAA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/skyframe/ParallelEvaluatorTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "/** Tests for {@link ParallelEvaluator}. */",
+         "matchingRanges": {
+          "lineNumber": "101",
+          "columnRanges": [
+           {
+            "startIndex": 21,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "101",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 43
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 21,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "@RunWith(TestParameterInjector.class)",
+         "matchingRanges": {
+          "lineNumber": "102"
+         },
+         "lineNumber": "102",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 31,
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "public class ParallelEvaluatorTest {",
+         "matchingRanges": {
+          "lineNumber": "103",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "103",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "  private static final SkyFunctionName CHILD_TYPE = SkyFunctionName.createHermetic(\"child\");",
+         "matchingRanges": {
+          "lineNumber": "104"
+         },
+         "lineNumber": "104",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 17,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 83,
+            "length": 7
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  private ParallelEvaluator makeEvaluator(",
+         "matchingRanges": {
+          "lineNumber": "144",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "144",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "      ProcessableGraph graph,",
+         "matchingRanges": {
+          "lineNumber": "145"
+         },
+         "lineNumber": "145"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  private ParallelEvaluator makeEvaluator(",
+         "matchingRanges": {
+          "lineNumber": "154",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "154",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "      ProcessableGraph graph,",
+         "matchingRanges": {
+          "lineNumber": "155"
+         },
+         "lineNumber": "155"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  private ParallelEvaluator makeEvaluator(",
+         "matchingRanges": {
+          "lineNumber": "177",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "177",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "      ProcessableGraph graph,",
+         "matchingRanges": {
+          "lineNumber": "178"
+         },
+         "lineNumber": "178"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 37
+    },
+    "resultToken": "CAESBAgBIAE4vNHC8P6KkvcyQABIAQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/skyframe/AbstractParallelEvaluator.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": " */",
+         "matchingRanges": {
+          "lineNumber": "96"
+         },
+         "lineNumber": "96",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "abstract class AbstractParallelEvaluator {",
+         "matchingRanges": {
+          "lineNumber": "97",
+          "columnRanges": [
+           {
+            "startIndex": 23,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "97",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 23,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "  private static final GoogleLogger logger = GoogleLogger.forEnclosingClass();",
+         "matchingRanges": {
+          "lineNumber": "98"
+         },
+         "lineNumber": "98",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 17,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  AbstractParallelEvaluator(",
+         "matchingRanges": {
+          "lineNumber": "110",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "110",
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "      ProcessableGraph graph,",
+         "matchingRanges": {
+          "lineNumber": "111"
+         },
+         "lineNumber": "111"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "        // and not to be confused with the oldDeps variable which refers to the last evaluation,",
+         "matchingRanges": {
+          "lineNumber": "729"
+         },
+         "lineNumber": "729",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 8,
+            "length": 88
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "        // i.e. a prior call to ParallelEvaluator#eval.",
+         "matchingRanges": {
+          "lineNumber": "730",
+          "columnRanges": [
+           {
+            "startIndex": 32,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "730",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 8,
+            "length": 47
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 32,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "        Collection\u003cSkyKey\u003e newDepsThatWerentInTheLastEvaluation;",
+         "matchingRanges": {
+          "lineNumber": "731"
+         },
+         "lineNumber": "731"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 6
+    },
+    "resultToken": "CAISBAgBIAE44NjmmabGpqdwQABIAg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/skyframe/ParallelEvaluatorContext.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": " */",
+         "matchingRanges": {
+          "lineNumber": "37"
+         },
+         "lineNumber": "37",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "class ParallelEvaluatorContext {",
+         "matchingRanges": {
+          "lineNumber": "38",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "38",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "39"
+         },
+         "lineNumber": "39"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  public ParallelEvaluatorContext(",
+         "matchingRanges": {
+          "lineNumber": "69",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "69",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "      QueryableGraph graph,",
+         "matchingRanges": {
+          "lineNumber": "70"
+         },
+         "lineNumber": "70"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAMSBAgBIAE4uPLR5NzimO1nQABIAw"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/skyframe/ParallelEvaluatorErrorClassifier.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "/** An {@link ErrorClassifier} implementation for {@link ParallelEvaluator}. */",
+         "matchingRanges": {
+          "lineNumber": "18",
+          "columnRanges": [
+           {
+            "startIndex": 57,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "18",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 79
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 57,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "public final class ParallelEvaluatorErrorClassifier extends ErrorClassifier {",
+         "matchingRanges": {
+          "lineNumber": "19",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "19",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 13,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 52,
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "  private static final ParallelEvaluatorErrorClassifier INSTANCE =",
+         "matchingRanges": {
+          "lineNumber": "20",
+          "columnRanges": [
+           {
+            "startIndex": 23,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "20",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 17,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 23,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "      new ParallelEvaluatorErrorClassifier();",
+         "matchingRanges": {
+          "lineNumber": "21",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "21",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "22"
+         },
+         "lineNumber": "22"
+        },
+        {
+         "lineText": "  public static ParallelEvaluatorErrorClassifier instance() {",
+         "matchingRanges": {
+          "lineNumber": "23",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "23",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "    return INSTANCE;",
+         "matchingRanges": {
+          "lineNumber": "24"
+         },
+         "lineNumber": "24",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  private ParallelEvaluatorErrorClassifier() {}",
+         "matchingRanges": {
+          "lineNumber": "27",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "27",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "28"
+         },
+         "lineNumber": "28"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 6
+    },
+    "resultToken": "CAQSBAgBIAE4jNHzidCNo8vrAUAASAQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/skyframe/AbstractInMemoryMemoizingEvaluator.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "      EvaluationResult\u003cT\u003e result;",
+         "matchingRanges": {
+          "lineNumber": "157"
+         },
+         "lineNumber": "157"
+        },
+        {
+         "lineText": "      try (SilentCloseable c = Profiler.instance().profile(\"ParallelEvaluator.eval\")) {",
+         "matchingRanges": {
+          "lineNumber": "158",
+          "columnRanges": [
+           {
+            "startIndex": 60,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "158",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 59,
+            "length": 24
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 60,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "        ParallelEvaluator evaluator =",
+         "matchingRanges": {
+          "lineNumber": "159",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "159",
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "            new ParallelEvaluator(",
+         "matchingRanges": {
+          "lineNumber": "160",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "160",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "                graph,",
+         "matchingRanges": {
+          "lineNumber": "161"
+         },
+         "lineNumber": "161"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    try {",
+         "matchingRanges": {
+          "lineNumber": "474"
+         },
+         "lineNumber": "474",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "      ParallelEvaluator.injectValues(valuesToInject, version, getInMemoryGraph(), progressReceiver);",
+         "matchingRanges": {
+          "lineNumber": "475",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "475",
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "    } catch (InterruptedException e) {",
+         "matchingRanges": {
+          "lineNumber": "476"
+         },
+         "lineNumber": "476",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 5
+    },
+    "resultToken": "CAUSAggBOKrazfP6sumWBkAASAU"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/skyframe/MemoizingEvaluatorTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    // When it is interrupted during evaluation (here, caused by the failure of the throwing",
+         "matchingRanges": {
+          "lineNumber": "389"
+         },
+         "lineNumber": "389",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 88
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    // SkyFunction during a no-keep-going evaluation), then the ParallelEvaluator#evaluate call",
+         "matchingRanges": {
+          "lineNumber": "390",
+          "columnRanges": [
+           {
+            "startIndex": 64,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "390",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 91
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 64,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "    // throws a RuntimeException e where e.getCause() is the RuntimeException thrown by that",
+         "matchingRanges": {
+          "lineNumber": "391"
+         },
+         "lineNumber": "391",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 88
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "        tester.eval(/*keepGoing=*/ false, interruptedKey, failKey);",
+         "matchingRanges": {
+          "lineNumber": "434"
+         },
+         "lineNumber": "434",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 20,
+            "length": 14
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    // Then the ParallelEvaluator#evaluate call returns an EvaluationResult that has no error for",
+         "matchingRanges": {
+          "lineNumber": "435",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "435",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 93
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "    // the interrupted SkyFunction.",
+         "matchingRanges": {
+          "lineNumber": "436"
+         },
+         "lineNumber": "436",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 31
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  // ParallelEvaluator notifies ValueProgressReceiver of already-built top-level values in error: we",
+         "matchingRanges": {
+          "lineNumber": "837",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "837",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 98
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "  // built \"top\" and \"mid\" as top-level targets; \"mid\" contains an error. We make sure \"mid\" is",
+         "matchingRanges": {
+          "lineNumber": "838"
+         },
+         "lineNumber": "838",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 93
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 10
+    },
+    "resultToken": "CAYSAggBOOq5qsymwMPANEAASAY"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/skyframe/EvaluationResult.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "/**",
+         "matchingRanges": {
+          "lineNumber": "28"
+         },
+         "lineNumber": "28",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": " * The result of a Skyframe {@link ParallelEvaluator#eval} call. Will contain all the successfully",
+         "matchingRanges": {
+          "lineNumber": "29",
+          "columnRanges": [
+           {
+            "startIndex": 35,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "29",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 98
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 35,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": " * evaluated values, retrievable through {@link #get}. As well, the {@link ErrorInfo} for the first",
+         "matchingRanges": {
+          "lineNumber": "30"
+         },
+         "lineNumber": "30",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 99
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAcSAggBOMrFmuiujaTnCkAASAc"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/skyframe/EagerInvalidatorTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    Reporter reporter = new Reporter(EventBusEventHandler.createWithNewEventBus());",
+         "matchingRanges": {
+          "lineNumber": "147"
+         },
+         "lineNumber": "147",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 24,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    ParallelEvaluator evaluator =",
+         "matchingRanges": {
+          "lineNumber": "148",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "148",
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "        new ParallelEvaluator(",
+         "matchingRanges": {
+          "lineNumber": "149",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "149",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "            graph,",
+         "matchingRanges": {
+          "lineNumber": "150"
+         },
+         "lineNumber": "150"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "            AbstractQueueVisitor.create(",
+         "matchingRanges": {
+          "lineNumber": "160"
+         },
+         "lineNumber": "160"
+        },
+        {
+         "lineText": "                \"test-pool\", 200, ParallelEvaluatorErrorClassifier.instance()),",
+         "matchingRanges": {
+          "lineNumber": "161",
+          "columnRanges": [
+           {
+            "startIndex": 34,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "161",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 16,
+            "length": 11
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 29,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 34,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "            new SimpleCycleDetector(/* storeExactCycles= */ true),",
+         "matchingRanges": {
+          "lineNumber": "162"
+         },
+         "lineNumber": "162",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 36,
+            "length": 23
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CAgSAggBOPT-jLqkmMyLsQFAAEgI"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/skyframe/SimpleCycleDetector.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import static com.google.common.base.Preconditions.checkState;",
+         "matchingRanges": {
+          "lineNumber": "17"
+         },
+         "lineNumber": "17",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "import static com.google.devtools.build.skyframe.AbstractParallelEvaluator.isDoneForBuild;",
+         "matchingRanges": {
+          "lineNumber": "18",
+          "columnRanges": [
+           {
+            "startIndex": 57,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "18",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 57,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "import static com.google.devtools.build.skyframe.AbstractParallelEvaluator.maybeMarkRebuilding;",
+         "matchingRanges": {
+          "lineNumber": "19",
+          "columnRanges": [
+           {
+            "startIndex": 57,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "19",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 57,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "20"
+         },
+         "lineNumber": "20"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "/**",
+         "matchingRanges": {
+          "lineNumber": "38"
+         },
+         "lineNumber": "38",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": " * Depth-first implementation of cycle detection after a {@link ParallelEvaluator} evaluation has",
+         "matchingRanges": {
+          "lineNumber": "39",
+          "columnRanges": [
+           {
+            "startIndex": 64,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "39",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 97
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 64,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": " * completed with at least one root unfinished.",
+         "matchingRanges": {
+          "lineNumber": "40"
+         },
+         "lineNumber": "40",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 47
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "      EvaluationResult.Builder\u003c?\u003e result,",
+         "matchingRanges": {
+          "lineNumber": "57"
+         },
+         "lineNumber": "57"
+        },
+        {
+         "lineText": "      ParallelEvaluatorContext evaluatorContext)",
+         "matchingRanges": {
+          "lineNumber": "58",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "58",
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "      throws InterruptedException {",
+         "matchingRanges": {
+          "lineNumber": "59"
+         },
+         "lineNumber": "59",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 11
+    },
+    "resultToken": "CAkSAggBOP7_ybLxxsagtgFAAEgJ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/skyframe/CycleDetector.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "/**",
+         "matchingRanges": {
+          "lineNumber": "16"
+         },
+         "lineNumber": "16",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": " * Detects cycles after a {@link ParallelEvaluator} evaluation that did not complete due to cycles.",
+         "matchingRanges": {
+          "lineNumber": "17",
+          "columnRanges": [
+           {
+            "startIndex": 33,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "17",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 99
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 33,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": " *",
+         "matchingRanges": {
+          "lineNumber": "18"
+         },
+         "lineNumber": "18",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "      EvaluationResult.Builder\u003c?\u003e result,",
+         "matchingRanges": {
+          "lineNumber": "24"
+         },
+         "lineNumber": "24"
+        },
+        {
+         "lineText": "      ParallelEvaluatorContext evaluatorContext)",
+         "matchingRanges": {
+          "lineNumber": "25",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "25",
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "      throws InterruptedException;",
+         "matchingRanges": {
+          "lineNumber": "26"
+         },
+         "lineNumber": "26",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAoSAggBOPKwk_LNyM7XhwFAAEgK"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/skyframe/NodeEntryVisitor.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import com.google.devtools.build.lib.concurrent.QuiescingExecutor;",
+         "matchingRanges": {
+          "lineNumber": "26"
+         },
+         "lineNumber": "26",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.skyframe.ParallelEvaluatorContext.RunnableMaker;",
+         "matchingRanges": {
+          "lineNumber": "27",
+          "columnRanges": [
+           {
+            "startIndex": 42,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "27",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 42,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.skyframe.SkyFunction.Environment.ClassToInstanceMapSkyKeyComputeState;",
+         "matchingRanges": {
+          "lineNumber": "28"
+         },
+         "lineNumber": "28",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "/**",
+         "matchingRanges": {
+          "lineNumber": "38"
+         },
+         "lineNumber": "38",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": " * Threadpool manager for {@link ParallelEvaluator}. Wraps a {@link QuiescingExecutor} and keeps",
+         "matchingRanges": {
+          "lineNumber": "39",
+          "columnRanges": [
+           {
+            "startIndex": 33,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "39",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 96
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 33,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": " * track of pending nodes.",
+         "matchingRanges": {
+          "lineNumber": "40"
+         },
+         "lineNumber": "40",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 26
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAsSAggBOIDxmdGT0qulGEAASAs"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/skyframe/ShortCircuitingCycleDetector.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import static com.google.devtools.build.skyframe.AbstractParallelEvaluator.maybeMarkRebuilding;",
+         "matchingRanges": {
+          "lineNumber": "16",
+          "columnRanges": [
+           {
+            "startIndex": 57,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "16",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 57,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "17"
+         },
+         "lineNumber": "17"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "      EvaluationResult.Builder\u003c?\u003e result,",
+         "matchingRanges": {
+          "lineNumber": "62"
+         },
+         "lineNumber": "62"
+        },
+        {
+         "lineText": "      ParallelEvaluatorContext evaluatorContext)",
+         "matchingRanges": {
+          "lineNumber": "63",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "63",
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "      throws InterruptedException {",
+         "matchingRanges": {
+          "lineNumber": "64"
+         },
+         "lineNumber": "64",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "                NamedForkJoinPool.newNamedPool(\"short-circuiting-cycle-detector\", numThreads))",
+         "matchingRanges": {
+          "lineNumber": "72"
+         },
+         "lineNumber": "72",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 47,
+            "length": 33
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "            .setErrorClassifier(ParallelEvaluatorErrorClassifier.instance())",
+         "matchingRanges": {
+          "lineNumber": "73",
+          "columnRanges": [
+           {
+            "startIndex": 32,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "73",
+         "ranges": [
+          {
+           "startIndex": 32,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "            .build();",
+         "matchingRanges": {
+          "lineNumber": "74"
+         },
+         "lineNumber": "74"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 5
+    },
+    "resultToken": "CAwSAggBONr4w6KH24ej9QFAAEgM"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/skyframe/EventFilter.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "/** Filters out events which should not be stored during evaluation in {@link ParallelEvaluator}. */",
+         "matchingRanges": {
+          "lineNumber": "16",
+          "columnRanges": [
+           {
+            "startIndex": 78,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "16",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 100
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 78,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "public interface EventFilter {",
+         "matchingRanges": {
+          "lineNumber": "17"
+         },
+         "lineNumber": "17",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 9
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CA0SAggBOOisvLeYoMmzuwFAAEgN"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/skyframe/StateMachineTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "      throws InterruptedException {",
+         "matchingRanges": {
+          "lineNumber": "70"
+         },
+         "lineNumber": "70",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    return new ParallelEvaluator(",
+         "matchingRanges": {
+          "lineNumber": "71",
+          "columnRanges": [
+           {
+            "startIndex": 15,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "71",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 11,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 15,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "            graph,",
+         "matchingRanges": {
+          "lineNumber": "72"
+         },
+         "lineNumber": "72"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "            AbstractQueueVisitor.create(",
+         "matchingRanges": {
+          "lineNumber": "82"
+         },
+         "lineNumber": "82"
+        },
+        {
+         "lineText": "                \"test-pool\", TEST_PARALLELISM, ParallelEvaluatorErrorClassifier.instance()),",
+         "matchingRanges": {
+          "lineNumber": "83",
+          "columnRanges": [
+           {
+            "startIndex": 47,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "83",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 16,
+            "length": 11
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 47,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "            new SimpleCycleDetector(/* storeExactCycles= */ true),",
+         "matchingRanges": {
+          "lineNumber": "84"
+         },
+         "lineNumber": "84",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 36,
+            "length": 23
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CA4SAggBOI7Dppvd-I203AFAAEgO"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/skyframe/ErrorInfoManager.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "/** Used by {@link ParallelEvaluator} to produce and consume {@link ErrorInfo} instances. */",
+         "matchingRanges": {
+          "lineNumber": "20",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "20",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 92
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "public interface ErrorInfoManager {",
+         "matchingRanges": {
+          "lineNumber": "21"
+         },
+         "lineNumber": "21",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 9
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CA8SAggBOK64wobqwPbT0QFAAEgP"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/skyframe/DirtyBuildingState.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "   * thread is not working on the node anymore. Note that this requires that there is no code after",
+         "matchingRanges": {
+          "lineNumber": "69"
+         },
+         "lineNumber": "69",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 99
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "   * the loop in {@link ParallelEvaluator.Evaluate#run}.",
+         "matchingRanges": {
+          "lineNumber": "70",
+          "columnRanges": [
+           {
+            "startIndex": 24,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "70",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 56
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 24,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "   */",
+         "matchingRanges": {
+          "lineNumber": "71"
+         },
+         "lineNumber": "71",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBASAggBOI7z47-hy86_wgFAAEgQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/skyframe/SequencedSkyframeExecutorTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "   * sets completionFuture. It then exits, returning control to",
+         "matchingRanges": {
+          "lineNumber": "1020"
+         },
+         "lineNumber": "1020",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 63
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "   * AbstractParallelEvaluator$Evaluate#run code. The build is interrupted. When B's code tries to",
+         "matchingRanges": {
+          "lineNumber": "1021",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "1021",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 98
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "   * register the future with AbstractQueueVisitor, the future is canceled (or if the interrupt",
+         "matchingRanges": {
+          "lineNumber": "1022"
+         },
+         "lineNumber": "1022",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 95
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBESAggBOKTqs8iqyJqcrQFAAEgR"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/skyframe/NodeEntryVisitorTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import com.google.devtools.build.lib.concurrent.MultiThreadPoolsQuiescingExecutor.ThreadPoolType;",
+         "matchingRanges": {
+          "lineNumber": "24"
+         },
+         "lineNumber": "24",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.skyframe.ParallelEvaluatorContext.RunnableMaker;",
+         "matchingRanges": {
+          "lineNumber": "25",
+          "columnRanges": [
+           {
+            "startIndex": 42,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "25",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 42,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.skyframe.SkyFunction.Environment.SkyKeyComputeState;",
+         "matchingRanges": {
+          "lineNumber": "26"
+         },
+         "lineNumber": "26",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBISAggBOObzkdK8t5-egQFAAEgS"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/buildtool/MiscAnalysisTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  // Regression test for http://b/12465751: \"IllegalStateException in ParallelEvaluator\".",
+         "matchingRanges": {
+          "lineNumber": "115",
+          "columnRanges": [
+           {
+            "startIndex": 70,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "115",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 87
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 70,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "  @Test",
+         "matchingRanges": {
+          "lineNumber": "116"
+         },
+         "lineNumber": "116"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBMSAggBOOaA6cLlioC6OEAASBM"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/skyframe/SkyFunctionEnvironment.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "/**",
+         "matchingRanges": {
+          "lineNumber": "60"
+         },
+         "lineNumber": "60",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": " * A {@link SkyFunction.Environment} implementation for {@link ParallelEvaluator}.",
+         "matchingRanges": {
+          "lineNumber": "61",
+          "columnRanges": [
+           {
+            "startIndex": 63,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "61",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 82
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 63,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": " *",
+         "matchingRanges": {
+          "lineNumber": "62"
+         },
+         "lineNumber": "62",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  private final ParallelEvaluatorContext evaluatorContext;",
+         "matchingRanges": {
+          "lineNumber": "164",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "164",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "165"
+         },
+         "lineNumber": "165"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "      @Nullable Version maxTransitiveSourceVersionSoFar,",
+         "matchingRanges": {
+          "lineNumber": "172"
+         },
+         "lineNumber": "172"
+        },
+        {
+         "lineText": "      ParallelEvaluatorContext evaluatorContext)",
+         "matchingRanges": {
+          "lineNumber": "173",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "173",
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "      throws InterruptedException, UndonePreviouslyRequestedDeps {",
+         "matchingRanges": {
+          "lineNumber": "174"
+         },
+         "lineNumber": "174",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 7
+    },
+    "resultToken": "CBQSAggBOJS3woPK46rUiAFAAEgU"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/runtime/QuiescingExecutorsImpl.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import com.google.devtools.build.lib.pkgcache.PackageOptions;",
+         "matchingRanges": {
+          "lineNumber": "31"
+         },
+         "lineNumber": "31",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.skyframe.ParallelEvaluatorErrorClassifier;",
+         "matchingRanges": {
+          "lineNumber": "32",
+          "columnRanges": [
+           {
+            "startIndex": 42,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "32",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 42,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.common.options.OptionsProvider;",
+         "matchingRanges": {
+          "lineNumber": "33"
+         },
+         "lineNumber": "33",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "          ExceptionHandlingMode.FAIL_FAST,",
+         "matchingRanges": {
+          "lineNumber": "140"
+         },
+         "lineNumber": "140"
+        },
+        {
+         "lineText": "          ParallelEvaluatorErrorClassifier.instance());",
+         "matchingRanges": {
+          "lineNumber": "141",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "141",
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "    }",
+         "matchingRanges": {
+          "lineNumber": "142"
+         },
+         "lineNumber": "142"
+        },
+        {
+         "lineText": "    return AbstractQueueVisitor.create(",
+         "matchingRanges": {
+          "lineNumber": "143"
+         },
+         "lineNumber": "143",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "        SKYFRAME_EVALUATOR, analysisParallelism(), ParallelEvaluatorErrorClassifier.instance());",
+         "matchingRanges": {
+          "lineNumber": "144",
+          "columnRanges": [
+           {
+            "startIndex": 51,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "144",
+         "ranges": [
+          {
+           "startIndex": 51,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "  }",
+         "matchingRanges": {
+          "lineNumber": "145"
+         },
+         "lineNumber": "145"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 4
+    },
+    "resultToken": "CBUSAggBOLj5oIfO47DmggFAAEgV"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/skyframe/SkyFunction.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "     *       Version#atMost}). If there are no direct dependencies, returns {@link",
+         "matchingRanges": {
+          "lineNumber": "625"
+         },
+         "lineNumber": "625",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 82
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "     *       ParallelEvaluatorContext#getMinimalVersion}. If any direct dependency node has a {@code",
+         "matchingRanges": {
+          "lineNumber": "626",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "626",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 100
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "     *       null} MTSV, returns {@code null}.",
+         "matchingRanges": {
+          "lineNumber": "627"
+         },
+         "lineNumber": "627",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 46
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBYSAggBOPaA88LXo9bMYUAASBY"
+   }
+  ],
+  "estimatedResultCount": "23",
+  "exhaustive": true,
+  "requestToken": "ChFQYXJhbGxlbEV2YWx1YXRvchIjKCBnaXQ6YmF6ZWwvYmF6ZWxAbWFzdGVyIGNhc2U6eWVzICkaDAil7KzRBhDvopiwAyAMKgAyAEgB"
+ }
+}

@@ -1,0 +1,473 @@
+{
+ "query": "Verify256",
+ "oss_project": "opentitan",
+ "repo_name": "manticore",
+ "page_size": 50,
+ "fetched_at": "2026-06-17T22:58:25Z",
+ "response": {
+  "searchResults": [
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "manticore",
+        "ossProject": "opentitan"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/crypto/ring/rsa.rs",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "/// A `ring`-based [`sig::Verify`] for PKCS#1.5 RSA using SHA-256.",
+         "matchingRanges": {
+          "lineNumber": "38"
+         },
+         "lineNumber": "38",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 66
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "pub struct Verify256 {",
+         "matchingRanges": {
+          "lineNumber": "39",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "39",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "    key: PublicKey,",
+         "matchingRanges": {
+          "lineNumber": "40"
+         },
+         "lineNumber": "40"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "impl Verify256 {",
+         "matchingRanges": {
+          "lineNumber": "43",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "43",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "    /// Creates a new `Verify256` with the given key.",
+         "matchingRanges": {
+          "lineNumber": "44",
+          "columnRanges": [
+           {
+            "startIndex": 23,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "44",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 49
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 23,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "    pub fn from_public(key: PublicKey) -\u003e Self {",
+         "matchingRanges": {
+          "lineNumber": "45"
+         },
+         "lineNumber": "45",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 42,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "impl sig::Verify for Verify256 {",
+         "matchingRanges": {
+          "lineNumber": "50",
+          "columnRanges": [
+           {
+            "startIndex": 21,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "50",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 17,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 21,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "    fn verify(",
+         "matchingRanges": {
+          "lineNumber": "51"
+         },
+         "lineNumber": "51",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    /// Creates a `Verify256` using a copy of the corresponding public key.",
+         "matchingRanges": {
+          "lineNumber": "84",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "84",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 71
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "    pub fn verifier(\u0026self) -\u003e Verify256 {",
+         "matchingRanges": {
+          "lineNumber": "85",
+          "columnRanges": [
+           {
+            "startIndex": 30,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "85",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 30,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "        let n = self",
+         "matchingRanges": {
+          "lineNumber": "86"
+         },
+         "lineNumber": "86",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "            .into_boxed_slice();",
+         "matchingRanges": {
+          "lineNumber": "99"
+         },
+         "lineNumber": "99"
+        },
+        {
+         "lineText": "        Verify256 {",
+         "matchingRanges": {
+          "lineNumber": "100",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "100",
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "            key: PublicKey::new(n, e),",
+         "matchingRanges": {
+          "lineNumber": "101"
+         },
+         "lineNumber": "101"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "#[cfg(test)]",
+         "matchingRanges": {
+          "lineNumber": "131"
+         },
+         "lineNumber": "131"
+        },
+        {
+         "lineText": "pub fn from_keypair(keypair: \u0026[u8]) -\u003e (Verify256, Sign256) {",
+         "matchingRanges": {
+          "lineNumber": "132",
+          "columnRanges": [
+           {
+            "startIndex": 40,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "132",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 40,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "    let signer = Sign256::from_pkcs8(keypair).unwrap();",
+         "matchingRanges": {
+          "lineNumber": "133"
+         },
+         "lineNumber": "133",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 8
+    },
+    "resultToken": "CAASAggBOOKryZCi3qDWC0AASAA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "manticore",
+        "ossProject": "opentitan"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/crypto/ring/sig.rs",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "                self.verifier =",
+         "matchingRanges": {
+          "lineNumber": "64"
+         },
+         "lineNumber": "64"
+        },
+        {
+         "lineText": "                    Some(Box::new(rsa::Verify256::from_public(key)));",
+         "matchingRanges": {
+          "lineNumber": "65",
+          "columnRanges": [
+           {
+            "startIndex": 39,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "65",
+         "ranges": [
+          {
+           "startIndex": 39,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "            }",
+         "matchingRanges": {
+          "lineNumber": "66"
+         },
+         "lineNumber": "66"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAESAggBOJD-jZ_xkM3Q7AFAAEgB"
+   }
+  ],
+  "estimatedResultCount": "2",
+  "exhaustive": true,
+  "requestToken": "CglWZXJpZnkyNTYSMCggZ2l0OmdpdGh1Yi9sb3dSSVNDL21hbnRpY29yZUBtYXN0ZXIgY2FzZTp5ZXMgKRoMCJHNzNEGEJLG2oABIAwqADIASAE"
+ }
+}

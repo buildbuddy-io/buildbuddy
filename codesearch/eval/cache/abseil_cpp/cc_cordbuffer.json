@@ -1,0 +1,1369 @@
+{
+ "query": "CordBuffer",
+ "oss_project": "abseil",
+ "repo_name": "abseil-cpp",
+ "page_size": 50,
+ "fetched_at": "2026-06-17T23:03:38Z",
+ "response": {
+  "searchResults": [
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "abseil-cpp",
+        "ossProject": "abseil"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "absl/strings/cord_buffer.h",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// CordBuffer is thread compatible.",
+         "matchingRanges": {
+          "lineNumber": "105",
+          "columnRanges": [
+           {
+            "startIndex": 3,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "105",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 35
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 3,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "class CordBuffer {",
+         "matchingRanges": {
+          "lineNumber": "106",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "106",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": " public:",
+         "matchingRanges": {
+          "lineNumber": "107"
+         },
+         "lineNumber": "107",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  // Creates an empty CordBuffer.",
+         "matchingRanges": {
+          "lineNumber": "123",
+          "columnRanges": [
+           {
+            "startIndex": 22,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "123",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 31
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 22,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "  CordBuffer() = default;",
+         "matchingRanges": {
+          "lineNumber": "124",
+          "columnRanges": [
+           {
+            "startIndex": 2,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "124",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 17,
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 2,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "125"
+         },
+         "lineNumber": "125"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  CordBuffer(CordBuffer\u0026\u0026 rhs) noexcept;",
+         "matchingRanges": {
+          "lineNumber": "131",
+          "columnRanges": [
+           {
+            "startIndex": 2,
+            "length": 10
+           },
+           {
+            "startIndex": 13,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "131",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 31,
+            "length": 8
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 2,
+           "length": 10
+          },
+          {
+           "startIndex": 13,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "  CordBuffer\u0026 operator=(CordBuffer\u0026\u0026) noexcept;",
+         "matchingRanges": {
+          "lineNumber": "132",
+          "columnRanges": [
+           {
+            "startIndex": 2,
+            "length": 10
+           },
+           {
+            "startIndex": 24,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "132",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 14,
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 38,
+            "length": 8
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 2,
+           "length": 10
+          },
+          {
+           "startIndex": 24,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "  CordBuffer(const CordBuffer\u0026) = delete;",
+         "matchingRanges": {
+          "lineNumber": "133",
+          "columnRanges": [
+           {
+            "startIndex": 2,
+            "length": 10
+           },
+           {
+            "startIndex": 19,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "133",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 13,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 34,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 2,
+           "length": 10
+          },
+          {
+           "startIndex": 19,
+           "length": 10
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 51
+    },
+    "resultToken": "CAASBAgBIAE40I3q2KDb58BBQABIAA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "abseil-cpp",
+        "ossProject": "abseil"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "absl/strings/cord_buffer_test.cc",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "class CordBufferTestPeer {",
+         "matchingRanges": {
+          "lineNumber": "41",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "41",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": " public:",
+         "matchingRanges": {
+          "lineNumber": "42"
+         },
+         "lineNumber": "42",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "class CordBufferTest : public testing::TestWithParam\u003csize_t\u003e {};",
+         "matchingRanges": {
+          "lineNumber": "65",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "65",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 23,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "66"
+         },
+         "lineNumber": "66"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "TEST_P(CordBufferTest, Available) {",
+         "matchingRanges": {
+          "lineNumber": "106",
+          "columnRanges": [
+           {
+            "startIndex": 7,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "106",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "startIndex": 7,
+            "length": 14
+           }
+          },
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "startIndex": 23,
+            "length": 9
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 7,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "  const size_t requested = GetParam();",
+         "matchingRanges": {
+          "lineNumber": "107"
+         },
+         "lineNumber": "107",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "TEST_P(CordBufferTest, AvailableUpTo) {",
+         "matchingRanges": {
+          "lineNumber": "126",
+          "columnRanges": [
+           {
+            "startIndex": 7,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "126",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "startIndex": 7,
+            "length": 14
+           }
+          },
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "startIndex": 23,
+            "length": 13
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 7,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "  const size_t requested = GetParam();",
+         "matchingRanges": {
+          "lineNumber": "127"
+         },
+         "lineNumber": "127",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "TEST_P(CordBufferTest, MoveConstruct) {",
+         "matchingRanges": {
+          "lineNumber": "175",
+          "columnRanges": [
+           {
+            "startIndex": 7,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "175",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "startIndex": 7,
+            "length": 14
+           }
+          },
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "startIndex": 23,
+            "length": 13
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 7,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "  const size_t requested = GetParam();",
+         "matchingRanges": {
+          "lineNumber": "176"
+         },
+         "lineNumber": "176",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 33
+    },
+    "resultToken": "CAESBAgBIAE45pHT1YWyxbuTAUAASAE"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "abseil-cpp",
+        "ossProject": "abseil"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "absl/strings/cord.h",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  // This method is guaranteed to consume `buffer`.",
+         "matchingRanges": {
+          "lineNumber": "279"
+         },
+         "lineNumber": "279",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 49
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  void Append(CordBuffer buffer);",
+         "matchingRanges": {
+          "lineNumber": "280",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "280",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "281"
+         },
+         "lineNumber": "281"
+        },
+        {
+         "lineText": "  // Returns a CordBuffer, re-using potential existing capacity in this cord.",
+         "matchingRanges": {
+          "lineNumber": "282",
+          "columnRanges": [
+           {
+            "startIndex": 15,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "282",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 75
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 15,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "  //",
+         "matchingRanges": {
+          "lineNumber": "283"
+         },
+         "lineNumber": "283",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  // allows applications to explicitly use this spare capacity if available,",
+         "matchingRanges": {
+          "lineNumber": "286"
+         },
+         "lineNumber": "286",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 74
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  // or create a new CordBuffer instance otherwise.",
+         "matchingRanges": {
+          "lineNumber": "287",
+          "columnRanges": [
+           {
+            "startIndex": 21,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "287",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 49
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 21,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "  // If this cord has a final non-shared node with at least `min_capacity`",
+         "matchingRanges": {
+          "lineNumber": "288"
+         },
+         "lineNumber": "288",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 72
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  // Returns a CordBuffer, re-using potential existing capacity in this cord.",
+         "matchingRanges": {
+          "lineNumber": "316",
+          "columnRanges": [
+           {
+            "startIndex": 15,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "316",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 75
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 15,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "  //",
+         "matchingRanges": {
+          "lineNumber": "317"
+         },
+         "lineNumber": "317",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 25
+    },
+    "resultToken": "CAISAggBONSWj-62hY7sHEAASAI"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "abseil-cpp",
+        "ossProject": "abseil"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "absl/strings/cord.cc",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "static CordBuffer CreateAppendBuffer(InlineData\u0026 data, size_t block_size,",
+         "matchingRanges": {
+          "lineNumber": "520",
+          "columnRanges": [
+           {
+            "startIndex": 7,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "520",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 7,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "                                     size_t capacity) {",
+         "matchingRanges": {
+          "lineNumber": "521"
+         },
+         "lineNumber": "521"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  capacity = (std::min)(max_capacity, capacity) + size;",
+         "matchingRanges": {
+          "lineNumber": "525"
+         },
+         "lineNumber": "525"
+        },
+        {
+         "lineText": "  CordBuffer buffer =",
+         "matchingRanges": {
+          "lineNumber": "526",
+          "columnRanges": [
+           {
+            "startIndex": 2,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "526",
+         "ranges": [
+          {
+           "startIndex": 2,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "      block_size ? CordBuffer::CreateWithCustomLimit(block_size, capacity)",
+         "matchingRanges": {
+          "lineNumber": "527",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "527",
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "                 : CordBuffer::CreateWithDefaultLimit(capacity);",
+         "matchingRanges": {
+          "lineNumber": "528",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "528",
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "  cord_internal::SmallMemmove(buffer.data(), data.as_chars(), size);",
+         "matchingRanges": {
+          "lineNumber": "529"
+         },
+         "lineNumber": "529"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "CordBuffer Cord::GetAppendBufferSlowPath(size_t block_size, size_t capacity,",
+         "matchingRanges": {
+          "lineNumber": "535",
+          "columnRanges": [
+           {
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "535",
+         "ranges": [
+          {
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "                                         size_t min_capacity) {",
+         "matchingRanges": {
+          "lineNumber": "536"
+         },
+         "lineNumber": "536"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 8
+    },
+    "resultToken": "CAMSAggBOLSXx8fs_J_lsQFAAEgD"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "abseil-cpp",
+        "ossProject": "abseil"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "absl/strings/internal/cordz_update_tracker.h",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    kAppendCord,",
+         "matchingRanges": {
+          "lineNumber": "42"
+         },
+         "lineNumber": "42"
+        },
+        {
+         "lineText": "    kAppendCordBuffer,",
+         "matchingRanges": {
+          "lineNumber": "43",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "43",
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "    kAppendExternalMemory,",
+         "matchingRanges": {
+          "lineNumber": "44"
+         },
+         "lineNumber": "44"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    kPrependCord,",
+         "matchingRanges": {
+          "lineNumber": "59"
+         },
+         "lineNumber": "59"
+        },
+        {
+         "lineText": "    kPrependCordBuffer,",
+         "matchingRanges": {
+          "lineNumber": "60",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "60",
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "    kPrependString,",
+         "matchingRanges": {
+          "lineNumber": "61"
+         },
+         "lineNumber": "61"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAQSAggBON6-7puB9sadOkAASAQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "abseil-cpp",
+        "ossProject": "abseil"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "absl/strings/cord_test.cc",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  absl::Cord cord;",
+         "matchingRanges": {
+          "lineNumber": "788"
+         },
+         "lineNumber": "788"
+        },
+        {
+         "lineText": "  cord.Append(absl::CordBuffer());",
+         "matchingRanges": {
+          "lineNumber": "789",
+          "columnRanges": [
+           {
+            "startIndex": 20,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "789",
+         "ranges": [
+          {
+           "startIndex": 20,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "  cord.Append(absl::CordBuffer::CreateWithDefaultLimit(2000));",
+         "matchingRanges": {
+          "lineNumber": "790",
+          "columnRanges": [
+           {
+            "startIndex": 20,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "790",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 55,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 20,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "}",
+         "matchingRanges": {
+          "lineNumber": "791"
+         },
+         "lineNumber": "791"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  absl::Cord cord(std::string(2000, 'x'));",
+         "matchingRanges": {
+          "lineNumber": "794"
+         },
+         "lineNumber": "794",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 30,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 36,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  cord.Append(absl::CordBuffer());",
+         "matchingRanges": {
+          "lineNumber": "795",
+          "columnRanges": [
+           {
+            "startIndex": 20,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "795",
+         "ranges": [
+          {
+           "startIndex": 20,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "  cord.Append(absl::CordBuffer::CreateWithDefaultLimit(2000));",
+         "matchingRanges": {
+          "lineNumber": "796",
+          "columnRanges": [
+           {
+            "startIndex": 20,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "796",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 55,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 20,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "}",
+         "matchingRanges": {
+          "lineNumber": "797"
+         },
+         "lineNumber": "797"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  buffer = absl::CordBuffer::CreateWithDefaultLimit(3);",
+         "matchingRanges": {
+          "lineNumber": "816",
+          "columnRanges": [
+           {
+            "startIndex": 17,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "816",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 52,
+            "length": 1
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 17,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "  memcpy(buffer.data(), \"defgh\", 5);",
+         "matchingRanges": {
+          "lineNumber": "817"
+         },
+         "lineNumber": "817",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 24,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 33,
+            "length": 1
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 31
+    },
+    "resultToken": "CAUSAggBOLym8vGVw4zFLEAASAU"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "abseil-cpp",
+        "ossProject": "abseil"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "absl/strings/internal/cordz_update_tracker_test.cc",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "                 Method::kAppendCord,",
+         "matchingRanges": {
+          "lineNumber": "40"
+         },
+         "lineNumber": "40"
+        },
+        {
+         "lineText": "                 Method::kAppendCordBuffer,",
+         "matchingRanges": {
+          "lineNumber": "41",
+          "columnRanges": [
+           {
+            "startIndex": 32,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "41",
+         "ranges": [
+          {
+           "startIndex": 32,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "                 Method::kAppendExternalMemory,",
+         "matchingRanges": {
+          "lineNumber": "42"
+         },
+         "lineNumber": "42"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "                 Method::kPrependCord,",
+         "matchingRanges": {
+          "lineNumber": "57"
+         },
+         "lineNumber": "57"
+        },
+        {
+         "lineText": "                 Method::kPrependCordBuffer,",
+         "matchingRanges": {
+          "lineNumber": "58",
+          "columnRanges": [
+           {
+            "startIndex": 33,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "58",
+         "ranges": [
+          {
+           "startIndex": 33,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "                 Method::kPrependString,",
+         "matchingRanges": {
+          "lineNumber": "59"
+         },
+         "lineNumber": "59"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAYSAggBOJbstdnwmNSEwQFAAEgG"
+   }
+  ],
+  "estimatedResultCount": "9",
+  "exhaustive": true,
+  "requestToken": "CgpDb3JkQnVmZmVyEjAoIGdpdDpnaXRodWIvYWJzZWlsL2Fic2VpbC1jcHBAbWFzdGVyIGNhc2U6eWVzICkaDAjKz8zRBhCLrOHwASAMKgAyAEgB"
+ }
+}

@@ -1,0 +1,94 @@
+{
+ "query": "\"entire network stack below the Cerberus\"",
+ "oss_project": "opentitan",
+ "repo_name": "manticore",
+ "page_size": 50,
+ "fetched_at": "2026-06-17T23:22:28Z",
+ "response": {
+  "searchResults": [
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "manticore",
+        "ossProject": "opentitan"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/host.rs",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "/// requests from host devices. A value of a type implementing this trait",
+         "matchingRanges": {
+          "lineNumber": "18"
+         },
+         "lineNumber": "18",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 73
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "/// implements the entire network stack below the Cerberus protocol: it must",
+         "matchingRanges": {
+          "lineNumber": "19",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 39
+           }
+          ]
+         },
+         "lineNumber": "19",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 76
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 39
+          }
+         ]
+        },
+        {
+         "lineText": "/// know how to speak the physical layer and assemble messages out of that",
+         "matchingRanges": {
+          "lineNumber": "20"
+         },
+         "lineNumber": "20",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 74
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAASAggBOM677bH1svPMwAFAAEgA"
+   }
+  ],
+  "estimatedResultCount": "1",
+  "exhaustive": true,
+  "requestToken": "CikiZW50aXJlIG5ldHdvcmsgc3RhY2sgYmVsb3cgdGhlIENlcmJlcnVzIhIwKCBnaXQ6Z2l0aHViL2xvd1JJU0MvbWFudGljb3JlQG1hc3RlciBjYXNlOnllcyApGgsItNjM0QYQm_foKSAMIA8qADIASAE"
+ }
+}

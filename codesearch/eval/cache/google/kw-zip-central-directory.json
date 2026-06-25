@@ -1,0 +1,1863 @@
+{
+ "query": "zip central directory",
+ "oss_project": "go",
+ "repo_name": "go",
+ "page_size": 50,
+ "fetched_at": "2026-06-11T02:29:06Z",
+ "response": {
+  "searchResults": [
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/archive/zip/reader.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tFileHeader",
+         "matchingRanges": {
+          "lineNumber": "62"
+         },
+         "lineNumber": "62"
+        },
+        {
+         "lineText": "\tzip          *Reader",
+         "matchingRanges": {
+          "lineNumber": "63",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "63",
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "\tzipr         io.ReaderAt",
+         "matchingRanges": {
+          "lineNumber": "64",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "64",
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "\theaderOffset int64 // includes overall ZIP archive baseOffset",
+         "matchingRanges": {
+          "lineNumber": "65",
+          "columnRanges": [
+           {
+            "startIndex": 40,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "65",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 20,
+            "length": 42
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 40,
+           "length": 3
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// interpretations has been made causing incompatibilities. We",
+         "matchingRanges": {
+          "lineNumber": "537"
+         },
+         "lineNumber": "537",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 62
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t// already have the sizes from the central directory so we can",
+         "matchingRanges": {
+          "lineNumber": "538",
+          "columnRanges": [
+           {
+            "startIndex": 36,
+            "length": 7
+           },
+           {
+            "startIndex": 44,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "538",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 62
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 36,
+           "length": 7
+          },
+          {
+           "startIndex": 44,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\t// just ignore these.",
+         "matchingRanges": {
+          "lineNumber": "539"
+         },
+         "lineNumber": "539",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 21
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func readDirectoryEnd(r io.ReaderAt, size int64) (dir *directoryEnd, baseOffset int64, err error) {",
+         "matchingRanges": {
+          "lineNumber": "544",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 9
+           },
+           {
+            "startIndex": 55,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "544",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 9
+          },
+          {
+           "startIndex": 55,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\t// look for directoryEndSignature in the last 1k, then in the last 65k",
+         "matchingRanges": {
+          "lineNumber": "545",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "545",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 70
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 9
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 76
+    },
+    "resultToken": "CAASBAgBIAE4jO-LxovUmM_GAUAASAA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/archive/zip/struct.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\textTimeExtraID     = 0x5455 // Extended timestamp",
+         "matchingRanges": {
+          "lineNumber": "78"
+         },
+         "lineNumber": "78",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 22,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 29,
+            "length": 21
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tinfoZipUnixExtraID = 0x5855 // Info-ZIP Unix extension",
+         "matchingRanges": {
+          "lineNumber": "79",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 3
+           },
+           {
+            "startIndex": 37,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "79",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 22,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 29,
+            "length": 26
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 3
+          },
+          {
+           "startIndex": 37,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": ")",
+         "matchingRanges": {
+          "lineNumber": "80"
+         },
+         "lineNumber": "80"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// the appropriate Zip64 field if necessary, and [Writer.Close] appends the",
+         "matchingRanges": {
+          "lineNumber": "160",
+          "columnRanges": [
+           {
+            "startIndex": 20,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "160",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 75
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 20,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "\t// Central Directory version of the Zip64 field to Extra.",
+         "matchingRanges": {
+          "lineNumber": "161",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 7
+           },
+           {
+            "startIndex": 12,
+            "length": 9
+           },
+           {
+            "startIndex": 37,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "161",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 57
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 7
+          },
+          {
+           "startIndex": 12,
+           "length": 9
+          },
+          {
+           "startIndex": 37,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "\tExtra []byte",
+         "matchingRanges": {
+          "lineNumber": "162"
+         },
+         "lineNumber": "162"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "type directoryEnd struct {",
+         "matchingRanges": {
+          "lineNumber": "224",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "224",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 18,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\tdiskNbr            uint32 // unused",
+         "matchingRanges": {
+          "lineNumber": "225"
+         },
+         "lineNumber": "225",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 27,
+            "length": 9
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 35
+    },
+    "resultToken": "CAESBAgBIAE4qOP_kOed-rJZQABIAQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/archive/zip/zip_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "func TestZip64(t *testing.T) {",
+         "matchingRanges": {
+          "lineNumber": "275",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "275",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "\tif testing.Short() {",
+         "matchingRanges": {
+          "lineNumber": "276"
+         },
+         "lineNumber": "276",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t\t\tif off != wantOff {",
+         "matchingRanges": {
+          "lineNumber": "311"
+         },
+         "lineNumber": "311",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t\t\tt.Errorf(\"central directory offset = %d (%x); want %d\", off, off, wantOff)",
+         "matchingRanges": {
+          "lineNumber": "312",
+          "columnRanges": [
+           {
+            "startIndex": 15,
+            "length": 7
+           },
+           {
+            "startIndex": 23,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "312",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 14,
+            "length": 45
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 15,
+           "length": 7
+          },
+          {
+           "startIndex": 23,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t\t}",
+         "matchingRanges": {
+          "lineNumber": "313"
+         },
+         "lineNumber": "313"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// Zip64 is required if the total size of the records is uint32max.",
+         "matchingRanges": {
+          "lineNumber": "495"
+         },
+         "lineNumber": "495",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 67
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "func TestZip64LargeDirectory(t *testing.T) {",
+         "matchingRanges": {
+          "lineNumber": "496",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 3
+           },
+           {
+            "startIndex": 19,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "496",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 3
+          },
+          {
+           "startIndex": 19,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\tif testenv.CPUIsSlow() {",
+         "matchingRanges": {
+          "lineNumber": "497"
+         },
+         "lineNumber": "497",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func testZip64(t testing.TB, size int64) *rleBuffer {",
+         "matchingRanges": {
+          "lineNumber": "571",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "571",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "\tconst chunkSize = 1024",
+         "matchingRanges": {
+          "lineNumber": "572"
+         },
+         "lineNumber": "572",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 19,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 53
+    },
+    "resultToken": "CAISBAgBIAE4kPiwsuubgPDbAUAASAI"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/archive/zip/zip64_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// TestZip64WriterCDGoldens checks that the archive/zip Writer emits a Central",
+         "matchingRanges": {
+          "lineNumber": "19",
+          "columnRanges": [
+           {
+            "startIndex": 7,
+            "length": 3
+           },
+           {
+            "startIndex": 52,
+            "length": 3
+           },
+           {
+            "startIndex": 71,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "19",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 78
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 7,
+           "length": 3
+          },
+          {
+           "startIndex": 52,
+           "length": 3
+          },
+          {
+           "startIndex": 71,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "// Directory that matches the Zip64 conventions used by Info-ZIP, libarchive,",
+         "matchingRanges": {
+          "lineNumber": "20",
+          "columnRanges": [
+           {
+            "startIndex": 3,
+            "length": 9
+           },
+           {
+            "startIndex": 30,
+            "length": 3
+           },
+           {
+            "startIndex": 61,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "20",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 77
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 3,
+           "length": 9
+          },
+          {
+           "startIndex": 30,
+           "length": 3
+          },
+          {
+           "startIndex": 61,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "// and the pre-CL archive/zip writer (go126-*), for archives at or above 4 GiB,",
+         "matchingRanges": {
+          "lineNumber": "21",
+          "columnRanges": [
+           {
+            "startIndex": 26,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "21",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 79
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 26,
+           "length": 3
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "//     byte offsets that depend on LFH/data-descriptor layout).",
+         "matchingRanges": {
+          "lineNumber": "35"
+         },
+         "lineNumber": "35",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 63
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "func TestZip64WriterCDGoldens(t *testing.T) {",
+         "matchingRanges": {
+          "lineNumber": "36",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "36",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "\tif testing.Short() {",
+         "matchingRanges": {
+          "lineNumber": "37"
+         },
+         "lineNumber": "37",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// Zip64 extended-information extra field, in the spec-defined order.",
+         "matchingRanges": {
+          "lineNumber": "332"
+         },
+         "lineNumber": "332",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 69
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "type zip64SubID int",
+         "matchingRanges": {
+          "lineNumber": "333",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "333",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "334"
+         },
+         "lineNumber": "334"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 51
+    },
+    "resultToken": "CAMSBAgBIAE4xKjSx8-m55uzAUAASAM"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/archive/zip/writer.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tfor _, h := range w.dir {",
+         "matchingRanges": {
+          "lineNumber": "97"
+         },
+         "lineNumber": "97",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 13,
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t// For the Central Directory, we always have the correct sizes.",
+         "matchingRanges": {
+          "lineNumber": "98",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 7
+           },
+           {
+            "startIndex": 21,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "98",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 63
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 7
+          },
+          {
+           "startIndex": 21,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t//",
+         "matchingRanges": {
+          "lineNumber": "99"
+         },
+         "lineNumber": "99",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t// Implementations disagree on what triggers the inclusion of a Zip64",
+         "matchingRanges": {
+          "lineNumber": "100",
+          "columnRanges": [
+           {
+            "startIndex": 66,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "100",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 69
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 66,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t// extra field: Info-ZIP only writes it if any size or offset EXCEEDS",
+         "matchingRanges": {
+          "lineNumber": "101",
+          "columnRanges": [
+           {
+            "startIndex": 23,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "101",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 69
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 23,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t// 4GiB - 1, while libarchive writes it if any size REACHES OR EXCEEDS",
+         "matchingRanges": {
+          "lineNumber": "102"
+         },
+         "lineNumber": "102",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 70
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t*header",
+         "matchingRanges": {
+          "lineNumber": "622"
+         },
+         "lineNumber": "622"
+        },
+        {
+         "lineText": "\tzipw      io.Writer",
+         "matchingRanges": {
+          "lineNumber": "623",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "623",
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "\trawCount  *countWriter",
+         "matchingRanges": {
+          "lineNumber": "624"
+         },
+         "lineNumber": "624"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 67
+    },
+    "resultToken": "CAQSBAgBIAE4oOaE2_OI35X1AUAASAQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/archive/zip/zip64_sparse_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "package zip",
+         "matchingRanges": {
+          "lineNumber": "5",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "5",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "6"
+         },
+         "lineNumber": "6"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// (the LFH headers, the Central Directory, the EOCD records, and any",
+         "matchingRanges": {
+          "lineNumber": "18",
+          "columnRanges": [
+           {
+            "startIndex": 25,
+            "length": 7
+           },
+           {
+            "startIndex": 33,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "18",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 69
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 25,
+           "length": 7
+          },
+          {
+           "startIndex": 33,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "// non-zero compressed bodies) plus a total length. Bytes outside any span",
+         "matchingRanges": {
+          "lineNumber": "19"
+         },
+         "lineNumber": "19",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 74
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "// are implicitly zero. This is the storage format used for goldens under",
+         "matchingRanges": {
+          "lineNumber": "20"
+         },
+         "lineNumber": "20",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 73
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "// testdata/zip64/ (suffix .zsparse) and the in-memory shape produced by",
+         "matchingRanges": {
+          "lineNumber": "21",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "21",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 72
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 3
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// of pushing multi-GiB streams of zeros through the writer almost free —",
+         "matchingRanges": {
+          "lineNumber": "211"
+         },
+         "lineNumber": "211",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 73
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "// the only bytes that end up retained are the LFHs, the Central",
+         "matchingRanges": {
+          "lineNumber": "212",
+          "columnRanges": [
+           {
+            "startIndex": 57,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "212",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 64
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 57,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "// Directory, the EOCD records, and any non-zero compressed body.",
+         "matchingRanges": {
+          "lineNumber": "213",
+          "columnRanges": [
+           {
+            "startIndex": 3,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "213",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 65
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 3,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "type sparseBuffer struct {",
+         "matchingRanges": {
+          "lineNumber": "214"
+         },
+         "lineNumber": "214",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 18,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 9
+    },
+    "resultToken": "CAUSAggBOMri4OeFmav3lQFAAEgF"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/go/alldocs.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "//",
+         "matchingRanges": {
+          "lineNumber": "79"
+         },
+         "lineNumber": "79",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "// If the arguments to build are a list of .go files from a single directory,",
+         "matchingRanges": {
+          "lineNumber": "80",
+          "columnRanges": [
+           {
+            "startIndex": 67,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "80",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 77
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 67,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "// build treats them as a list of source files specifying a single package.",
+         "matchingRanges": {
+          "lineNumber": "81"
+         },
+         "lineNumber": "81",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 75
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "//\t    GoMod    string // absolute path to cached .mod file",
+         "matchingRanges": {
+          "lineNumber": "1197"
+         },
+         "lineNumber": "1197",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 59
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "//\t    Zip      string // absolute path to cached .zip file",
+         "matchingRanges": {
+          "lineNumber": "1198",
+          "columnRanges": [
+           {
+            "startIndex": 7,
+            "length": 3
+           },
+           {
+            "startIndex": 51,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "1198",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 59
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 7,
+           "length": 3
+          },
+          {
+           "startIndex": 51,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "//\t    Dir      string // absolute path to cached source root directory",
+         "matchingRanges": {
+          "lineNumber": "1199",
+          "columnRanges": [
+           {
+            "startIndex": 62,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "1199",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 71
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 62,
+           "length": 9
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// The go command can run version control commands like git",
+         "matchingRanges": {
+          "lineNumber": "3713"
+         },
+         "lineNumber": "3713",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 59
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "// to download imported code. This functionality is critical to the decentralized",
+         "matchingRanges": {
+          "lineNumber": "3714",
+          "columnRanges": [
+           {
+            "startIndex": 70,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "3714",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 81
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 70,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "// Go package ecosystem, in which code can be imported from any server,",
+         "matchingRanges": {
+          "lineNumber": "3715"
+         },
+         "lineNumber": "3715",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 71
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 45
+    },
+    "resultToken": "CAYSAggBOOLrtMLx6oXsUkAASAY"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/go/internal/modget/get.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "'go install' runs in module-aware mode and ignores the go.mod file in the",
+         "matchingRanges": {
+          "lineNumber": "89"
+         },
+         "lineNumber": "89",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "length": 73
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "current directory. For example:",
+         "matchingRanges": {
+          "lineNumber": "90",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "90",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "length": 31
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "91"
+         },
+         "lineNumber": "91",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {}
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "The go command can run version control commands like git",
+         "matchingRanges": {
+          "lineNumber": "137"
+         },
+         "lineNumber": "137",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "length": 56
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "to download imported code. This functionality is critical to the decentralized",
+         "matchingRanges": {
+          "lineNumber": "138",
+          "columnRanges": [
+           {
+            "startIndex": 67,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "138",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "length": 78
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 67,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "Go package ecosystem, in which code can be imported from any server,",
+         "matchingRanges": {
+          "lineNumber": "139"
+         },
+         "lineNumber": "139",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "length": 68
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\tr.work.Add(func() {",
+         "matchingRanges": {
+          "lineNumber": "1805"
+         },
+         "lineNumber": "1805",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 13,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\tif _, err := ld.Fetcher().DownloadZip(ctx, mActual); err != nil {",
+         "matchingRanges": {
+          "lineNumber": "1806",
+          "columnRanges": [
+           {
+            "startIndex": 37,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "1806",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 3,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 37,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t\tverb := \"upgraded\"",
+         "matchingRanges": {
+          "lineNumber": "1807"
+         },
+         "lineNumber": "1807",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 12,
+            "length": 10
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 5
+    },
+    "resultToken": "CAcSAggBOOC3wI3jjuqRN0AASAc"
+   }
+  ],
+  "estimatedResultCount": "8",
+  "exhaustive": true,
+  "requestToken": "ChV6aXAgY2VudHJhbCBkaXJlY3RvcnkSHSggZ2l0OmdvL2dvQG1hc3RlciBjYXNlOnllcyApGgsI8rqo0QYQnL2_OyAMKgAyAEgB"
+ }
+}

@@ -1,0 +1,3456 @@
+{
+ "query": "cookie jar",
+ "oss_project": "go",
+ "repo_name": "go",
+ "page_size": 50,
+ "fetched_at": "2026-06-11T02:28:37Z",
+ "response": {
+  "searchResults": [
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/http/cookiejar/jar.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// Jar implements the [net/http.CookieJar] interface.",
+         "matchingRanges": {
+          "lineNumber": "64",
+          "columnRanges": [
+           {
+            "startIndex": 3,
+            "length": 3
+           },
+           {
+            "startIndex": 32,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "64",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 53
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 3,
+           "length": 3
+          },
+          {
+           "startIndex": 32,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "type Jar struct {",
+         "matchingRanges": {
+          "lineNumber": "65",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "65",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "\tpsList PublicSuffixList",
+         "matchingRanges": {
+          "lineNumber": "66"
+         },
+         "lineNumber": "66"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// It returns an empty slice if the URL's scheme is not HTTP or HTTPS.",
+         "matchingRanges": {
+          "lineNumber": "193"
+         },
+         "lineNumber": "193",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 70
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "func (j *Jar) Cookies(u *url.URL) (cookies []*http.Cookie) {",
+         "matchingRanges": {
+          "lineNumber": "194",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 3
+           },
+           {
+            "startIndex": 14,
+            "length": 6
+           },
+           {
+            "startIndex": 35,
+            "length": 6
+           },
+           {
+            "startIndex": 51,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "194",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 3
+          },
+          {
+           "startIndex": 14,
+           "length": 6
+          },
+          {
+           "startIndex": 35,
+           "length": 6
+          },
+          {
+           "startIndex": 51,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\treturn j.cookies(u, time.Now())",
+         "matchingRanges": {
+          "lineNumber": "195",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "195",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// cookies is like Cookies but takes the current time as a parameter.",
+         "matchingRanges": {
+          "lineNumber": "198",
+          "columnRanges": [
+           {
+            "startIndex": 3,
+            "length": 6
+           },
+           {
+            "startIndex": 19,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "198",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 69
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 3,
+           "length": 6
+          },
+          {
+           "startIndex": 19,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "func (j *Jar) cookies(u *url.URL, now time.Time) (cookies []*http.Cookie) {",
+         "matchingRanges": {
+          "lineNumber": "199",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 3
+           },
+           {
+            "startIndex": 14,
+            "length": 6
+           },
+           {
+            "startIndex": 50,
+            "length": 6
+           },
+           {
+            "startIndex": 66,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "199",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 3
+          },
+          {
+           "startIndex": 14,
+           "length": 6
+          },
+          {
+           "startIndex": 50,
+           "length": 6
+          },
+          {
+           "startIndex": 66,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tif u.Scheme != \"http\" \u0026\u0026 u.Scheme != \"https\" {",
+         "matchingRanges": {
+          "lineNumber": "200"
+         },
+         "lineNumber": "200",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 16,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 38,
+            "length": 7
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 48
+    },
+    "resultToken": "CAASBAgBIAE4qPCMuILSnI0QQABIAA"
+   },
+   {
+    "directorySearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/http/cookiejar/",
+      "type": "DIRECTORY"
+     },
+     "childEntries": [
+      {
+       "path": "src/net/http/cookiejar/dummy_publicsuffix_test.go",
+       "type": "FILE"
+      },
+      {
+       "path": "src/net/http/cookiejar/example_test.go",
+       "type": "FILE"
+      },
+      {
+       "path": "src/net/http/cookiejar/jar.go",
+       "type": "FILE"
+      },
+      {
+       "path": "src/net/http/cookiejar/jar_test.go",
+       "type": "FILE"
+      },
+      {
+       "path": "src/net/http/cookiejar/punycode.go",
+       "type": "FILE"
+      },
+      {
+       "path": "src/net/http/cookiejar/punycode_test.go",
+       "type": "FILE"
+      }
+     ]
+    },
+    "resultToken": "CAESADjOzPuR6Y6wguYBQABIAQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/http/cookiejar/jar_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// newTestJar creates an empty Jar with testPSL as the public suffix list.",
+         "matchingRanges": {
+          "lineNumber": "44",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 3
+           },
+           {
+            "startIndex": 31,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "44",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 74
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 3
+          },
+          {
+           "startIndex": 31,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "func newTestJar() *Jar {",
+         "matchingRanges": {
+          "lineNumber": "45",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 3
+           },
+           {
+            "startIndex": 19,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "45",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 3
+          },
+          {
+           "startIndex": 19,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "\tjar, err := New(\u0026Options{PublicSuffixList: testPSL{}})",
+         "matchingRanges": {
+          "lineNumber": "46",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "46",
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 3
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "//     (Query n done at tNow + (n+2)*1001 ms.)",
+         "matchingRanges": {
+          "lineNumber": "369"
+         },
+         "lineNumber": "369",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 46
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "type jarTest struct {",
+         "matchingRanges": {
+          "lineNumber": "370",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "370",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 13,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "\tdescription string   // The description of what this test is supposed to test",
+         "matchingRanges": {
+          "lineNumber": "371"
+         },
+         "lineNumber": "371",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 22,
+            "length": 56
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tfromURL     string   // The full URL of the request from which Set-Cookie headers where received",
+         "matchingRanges": {
+          "lineNumber": "372",
+          "columnRanges": [
+           {
+            "startIndex": 68,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "372",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 22,
+            "length": 75
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 68,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tsetCookies  []string // All the cookies received from fromURL",
+         "matchingRanges": {
+          "lineNumber": "373",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 6
+           },
+           {
+            "startIndex": 33,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "373",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 22,
+            "length": 40
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 6
+          },
+          {
+           "startIndex": 33,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tcontent     string   // The whole (non-expired) content of the jar",
+         "matchingRanges": {
+          "lineNumber": "374",
+          "columnRanges": [
+           {
+            "startIndex": 64,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "374",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 22,
+            "length": 45
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 64,
+           "length": 3
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 56
+    },
+    "resultToken": "CAISBAgBIAE4jLv7p-CohrgSQABIAg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/http/cookiejar/example_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {",
+         "matchingRanges": {
+          "lineNumber": "18"
+         },
+         "lineNumber": "18",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 43,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tif cookie, err := r.Cookie(\"Flavor\"); err != nil {",
+         "matchingRanges": {
+          "lineNumber": "19",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 6
+           },
+           {
+            "startIndex": 22,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "19",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 29,
+            "length": 8
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 6
+          },
+          {
+           "startIndex": 22,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\thttp.SetCookie(w, \u0026http.Cookie{Name: \"Flavor\", Value: \"Chocolate Chip\"})",
+         "matchingRanges": {
+          "lineNumber": "20",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 6
+           },
+           {
+            "startIndex": 27,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "20",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 40,
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 57,
+            "length": 16
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 6
+          },
+          {
+           "startIndex": 27,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t} else {",
+         "matchingRanges": {
+          "lineNumber": "21"
+         },
+         "lineNumber": "21",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// All users of cookiejar should import \"golang.org/x/net/publicsuffix\"",
+         "matchingRanges": {
+          "lineNumber": "33",
+          "columnRanges": [
+           {
+            "startIndex": 17,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "33",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 71
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 17,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\tjar, err := cookiejar.New(\u0026cookiejar.Options{PublicSuffixList: publicsuffix.List})",
+         "matchingRanges": {
+          "lineNumber": "34",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 3
+           },
+           {
+            "startIndex": 13,
+            "length": 9
+           },
+           {
+            "startIndex": 28,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "34",
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 3
+          },
+          {
+           "startIndex": 13,
+           "length": 9
+          },
+          {
+           "startIndex": 28,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\tif err != nil {",
+         "matchingRanges": {
+          "lineNumber": "35"
+         },
+         "lineNumber": "35",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tclient := \u0026http.Client{",
+         "matchingRanges": {
+          "lineNumber": "39"
+         },
+         "lineNumber": "39"
+        },
+        {
+         "lineText": "\t\tJar: jar,",
+         "matchingRanges": {
+          "lineNumber": "40",
+          "columnRanges": [
+           {
+            "startIndex": 2,
+            "length": 3
+           },
+           {
+            "startIndex": 7,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "40",
+         "ranges": [
+          {
+           "startIndex": 2,
+           "length": 3
+          },
+          {
+           "startIndex": 7,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "\t}",
+         "matchingRanges": {
+          "lineNumber": "41"
+         },
+         "lineNumber": "41"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 14
+    },
+    "resultToken": "CAMSAggBOKb-56_a87fFK0AASAM"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/http/cookiejar/punycode.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "package cookiejar",
+         "matchingRanges": {
+          "lineNumber": "5",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "5",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "6"
+         },
+         "lineNumber": "6"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\tif delta \u003c 0 {",
+         "matchingRanges": {
+          "lineNumber": "60"
+         },
+         "lineNumber": "60",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 13,
+            "length": 1
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\treturn \"\", fmt.Errorf(\"cookiejar: invalid label %q\", s)",
+         "matchingRanges": {
+          "lineNumber": "61",
+          "columnRanges": [
+           {
+            "startIndex": 26,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "61",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 3,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 10,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 25,
+            "length": 29
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 26,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t}",
+         "matchingRanges": {
+          "lineNumber": "62"
+         },
+         "lineNumber": "62"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t\t\tif delta \u003c 0 {",
+         "matchingRanges": {
+          "lineNumber": "67"
+         },
+         "lineNumber": "67",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 15,
+            "length": 1
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t\t\treturn \"\", fmt.Errorf(\"cookiejar: invalid label %q\", s)",
+         "matchingRanges": {
+          "lineNumber": "68",
+          "columnRanges": [
+           {
+            "startIndex": 28,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "68",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 5,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 12,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 27,
+            "length": 29
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 28,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t\t}",
+         "matchingRanges": {
+          "lineNumber": "69"
+         },
+         "lineNumber": "69"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 4
+    },
+    "resultToken": "CAQSAggBONbwv4fErumYywFAAEgE"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/http/jar.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// A CookieJar manages storage and use of cookies in HTTP requests.",
+         "matchingRanges": {
+          "lineNumber": "11",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 9
+           },
+           {
+            "startIndex": 42,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "11",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 67
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 9
+          },
+          {
+           "startIndex": 42,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "//",
+         "matchingRanges": {
+          "lineNumber": "12"
+         },
+         "lineNumber": "12",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "// Implementations of CookieJar must be safe for concurrent use by multiple",
+         "matchingRanges": {
+          "lineNumber": "13",
+          "columnRanges": [
+           {
+            "startIndex": 22,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "13",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 75
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 22,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "// goroutines.",
+         "matchingRanges": {
+          "lineNumber": "14"
+         },
+         "lineNumber": "14",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 14
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "//",
+         "matchingRanges": {
+          "lineNumber": "15"
+         },
+         "lineNumber": "15",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "// The net/http/cookiejar package provides a CookieJar implementation.",
+         "matchingRanges": {
+          "lineNumber": "16",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 9
+           },
+           {
+            "startIndex": 45,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "16",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 70
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 9
+          },
+          {
+           "startIndex": 45,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "type CookieJar interface {",
+         "matchingRanges": {
+          "lineNumber": "17",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "17",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 15,
+            "length": 9
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 9
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// restrictions such as in RFC 6265.",
+         "matchingRanges": {
+          "lineNumber": "25"
+         },
+         "lineNumber": "25",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 36
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tCookies(u *url.URL) []*Cookie",
+         "matchingRanges": {
+          "lineNumber": "26",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 6
+           },
+           {
+            "startIndex": 24,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "26",
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 6
+          },
+          {
+           "startIndex": 24,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "}",
+         "matchingRanges": {
+          "lineNumber": "27"
+         },
+         "lineNumber": "27"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 11
+    },
+    "resultToken": "CAUSBAgBIAE42peAoIfhh5-pAUAASAU"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/http/cookiejar/punycode_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "package cookiejar",
+         "matchingRanges": {
+          "lineNumber": "5",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "5",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "6"
+         },
+         "lineNumber": "6"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAYSAggBOPil4OLm6sfq-gFAAEgG"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/http/cookiejar/dummy_publicsuffix_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "package cookiejar_test",
+         "matchingRanges": {
+          "lineNumber": "5",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "5",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "6"
+         },
+         "lineNumber": "6"
+        },
+        {
+         "lineText": "import \"net/http/cookiejar\"",
+         "matchingRanges": {
+          "lineNumber": "7",
+          "columnRanges": [
+           {
+            "startIndex": 17,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "7",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 7,
+            "length": 20
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 17,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "8"
+         },
+         "lineNumber": "8"
+        },
+        {
+         "lineText": "type dummypsl struct {",
+         "matchingRanges": {
+          "lineNumber": "9"
+         },
+         "lineNumber": "9",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 14,
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tList cookiejar.PublicSuffixList",
+         "matchingRanges": {
+          "lineNumber": "10",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "10",
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "}",
+         "matchingRanges": {
+          "lineNumber": "11"
+         },
+         "lineNumber": "11"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CAcSAggBON6izfzhyvPf7wFAAEgH"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/http/client.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "//   - when forwarding sensitive headers like \"Authorization\",",
+         "matchingRanges": {
+          "lineNumber": "46"
+         },
+         "lineNumber": "46",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 62
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "//     \"WWW-Authenticate\", and \"Cookie\" to untrusted targets.",
+         "matchingRanges": {
+          "lineNumber": "47",
+          "columnRanges": [
+           {
+            "startIndex": 32,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "47",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 61
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 32,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "//     These headers will be ignored when following a redirect to a domain",
+         "matchingRanges": {
+          "lineNumber": "48"
+         },
+         "lineNumber": "48",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 74
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "//   - when forwarding the \"Cookie\" header with a non-nil cookie Jar.",
+         "matchingRanges": {
+          "lineNumber": "52",
+          "columnRanges": [
+           {
+            "startIndex": 28,
+            "length": 6
+           },
+           {
+            "startIndex": 58,
+            "length": 6
+           },
+           {
+            "startIndex": 65,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "52",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 69
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 28,
+           "length": 6
+          },
+          {
+           "startIndex": 58,
+           "length": 6
+          },
+          {
+           "startIndex": 65,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "//     Since each redirect may mutate the state of the cookie jar,",
+         "matchingRanges": {
+          "lineNumber": "53",
+          "columnRanges": [
+           {
+            "startIndex": 55,
+            "length": 6
+           },
+           {
+            "startIndex": 62,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "53",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 66
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 55,
+           "length": 6
+          },
+          {
+           "startIndex": 62,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "//     a redirect may possibly alter a cookie set in the initial request.",
+         "matchingRanges": {
+          "lineNumber": "54",
+          "columnRanges": [
+           {
+            "startIndex": 39,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "54",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 73
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 39,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "//     When forwarding the \"Cookie\" header, any mutated cookies will be omitted,",
+         "matchingRanges": {
+          "lineNumber": "55",
+          "columnRanges": [
+           {
+            "startIndex": 28,
+            "length": 6
+           },
+           {
+            "startIndex": 56,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "55",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 80
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 28,
+           "length": 6
+          },
+          {
+           "startIndex": 56,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// set on the Request.",
+         "matchingRanges": {
+          "lineNumber": "89"
+         },
+         "lineNumber": "89",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 22
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tJar CookieJar",
+         "matchingRanges": {
+          "lineNumber": "90",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 3
+           },
+           {
+            "startIndex": 5,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "90",
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 3
+          },
+          {
+           "startIndex": 5,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "91"
+         },
+         "lineNumber": "91"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 35
+    },
+    "resultToken": "CAgSBAgBIAE4nqWbt76x6v-XAUAASAg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/http/client_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// scope of all cookies.",
+         "matchingRanges": {
+          "lineNumber": "654"
+         },
+         "lineNumber": "654",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 24
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "type TestJar struct {",
+         "matchingRanges": {
+          "lineNumber": "655",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "655",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 13,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "\tm      sync.Mutex",
+         "matchingRanges": {
+          "lineNumber": "656"
+         },
+         "lineNumber": "656"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func (j *TestJar) Cookies(u *url.URL) []*Cookie {",
+         "matchingRanges": {
+          "lineNumber": "669",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 3
+           },
+           {
+            "startIndex": 18,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "669",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 3
+          },
+          {
+           "startIndex": 18,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tj.m.Lock()",
+         "matchingRanges": {
+          "lineNumber": "670"
+         },
+         "lineNumber": "670"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// tracking any cookies.",
+         "matchingRanges": {
+          "lineNumber": "749"
+         },
+         "lineNumber": "749",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 24
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "type RecordingJar struct {",
+         "matchingRanges": {
+          "lineNumber": "750",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "750",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 18,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "\tmu  sync.Mutex",
+         "matchingRanges": {
+          "lineNumber": "751"
+         },
+         "lineNumber": "751"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func (j *RecordingJar) Cookies(u *url.URL) []*Cookie {",
+         "matchingRanges": {
+          "lineNumber": "759",
+          "columnRanges": [
+           {
+            "startIndex": 18,
+            "length": 3
+           },
+           {
+            "startIndex": 23,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "759",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 18,
+           "length": 3
+          },
+          {
+           "startIndex": 23,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tj.logf(\"Cookies(%q)\\n\", u)",
+         "matchingRanges": {
+          "lineNumber": "760"
+         },
+         "lineNumber": "760",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 15
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 48
+    },
+    "resultToken": "CAkSBAgBIAE4jvTT9bXh9b0TQABICQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "api/go1.txt",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "pkg net/http, func ServeFile(ResponseWriter, *Request, string)",
+         "matchingRanges": {
+          "lineNumber": "4697"
+         },
+         "lineNumber": "4697"
+        },
+        {
+         "lineText": "pkg net/http, func SetCookie(ResponseWriter, *Cookie)",
+         "matchingRanges": {
+          "lineNumber": "4698",
+          "columnRanges": [
+           {
+            "startIndex": 22,
+            "length": 6
+           },
+           {
+            "startIndex": 46,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "4698",
+         "ranges": [
+          {
+           "startIndex": 22,
+           "length": 6
+          },
+          {
+           "startIndex": 46,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "pkg net/http, func StatusText(int) string",
+         "matchingRanges": {
+          "lineNumber": "4699"
+         },
+         "lineNumber": "4699"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "pkg net/http, method (*Cookie) String() string",
+         "matchingRanges": {
+          "lineNumber": "4707",
+          "columnRanges": [
+           {
+            "startIndex": 23,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "4707",
+         "ranges": [
+          {
+           "startIndex": 23,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "pkg net/http, method (*ProtocolError) Error() string",
+         "matchingRanges": {
+          "lineNumber": "4708"
+         },
+         "lineNumber": "4708"
+        },
+        {
+         "lineText": "pkg net/http, method (*Request) AddCookie(*Cookie)",
+         "matchingRanges": {
+          "lineNumber": "4709",
+          "columnRanges": [
+           {
+            "startIndex": 35,
+            "length": 6
+           },
+           {
+            "startIndex": 43,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "4709",
+         "ranges": [
+          {
+           "startIndex": 35,
+           "length": 6
+          },
+          {
+           "startIndex": 43,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "pkg net/http, method (*Request) Cookie(string) (*Cookie, error)",
+         "matchingRanges": {
+          "lineNumber": "4710",
+          "columnRanges": [
+           {
+            "startIndex": 32,
+            "length": 6
+           },
+           {
+            "startIndex": 49,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "4710",
+         "ranges": [
+          {
+           "startIndex": 32,
+           "length": 6
+          },
+          {
+           "startIndex": 49,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "pkg net/http, type Client struct, CheckRedirect func(*Request, []*Request) error",
+         "matchingRanges": {
+          "lineNumber": "4745"
+         },
+         "lineNumber": "4745"
+        },
+        {
+         "lineText": "pkg net/http, type Client struct, Jar CookieJar",
+         "matchingRanges": {
+          "lineNumber": "4746",
+          "columnRanges": [
+           {
+            "startIndex": 34,
+            "length": 3
+           },
+           {
+            "startIndex": 38,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "4746",
+         "ranges": [
+          {
+           "startIndex": 34,
+           "length": 3
+          },
+          {
+           "startIndex": 38,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "pkg net/http, type Client struct, Transport RoundTripper",
+         "matchingRanges": {
+          "lineNumber": "4747"
+         },
+         "lineNumber": "4747"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 30
+    },
+    "resultToken": "CAoSAggBOOjf65ehl6OAuQFAAEgK"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/vendor/golang.org/x/tools/internal/stdlib/manifest.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t{\"(*ClientConn).SetStateHook\", Method, 26, \"\"},",
+         "matchingRanges": {
+          "lineNumber": "8783"
+         },
+         "lineNumber": "8783",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 3,
+            "length": 28
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 41,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 45,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t{\"(*Cookie).String\", Method, 0, \"\"},",
+         "matchingRanges": {
+          "lineNumber": "8784",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "8784",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 3,
+            "length": 18
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 31,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 34,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t{\"(*Cookie).Valid\", Method, 18, \"\"},",
+         "matchingRanges": {
+          "lineNumber": "8785",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "8785",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 3,
+            "length": 17
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 30,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 34,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t{\"(*CrossOriginProtection).AddInsecureBypassPattern\", Method, 25, \"\"},",
+         "matchingRanges": {
+          "lineNumber": "8786"
+         },
+         "lineNumber": "8786",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 3,
+            "length": 51
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 64,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 68,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t{\"Client.CheckRedirect\", Field, 0, \"\"},",
+         "matchingRanges": {
+          "lineNumber": "8881"
+         },
+         "lineNumber": "8881",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 3,
+            "length": 22
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 34,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 37,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t{\"Client.Jar\", Field, 0, \"\"},",
+         "matchingRanges": {
+          "lineNumber": "8882",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "8882",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 3,
+            "length": 12
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 24,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 27,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t{\"Client.Timeout\", Field, 3, \"\"},",
+         "matchingRanges": {
+          "lineNumber": "8883"
+         },
+         "lineNumber": "8883",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 3,
+            "length": 16
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 28,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 31,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t{\"(*Jar).Cookies\", Method, 1, \"\"},",
+         "matchingRanges": {
+          "lineNumber": "9194",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 3
+           },
+           {
+            "startIndex": 11,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "9194",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 3,
+            "length": 16
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 29,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 32,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 3
+          },
+          {
+           "startIndex": 11,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t{\"(*Jar).SetCookies\", Method, 1, \"\"},",
+         "matchingRanges": {
+          "lineNumber": "9195",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 3
+           },
+           {
+            "startIndex": 14,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "9195",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 3,
+            "length": 19
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 32,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 35,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 3
+          },
+          {
+           "startIndex": 14,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 38
+    },
+    "resultToken": "CAsSAggBOJrA-rfNvvHiBUAASAs"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "test/stress/parsego.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\"net/http/cgi\",",
+         "matchingRanges": {
+          "lineNumber": "175"
+         },
+         "lineNumber": "175",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 1,
+            "length": 14
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\"net/http/cookiejar\",",
+         "matchingRanges": {
+          "lineNumber": "176",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "176",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 1,
+            "length": 20
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\t\"net/http/fcgi\",",
+         "matchingRanges": {
+          "lineNumber": "177"
+         },
+         "lineNumber": "177",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 1,
+            "length": 15
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAwSAggBOOy7yPrz3YOZiwFAAEgM"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/http/internal/http2/server_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// Concatenated cookie headers. (\"8.1.2.5 Compressing the Cookie Header Field\")",
+         "matchingRanges": {
+          "lineNumber": "950",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 6
+           },
+           {
+            "startIndex": 58,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "950",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 79
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 6
+          },
+          {
+           "startIndex": 58,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "func TestServer_Request_CookieConcat(t *testing.T) { synctestTest(t, testServer_Request_CookieConcat) }",
+         "matchingRanges": {
+          "lineNumber": "951",
+          "columnRanges": [
+           {
+            "startIndex": 24,
+            "length": 6
+           },
+           {
+            "startIndex": 88,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "951",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 24,
+           "length": 6
+          },
+          {
+           "startIndex": 88,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "func testServer_Request_CookieConcat(t testing.TB) {",
+         "matchingRanges": {
+          "lineNumber": "952",
+          "columnRanges": [
+           {
+            "startIndex": 24,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "952",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 24,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tconst host = \"example.com\"",
+         "matchingRanges": {
+          "lineNumber": "953"
+         },
+         "lineNumber": "953",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 14,
+            "length": 13
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\tconst want = \"a=b; c=d; e=f\"",
+         "matchingRanges": {
+          "lineNumber": "962"
+         },
+         "lineNumber": "962",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 15,
+            "length": 15
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tif got := r.Header.Get(\"Cookie\"); got != want {",
+         "matchingRanges": {
+          "lineNumber": "963",
+          "columnRanges": [
+           {
+            "startIndex": 26,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "963",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 25,
+            "length": 8
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 26,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\tt.Errorf(\"Cookie = %q; want %q\", got, want)",
+         "matchingRanges": {
+          "lineNumber": "964",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "964",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 12,
+            "length": 22
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t}",
+         "matchingRanges": {
+          "lineNumber": "965"
+         },
+         "lineNumber": "965"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// This previously crashed (reported by Mathieu Lonjaret as observed",
+         "matchingRanges": {
+          "lineNumber": "2549",
+          "columnRanges": [
+           {
+            "startIndex": 51,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "2549",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 68
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 51,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "// while using Camlistore) because we got a DATA frame from the client",
+         "matchingRanges": {
+          "lineNumber": "2550"
+         },
+         "lineNumber": "2550",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 70
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 14
+    },
+    "resultToken": "CA0SBAgBIAE4yOvr6Y2Bm_GnAUAASA0"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/go/build/deps_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tnet/http, net/http/internal/ascii",
+         "matchingRanges": {
+          "lineNumber": "690"
+         },
+         "lineNumber": "690",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "length": 34
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\u003c net/http/cookiejar, net/http/httputil;",
+         "matchingRanges": {
+          "lineNumber": "691",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "691",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "length": 41
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "692"
+         },
+         "lineNumber": "692",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {}
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CA4SAggBOPDnxM3ttbHjCUAASA4"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/vendor/golang.org/x/tools/internal/stdlib/deps.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t{\"net/http/cgi\", \"\\x02W\\x1b\\x03\\x83\\x01\\x04\\a\\v\\x01\\x13\\x01\\x01\\x01\\x04\\x01\\x05\\x02\\b\\x02\\x01\\x11\\x0e\"},",
+         "matchingRanges": {
+          "lineNumber": "289"
+         },
+         "lineNumber": "289",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 14
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 18,
+            "length": 85
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t{\"net/http/cookiejar\", \"\\x04p\\x03\\x99\\x01\\x01\\b\\a\\x05\\x16\\x03\\x02\\x0f\\x04\"},",
+         "matchingRanges": {
+          "lineNumber": "290",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "290",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 20
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 24,
+            "length": 51
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\t{\"net/http/fcgi\", \"\\x02\\x01\\n`\\a\\x03\\x83\\x01\\x16\\x01\\x01\\x14\\x18\\x02\\x0f\"},",
+         "matchingRanges": {
+          "lineNumber": "291"
+         },
+         "lineNumber": "291",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 15
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 19,
+            "length": 55
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CA8SAggBOKLf1-nrwv7z-wFAAEgP"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/go/internal/gccgoimporter/gccgoinstallation_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\"net/http/cgi\",",
+         "matchingRanges": {
+          "lineNumber": "106"
+         },
+         "lineNumber": "106",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 1,
+            "length": 14
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t// \"net/http/cookiejar\", // Added in GCC 4.8.",
+         "matchingRanges": {
+          "lineNumber": "107",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "107",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 45
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\t\"net/http/fcgi\",",
+         "matchingRanges": {
+          "lineNumber": "108"
+         },
+         "lineNumber": "108",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 1,
+            "length": 15
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBASAggBOLjunJP5sZKPYUAASBA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/go/internal/modfetch/zip_sum_test/testdata/zip_sums.csv",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "github.com/gorilla/schema,v1.1.0,h1:CamqUDOFUBqzrvxuz2vEwo8+SUdwsluFh7IlzJh30LY=,42a6d7dc873e8ba1822551b4e15304d5654a11f6da3cccdc270be847148bbfaf",
+         "matchingRanges": {
+          "lineNumber": "831"
+         },
+         "lineNumber": "831"
+        },
+        {
+         "lineText": "github.com/gorilla/securecookie,v1.1.1,h1:miw7JPhV+b/lAHSXz4qd/nN9jRiAFV5FwjeKyCS8BvQ=,dd83a4230e11568159756bbea4d343c88df0cd1415bbbc7cd5badad6cd2ed903",
+         "matchingRanges": {
+          "lineNumber": "832",
+          "columnRanges": [
+           {
+            "startIndex": 25,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "832",
+         "ranges": [
+          {
+           "startIndex": 25,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "github.com/gorilla/sessions,v1.2.0,h1:S7P+1Hm5V/AT9cjEcUD5uDaQSX0OE577aCXgoaKpYbQ=,8753d00ae6cf8ea0e28c195d4b87875384e2ed79df7eba4cf210fdf9ab0294df",
+         "matchingRanges": {
+          "lineNumber": "833"
+         },
+         "lineNumber": "833"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "github.com/libp2p/go-maddr-filter,v0.0.5,h1:CW3AgbMO6vUvT4kf87y4N+0P8KUl2aqLYhrGyDUbLSg=,19c76e021879aab85a8858b53d706220e9e3277a96dead161db152f5a1d17219",
+         "matchingRanges": {
+          "lineNumber": "1218"
+         },
+         "lineNumber": "1218"
+        },
+        {
+         "lineText": "github.com/libp2p/go-mplex,v0.1.0,h1:/nBTy5+1yRyY82YaO6HXQRnO5IAGsXTjEJaR3LdTPc0=,3340a423ea89310360810973a77a97c217fe7b35e1c18189a3628e35fe1275e0",
+         "matchingRanges": {
+          "lineNumber": "1219",
+          "columnRanges": [
+           {
+            "startIndex": 70,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "1219",
+         "ranges": [
+          {
+           "startIndex": 70,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "github.com/libp2p/go-msgio,v0.0.4,h1:agEFehY3zWJFUHK6SEMR7UYmk2z6kC3oeCM7ybLhguA=,ec22f703203a2a443c57896b2082c02fe9c54d372aad091cdca144709d244721",
+         "matchingRanges": {
+          "lineNumber": "1220"
+         },
+         "lineNumber": "1220"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "github.com/prometheus/common,v0.7.0,h1:L+1lyG48J1zAQXA3RBX/nG/B3gjlHq0zTt2tlbJLyCY=,f2640a94b18b115552df41ee33effa013e10536aca51e09a971d1503a20e186a",
+         "matchingRanges": {
+          "lineNumber": "1527"
+         },
+         "lineNumber": "1527"
+        },
+        {
+         "lineText": "github.com/prometheus/procfs,v0.0.5,h1:3+auTFlqw+ZaQYJARz6ArODtkaIwtvBTx3N2NehQlL8=,f45b90c72f8c2e4c84e5314092ee1ccf7d6ace1cc14b2f483c82f7c1e6d0d0d4",
+         "matchingRanges": {
+          "lineNumber": "1528",
+          "columnRanges": [
+           {
+            "startIndex": 53,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "1528",
+         "ranges": [
+          {
+           "startIndex": 53,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "github.com/prometheus/prom2json,v1.1.0,h1:/fEL2DK7EEyHVeGMG4TV+gSS9Sw53yYKt//QRL0IIYE=,166f5f98c62d0b90139947d1464ee747f8143772b9e926c7b51c53a4420380ff",
+         "matchingRanges": {
+          "lineNumber": "1529"
+         },
+         "lineNumber": "1529"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "gopkg.in/juju/worker.v1,v1.0.0-20191018043616-19a698a7150f,h1:UAHa7z4EdrOcMN+9p5P+ojJshcIC34vwi0hCmEL6Qf8=,2e0da8053029ca9da961f8e6f1037a9d7ba12623e5c16fc5f88bf1a724c5dd23",
+         "matchingRanges": {
+          "lineNumber": "1989"
+         },
+         "lineNumber": "1989"
+        },
+        {
+         "lineText": "gopkg.in/karalabe/cookiejar.v2,v2.0.0-20150724131613-8dcd6a7f4951,h1:DMTcQRFbEH62YPR ...",
+         "matchingRanges": {
+          "lineNumber": "1990",
+          "columnRanges": [
+           {
+            "startIndex": 18,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "1990",
+         "ranges": [
+          {
+           "startIndex": 18,
+           "length": 9
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 6
+    },
+    "resultToken": "CBESAggBOJTW0dqclI_DpAFAAEgR"
+   }
+  ],
+  "estimatedResultCount": "18",
+  "exhaustive": true,
+  "requestToken": "Cgpjb29raWUgamFyEh0oIGdpdDpnby9nb0BtYXN0ZXIgY2FzZTp5ZXMgKRoMCNW6qNEGEJHdgM8CIAwqADIASAE"
+ }
+}

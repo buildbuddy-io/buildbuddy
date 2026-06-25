@@ -1,0 +1,94 @@
+{
+ "query": "\"is a polyfill that\"",
+ "oss_project": "material-components",
+ "repo_name": "material-components-web",
+ "page_size": 50,
+ "fetched_at": "2026-06-17T23:23:41Z",
+ "response": {
+  "searchResults": [
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "material-components-web",
+        "ossProject": "material-components"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "packages/mdc-dom/ponyfill.ts",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "/**",
+         "matchingRanges": {
+          "lineNumber": "24"
+         },
+         "lineNumber": "24",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": " * @fileoverview A \"ponyfill\" is a polyfill that doesn't modify the global",
+         "matchingRanges": {
+          "lineNumber": "25",
+          "columnRanges": [
+           {
+            "startIndex": 30,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "25",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 74
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 30,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "lineText": " * prototype chain. This makes ponyfills safer than traditional polyfills,",
+         "matchingRanges": {
+          "lineNumber": "26"
+         },
+         "lineNumber": "26",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 74
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAASAggBOP7gmZbi1933kwFAAEgA"
+   }
+  ],
+  "estimatedResultCount": "1",
+  "exhaustive": true,
+  "requestToken": "ChQiaXMgYSBwb2x5ZmlsbCB0aGF0IhJKKCBnaXQ6Z2l0aHViL21hdGVyaWFsLWNvbXBvbmVudHMvbWF0ZXJpYWwtY29tcG9uZW50cy13ZWJAbWFzdGVyIGNhc2U6eWVzICkaDAj92MzRBhDfwY_MAyAMIA8qADIASAE"
+ }
+}

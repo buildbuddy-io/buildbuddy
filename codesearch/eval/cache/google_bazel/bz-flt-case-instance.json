@@ -1,0 +1,7737 @@
+{
+ "query": "case:yes INSTANCE file:skyframe",
+ "oss_project": "bazel",
+ "repo_name": "bazel",
+ "page_size": 50,
+ "fetched_at": "2026-06-11T22:29:28Z",
+ "response": {
+  "searchResults": [
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/skyframe/EmptySkyValue.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  @SerializationConstant public static final EmptySkyValue INSTANCE = new EmptySkyValue();",
+         "matchingRanges": {
+          "lineNumber": "24",
+          "columnRanges": [
+           {
+            "startIndex": 59,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "24",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 25,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 32,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 39,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 70,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 59,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "25"
+         },
+         "lineNumber": "25"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAASBAgBIAE4nOKVgvf0-qrCAUAASAA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/skyframe/TrackingAwaiter.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "public class TrackingAwaiter {",
+         "matchingRanges": {
+          "lineNumber": "34"
+         },
+         "lineNumber": "34",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  public static final TrackingAwaiter INSTANCE = new TrackingAwaiter();",
+         "matchingRanges": {
+          "lineNumber": "35",
+          "columnRanges": [
+           {
+            "startIndex": 38,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "35",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 16,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 49,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 38,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "36"
+         },
+         "lineNumber": "36"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAESBAgBIAE4sqix1dyOmfoNQABIAQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/skyframe/Version.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  static MinimalVersion minimal() {",
+         "matchingRanges": {
+          "lineNumber": "68"
+         },
+         "lineNumber": "68",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    return MinimalVersion.INSTANCE;",
+         "matchingRanges": {
+          "lineNumber": "69",
+          "columnRanges": [
+           {
+            "startIndex": 26,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "69",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 26,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "  }",
+         "matchingRanges": {
+          "lineNumber": "70"
+         },
+         "lineNumber": "70"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  final class MinimalVersion implements Version {",
+         "matchingRanges": {
+          "lineNumber": "84"
+         },
+         "lineNumber": "84",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 29,
+            "length": 10
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    private static final MinimalVersion INSTANCE = new MinimalVersion();",
+         "matchingRanges": {
+          "lineNumber": "85",
+          "columnRanges": [
+           {
+            "startIndex": 40,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "85",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 19,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 51,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 40,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "86"
+         },
+         "lineNumber": "86"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  final class ConstantVersion implements Version {",
+         "matchingRanges": {
+          "lineNumber": "96"
+         },
+         "lineNumber": "96",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 30,
+            "length": 10
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    private static final ConstantVersion INSTANCE = new ConstantVersion();",
+         "matchingRanges": {
+          "lineNumber": "97",
+          "columnRanges": [
+           {
+            "startIndex": 41,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "97",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 19,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 52,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 41,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "98"
+         },
+         "lineNumber": "98"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 4
+    },
+    "resultToken": "CAISBAgBIAE46MG-16zj491GQABIAg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/skyframe/ErrorTransienceValue.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  @SerializationConstant",
+         "matchingRanges": {
+          "lineNumber": "46"
+         },
+         "lineNumber": "46"
+        },
+        {
+         "lineText": "  public static final ErrorTransienceValue INSTANCE = new ErrorTransienceValue();",
+         "matchingRanges": {
+          "lineNumber": "47",
+          "columnRanges": [
+           {
+            "startIndex": 43,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "47",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 16,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 54,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 43,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "48"
+         },
+         "lineNumber": "48"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAMSBAgBIAE4oNDrrdnoq69lQABIAw"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/skyframe/serialization/ExampleKey.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  static ExampleKeyCodec exampleKeyCodec() {",
+         "matchingRanges": {
+          "lineNumber": "31"
+         },
+         "lineNumber": "31",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    return ExampleKeyCodec.INSTANCE;",
+         "matchingRanges": {
+          "lineNumber": "32",
+          "columnRanges": [
+           {
+            "startIndex": 27,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "32",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 27,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "  }",
+         "matchingRanges": {
+          "lineNumber": "33"
+         },
+         "lineNumber": "33"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  private static final class ExampleKeyCodec extends LeafObjectCodec\u003cExampleKey\u003e {",
+         "matchingRanges": {
+          "lineNumber": "35"
+         },
+         "lineNumber": "35",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 17,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 23,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 45,
+            "length": 7
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    private static final ExampleKeyCodec INSTANCE = new ExampleKeyCodec();",
+         "matchingRanges": {
+          "lineNumber": "36",
+          "columnRanges": [
+           {
+            "startIndex": 41,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "36",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 19,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 52,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 41,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "37"
+         },
+         "lineNumber": "37"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAQSBAgBIAE4qqrkrpqBnrBVQABIBA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/skyframe/BzlLoadValue.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  public static KeyCodec bzlLoadKeyCodec() {",
+         "matchingRanges": {
+          "lineNumber": "370"
+         },
+         "lineNumber": "370",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    return KeyCodec.INSTANCE;",
+         "matchingRanges": {
+          "lineNumber": "371",
+          "columnRanges": [
+           {
+            "startIndex": 20,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "371",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 20,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "  }",
+         "matchingRanges": {
+          "lineNumber": "372"
+         },
+         "lineNumber": "372"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  private static final class KeyCodec extends LeafObjectCodec\u003cKey\u003e {",
+         "matchingRanges": {
+          "lineNumber": "375"
+         },
+         "lineNumber": "375",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 17,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 23,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 38,
+            "length": 7
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    private static final KeyCodec INSTANCE = new KeyCodec();",
+         "matchingRanges": {
+          "lineNumber": "376",
+          "columnRanges": [
+           {
+            "startIndex": 34,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "376",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 19,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 45,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 34,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "377"
+         },
+         "lineNumber": "377"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAUSBAgBIAE4oIqQpIrBzO-nAUAASAU"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/skyframe/ErrorInfoManager.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  static class UseChildErrorInfoIfNecessary implements ErrorInfoManager {",
+         "matchingRanges": {
+          "lineNumber": "39"
+         },
+         "lineNumber": "39",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 44,
+            "length": 10
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    public static final UseChildErrorInfoIfNecessary INSTANCE = new UseChildErrorInfoIfNecessary();",
+         "matchingRanges": {
+          "lineNumber": "40",
+          "columnRanges": [
+           {
+            "startIndex": 53,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "40",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 11,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 18,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 64,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 53,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "41"
+         },
+         "lineNumber": "41"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAYSBAgBIAE4rrjChurA9tPRAUAASAY"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/skyframe/serialization/ExampleValue.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  static ExampleValueCodec exampleValueCodec() {",
+         "matchingRanges": {
+          "lineNumber": "26"
+         },
+         "lineNumber": "26",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    return ExampleValueCodec.INSTANCE;",
+         "matchingRanges": {
+          "lineNumber": "27",
+          "columnRanges": [
+           {
+            "startIndex": 29,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "27",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 29,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "  }",
+         "matchingRanges": {
+          "lineNumber": "28"
+         },
+         "lineNumber": "28"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  private static final class ExampleValueCodec extends DeferredObjectCodec\u003cExampleValue\u003e {",
+         "matchingRanges": {
+          "lineNumber": "30"
+         },
+         "lineNumber": "30",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 17,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 23,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 47,
+            "length": 7
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    private static final ExampleValueCodec INSTANCE = new ExampleValueCodec();",
+         "matchingRanges": {
+          "lineNumber": "31",
+          "columnRanges": [
+           {
+            "startIndex": 43,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "31",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 19,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 54,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 43,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "32"
+         },
+         "lineNumber": "32"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAcSBAgBIAE4mObXmIvEocC8AUAASAc"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/skyframe/ParallelEvaluatorErrorClassifier.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "public final class ParallelEvaluatorErrorClassifier extends ErrorClassifier {",
+         "matchingRanges": {
+          "lineNumber": "19"
+         },
+         "lineNumber": "19",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 13,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 52,
+            "length": 7
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  private static final ParallelEvaluatorErrorClassifier INSTANCE =",
+         "matchingRanges": {
+          "lineNumber": "20",
+          "columnRanges": [
+           {
+            "startIndex": 56,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "20",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 17,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 56,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "      new ParallelEvaluatorErrorClassifier();",
+         "matchingRanges": {
+          "lineNumber": "21"
+         },
+         "lineNumber": "21",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  public static ParallelEvaluatorErrorClassifier instance() {",
+         "matchingRanges": {
+          "lineNumber": "23"
+         },
+         "lineNumber": "23",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    return INSTANCE;",
+         "matchingRanges": {
+          "lineNumber": "24",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "24",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "  }",
+         "matchingRanges": {
+          "lineNumber": "25"
+         },
+         "lineNumber": "25"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAgSBAgBIAE4jNHzidCNo8vrAUAASAg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/skyframe/PackageFunction.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "   * \u003cp\u003eAny choice besides {@link",
+         "matchingRanges": {
+          "lineNumber": "225"
+         },
+         "lineNumber": "225",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 33
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "   * ActionOnIOExceptionReadingBuildFile.UseOriginalIOException#INSTANCE} is potentially",
+         "matchingRanges": {
+          "lineNumber": "226",
+          "columnRanges": [
+           {
+            "startIndex": 64,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "226",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 88
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 64,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "   * incrementally unsound: if the initial {@link IOException} is transient, then Blaze will",
+         "matchingRanges": {
+          "lineNumber": "227"
+         },
+         "lineNumber": "227",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 92
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    public static class UseOriginalIOException implements ActionOnIOExceptionReadingBuildFile {",
+         "matchingRanges": {
+          "lineNumber": "247"
+         },
+         "lineNumber": "247",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 11,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 18,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 47,
+            "length": 10
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "      public static final UseOriginalIOException INSTANCE = new UseOriginalIOException();",
+         "matchingRanges": {
+          "lineNumber": "248",
+          "columnRanges": [
+           {
+            "startIndex": 49,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "248",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 13,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 20,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 60,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 49,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "249"
+         },
+         "lineNumber": "249"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    private ActionOnIOExceptionReadingBuildFile actionOnIOExceptionReadingBuildFile =",
+         "matchingRanges": {
+          "lineNumber": "1524"
+         },
+         "lineNumber": "1524",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 7
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "        PackageFunction.ActionOnIOExceptionReadingBuildFile.UseOriginalIOException.INSTANCE;",
+         "matchingRanges": {
+          "lineNumber": "1525",
+          "columnRanges": [
+           {
+            "startIndex": 83,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "1525",
+         "ranges": [
+          {
+           "startIndex": 83,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "    private ActionOnFilesystemErrorCodeLoadingBzlFile actionOnFilesystemErrorCodeLoadingBzlFile =",
+         "matchingRanges": {
+          "lineNumber": "1526"
+         },
+         "lineNumber": "1526",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 7
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 4
+    },
+    "resultToken": "CAkSBAgBIAE4suemwP_Piv67AUAASAk"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/skyframe/BzlLoadFunction.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "        // file is loaded by a lot of other bzl files or BUILD files.",
+         "matchingRanges": {
+          "lineNumber": "196"
+         },
+         "lineNumber": "196",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 8,
+            "length": 61
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "        RegularSkyframeGetter.INSTANCE,",
+         "matchingRanges": {
+          "lineNumber": "197",
+          "columnRanges": [
+           {
+            "startIndex": 30,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "197",
+         "ranges": [
+          {
+           "startIndex": 30,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "        new InlineCacheManager(bzlLoadValueCacheSize));",
+         "matchingRanges": {
+          "lineNumber": "198"
+         },
+         "lineNumber": "198",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  private static class RegularSkyframeGetter implements ValueGetter {",
+         "matchingRanges": {
+          "lineNumber": "1476"
+         },
+         "lineNumber": "1476",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 17,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 45,
+            "length": 10
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    private static final RegularSkyframeGetter INSTANCE = new RegularSkyframeGetter();",
+         "matchingRanges": {
+          "lineNumber": "1477",
+          "columnRanges": [
+           {
+            "startIndex": 47,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "1477",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 19,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 58,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 47,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "1478"
+         },
+         "lineNumber": "1478"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAoSBAgBIAE47IOF4_nSpdddQABICg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/skyframe/ConfiguredTargetKey.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  public static ConfiguredTargetKeyValueSharingCodec valueSharingCodec() {",
+         "matchingRanges": {
+          "lineNumber": "350"
+         },
+         "lineNumber": "350",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    return ConfiguredTargetKeyValueSharingCodec.INSTANCE;",
+         "matchingRanges": {
+          "lineNumber": "351",
+          "columnRanges": [
+           {
+            "startIndex": 48,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "351",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 48,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "  }",
+         "matchingRanges": {
+          "lineNumber": "352"
+         },
+         "lineNumber": "352"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    private static final ConfiguredTargetKeyValueSharingCodec INSTANCE =",
+         "matchingRanges": {
+          "lineNumber": "362",
+          "columnRanges": [
+           {
+            "startIndex": 62,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "362",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 19,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 62,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "        new ConfiguredTargetKeyValueSharingCodec();",
+         "matchingRanges": {
+          "lineNumber": "363"
+         },
+         "lineNumber": "363",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAsSBAgBIAE4-PCVh_Xnlp-HAUAASAs"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/skyframe/ActionExecutionState.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  //",
+         "matchingRanges": {
+          "lineNumber": "53"
+         },
+         "lineNumber": "53",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  // (Also, via obsolete(), all states can transition to state==Obsolete.INSTANCE with a null",
+         "matchingRanges": {
+          "lineNumber": "54",
+          "columnRanges": [
+           {
+            "startIndex": 73,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "54",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 91
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 73,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "  // completionFuture, which is terminal.)",
+         "matchingRanges": {
+          "lineNumber": "55"
+         },
+         "lineNumber": "55",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 40
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    synchronized (this) {",
+         "matchingRanges": {
+          "lineNumber": "103"
+         },
+         "lineNumber": "103",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 12
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 18,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "      if (state == Obsolete.INSTANCE) {",
+         "matchingRanges": {
+          "lineNumber": "104",
+          "columnRanges": [
+           {
+            "startIndex": 28,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "104",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 28,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "        scheduleRestart(env);",
+         "matchingRanges": {
+          "lineNumber": "105"
+         },
+         "lineNumber": "105"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  private static final class Obsolete implements ActionStepOrResult {",
+         "matchingRanges": {
+          "lineNumber": "404"
+         },
+         "lineNumber": "404",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 17,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 23,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 38,
+            "length": 10
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    private static final Obsolete INSTANCE = new Obsolete();",
+         "matchingRanges": {
+          "lineNumber": "405",
+          "columnRanges": [
+           {
+            "startIndex": 34,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "405",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 19,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 45,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 34,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "406"
+         },
+         "lineNumber": "406"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 7
+    },
+    "resultToken": "CAwSBAgBIAE4roa135ibl-kPQABIDA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/skyframe/DiffAwarenessManager.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    if (diffAwarenessState == null) {",
+         "matchingRanges": {
+          "lineNumber": "175"
+         },
+         "lineNumber": "175",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "      return BrokenProcessableModifiedFileSet.INSTANCE;",
+         "matchingRanges": {
+          "lineNumber": "176",
+          "columnRanges": [
+           {
+            "startIndex": 46,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "176",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 46,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "    }",
+         "matchingRanges": {
+          "lineNumber": "177"
+         },
+         "lineNumber": "177"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "        handleBrokenDiffAwareness(eventHandler, pathEntry, ignoredPaths, e);",
+         "matchingRanges": {
+          "lineNumber": "185"
+         },
+         "lineNumber": "185"
+        },
+        {
+         "lineText": "        return BrokenProcessableModifiedFileSet.INSTANCE;",
+         "matchingRanges": {
+          "lineNumber": "186",
+          "columnRanges": [
+           {
+            "startIndex": 48,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "186",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 48,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "      }",
+         "matchingRanges": {
+          "lineNumber": "187"
+         },
+         "lineNumber": "187"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    private static final BrokenProcessableModifiedFileSet INSTANCE =",
+         "matchingRanges": {
+          "lineNumber": "293",
+          "columnRanges": [
+           {
+            "startIndex": 58,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "293",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 19,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 58,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "        new BrokenProcessableModifiedFileSet();",
+         "matchingRanges": {
+          "lineNumber": "294"
+         },
+         "lineNumber": "294",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 4
+    },
+    "resultToken": "CA0SBAgBIAE4uKzv7MeYjeRkQABIDQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/skyframe/StarlarkBuiltinsValue.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  public static Key key() {",
+         "matchingRanges": {
+          "lineNumber": "121"
+         },
+         "lineNumber": "121",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    return Key.INSTANCE;",
+         "matchingRanges": {
+          "lineNumber": "122",
+          "columnRanges": [
+           {
+            "startIndex": 15,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "122",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 15,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "  }",
+         "matchingRanges": {
+          "lineNumber": "123"
+         },
+         "lineNumber": "123"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    private static final Key INSTANCE = new Key();",
+         "matchingRanges": {
+          "lineNumber": "132",
+          "columnRanges": [
+           {
+            "startIndex": 29,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "132",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 19,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 40,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 29,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "133"
+         },
+         "lineNumber": "133"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CA4SBAgBIAE4sIb00qzFr-QjQABIDg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/skyframe/TargetCompletionValue.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "public class TargetCompletionValue implements SkyValue {",
+         "matchingRanges": {
+          "lineNumber": "28"
+         },
+         "lineNumber": "28",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 35,
+            "length": 10
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  @SerializationConstant static final TargetCompletionValue INSTANCE = new TargetCompletionValue();",
+         "matchingRanges": {
+          "lineNumber": "29",
+          "columnRanges": [
+           {
+            "startIndex": 60,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "29",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 25,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 32,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 71,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 60,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "30"
+         },
+         "lineNumber": "30"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CA8SBAgBIAE46vDRmKao4oxNQABIDw"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/skyframe/AspectCompletionValue.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "public class AspectCompletionValue implements SkyValue {",
+         "matchingRanges": {
+          "lineNumber": "30"
+         },
+         "lineNumber": "30",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 35,
+            "length": 10
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  @SerializationConstant static final AspectCompletionValue INSTANCE = new AspectCompletionValue();",
+         "matchingRanges": {
+          "lineNumber": "31",
+          "columnRanges": [
+           {
+            "startIndex": 60,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "31",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 25,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 32,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 71,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 60,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "32"
+         },
+         "lineNumber": "32"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBASBAgBIAE4nojShJ2Ljs5uQABIEA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/skyframe/RepoPackageArgsFunction.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "public class RepoPackageArgsFunction implements SkyFunction {",
+         "matchingRanges": {
+          "lineNumber": "34"
+         },
+         "lineNumber": "34",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 37,
+            "length": 10
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  public static final RepoPackageArgsFunction INSTANCE = new RepoPackageArgsFunction();",
+         "matchingRanges": {
+          "lineNumber": "35",
+          "columnRanges": [
+           {
+            "startIndex": 46,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "35",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 16,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 57,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 46,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "36"
+         },
+         "lineNumber": "36"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBESBAgBIAE4rKyI4qvMu_3eAUAASBE"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/skyframe/serialization/ClassCodec.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "class ClassCodec extends LeafObjectCodec\u003cClass\u003c?\u003e\u003e {",
+         "matchingRanges": {
+          "lineNumber": "26"
+         },
+         "lineNumber": "26",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 17,
+            "length": 7
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  private static final ClassCodec INSTANCE = new ClassCodec();",
+         "matchingRanges": {
+          "lineNumber": "27",
+          "columnRanges": [
+           {
+            "startIndex": 34,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "27",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 17,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 45,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 34,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "28"
+         },
+         "lineNumber": "28"
+        },
+        {
+         "lineText": "  static ClassCodec classCodec() {",
+         "matchingRanges": {
+          "lineNumber": "29"
+         },
+         "lineNumber": "29",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    return INSTANCE;",
+         "matchingRanges": {
+          "lineNumber": "30",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "30",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "  }",
+         "matchingRanges": {
+          "lineNumber": "31"
+         },
+         "lineNumber": "31"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CBISBAgBIAE4tr22pYHRv_7DAUAASBI"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/skyframe/serialization/ModuleCodec.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "public final class ModuleCodec extends DeferredObjectCodec\u003cModule\u003e {",
+         "matchingRanges": {
+          "lineNumber": "31"
+         },
+         "lineNumber": "31",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 13,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 31,
+            "length": 7
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  private static final ModuleCodec INSTANCE = new ModuleCodec();",
+         "matchingRanges": {
+          "lineNumber": "32",
+          "columnRanges": [
+           {
+            "startIndex": 35,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "32",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 17,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 46,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 35,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "33"
+         },
+         "lineNumber": "33"
+        },
+        {
+         "lineText": "  public static ModuleCodec moduleCodec() {",
+         "matchingRanges": {
+          "lineNumber": "34"
+         },
+         "lineNumber": "34",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    return INSTANCE;",
+         "matchingRanges": {
+          "lineNumber": "35",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "35",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "  }",
+         "matchingRanges": {
+          "lineNumber": "36"
+         },
+         "lineNumber": "36"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CBMSBAgBIAE46IXplfLXkrHKAUAASBM"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/skyframe/PrepareDepsOfPatternValue.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  @SerializationConstant",
+         "matchingRanges": {
+          "lineNumber": "49"
+         },
+         "lineNumber": "49"
+        },
+        {
+         "lineText": "  public static final PrepareDepsOfPatternValue INSTANCE = new PrepareDepsOfPatternValue();",
+         "matchingRanges": {
+          "lineNumber": "50",
+          "columnRanges": [
+           {
+            "startIndex": 48,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "50",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 16,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 59,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 48,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "51"
+         },
+         "lineNumber": "51"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBQSBAgBIAE46Iuby7PeusXVAUAASBQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/skyframe/serialization/MemoizerTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  private static WrapperLeafCodec wrapperLeafCodec() {",
+         "matchingRanges": {
+          "lineNumber": "211"
+         },
+         "lineNumber": "211",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    return WrapperLeafCodec.INSTANCE;",
+         "matchingRanges": {
+          "lineNumber": "212",
+          "columnRanges": [
+           {
+            "startIndex": 28,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "212",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 28,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "  }",
+         "matchingRanges": {
+          "lineNumber": "213"
+         },
+         "lineNumber": "213"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  private static final class WrapperLeafCodec extends LeafObjectCodec\u003cWrapper\u003e {",
+         "matchingRanges": {
+          "lineNumber": "215"
+         },
+         "lineNumber": "215",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 17,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 23,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 46,
+            "length": 7
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    private static final WrapperLeafCodec INSTANCE = new WrapperLeafCodec();",
+         "matchingRanges": {
+          "lineNumber": "216",
+          "columnRanges": [
+           {
+            "startIndex": 42,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "216",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 19,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 53,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 42,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "217"
+         },
+         "lineNumber": "217"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  private static class DeferredStringCodec extends DeferredObjectCodec\u003cString\u003e {",
+         "matchingRanges": {
+          "lineNumber": "287"
+         },
+         "lineNumber": "287",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 17,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 43,
+            "length": 7
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    private static final DeferredStringCodec INSTANCE = new DeferredStringCodec();",
+         "matchingRanges": {
+          "lineNumber": "288",
+          "columnRanges": [
+           {
+            "startIndex": 45,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "288",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 19,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 56,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 45,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "289"
+         },
+         "lineNumber": "289"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 5
+    },
+    "resultToken": "CBUSBAgBIAE4mMq4vr6dpKdUQABIFQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/skyframe/RemoteConfiguredTargetValue.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  public static ConfiguredTargetValueCodec codec() {",
+         "matchingRanges": {
+          "lineNumber": "115"
+         },
+         "lineNumber": "115",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    return ConfiguredTargetValueCodec.INSTANCE;",
+         "matchingRanges": {
+          "lineNumber": "116",
+          "columnRanges": [
+           {
+            "startIndex": 38,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "116",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 38,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "  }",
+         "matchingRanges": {
+          "lineNumber": "117"
+         },
+         "lineNumber": "117"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    private static final ConfiguredTargetValueCodec INSTANCE = new ConfiguredTargetValueCodec();",
+         "matchingRanges": {
+          "lineNumber": "132",
+          "columnRanges": [
+           {
+            "startIndex": 52,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "132",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 19,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 63,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 52,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "133"
+         },
+         "lineNumber": "133"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CBYSBAgBIAE4iNuB5Iu708TZAUAASBY"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/skyframe/CollectTargetsInPackageValue.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  @SerializationConstant",
+         "matchingRanges": {
+          "lineNumber": "29"
+         },
+         "lineNumber": "29"
+        },
+        {
+         "lineText": "  public static final CollectTargetsInPackageValue INSTANCE = new CollectTargetsInPackageValue();",
+         "matchingRanges": {
+          "lineNumber": "30",
+          "columnRanges": [
+           {
+            "startIndex": 51,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "30",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 16,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 62,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 51,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "31"
+         },
+         "lineNumber": "31"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBcSBAgBIAE4nr_EvIb40_8mQABIFw"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/skyframe/IgnoredSubdirectoriesFunction.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  /** Singleton instance of this {@link SkyFunction}. */",
+         "matchingRanges": {
+          "lineNumber": "62"
+         },
+         "lineNumber": "62",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 54
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  public static final IgnoredSubdirectoriesFunction INSTANCE = new IgnoredSubdirectoriesFunction();",
+         "matchingRanges": {
+          "lineNumber": "63",
+          "columnRanges": [
+           {
+            "startIndex": 52,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "63",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 16,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 63,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 52,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "64"
+         },
+         "lineNumber": "64"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBgSBAgBIAE4gILh84_py41tQABIGA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/skyframe/ActionLookupConflictFindingValue.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  @SerializationConstant",
+         "matchingRanges": {
+          "lineNumber": "33"
+         },
+         "lineNumber": "33"
+        },
+        {
+         "lineText": "  static final ActionLookupConflictFindingValue INSTANCE = new ActionLookupConflictFindingValue();",
+         "matchingRanges": {
+          "lineNumber": "34",
+          "columnRanges": [
+           {
+            "startIndex": 48,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "34",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 59,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 48,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "35"
+         },
+         "lineNumber": "35"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBkSBAgBIAE47r2WmIq1retJQABIGQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/skyframe/serialization/SerializationModule.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  protected RemoteAnalysisCachingServicesSupplier getAnalysisCachingServicesSupplier() {",
+         "matchingRanges": {
+          "lineNumber": "79"
+         },
+         "lineNumber": "79",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 9
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    return InMemoryRemoteAnalysisCachingServicesSupplier.INSTANCE;",
+         "matchingRanges": {
+          "lineNumber": "80",
+          "columnRanges": [
+           {
+            "startIndex": 57,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "80",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 57,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "  }",
+         "matchingRanges": {
+          "lineNumber": "81"
+         },
+         "lineNumber": "81"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "      implements RemoteAnalysisCachingServicesSupplier {",
+         "matchingRanges": {
+          "lineNumber": "85"
+         },
+         "lineNumber": "85",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 10
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    private static final InMemoryRemoteAnalysisCachingServicesSupplier INSTANCE =",
+         "matchingRanges": {
+          "lineNumber": "86",
+          "columnRanges": [
+           {
+            "startIndex": 71,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "86",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 19,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 71,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "        new InMemoryRemoteAnalysisCachingServicesSupplier();",
+         "matchingRanges": {
+          "lineNumber": "87"
+         },
+         "lineNumber": "87",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    private static final FingerprintValueService SERVICE_INSTANCE =",
+         "matchingRanges": {
+          "lineNumber": "89",
+          "columnRanges": [
+           {
+            "startIndex": 57,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "89",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 19,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 57,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "        new FingerprintValueService(",
+         "matchingRanges": {
+          "lineNumber": "90"
+         },
+         "lineNumber": "90",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    private static final ListenableFuture\u003cFingerprintValueService\u003e WRAPPED_SERVICE_INSTANCE =",
+         "matchingRanges": {
+          "lineNumber": "97",
+          "columnRanges": [
+           {
+            "startIndex": 83,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "97",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 19,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 83,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "        immediateFuture(SERVICE_INSTANCE);",
+         "matchingRanges": {
+          "lineNumber": "98",
+          "columnRanges": [
+           {
+            "startIndex": 32,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "98",
+         "ranges": [
+          {
+           "startIndex": 32,
+           "length": 8
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 6
+    },
+    "resultToken": "CBoSBAgBIAE4npbYl77Mo-kyQABIGg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/skyframe/serialization/ProfileRecorderTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  private static CodecA codecA() {",
+         "matchingRanges": {
+          "lineNumber": "132"
+         },
+         "lineNumber": "132",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    return CodecA.INSTANCE;",
+         "matchingRanges": {
+          "lineNumber": "133",
+          "columnRanges": [
+           {
+            "startIndex": 18,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "133",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 18,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "  }",
+         "matchingRanges": {
+          "lineNumber": "134"
+         },
+         "lineNumber": "134"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  private static class CodecA extends AsyncObjectCodec\u003cA\u003e {",
+         "matchingRanges": {
+          "lineNumber": "178"
+         },
+         "lineNumber": "178",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 17,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 30,
+            "length": 7
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    private static final CodecA INSTANCE = new CodecA();",
+         "matchingRanges": {
+          "lineNumber": "179",
+          "columnRanges": [
+           {
+            "startIndex": 32,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "179",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 19,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 43,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 32,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "180"
+         },
+         "lineNumber": "180"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  private static class CodecB extends AsyncObjectCodec\u003cB\u003e {",
+         "matchingRanges": {
+          "lineNumber": "197"
+         },
+         "lineNumber": "197",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 17,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 30,
+            "length": 7
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    private static final CodecB INSTANCE = new CodecB();",
+         "matchingRanges": {
+          "lineNumber": "198",
+          "columnRanges": [
+           {
+            "startIndex": 32,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "198",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 19,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 43,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 32,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "199"
+         },
+         "lineNumber": "199"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 4
+    },
+    "resultToken": "CBsSBAgBIAE4iuLFvdmJqtdBQABIGw"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/skyframe/serialization/ProfileCollectorTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  private static class ExampleLeafSharerCodec extends AsyncObjectCodec\u003cExampleLeafSharer\u003e {",
+         "matchingRanges": {
+          "lineNumber": "354"
+         },
+         "lineNumber": "354",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 17,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 46,
+            "length": 7
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    private static final ExampleLeafSharerCodec INSTANCE = new ExampleLeafSharerCodec();",
+         "matchingRanges": {
+          "lineNumber": "355",
+          "columnRanges": [
+           {
+            "startIndex": 48,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "355",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 19,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 59,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 48,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "356"
+         },
+         "lineNumber": "356"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  private static class DeferredExampleLeafCodec extends DeferredObjectCodec\u003cExampleLeaf\u003e {",
+         "matchingRanges": {
+          "lineNumber": "387"
+         },
+         "lineNumber": "387",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 17,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 48,
+            "length": 7
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    private static final DeferredExampleLeafCodec INSTANCE = new DeferredExampleLeafCodec();",
+         "matchingRanges": {
+          "lineNumber": "388",
+          "columnRanges": [
+           {
+            "startIndex": 50,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "388",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 19,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 61,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 50,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "389"
+         },
+         "lineNumber": "389"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  private static class CodecA extends AsyncObjectCodec\u003cA\u003e {",
+         "matchingRanges": {
+          "lineNumber": "472"
+         },
+         "lineNumber": "472",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 17,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 30,
+            "length": 7
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    private static final CodecA INSTANCE = new CodecA();",
+         "matchingRanges": {
+          "lineNumber": "473",
+          "columnRanges": [
+           {
+            "startIndex": 32,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "473",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 19,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 43,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 32,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "474"
+         },
+         "lineNumber": "474"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 15
+    },
+    "resultToken": "CBwSBAgBIAE47rus_o2tlLP4AUAASBw"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/skyframe/serialization/strings/UnsafeStringCodec.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "   */",
+         "matchingRanges": {
+          "lineNumber": "38"
+         },
+         "lineNumber": "38",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  private static final UnsafeStringCodec INSTANCE = new UnsafeStringCodec();",
+         "matchingRanges": {
+          "lineNumber": "39",
+          "columnRanges": [
+           {
+            "startIndex": 41,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "39",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 17,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 52,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 41,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "40"
+         },
+         "lineNumber": "40"
+        },
+        {
+         "lineText": "  public static UnsafeStringCodec stringCodec() {",
+         "matchingRanges": {
+          "lineNumber": "41"
+         },
+         "lineNumber": "41",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    return INSTANCE;",
+         "matchingRanges": {
+          "lineNumber": "42",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "42",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "  }",
+         "matchingRanges": {
+          "lineNumber": "43"
+         },
+         "lineNumber": "43"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CB0SBAgBIAE4qIT0r5fO35v_AUAASB0"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/skyframe/PrepareDepsOfTargetsUnderDirectoryValue.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  @SerializationConstant",
+         "matchingRanges": {
+          "lineNumber": "45"
+         },
+         "lineNumber": "45"
+        },
+        {
+         "lineText": "  public static final PrepareDepsOfTargetsUnderDirectoryValue INSTANCE =",
+         "matchingRanges": {
+          "lineNumber": "46",
+          "columnRanges": [
+           {
+            "startIndex": 62,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "46",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 16,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 62,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "      new PrepareDepsOfTargetsUnderDirectoryValue();",
+         "matchingRanges": {
+          "lineNumber": "47"
+         },
+         "lineNumber": "47",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CB4SBAgBIAE42rPN48KmxP3pAUAASB4"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/skyframe/serialization/DeserializationContextTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "              deserializationContext.deserializeLeaf(",
+         "matchingRanges": {
+          "lineNumber": "74"
+         },
+         "lineNumber": "74"
+        },
+        {
+         "lineText": "                  codedInputStream, LeafCodecForCastingOnly.INSTANCE))",
+         "matchingRanges": {
+          "lineNumber": "75",
+          "columnRanges": [
+           {
+            "startIndex": 60,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "75",
+         "ranges": [
+          {
+           "startIndex": 60,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "          .isSameInstanceAs(constant);",
+         "matchingRanges": {
+          "lineNumber": "76"
+         },
+         "lineNumber": "76"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  private static final class LeafCodecForCastingOnly extends LeafObjectCodec\u003cString\u003e {",
+         "matchingRanges": {
+          "lineNumber": "85"
+         },
+         "lineNumber": "85",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 17,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 23,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 53,
+            "length": 7
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    private static final LeafCodecForCastingOnly INSTANCE = new LeafCodecForCastingOnly();",
+         "matchingRanges": {
+          "lineNumber": "86",
+          "columnRanges": [
+           {
+            "startIndex": 49,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "86",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 19,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 60,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 49,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "87"
+         },
+         "lineNumber": "87"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "        .thenReturn(WireType.CodecWireType.UNSTABLE.getTypedTagNumber(1))",
+         "matchingRanges": {
+          "lineNumber": "161"
+         },
+         "lineNumber": "161",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 70,
+            "length": 1
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "        .thenReturn(WireType.Backreference.INSTANCE.getTypedTagNumber(2));",
+         "matchingRanges": {
+          "lineNumber": "162",
+          "columnRanges": [
+           {
+            "startIndex": 43,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "162",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 70,
+            "length": 1
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 43,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "    assertThat((Object) deserializationContext.deserialize(codedInputStream)).isEqualTo(returned);",
+         "matchingRanges": {
+          "lineNumber": "163"
+         },
+         "lineNumber": "163"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 7
+    },
+    "resultToken": "CB8SBAgBIAE4sOr5mu6k2c6VAUAASB8"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/skyframe/serialization/SerializationRegistrySetupHelpers.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  public static ImmutableList\u003cObjectCodec\u003c?\u003e\u003e analysisCachingCodecs() {",
+         "matchingRanges": {
+          "lineNumber": "143"
+         },
+         "lineNumber": "143",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    return AnalysisCachingCodecsHolder.INSTANCE;",
+         "matchingRanges": {
+          "lineNumber": "144",
+          "columnRanges": [
+           {
+            "startIndex": 39,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "144",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 39,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "  }",
+         "matchingRanges": {
+          "lineNumber": "145"
+         },
+         "lineNumber": "145"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    private static final ImmutableList\u003cObjectCodec\u003c?\u003e\u003e INSTANCE;",
+         "matchingRanges": {
+          "lineNumber": "173",
+          "columnRanges": [
+           {
+            "startIndex": 55,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "173",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 19,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 55,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "174"
+         },
+         "lineNumber": "174"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "      }",
+         "matchingRanges": {
+          "lineNumber": "209"
+         },
+         "lineNumber": "209"
+        },
+        {
+         "lineText": "      INSTANCE = builder.build();",
+         "matchingRanges": {
+          "lineNumber": "210",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "210",
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "    }",
+         "matchingRanges": {
+          "lineNumber": "211"
+         },
+         "lineNumber": "211"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CCASBAgBIAE48OL68ebPzuWfAUAASCA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/skyframe/serialization/SharedValueDeserializationContext.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "        // This error should be tolerated by falling back on computation.",
+         "matchingRanges": {
+          "lineNumber": "370"
+         },
+         "lineNumber": "370",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 8,
+            "length": 65
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "        onFailure(MissingSharedValueBytesException.INSTANCE);",
+         "matchingRanges": {
+          "lineNumber": "371",
+          "columnRanges": [
+           {
+            "startIndex": 51,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "371",
+         "ranges": [
+          {
+           "startIndex": 51,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "        return;",
+         "matchingRanges": {
+          "lineNumber": "372"
+         },
+         "lineNumber": "372",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    }",
+         "matchingRanges": {
+          "lineNumber": "429"
+         },
+         "lineNumber": "429"
+        },
+        {
+         "lineText": "    return new ZstdInputStream(byteArrayInputStream, RecyclingBufferPool.INSTANCE);",
+         "matchingRanges": {
+          "lineNumber": "430",
+          "columnRanges": [
+           {
+            "startIndex": 73,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "430",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 11,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 73,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "  }",
+         "matchingRanges": {
+          "lineNumber": "431"
+         },
+         "lineNumber": "431"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    @SuppressWarnings(\"StaticAssignmentOfThrowable\")",
+         "matchingRanges": {
+          "lineNumber": "628"
+         },
+         "lineNumber": "628",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 22,
+            "length": 29
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    public static final MissingSharedValueBytesException INSTANCE =",
+         "matchingRanges": {
+          "lineNumber": "629",
+          "columnRanges": [
+           {
+            "startIndex": 57,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "629",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 11,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 18,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 57,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "        new MissingSharedValueBytesException();",
+         "matchingRanges": {
+          "lineNumber": "630"
+         },
+         "lineNumber": "630",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CCESBAgBIAE4_O7DiNap1u3_AUAASCE"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/skyframe/serialization/SharedValueSerializationContextTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "      context.putSharedValue(",
+         "matchingRanges": {
+          "lineNumber": "367"
+         },
+         "lineNumber": "367"
+        },
+        {
+         "lineText": "          obj.sharedData(), /* distinguisher= */ null, FaultySerializationCodec.INSTANCE, codedOut);",
+         "matchingRanges": {
+          "lineNumber": "368",
+          "columnRanges": [
+           {
+            "startIndex": 80,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "368",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 28,
+            "length": 20
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 80,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "    }",
+         "matchingRanges": {
+          "lineNumber": "369"
+         },
+         "lineNumber": "369"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  private static class FaultySerializationCodec extends DeferredObjectCodec\u003cInteger\u003e {",
+         "matchingRanges": {
+          "lineNumber": "378"
+         },
+         "lineNumber": "378",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 17,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 48,
+            "length": 7
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    private static final FaultySerializationCodec INSTANCE = new FaultySerializationCodec();",
+         "matchingRanges": {
+          "lineNumber": "379",
+          "columnRanges": [
+           {
+            "startIndex": 50,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "379",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 19,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 61,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 50,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "380"
+         },
+         "lineNumber": "380"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CCISBAgBIAE4rJeNqLfL57G9AUAASCI"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/skyframe/serialization/SharedValueDeserializationContextTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "      context.putSharedValue(",
+         "matchingRanges": {
+          "lineNumber": "411"
+         },
+         "lineNumber": "411"
+        },
+        {
+         "lineText": "          obj.value, /* distinguisher= */ null, DeferredIntegerCodec.INSTANCE, codedOut);",
+         "matchingRanges": {
+          "lineNumber": "412",
+          "columnRanges": [
+           {
+            "startIndex": 69,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "412",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 21,
+            "length": 20
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 69,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "    }",
+         "matchingRanges": {
+          "lineNumber": "413"
+         },
+         "lineNumber": "413"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "          /* distinguisher= */ null,",
+         "matchingRanges": {
+          "lineNumber": "422"
+         },
+         "lineNumber": "422",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 10,
+            "length": 20
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "          DeferredIntegerCodec.INSTANCE,",
+         "matchingRanges": {
+          "lineNumber": "423",
+          "columnRanges": [
+           {
+            "startIndex": 31,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "423",
+         "ranges": [
+          {
+           "startIndex": 31,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "          value,",
+         "matchingRanges": {
+          "lineNumber": "424"
+         },
+         "lineNumber": "424"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  private static class DeferredIntegerCodec extends DeferredObjectCodec\u003cInteger\u003e {",
+         "matchingRanges": {
+          "lineNumber": "437"
+         },
+         "lineNumber": "437",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 17,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 44,
+            "length": 7
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    private static final DeferredIntegerCodec INSTANCE = new DeferredIntegerCodec();",
+         "matchingRanges": {
+          "lineNumber": "438",
+          "columnRanges": [
+           {
+            "startIndex": 46,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "438",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 19,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 57,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 46,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "439"
+         },
+         "lineNumber": "439"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CCMSBAgBIAE4mv7Lrsfcg8odQABIIw"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/skyframe/config/BuildConfigurationKey.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  public static DeferredObjectCodec\u003cBuildConfigurationKey\u003e codec() {",
+         "matchingRanges": {
+          "lineNumber": "89"
+         },
+         "lineNumber": "89",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    return CodecHolder.INSTANCE.codec;",
+         "matchingRanges": {
+          "lineNumber": "90",
+          "columnRanges": [
+           {
+            "startIndex": 23,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "90",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 23,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "  }",
+         "matchingRanges": {
+          "lineNumber": "91"
+         },
+         "lineNumber": "91"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  private enum CodecHolder {",
+         "matchingRanges": {
+          "lineNumber": "94"
+         },
+         "lineNumber": "94",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    INSTANCE;",
+         "matchingRanges": {
+          "lineNumber": "95",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "95",
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "96"
+         },
+         "lineNumber": "96"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CCQSBAgBIAE4-KWJ1ajRsq18QABIJA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/skyframe/serialization/WireType.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  public enum Backreference implements WireType {",
+         "matchingRanges": {
+          "lineNumber": "74"
+         },
+         "lineNumber": "74",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 28,
+            "length": 10
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    INSTANCE;",
+         "matchingRanges": {
+          "lineNumber": "75",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "75",
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "76"
+         },
+         "lineNumber": "76"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "      case WireType.UNSTABLE_CODEC_VALUE -\u003e CodecWireType.UNSTABLE;",
+         "matchingRanges": {
+          "lineNumber": "139"
+         },
+         "lineNumber": "139",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "      case WireType.BACKREFERENCE_VALUE -\u003e Backreference.INSTANCE;",
+         "matchingRanges": {
+          "lineNumber": "140",
+          "columnRanges": [
+           {
+            "startIndex": 57,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "140",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 57,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "      case WireType.STABLE_CODEC_VALUE -\u003e CodecWireType.STABLE_PUBLIC;",
+         "matchingRanges": {
+          "lineNumber": "141"
+         },
+         "lineNumber": "141",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CCUSBAgBIAE4yJOTuYal5eq3AUAASCU"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/skyframe/SkyframeExecutor.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    map.put(SkyFunctions.PACKAGE_ERROR_MESSAGE, new PackageErrorMessageFunction());",
+         "matchingRanges": {
+          "lineNumber": "862"
+         },
+         "lineNumber": "862",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 48,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    map.put(SkyFunctions.MACRO_INSTANCE, new MacroInstanceFunction());",
+         "matchingRanges": {
+          "lineNumber": "863",
+          "columnRanges": [
+           {
+            "startIndex": 31,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "863",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 41,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 31,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "    map.put(SkyFunctions.EVAL_MACRO, new EvalMacroFunction(pkgFactory, cpuBoundSemaphore));",
+         "matchingRanges": {
+          "lineNumber": "864"
+         },
+         "lineNumber": "864",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 37,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "            });",
+         "matchingRanges": {
+          "lineNumber": "925"
+         },
+         "lineNumber": "925"
+        },
+        {
+         "lineText": "    map.put(SkyFunctions.REPO_PACKAGE_ARGS, RepoPackageArgsFunction.INSTANCE);",
+         "matchingRanges": {
+          "lineNumber": "926",
+          "columnRanges": [
+           {
+            "startIndex": 68,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "926",
+         "ranges": [
+          {
+           "startIndex": 68,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "    // Inject an empty default BAZEL_DEP_GRAPH SkyFunction for unit tests.",
+         "matchingRanges": {
+          "lineNumber": "927"
+         },
+         "lineNumber": "927",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 70
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  public interface SkyKeyStateReceiver {",
+         "matchingRanges": {
+          "lineNumber": "4359"
+         },
+         "lineNumber": "4359",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 9
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    SkyKeyStateReceiver NULL_INSTANCE = new SkyKeyStateReceiver() {};",
+         "matchingRanges": {
+          "lineNumber": "4360",
+          "columnRanges": [
+           {
+            "startIndex": 29,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "4360",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 40,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 29,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "4361"
+         },
+         "lineNumber": "4361"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 4
+    },
+    "resultToken": "CCYSBAgBIAE4nsWrmaelgJ1zQABIJg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/skyframe/SkyframeBuildView.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "          /* packageRoots= */ null,",
+         "matchingRanges": {
+          "lineNumber": "907"
+         },
+         "lineNumber": "907",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 10,
+            "length": 19
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "          Collections.max(detailedExitCodes, DetailedExitCodeComparator.INSTANCE));",
+         "matchingRanges": {
+          "lineNumber": "908",
+          "columnRanges": [
+           {
+            "startIndex": 72,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "908",
+         "ranges": [
+          {
+           "startIndex": 72,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "    }",
+         "matchingRanges": {
+          "lineNumber": "909"
+         },
+         "lineNumber": "909"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CCcSAggBOKCkp-Gmm5HKS0AASCc"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/skyframe/SkyFunctions.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  public static final SkyFunctionName EVAL_MACRO = SkyFunctionName.createHermetic(\"EVAL_MACRO\");",
+         "matchingRanges": {
+          "lineNumber": "60"
+         },
+         "lineNumber": "60",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 16,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 82,
+            "length": 12
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  public static final SkyFunctionName MACRO_INSTANCE =",
+         "matchingRanges": {
+          "lineNumber": "61",
+          "columnRanges": [
+           {
+            "startIndex": 44,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "61",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 16,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 44,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "      SkyFunctionName.createHermetic(\"MACRO_INSTANCE\");",
+         "matchingRanges": {
+          "lineNumber": "62",
+          "columnRanges": [
+           {
+            "startIndex": 44,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "62",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 37,
+            "length": 16
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 44,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "  public static final SkyFunctionName NON_FINALIZER_PACKAGE_PIECES =",
+         "matchingRanges": {
+          "lineNumber": "63"
+         },
+         "lineNumber": "63",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 16,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CCgSBAgBIAE4-vvKqriAg8hOQABIKA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/skyframe/SequencedSkyframeExecutorTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    // Initial sync to establish the baseline DiffAwareness.View.",
+         "matchingRanges": {
+          "lineNumber": "373"
+         },
+         "lineNumber": "373",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 61
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    skyframeExecutor.handleDiffsForTesting(NullEventHandler.INSTANCE);",
+         "matchingRanges": {
+          "lineNumber": "374",
+          "columnRanges": [
+           {
+            "startIndex": 60,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "374",
+         "ranges": [
+          {
+           "startIndex": 60,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "    scratch.overwriteFile(\"/external/file\", \"new content\");",
+         "matchingRanges": {
+          "lineNumber": "375"
+         },
+         "lineNumber": "375",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 26,
+            "length": 16
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 44,
+            "length": 13
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    // Initial sync to establish the baseline DiffAwareness.View.",
+         "matchingRanges": {
+          "lineNumber": "395"
+         },
+         "lineNumber": "395",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 61
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    skyframeExecutor.handleDiffsForTesting(NullEventHandler.INSTANCE);",
+         "matchingRanges": {
+          "lineNumber": "396",
+          "columnRanges": [
+           {
+            "startIndex": 60,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "396",
+         "ranges": [
+          {
+           "startIndex": 60,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "397"
+         },
+         "lineNumber": "397"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    // Initial sync to establish the baseline DiffAwareness.View.",
+         "matchingRanges": {
+          "lineNumber": "423"
+         },
+         "lineNumber": "423",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 61
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    skyframeExecutor.handleDiffsForTesting(NullEventHandler.INSTANCE);",
+         "matchingRanges": {
+          "lineNumber": "424",
+          "columnRanges": [
+           {
+            "startIndex": 60,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "424",
+         "ranges": [
+          {
+           "startIndex": 60,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "    scratch.file(\"/external/foo/new_file\");",
+         "matchingRanges": {
+          "lineNumber": "425"
+         },
+         "lineNumber": "425",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 17,
+            "length": 24
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 17
+    },
+    "resultToken": "CCkSAggBOKTqs8iqyJqcrQFAAEgp"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/skyframe/BazelSkyframeExecutorConstants.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "      ACTION_ON_IO_EXCEPTION_READING_BUILD_FILE =",
+         "matchingRanges": {
+          "lineNumber": "39"
+         },
+         "lineNumber": "39"
+        },
+        {
+         "lineText": "          ActionOnIOExceptionReadingBuildFile.UseOriginalIOException.INSTANCE;",
+         "matchingRanges": {
+          "lineNumber": "40",
+          "columnRanges": [
+           {
+            "startIndex": 69,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "40",
+         "ranges": [
+          {
+           "startIndex": 69,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "41"
+         },
+         "lineNumber": "41"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    return SequencedSkyframeExecutor.builder()",
+         "matchingRanges": {
+          "lineNumber": "68"
+         },
+         "lineNumber": "68",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "        .setIgnoredSubdirectories(IgnoredSubdirectoriesFunction.INSTANCE)",
+         "matchingRanges": {
+          "lineNumber": "69",
+          "columnRanges": [
+           {
+            "startIndex": 64,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "69",
+         "ranges": [
+          {
+           "startIndex": 64,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "        .setActionOnIOExceptionReadingBuildFile(ACTION_ON_IO_EXCEPTION_READING_BUILD_FILE)",
+         "matchingRanges": {
+          "lineNumber": "70"
+         },
+         "lineNumber": "70"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CCoSAggBOJrk4ZWP3reba0AASCo"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/skyframe/CycleInfo.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  private static final CycleInfoNoDetails NO_DETAILS_INSTANCE = new CycleInfoNoDetails();",
+         "matchingRanges": {
+          "lineNumber": "50",
+          "columnRanges": [
+           {
+            "startIndex": 53,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "50",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 17,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 64,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 53,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "51"
+         },
+         "lineNumber": "51"
+        },
+        {
+         "lineText": "  public static CycleInfo cycleInfoNoDetails() {",
+         "matchingRanges": {
+          "lineNumber": "52"
+         },
+         "lineNumber": "52",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    return NO_DETAILS_INSTANCE;",
+         "matchingRanges": {
+          "lineNumber": "53",
+          "columnRanges": [
+           {
+            "startIndex": 22,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "53",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 22,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "  }",
+         "matchingRanges": {
+          "lineNumber": "54"
+         },
+         "lineNumber": "54"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CCsSBAgBIAE4kJOAxfCCmbJAQABIKw"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/skyframe/SequencedSkyframeExecutor.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    private BugReporter bugReporter = BugReporter.defaultInstance();",
+         "matchingRanges": {
+          "lineNumber": "860"
+         },
+         "lineNumber": "860",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 7
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    private SkyKeyStateReceiver skyKeyStateReceiver = SkyKeyStateReceiver.NULL_INSTANCE;",
+         "matchingRanges": {
+          "lineNumber": "861",
+          "columnRanges": [
+           {
+            "startIndex": 79,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "861",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 79,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "    private SyscallCache syscallCache = null;",
+         "matchingRanges": {
+          "lineNumber": "862"
+         },
+         "lineNumber": "862",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 7
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CCwSAggBOK7x0rOyyIyEnAFAAEgs"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/skyframe/serialization/autocodec/TypeOperations.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  enum Relation {",
+         "matchingRanges": {
+          "lineNumber": "144"
+         },
+         "lineNumber": "144",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    INSTANCE_OF,",
+         "matchingRanges": {
+          "lineNumber": "145",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "145",
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "    EQUAL_TO,",
+         "matchingRanges": {
+          "lineNumber": "146"
+         },
+         "lineNumber": "146"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "      }",
+         "matchingRanges": {
+          "lineNumber": "163"
+         },
+         "lineNumber": "163"
+        },
+        {
+         "lineText": "      return Relation.INSTANCE_OF;",
+         "matchingRanges": {
+          "lineNumber": "164",
+          "columnRanges": [
+           {
+            "startIndex": 22,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "164",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 22,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "    }",
+         "matchingRanges": {
+          "lineNumber": "165"
+         },
+         "lineNumber": "165"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CC0SBAgBIAE4nvmsprfbo50uQABILQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/skyframe/GraphTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "        () -\u003e {",
+         "matchingRanges": {
+          "lineNumber": "188"
+         },
+         "lineNumber": "188"
+        },
+        {
+         "lineText": "          TrackingAwaiter.INSTANCE.awaitLatchAndTrackExceptions(",
+         "matchingRanges": {
+          "lineNumber": "189",
+          "columnRanges": [
+           {
+            "startIndex": 26,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "189",
+         "ranges": [
+          {
+           "startIndex": 26,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "              startThreads, \"threads not started\");",
+         "matchingRanges": {
+          "lineNumber": "190"
+         },
+         "lineNumber": "190",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 28,
+            "length": 21
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "        () -\u003e {",
+         "matchingRanges": {
+          "lineNumber": "198"
+         },
+         "lineNumber": "198"
+        },
+        {
+         "lineText": "          TrackingAwaiter.INSTANCE.awaitLatchAndTrackExceptions(",
+         "matchingRanges": {
+          "lineNumber": "199",
+          "columnRanges": [
+           {
+            "startIndex": 26,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "199",
+         "ranges": [
+          {
+           "startIndex": 26,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "              startThreads, \"threads not started\");",
+         "matchingRanges": {
+          "lineNumber": "200"
+         },
+         "lineNumber": "200",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 28,
+            "length": 21
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CC4SAggBOMDD3uTcvv2aFEAASC4"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/skyframe/ParallelEvaluator.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "      injectValues(",
+         "matchingRanges": {
+          "lineNumber": "189"
+         },
+         "lineNumber": "189"
+        },
+        {
+         "lineText": "          ImmutableMap.of(ErrorTransienceValue.KEY, Delta.justNew(ErrorTransienceValue.INSTANCE)),",
+         "matchingRanges": {
+          "lineNumber": "190",
+          "columnRanges": [
+           {
+            "startIndex": 87,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "190",
+         "ranges": [
+          {
+           "startIndex": 87,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "          evaluatorContext.getGraphVersion(),",
+         "matchingRanges": {
+          "lineNumber": "191"
+         },
+         "lineNumber": "191"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CC8SAggBONC6luTJgsXR_wFAAEgv"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/skyframe/ParallelEvaluatorTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  public void assertNoTrackedErrors() {",
+         "matchingRanges": {
+          "lineNumber": "140"
+         },
+         "lineNumber": "140",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    TrackingAwaiter.INSTANCE.assertNoErrors();",
+         "matchingRanges": {
+          "lineNumber": "141",
+          "columnRanges": [
+           {
+            "startIndex": 20,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "141",
+         "ranges": [
+          {
+           "startIndex": 20,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "  }",
+         "matchingRanges": {
+          "lineNumber": "142"
+         },
+         "lineNumber": "142"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "        storedEventFilter,",
+         "matchingRanges": {
+          "lineNumber": "167"
+         },
+         "lineNumber": "167"
+        },
+        {
+         "lineText": "        ErrorInfoManager.UseChildErrorInfoIfNecessary.INSTANCE,",
+         "matchingRanges": {
+          "lineNumber": "168",
+          "columnRanges": [
+           {
+            "startIndex": 54,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "168",
+         "ranges": [
+          {
+           "startIndex": 54,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "        revalidationReceiver,",
+         "matchingRanges": {
+          "lineNumber": "169"
+         },
+         "lineNumber": "169"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "              otherStarted.countDown();",
+         "matchingRanges": {
+          "lineNumber": "2764"
+         },
+         "lineNumber": "2764"
+        },
+        {
+         "lineText": "              TrackingAwaiter.INSTANCE.awaitLatchAndTrackExceptions(",
+         "matchingRanges": {
+          "lineNumber": "2765",
+          "columnRanges": [
+           {
+            "startIndex": 30,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "2765",
+         "ranges": [
+          {
+           "startIndex": 30,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "                  errorCommitted, \"error didn't get committed to the graph in time\");",
+         "matchingRanges": {
+          "lineNumber": "2766"
+         },
+         "lineNumber": "2766",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 34,
+            "length": 49
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 7
+    },
+    "resultToken": "CDASAggBOLzRwvD-ipL3MkAASDA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/skyframe/ErrorTransienceValueTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  public void testHashCodeNotSupported() {",
+         "matchingRanges": {
+          "lineNumber": "28"
+         },
+         "lineNumber": "28",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    assertThrows(UnsupportedOperationException.class, ErrorTransienceValue.INSTANCE::hashCode);",
+         "matchingRanges": {
+          "lineNumber": "29",
+          "columnRanges": [
+           {
+            "startIndex": 75,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "29",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 47,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 75,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "  }",
+         "matchingRanges": {
+          "lineNumber": "30"
+         },
+         "lineNumber": "30"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  public void testToStringWorks() {",
+         "matchingRanges": {
+          "lineNumber": "33"
+         },
+         "lineNumber": "33",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    assertThat(ErrorTransienceValue.INSTANCE.toString()).isEqualTo(\"ErrorTransienceValue\");",
+         "matchingRanges": {
+          "lineNumber": "34",
+          "columnRanges": [
+           {
+            "startIndex": 36,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "34",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 67,
+            "length": 22
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 36,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "  }",
+         "matchingRanges": {
+          "lineNumber": "35"
+         },
+         "lineNumber": "35"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    // assertThat(...).isNotEqualTo(...) does ref equality check, so use equals explicitly.",
+         "matchingRanges": {
+          "lineNumber": "40"
+         },
+         "lineNumber": "40",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 87
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    assertThat(ErrorTransienceValue.INSTANCE.equals(ErrorTransienceValue.INSTANCE)).isFalse();",
+         "matchingRanges": {
+          "lineNumber": "41",
+          "columnRanges": [
+           {
+            "startIndex": 36,
+            "length": 8
+           },
+           {
+            "startIndex": 73,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "41",
+         "ranges": [
+          {
+           "startIndex": 36,
+           "length": 8
+          },
+          {
+           "startIndex": 73,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "  }",
+         "matchingRanges": {
+          "lineNumber": "42"
+         },
+         "lineNumber": "42"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CDESAggBOIb099vEuYWn0gFAAEgx"
+   }
+  ],
+  "estimatedResultCount": "94",
+  "nextPageToken": "CLKosdXcjpn6DQiuhrXfmJuX6Q8IwMPe5Ny+/ZoUCJr+y67H3IPKHQiwhvTSrMWv5CMInr/EvIb40/8mCJ75rKa326OdLgieltiXvsyj6TIIvNHC8P6KkvcyCJCTgMXwgpmyQAiK4sW92Ymq10EI6MG+16zj491GCO69lpiKta3rSQigpKfhppuRyksI6vDRmKao4oxNCPr7yqq4gIPITgiYyri+vp2kp1QIqqrkrpqBnrBVCOyDheP50qXXXQi4rO/sx5iN5GQIoNDrrdnoq69lCJrk4ZWP3rebawiAguHzj+nLjW0InojShJ2Ljs5uCJ7Fq5mnpYCdcwj4pYnVqNGyrXwI+PCVh/Xnlp+HAQiw6vma7qTZzpUBCK7x0rOyyIyEnAEI8OL68ebPzuWfAQigipCkisHM76cBCKTqs8iqyJqcrQEIyJOTuYal5eq3AQiy56bA/8+K/rsBCJjm15iLxKHAvAEIrJeNqLfL57G9AQic4pWC9/T6qsIBCLa9tqWB0b/+wwEI6IXplfLXkrHKAQiuuMKG6sD209EBCIb099vEuYWn0gEI6Iuby7PeusXVAQiI24Hki7vTxNkBCKysiOKrzLv93gEI2rPN48KmxP3pAQiM0fOJ0I2jy+sBCO67rP6NrZSz+AEIqIT0r5fO35v/AQjQupbkyYLF0f8BCPzuw4jWqdbt/wE=",
+  "exhaustive": true,
+  "requestToken": "Ch9jYXNlOnllcyBJTlNUQU5DRSBmaWxlOnNreWZyYW1lEiMoIGdpdDpiYXplbC9iYXplbEBtYXN0ZXIgY2FzZTp5ZXMgKRoMCMjtrNEGENLBvbsBIAwqADIASAE"
+ }
+}

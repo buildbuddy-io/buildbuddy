@@ -1,0 +1,7362 @@
+{
+ "query": "BuildConfigurationValue",
+ "oss_project": "bazel",
+ "repo_name": "bazel",
+ "page_size": 50,
+ "fetched_at": "2026-06-11T22:27:17Z",
+ "response": {
+  "searchResults": [
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/analysis/config/BuildConfigurationValue.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": " * that can affect the output of any build tool should be explicitly represented in the {@code",
+         "matchingRanges": {
+          "lineNumber": "69"
+         },
+         "lineNumber": "69",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 94
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 94
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 94
+           }
+          }
+         ]
+        },
+        {
+         "lineText": " * BuildConfigurationValue} instance.",
+         "matchingRanges": {
+          "lineNumber": "70",
+          "columnRanges": [
+           {
+            "startIndex": 3,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "70",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 37
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 37
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 37
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 3,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": " *",
+         "matchingRanges": {
+          "lineNumber": "71"
+         },
+         "lineNumber": "71",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "@AutoCodec",
+         "matchingRanges": {
+          "lineNumber": "84"
+         },
+         "lineNumber": "84"
+        },
+        {
+         "lineText": "public class BuildConfigurationValue",
+         "matchingRanges": {
+          "lineNumber": "85",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "85",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": "    implements BuildConfigurationApi, SkyValue, BuildConfigurationInfo {",
+         "matchingRanges": {
+          "lineNumber": "86"
+         },
+         "lineNumber": "86",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 10
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  // Package-visible for serialization purposes.",
+         "matchingRanges": {
+          "lineNumber": "275"
+         },
+         "lineNumber": "275",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 46
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  BuildConfigurationValue(",
+         "matchingRanges": {
+          "lineNumber": "276",
+          "columnRanges": [
+           {
+            "startIndex": 2,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "276",
+         "ranges": [
+          {
+           "startIndex": 2,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": "      BuildOptions buildOptions,",
+         "matchingRanges": {
+          "lineNumber": "277"
+         },
+         "lineNumber": "277"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 15
+    },
+    "resultToken": "CAASBAgBIAE4oOjy_dnw0IQ_QABIAA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/analysis/config/BuildConfigurationValueTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "/** Tests for {@link BuildConfigurationValue}. */",
+         "matchingRanges": {
+          "lineNumber": "37",
+          "columnRanges": [
+           {
+            "startIndex": 21,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "37",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 49
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 21,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": "@RunWith(TestParameterInjector.class)",
+         "matchingRanges": {
+          "lineNumber": "38"
+         },
+         "lineNumber": "38",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 31,
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "public final class BuildConfigurationValueTest extends ConfigurationTestCase {",
+         "matchingRanges": {
+          "lineNumber": "39",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "39",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 13,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 47,
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "40"
+         },
+         "lineNumber": "40"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    BuildConfigurationValue config = create(\"--cpu=piii\");",
+         "matchingRanges": {
+          "lineNumber": "47",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "47",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 44,
+            "length": 12
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": "    String outputDirPrefix =",
+         "matchingRanges": {
+          "lineNumber": "48"
+         },
+         "lineNumber": "48"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    BuildConfigurationValue config = create(\"--platform_suffix=test\");",
+         "matchingRanges": {
+          "lineNumber": "65",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "65",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 44,
+            "length": 24
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": "    assertThat(config.getOutputDirectory(RepositoryName.MAIN).getRoot().toString())",
+         "matchingRanges": {
+          "lineNumber": "66"
+         },
+         "lineNumber": "66"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    BuildConfigurationValue twoEnvsConfig =",
+         "matchingRanges": {
+          "lineNumber": "101",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "101",
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": "        create(\"--target_environment=//foo\", \"--target_environment=//bar\");",
+         "matchingRanges": {
+          "lineNumber": "102"
+         },
+         "lineNumber": "102",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 15,
+            "length": 28
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 45,
+            "length": 28
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 40
+    },
+    "resultToken": "CAESBAgBIAE4wIrduM-eiaAIQABIAQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/skyframe/config/BuildConfigurationFunction.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import com.google.devtools.build.lib.analysis.PlatformOptions;",
+         "matchingRanges": {
+          "lineNumber": "20"
+         },
+         "lineNumber": "20",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.analysis.config.BuildConfigurationValue;",
+         "matchingRanges": {
+          "lineNumber": "21",
+          "columnRanges": [
+           {
+            "startIndex": 53,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "21",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 53,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.analysis.config.BuildOptions;",
+         "matchingRanges": {
+          "lineNumber": "22"
+         },
+         "lineNumber": "22",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "/** A builder for {@link BuildConfigurationValue} instances. */",
+         "matchingRanges": {
+          "lineNumber": "43",
+          "columnRanges": [
+           {
+            "startIndex": 25,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "43",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 63
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 25,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": "public final class BuildConfigurationFunction implements SkyFunction {",
+         "matchingRanges": {
+          "lineNumber": "44"
+         },
+         "lineNumber": "44",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 13,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 46,
+            "length": 10
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "      var configurationValue =",
+         "matchingRanges": {
+          "lineNumber": "78"
+         },
+         "lineNumber": "78"
+        },
+        {
+         "lineText": "          BuildConfigurationValue.create(",
+         "matchingRanges": {
+          "lineNumber": "79",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "79",
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": "              targetOptions,",
+         "matchingRanges": {
+          "lineNumber": "80"
+         },
+         "lineNumber": "80"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CAISAggBOPqvh4W_ksO8c0AASAI"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/analysis/config/BuildConfigurationInfo.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": " *",
+         "matchingRanges": {
+          "lineNumber": "23"
+         },
+         "lineNumber": "23",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": " * \u003cp\u003eBy having this interface, we don't need to create a full {@link BuildConfigurationValue}",
+         "matchingRanges": {
+          "lineNumber": "24",
+          "columnRanges": [
+           {
+            "startIndex": 70,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "24",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 94
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 70,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": " * instance when only the four fields defined in this interface is provided.",
+         "matchingRanges": {
+          "lineNumber": "25"
+         },
+         "lineNumber": "25",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 76
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "   * \u003cp\u003eThis is also the name of the configuration's base output directory. See also {@link",
+         "matchingRanges": {
+          "lineNumber": "35"
+         },
+         "lineNumber": "35",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 91
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "   * com.google.devtools.build.lib.analysis.config.BuildConfigurationValue#getOutputDirectoryName}.",
+         "matchingRanges": {
+          "lineNumber": "36",
+          "columnRanges": [
+           {
+            "startIndex": 51,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "36",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 99
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 51,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": "   */",
+         "matchingRanges": {
+          "lineNumber": "37"
+         },
+         "lineNumber": "37",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "   * Returns the {@code BuildEvent} associated with {@link",
+         "matchingRanges": {
+          "lineNumber": "44"
+         },
+         "lineNumber": "44",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 58
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "   * com.google.devtools.build.lib.analysis.config.BuildConfigurationValue}.",
+         "matchingRanges": {
+          "lineNumber": "45",
+          "columnRanges": [
+           {
+            "startIndex": 51,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "45",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 76
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 51,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": "   */",
+         "matchingRanges": {
+          "lineNumber": "46"
+         },
+         "lineNumber": "46",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CAMSAggBOJCI0_e8i4eM1wFAAEgD"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/analysis/config/ConfigurationValueEvent.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "/** Posted when a {@link BuildConfigurationValue} is created. */",
+         "matchingRanges": {
+          "lineNumber": "20",
+          "columnRanges": [
+           {
+            "startIndex": 25,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "20",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 64
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 25,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": "public record ConfigurationValueEvent(BuildConfigurationValue configuration) implements Postable {",
+         "matchingRanges": {
+          "lineNumber": "21",
+          "columnRanges": [
+           {
+            "startIndex": 38,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "21",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 77,
+            "length": 10
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 38,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": "  public ConfigurationValueEvent {",
+         "matchingRanges": {
+          "lineNumber": "22"
+         },
+         "lineNumber": "22",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  public static ConfigurationValueEvent create(BuildConfigurationValue configuration) {",
+         "matchingRanges": {
+          "lineNumber": "26",
+          "columnRanges": [
+           {
+            "startIndex": 47,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "26",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 47,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": "    return new ConfigurationValueEvent(configuration);",
+         "matchingRanges": {
+          "lineNumber": "27"
+         },
+         "lineNumber": "27",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 11,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CAQSAggBOOCyt8CTpITAekAASAQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/analysis/config/BuildConfigurationFunctionTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    BuildConfigurationValue config = getConfiguration(getConfiguredTarget(\"//test:parent\"));",
+         "matchingRanges": {
+          "lineNumber": "798",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "798",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 74,
+            "length": 15
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": "    assertThat(config.isExecConfiguration()).isFalse();",
+         "matchingRanges": {
+          "lineNumber": "799"
+         },
+         "lineNumber": "799"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    BuildConfigurationValue execConfig =",
+         "matchingRanges": {
+          "lineNumber": "802",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "802",
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": "        getConfiguration(",
+         "matchingRanges": {
+          "lineNumber": "803"
+         },
+         "lineNumber": "803"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAUSAggBOJTNu_fpxt6s0wFAAEgF"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/skyframe/config/BuildConfigurationKey.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "/**",
+         "matchingRanges": {
+          "lineNumber": "25"
+         },
+         "lineNumber": "25",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": " * {@link SkyKey} for {@link com.google.devtools.build.lib.analysis.config.BuildConfigurationValue}.",
+         "matchingRanges": {
+          "lineNumber": "26",
+          "columnRanges": [
+           {
+            "startIndex": 75,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "26",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 100
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 75,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": " */",
+         "matchingRanges": {
+          "lineNumber": "27"
+         },
+         "lineNumber": "27",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAYSAggBOPilidWo0bKtfEAASAY"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/actions/BuildConfigurationEvent.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": " * Encapsulation of {@link BuildEvent} info associated with a {@link",
+         "matchingRanges": {
+          "lineNumber": "26"
+         },
+         "lineNumber": "26",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 68
+           }
+          }
+         ]
+        },
+        {
+         "lineText": " * com.google.devtools.build.lib.analysis.config.BuildConfigurationValue}.",
+         "matchingRanges": {
+          "lineNumber": "27",
+          "columnRanges": [
+           {
+            "startIndex": 49,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "27",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 74
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 49,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": " */",
+         "matchingRanges": {
+          "lineNumber": "28"
+         },
+         "lineNumber": "28",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAcSAggBONLssIr0kPGcFUAASAc"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/analysis/config/BuildConfigurationStarlarkTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "/** Tests for {@link BuildConfigurationValue}'s integration with Starlark. */",
+         "matchingRanges": {
+          "lineNumber": "31",
+          "columnRanges": [
+           {
+            "startIndex": 21,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "31",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 77
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 21,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": "@RunWith(JUnit4.class)",
+         "matchingRanges": {
+          "lineNumber": "32"
+         },
+         "lineNumber": "32",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 16,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAgSAggBOL7z8_Dsp5PvAUAASAg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/analysis/ConfigurationMakeVariableContext.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import com.google.devtools.build.lib.analysis.MakeVariableSupplier.TemplateVariableInfoBackedMakeVariableSupplier;",
+         "matchingRanges": {
+          "lineNumber": "20"
+         },
+         "lineNumber": "20",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.analysis.config.BuildConfigurationValue;",
+         "matchingRanges": {
+          "lineNumber": "21",
+          "columnRanges": [
+           {
+            "startIndex": 53,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "21",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 53,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.analysis.stringtemplate.ExpansionException;",
+         "matchingRanges": {
+          "lineNumber": "22"
+         },
+         "lineNumber": "22",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "      Package.Declarations pkgDeclarations,",
+         "matchingRanges": {
+          "lineNumber": "37"
+         },
+         "lineNumber": "37"
+        },
+        {
+         "lineText": "      BuildConfigurationValue configuration,",
+         "matchingRanges": {
+          "lineNumber": "38",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "38",
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": "      ImmutableList\u003cTemplateVariableInfo\u003e ruleTemplateVariableProviders) {",
+         "matchingRanges": {
+          "lineNumber": "39"
+         },
+         "lineNumber": "39"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "      Package.Declarations pkgDeclarations,",
+         "matchingRanges": {
+          "lineNumber": "44"
+         },
+         "lineNumber": "44"
+        },
+        {
+         "lineText": "      BuildConfigurationValue configuration,",
+         "matchingRanges": {
+          "lineNumber": "45",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "45",
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": "      ImmutableList\u003cTemplateVariableInfo\u003e ruleTemplateVariableProviders,",
+         "matchingRanges": {
+          "lineNumber": "46"
+         },
+         "lineNumber": "46"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CAkSAggBOOCD3v3zkrX4lAFAAEgJ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/analysis/TargetAndConfiguration.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import com.google.common.base.Preconditions;",
+         "matchingRanges": {
+          "lineNumber": "16"
+         },
+         "lineNumber": "16",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.analysis.config.BuildConfigurationValue;",
+         "matchingRanges": {
+          "lineNumber": "17",
+          "columnRanges": [
+           {
+            "startIndex": 53,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "17",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 53,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.cmdline.Label;",
+         "matchingRanges": {
+          "lineNumber": "18"
+         },
+         "lineNumber": "18",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  private final Target target;",
+         "matchingRanges": {
+          "lineNumber": "30"
+         },
+         "lineNumber": "30",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  @Nullable private final BuildConfigurationValue configuration;",
+         "matchingRanges": {
+          "lineNumber": "31",
+          "columnRanges": [
+           {
+            "startIndex": 26,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "31",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 20,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 26,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "32"
+         },
+         "lineNumber": "32"
+        },
+        {
+         "lineText": "  public TargetAndConfiguration(Target target, @Nullable BuildConfigurationValue configuration) {",
+         "matchingRanges": {
+          "lineNumber": "33",
+          "columnRanges": [
+           {
+            "startIndex": 57,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "33",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 57,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": "    this.target = Preconditions.checkNotNull(target);",
+         "matchingRanges": {
+          "lineNumber": "34"
+         },
+         "lineNumber": "34",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 4
+    },
+    "resultToken": "CAoSAggBONyw1IWE2pzBXEAASAo"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/analysis/config/output/ConfigurationForOutput.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import com.google.common.collect.Ordering;",
+         "matchingRanges": {
+          "lineNumber": "26"
+         },
+         "lineNumber": "26",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.analysis.config.BuildConfigurationValue;",
+         "matchingRanges": {
+          "lineNumber": "27",
+          "columnRanges": [
+           {
+            "startIndex": 53,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "27",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 53,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.analysis.config.CoreOptions;",
+         "matchingRanges": {
+          "lineNumber": "28"
+         },
+         "lineNumber": "28",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "/**",
+         "matchingRanges": {
+          "lineNumber": "41"
+         },
+         "lineNumber": "41",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": " * Data structure defining a {@link BuildConfigurationValue} for the purpose of returning user",
+         "matchingRanges": {
+          "lineNumber": "42",
+          "columnRanges": [
+           {
+            "startIndex": 36,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "42",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 94
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 36,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": " * output about the configuration.",
+         "matchingRanges": {
+          "lineNumber": "43"
+         },
+         "lineNumber": "43",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 34
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  /** Constructs a {@link ConfigurationForOutput} from the given {@link BuildConfigurationValue}. */",
+         "matchingRanges": {
+          "lineNumber": "138",
+          "columnRanges": [
+           {
+            "startIndex": 72,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "138",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 98
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 72,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": "  public static ConfigurationForOutput getConfigurationForOutput(",
+         "matchingRanges": {
+          "lineNumber": "139"
+         },
+         "lineNumber": "139",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "      BuildConfigurationValue buildConfigurationValue) {",
+         "matchingRanges": {
+          "lineNumber": "140",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 23
+           },
+           {
+            "startIndex": 30,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "140",
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 23
+          },
+          {
+           "startIndex": 30,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": "    ImmutableSortedMap\u003c",
+         "matchingRanges": {
+          "lineNumber": "141"
+         },
+         "lineNumber": "141"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 10
+    },
+    "resultToken": "CAsSAggBOJr_8t3ey4vgVkAASAs"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/analysis/util/ConfigurationTestCase.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import com.google.devtools.build.lib.analysis.ServerDirectories;",
+         "matchingRanges": {
+          "lineNumber": "24"
+         },
+         "lineNumber": "24",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.analysis.config.BuildConfigurationValue;",
+         "matchingRanges": {
+          "lineNumber": "25",
+          "columnRanges": [
+           {
+            "startIndex": 53,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "25",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 53,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.analysis.config.BuildOptions;",
+         "matchingRanges": {
+          "lineNumber": "26"
+         },
+         "lineNumber": "26",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  /**",
+         "matchingRanges": {
+          "lineNumber": "173"
+         },
+         "lineNumber": "173",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "   * Returns a {@link BuildConfigurationValue} with the given non-default options.",
+         "matchingRanges": {
+          "lineNumber": "174",
+          "columnRanges": [
+           {
+            "startIndex": 22,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "174",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 82
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 82
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 22,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": "   *",
+         "matchingRanges": {
+          "lineNumber": "175"
+         },
+         "lineNumber": "175",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "   */",
+         "matchingRanges": {
+          "lineNumber": "177"
+         },
+         "lineNumber": "177",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  protected BuildConfigurationValue createConfiguration(String... args) throws Exception {",
+         "matchingRanges": {
+          "lineNumber": "178",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "178",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 9
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 72,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": "    return createConfiguration(ImmutableMap.of(), args);",
+         "matchingRanges": {
+          "lineNumber": "179"
+         },
+         "lineNumber": "179",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 14
+    },
+    "resultToken": "CAwSAggBOPibv5uOtu78gQFAAEgM"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/analysis/config/transitions/BaselineOptionsValue.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": " *",
+         "matchingRanges": {
+          "lineNumber": "33"
+         },
+         "lineNumber": "33",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": " * \u003cp\u003eWhen constructing the output mnemonic as part of making a {@link BuildConfigurationValue} and",
+         "matchingRanges": {
+          "lineNumber": "34",
+          "columnRanges": [
+           {
+            "startIndex": 71,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "34",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 99
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 71,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": " * the selected naming scheme is to diff against a baseline, this function returns the baseline to",
+         "matchingRanges": {
+          "lineNumber": "35"
+         },
+         "lineNumber": "35",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 98
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CA0SAggBOOT7zr2lq7mWREAASA0"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/rules/cpp/CppConfiguration.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import com.google.common.collect.ImmutableList;",
+         "matchingRanges": {
+          "lineNumber": "17"
+         },
+         "lineNumber": "17",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.analysis.config.BuildConfigurationValue;",
+         "matchingRanges": {
+          "lineNumber": "18",
+          "columnRanges": [
+           {
+            "startIndex": 53,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "18",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 53,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.analysis.config.BuildOptions;",
+         "matchingRanges": {
+          "lineNumber": "19"
+         },
+         "lineNumber": "19",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "/**",
+         "matchingRanges": {
+          "lineNumber": "44"
+         },
+         "lineNumber": "44",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": " * This class represents the C/C++ parts of the {@link BuildConfigurationValue}, including the exec",
+         "matchingRanges": {
+          "lineNumber": "45",
+          "columnRanges": [
+           {
+            "startIndex": 55,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "45",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 99
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 55,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": " * architecture, target architecture, compiler version, and a standard library version.",
+         "matchingRanges": {
+          "lineNumber": "46"
+         },
+         "lineNumber": "46",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 87
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CA4SAggBOJ6Q8YnpxrbZEUAASA4"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/analysis/producers/TargetAndConfigurationProducer.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import com.google.devtools.build.lib.analysis.TransitiveDependencyState;",
+         "matchingRanges": {
+          "lineNumber": "23"
+         },
+         "lineNumber": "23",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.analysis.config.BuildConfigurationValue;",
+         "matchingRanges": {
+          "lineNumber": "24",
+          "columnRanges": [
+           {
+            "startIndex": 53,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "24",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 53,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.analysis.config.InvalidConfigurationException;",
+         "matchingRanges": {
+          "lineNumber": "25"
+         },
+         "lineNumber": "25",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "      sink.acceptTargetAndConfiguration(",
+         "matchingRanges": {
+          "lineNumber": "264"
+         },
+         "lineNumber": "264"
+        },
+        {
+         "lineText": "          new TargetAndConfiguration(target, (BuildConfigurationValue) value),",
+         "matchingRanges": {
+          "lineNumber": "265",
+          "columnRanges": [
+           {
+            "startIndex": 46,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "265",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 46,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": "          preRuleTransitionKey);",
+         "matchingRanges": {
+          "lineNumber": "266"
+         },
+         "lineNumber": "266"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CA8SAggBOPTisfKQj8qf-AFAAEgP"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/packages/ConfigurationFragmentPolicy.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "   * \u003cp\u003e{@link",
+         "matchingRanges": {
+          "lineNumber": "172"
+         },
+         "lineNumber": "172",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 14
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "   * com.google.devtools.build.lib.analysis.config.BuildConfigurationValue#getStarlarkFragmentByName}",
+         "matchingRanges": {
+          "lineNumber": "173",
+          "columnRanges": [
+           {
+            "startIndex": 51,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "173",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 101
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 51,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": "   * can be used to convert this to Java fragment instances.",
+         "matchingRanges": {
+          "lineNumber": "174"
+         },
+         "lineNumber": "174",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 60
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBASAggBOPywrqvjp9muD0AASBA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/skyframe/ConfigurationsForTargetsTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import com.google.devtools.build.lib.analysis.ToolchainCollection;",
+         "matchingRanges": {
+          "lineNumber": "34"
+         },
+         "lineNumber": "34",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.analysis.config.BuildConfigurationValue;",
+         "matchingRanges": {
+          "lineNumber": "35",
+          "columnRanges": [
+           {
+            "startIndex": 53,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "35",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 53,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.analysis.config.CompilationMode;",
+         "matchingRanges": {
+          "lineNumber": "36"
+         },
+         "lineNumber": "36",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": " * Tests {@link ConfiguredTargetFunction}'s logic for determining each target's {@link",
+         "matchingRanges": {
+          "lineNumber": "77"
+         },
+         "lineNumber": "77",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 86
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 86
+           }
+          }
+         ]
+        },
+        {
+         "lineText": " * BuildConfigurationValue}.",
+         "matchingRanges": {
+          "lineNumber": "78",
+          "columnRanges": [
+           {
+            "startIndex": 3,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "78",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 28
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 28
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 3,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": " *",
+         "matchingRanges": {
+          "lineNumber": "79"
+         },
+         "lineNumber": "79",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": " * target's deps are, how their configurations should differ from their parent, and how to",
+         "matchingRanges": {
+          "lineNumber": "82"
+         },
+         "lineNumber": "82",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 90
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 90
+           }
+          }
+         ]
+        },
+        {
+         "lineText": " * instantiate those configurations as tangible {@link BuildConfigurationValue} objects.",
+         "matchingRanges": {
+          "lineNumber": "83",
+          "columnRanges": [
+           {
+            "startIndex": 55,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "83",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 88
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 88
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 55,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": " *",
+         "matchingRanges": {
+          "lineNumber": "84"
+         },
+         "lineNumber": "84",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 7
+    },
+    "resultToken": "CBESAggBOP7Hq-GJ4cXyRkAASBE"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/view/java/JavaConfigurationTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import com.google.devtools.build.lib.analysis.config.BuildConfigurationValue;",
+         "matchingRanges": {
+          "lineNumber": "18",
+          "columnRanges": [
+           {
+            "startIndex": 53,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "18",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 53,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.analysis.util.ConfigurationTestCase;",
+         "matchingRanges": {
+          "lineNumber": "19"
+         },
+         "lineNumber": "19",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "/**",
+         "matchingRanges": {
+          "lineNumber": "26"
+         },
+         "lineNumber": "26",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": " * Tests for the Java-specific parts of {@link BuildConfigurationValue} creation, and the",
+         "matchingRanges": {
+          "lineNumber": "27",
+          "columnRanges": [
+           {
+            "startIndex": 47,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "27",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 89
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 47,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": " * Java-related configuration transitions.",
+         "matchingRanges": {
+          "lineNumber": "28"
+         },
+         "lineNumber": "28",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 42
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    // Default value of --java_launcher: null.",
+         "matchingRanges": {
+          "lineNumber": "35"
+         },
+         "lineNumber": "35",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 42
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    BuildConfigurationValue config = create();",
+         "matchingRanges": {
+          "lineNumber": "36",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "36",
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": "    JavaConfiguration cfg = config.getFragment(JavaConfiguration.class);",
+         "matchingRanges": {
+          "lineNumber": "37"
+         },
+         "lineNumber": "37",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 65,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CBISAggBOJaHh52DwbTxmgFAAEgS"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "site/en/configure/attributes.md",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "$ bazel config 12e23b9a2b534a",
+         "matchingRanges": {
+          "lineNumber": "990"
+         },
+         "lineNumber": "990"
+        },
+        {
+         "lineText": "BuildConfigurationValue 12e23b9a2b534a",
+         "matchingRanges": {
+          "lineNumber": "991",
+          "columnRanges": [
+           {
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "991",
+         "ranges": [
+          {
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": "Fragment com.google.devtools.build.lib.analysis.config.CoreOptions {",
+         "matchingRanges": {
+          "lineNumber": "992"
+         },
+         "lineNumber": "992"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBMSAggBOPbNkbfSu9SDswFAAEgT"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/buildtool/util/BuildIntegrationTestCase.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import com.google.devtools.build.lib.analysis.WorkspaceStatusAction;",
+         "matchingRanges": {
+          "lineNumber": "54"
+         },
+         "lineNumber": "54",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.analysis.config.BuildConfigurationValue;",
+         "matchingRanges": {
+          "lineNumber": "55",
+          "columnRanges": [
+           {
+            "startIndex": 53,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "55",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 53,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.analysis.config.InvalidConfigurationException;",
+         "matchingRanges": {
+          "lineNumber": "56"
+         },
+         "lineNumber": "56",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  protected ConfiguredTarget getConfiguredTarget(",
+         "matchingRanges": {
+          "lineNumber": "838"
+         },
+         "lineNumber": "838",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 9
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "      ExtendedEventHandler eventHandler, Label label, BuildConfigurationValue config)",
+         "matchingRanges": {
+          "lineNumber": "839",
+          "columnRanges": [
+           {
+            "startIndex": 54,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "839",
+         "ranges": [
+          {
+           "startIndex": 54,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": "      throws TransitionException, InvalidConfigurationException, InterruptedException {",
+         "matchingRanges": {
+          "lineNumber": "840"
+         },
+         "lineNumber": "840",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  @Nullable // Null if no build has been run.",
+         "matchingRanges": {
+          "lineNumber": "859"
+         },
+         "lineNumber": "859",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 12,
+            "length": 33
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  public BuildConfigurationValue getTargetConfigurationFromLastBuildResult() {",
+         "matchingRanges": {
+          "lineNumber": "860",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "860",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": "    return runtimeWrapper.getConfiguration();",
+         "matchingRanges": {
+          "lineNumber": "861"
+         },
+         "lineNumber": "861",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 8
+    },
+    "resultToken": "CBQSAggBOPjQ382rjvHM1gFAAEgU"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/skyframe/ConfiguredTargetFunction.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import static com.google.common.collect.ImmutableList.toImmutableList;",
+         "matchingRanges": {
+          "lineNumber": "16"
+         },
+         "lineNumber": "16",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "import static com.google.devtools.build.lib.analysis.config.BuildConfigurationValue.configurationIdMessage;",
+         "matchingRanges": {
+          "lineNumber": "17",
+          "columnRanges": [
+           {
+            "startIndex": 60,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "17",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 60,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": "import static com.google.devtools.build.lib.buildeventstream.BuildEventIdUtil.configurationIdMessage;",
+         "matchingRanges": {
+          "lineNumber": "18"
+         },
+         "lineNumber": "18",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "import com.google.devtools.build.lib.analysis.ToolchainCollection;",
+         "matchingRanges": {
+          "lineNumber": "39"
+         },
+         "lineNumber": "39",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.analysis.config.BuildConfigurationValue;",
+         "matchingRanges": {
+          "lineNumber": "40",
+          "columnRanges": [
+           {
+            "startIndex": 53,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "40",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 53,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.analysis.config.ConfigConditions;",
+         "matchingRanges": {
+          "lineNumber": "41"
+         },
+         "lineNumber": "41",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "      // --run_under build option doesn't pass to the exec config.",
+         "matchingRanges": {
+          "lineNumber": "332"
+         },
+         "lineNumber": "332",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 6,
+            "length": 60
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "      BuildConfigurationValue config = prereqs.getTargetAndConfiguration().getConfiguration();",
+         "matchingRanges": {
+          "lineNumber": "333",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "333",
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": "      if (config != null \u0026\u0026 config.getRunUnder() instanceof LabelRunUnder runUnder) {",
+         "matchingRanges": {
+          "lineNumber": "334"
+         },
+         "lineNumber": "334",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 49,
+            "length": 10
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 4
+    },
+    "resultToken": "CBUSAggBOKr4xKjwhvqFN0AASBU"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/analysis/actions/ActionConstructionContext.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import com.google.devtools.build.lib.analysis.RuleErrorConsumer;",
+         "matchingRanges": {
+          "lineNumber": "23"
+         },
+         "lineNumber": "23",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.analysis.config.BuildConfigurationValue;",
+         "matchingRanges": {
+          "lineNumber": "24",
+          "columnRanges": [
+           {
+            "startIndex": 53,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "24",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 53,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.analysis.platform.PlatformInfo;",
+         "matchingRanges": {
+          "lineNumber": "25"
+         },
+         "lineNumber": "25",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  /** Returns the {@link BuildConfigurationValue} for which the given rule is analyzed. */",
+         "matchingRanges": {
+          "lineNumber": "58",
+          "columnRanges": [
+           {
+            "startIndex": 25,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "58",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 88
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 25,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": "  BuildConfigurationValue getConfiguration();",
+         "matchingRanges": {
+          "lineNumber": "59",
+          "columnRanges": [
+           {
+            "startIndex": 2,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "59",
+         "ranges": [
+          {
+           "startIndex": 2,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "60"
+         },
+         "lineNumber": "60"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CBYSAggBOJbHy8fK8OOKWEAASBY"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "site/en/docs/configurable-attributes.md",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "$ bazel config 12e23b9a2b534a",
+         "matchingRanges": {
+          "lineNumber": "994"
+         },
+         "lineNumber": "994"
+        },
+        {
+         "lineText": "BuildConfigurationValue 12e23b9a2b534a",
+         "matchingRanges": {
+          "lineNumber": "995",
+          "columnRanges": [
+           {
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "995",
+         "ranges": [
+          {
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": "Fragment com.google.devtools.build.lib.analysis.config.CoreOptions {",
+         "matchingRanges": {
+          "lineNumber": "996"
+         },
+         "lineNumber": "996"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBcSAggBOOqlsvi976a8gwFAAEgX"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/rules/config/ConfigSetting.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import com.google.devtools.build.lib.analysis.TransitiveInfoCollection;",
+         "matchingRanges": {
+          "lineNumber": "48"
+         },
+         "lineNumber": "48",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.analysis.config.BuildConfigurationValue;",
+         "matchingRanges": {
+          "lineNumber": "49",
+          "columnRanges": [
+           {
+            "startIndex": 53,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "49",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 53,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.analysis.config.BuildOptionDetails;",
+         "matchingRanges": {
+          "lineNumber": "50"
+         },
+         "lineNumber": "50",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "      AttributeMap attributes,",
+         "matchingRanges": {
+          "lineNumber": "268"
+         },
+         "lineNumber": "268"
+        },
+        {
+         "lineText": "      BuildConfigurationValue configuration) {",
+         "matchingRanges": {
+          "lineNumber": "269",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "269",
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": "    // values",
+         "matchingRanges": {
+          "lineNumber": "270"
+         },
+         "lineNumber": "270",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 9
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CBgSAggBOKCk0Me4jPLO7QFAAEgY"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/analysis/config/ExecutionTransitionFactoryTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "        \"--experimental_override_name_platform_in_output_dir=//platforms:mock_platform=mock_platform_path_string\");",
+         "matchingRanges": {
+          "lineNumber": "322"
+         },
+         "lineNumber": "322",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 105
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    BuildConfigurationValue execConfig =",
+         "matchingRanges": {
+          "lineNumber": "323",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "323",
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": "        getConfiguration(",
+         "matchingRanges": {
+          "lineNumber": "324"
+         },
+         "lineNumber": "324"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBkSAggBOKLy0-KGk6_w2AFAAEgZ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/actions/ActionExecutionContext.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import com.google.devtools.build.lib.analysis.SymlinkEntry;",
+         "matchingRanges": {
+          "lineNumber": "23"
+         },
+         "lineNumber": "23",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.analysis.config.BuildConfigurationValue.RunfileSymlinksMode;",
+         "matchingRanges": {
+          "lineNumber": "24",
+          "columnRanges": [
+           {
+            "startIndex": 53,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "24",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 53,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.bugreport.BugReporter;",
+         "matchingRanges": {
+          "lineNumber": "25"
+         },
+         "lineNumber": "25",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBoSAggBONyVn4nUkcvZB0AASBo"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/configure/attributes.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "$ bazel config 12e23b9a2b534a",
+         "matchingRanges": {
+          "lineNumber": "987"
+         },
+         "lineNumber": "987"
+        },
+        {
+         "lineText": "BuildConfigurationValue 12e23b9a2b534a",
+         "matchingRanges": {
+          "lineNumber": "988",
+          "columnRanges": [
+           {
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "988",
+         "ranges": [
+          {
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": "Fragment com.google.devtools.build.lib.analysis.config.CoreOptions {",
+         "matchingRanges": {
+          "lineNumber": "989"
+         },
+         "lineNumber": "989"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBsSAggBONj_0efFmOKu_QFAAEgb"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/analysis/config/CoreOptions.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "/**",
+         "matchingRanges": {
+          "lineNumber": "48"
+         },
+         "lineNumber": "48",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": " * Core options affecting a {@link BuildConfigurationValue} that don't belong in domain-specific",
+         "matchingRanges": {
+          "lineNumber": "49",
+          "columnRanges": [
+           {
+            "startIndex": 35,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "49",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 96
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 96
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 35,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": " * {@link FragmentOptions}. All options defined here should be universal in that they affect",
+         "matchingRanges": {
+          "lineNumber": "50"
+         },
+         "lineNumber": "50",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 92
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 92
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": " * affect the \u003ci\u003emechanism\u003c/i\u003e of view construction, even if they don't affect the value of the",
+         "matchingRanges": {
+          "lineNumber": "55"
+         },
+         "lineNumber": "55",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 95
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 95
+           }
+          }
+         ]
+        },
+        {
+         "lineText": " * BuildConfigurationValue instances.)",
+         "matchingRanges": {
+          "lineNumber": "56",
+          "columnRanges": [
+           {
+            "startIndex": 3,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "56",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 38
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 38
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 3,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": " *",
+         "matchingRanges": {
+          "lineNumber": "57"
+         },
+         "lineNumber": "57",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CBwSAggBOPDYv6ql25etpQFAAEgc"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/query2/cquery/ConfiguredTargetQuerySemanticsTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import com.google.common.collect.Iterables;",
+         "matchingRanges": {
+          "lineNumber": "27"
+         },
+         "lineNumber": "27",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.analysis.config.BuildConfigurationValue;",
+         "matchingRanges": {
+          "lineNumber": "28",
+          "columnRanges": [
+           {
+            "startIndex": 53,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "28",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 53,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.analysis.config.BuildOptions;",
+         "matchingRanges": {
+          "lineNumber": "29"
+         },
+         "lineNumber": "29",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    BuildConfigurationValue configuration =",
+         "matchingRanges": {
+          "lineNumber": "403",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "403",
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": "        getConfiguration(Iterables.getOnlyElement(eval(\"config(//test:dep, target)\")));",
+         "matchingRanges": {
+          "lineNumber": "404"
+         },
+         "lineNumber": "404",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 55,
+            "length": 28
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    int myDepIndex = stableOrderList.get(0).getLabel().toString().equals(\"//test:mydep\") ? 0 : 1;",
+         "matchingRanges": {
+          "lineNumber": "458"
+         },
+         "lineNumber": "458",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 41,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 73,
+            "length": 14
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 91,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 95,
+            "length": 1
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    BuildConfigurationValue myDepConfig = getConfiguration(stableOrderList.get(myDepIndex));",
+         "matchingRanges": {
+          "lineNumber": "459",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "459",
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": "    BuildConfigurationValue stringFlagConfig =",
+         "matchingRanges": {
+          "lineNumber": "460",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "460",
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": "        getConfiguration(stableOrderList.get(1 - myDepIndex));",
+         "matchingRanges": {
+          "lineNumber": "461"
+         },
+         "lineNumber": "461",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 45,
+            "length": 1
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 5
+    },
+    "resultToken": "CB0SAggBOLKo3MOdiOj9eUAASB0"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/skyframe/ConfiguredTargetAndData.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import com.google.devtools.build.lib.analysis.ConfiguredTargetValue;",
+         "matchingRanges": {
+          "lineNumber": "24"
+         },
+         "lineNumber": "24",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.analysis.config.BuildConfigurationValue;",
+         "matchingRanges": {
+          "lineNumber": "25",
+          "columnRanges": [
+           {
+            "startIndex": 53,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "25",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 53,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.cmdline.Label;",
+         "matchingRanges": {
+          "lineNumber": "26"
+         },
+         "lineNumber": "26",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": " * A container class for a {@link ConfiguredTarget} and associated data, {@link Target}, {@link",
+         "matchingRanges": {
+          "lineNumber": "46"
+         },
+         "lineNumber": "46",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 95
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 95
+           }
+          }
+         ]
+        },
+        {
+         "lineText": " * BuildConfigurationValue}, and transition keys. In the future, {@link ConfiguredTarget} objects",
+         "matchingRanges": {
+          "lineNumber": "47",
+          "columnRanges": [
+           {
+            "startIndex": 3,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "47",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 97
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 97
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 3,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": " * will no longer contain their associated {@link BuildConfigurationValue}. Consumers that need the",
+         "matchingRanges": {
+          "lineNumber": "48",
+          "columnRanges": [
+           {
+            "startIndex": 50,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "48",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 99
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 99
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 50,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": " * {@link Target} or {@link BuildConfigurationValue} must therefore have access to one of these",
+         "matchingRanges": {
+          "lineNumber": "49",
+          "columnRanges": [
+           {
+            "startIndex": 28,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "49",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 95
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 95
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 28,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": " * objects.",
+         "matchingRanges": {
+          "lineNumber": "50"
+         },
+         "lineNumber": "50",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 11
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 11
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 14
+    },
+    "resultToken": "CB4SAggBOLzO-Na-s8OW7gFAAEge"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/query2/cquery/ConfiguredTargetQueryEnvironment.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import com.google.devtools.build.lib.analysis.TopLevelArtifactContext;",
+         "matchingRanges": {
+          "lineNumber": "28"
+         },
+         "lineNumber": "28",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.analysis.config.BuildConfigurationValue;",
+         "matchingRanges": {
+          "lineNumber": "29",
+          "columnRanges": [
+           {
+            "startIndex": 53,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "29",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 53,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.analysis.configuredtargets.OutputFileConfiguredTarget;",
+         "matchingRanges": {
+          "lineNumber": "30"
+         },
+         "lineNumber": "30",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "      TopLevelConfigurations topLevelConfigurations,",
+         "matchingRanges": {
+          "lineNumber": "105"
+         },
+         "lineNumber": "105"
+        },
+        {
+         "lineText": "      ImmutableMap\u003cString, BuildConfigurationValue\u003e transitiveConfigurations,",
+         "matchingRanges": {
+          "lineNumber": "106",
+          "columnRanges": [
+           {
+            "startIndex": 27,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "106",
+         "ranges": [
+          {
+           "startIndex": 27,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": "      ImmutableMap\u003cAspectKey, ConfiguredAspect\u003e topLevelAspects,",
+         "matchingRanges": {
+          "lineNumber": "107"
+         },
+         "lineNumber": "107"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "      TopLevelConfigurations topLevelConfigurations,",
+         "matchingRanges": {
+          "lineNumber": "135"
+         },
+         "lineNumber": "135"
+        },
+        {
+         "lineText": "      ImmutableMap\u003cString, BuildConfigurationValue\u003e transitiveConfigurations,",
+         "matchingRanges": {
+          "lineNumber": "136",
+          "columnRanges": [
+           {
+            "startIndex": 27,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "136",
+         "ranges": [
+          {
+           "startIndex": 27,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": "      ImmutableMap\u003cAspectKey, ConfiguredAspect\u003e topLevelAspects,",
+         "matchingRanges": {
+          "lineNumber": "137"
+         },
+         "lineNumber": "137"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 10
+    },
+    "resultToken": "CB8SAggBOMjDwPSMrNKrmAFAAEgf"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/analysis/config/TopLevelConfigRequestedEvent.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "/**",
+         "matchingRanges": {
+          "lineNumber": "20"
+         },
+         "lineNumber": "20",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": " * A Bazel invocation requested a top-level {@link BuildConfigurationValue}.",
+         "matchingRanges": {
+          "lineNumber": "21",
+          "columnRanges": [
+           {
+            "startIndex": 51,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "21",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 76
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 51,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": " *",
+         "matchingRanges": {
+          "lineNumber": "22"
+         },
+         "lineNumber": "22",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "public record TopLevelConfigRequestedEvent(",
+         "matchingRanges": {
+          "lineNumber": "27"
+         },
+         "lineNumber": "27",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    BuildConfigurationValue topLevelConfig, BuildOptions testTrimmedTopLevelConfiguration)",
+         "matchingRanges": {
+          "lineNumber": "28",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "28",
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": "    implements Postable {",
+         "matchingRanges": {
+          "lineNumber": "29"
+         },
+         "lineNumber": "29",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 10
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CCASAggBOJjr4MrXpb6_0wFAAEgg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/query2/cquery/ConfiguredTargetQueryTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import com.google.common.collect.ImmutableList;",
+         "matchingRanges": {
+          "lineNumber": "18"
+         },
+         "lineNumber": "18",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.analysis.config.BuildConfigurationValue;",
+         "matchingRanges": {
+          "lineNumber": "19",
+          "columnRanges": [
+           {
+            "startIndex": 53,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "19",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 53,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.query2.common.CqueryNode;",
+         "matchingRanges": {
+          "lineNumber": "20"
+         },
+         "lineNumber": "20",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  @Override",
+         "matchingRanges": {
+          "lineNumber": "50"
+         },
+         "lineNumber": "50"
+        },
+        {
+         "lineText": "  protected final BuildConfigurationValue getConfiguration(CqueryNode kct) {",
+         "matchingRanges": {
+          "lineNumber": "51",
+          "columnRanges": [
+           {
+            "startIndex": 18,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "51",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 9
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 18,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": "    return getHelper()",
+         "matchingRanges": {
+          "lineNumber": "52"
+         },
+         "lineNumber": "52",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CCESAggBONqajIrL_7y3yQFAAEgh"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/analysis/ConfiguredTargetTransitivePackagesTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import com.google.common.collect.Sets;",
+         "matchingRanges": {
+          "lineNumber": "21"
+         },
+         "lineNumber": "21",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.analysis.config.BuildConfigurationValue;",
+         "matchingRanges": {
+          "lineNumber": "22",
+          "columnRanges": [
+           {
+            "startIndex": 53,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "22",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 53,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.analysis.util.AnalysisTestCase;",
+         "matchingRanges": {
+          "lineNumber": "23"
+         },
+         "lineNumber": "23",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  private void assertTransitiveClosureOfTargetContainsPackages(",
+         "matchingRanges": {
+          "lineNumber": "51"
+         },
+         "lineNumber": "51",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "      String target, BuildConfigurationValue config, String... packages) throws Exception {",
+         "matchingRanges": {
+          "lineNumber": "52",
+          "columnRanges": [
+           {
+            "startIndex": 21,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "52",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 73,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 21,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": "    ConfiguredTargetValue ctValue =",
+         "matchingRanges": {
+          "lineNumber": "53"
+         },
+         "lineNumber": "53"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    ConfiguredTarget target = Iterables.getOnlyElement(update(\"//a:a\").getTargetsToBuild());",
+         "matchingRanges": {
+          "lineNumber": "70"
+         },
+         "lineNumber": "70",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 62,
+            "length": 7
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    BuildConfigurationValue config = getConfiguration(target);",
+         "matchingRanges": {
+          "lineNumber": "71",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "71",
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "72"
+         },
+         "lineNumber": "72"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 5
+    },
+    "resultToken": "CCISAggBOIbqzIiu2JWiX0AASCI"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/query2/cquery/ConfiguredTargetQueryHelper.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import com.google.devtools.build.lib.analysis.ConfiguredAspect;",
+         "matchingRanges": {
+          "lineNumber": "18"
+         },
+         "lineNumber": "18",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.analysis.config.BuildConfigurationValue;",
+         "matchingRanges": {
+          "lineNumber": "19",
+          "columnRanges": [
+           {
+            "startIndex": 53,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "19",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 53,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.analysis.util.AnalysisTestCase;",
+         "matchingRanges": {
+          "lineNumber": "20"
+         },
+         "lineNumber": "20",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "      TopLevelConfigurations topLevelConfigurations,",
+         "matchingRanges": {
+          "lineNumber": "41"
+         },
+         "lineNumber": "41"
+        },
+        {
+         "lineText": "      ImmutableMap\u003cString, BuildConfigurationValue\u003e transitiveConfigurations,",
+         "matchingRanges": {
+          "lineNumber": "42",
+          "columnRanges": [
+           {
+            "startIndex": 27,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "42",
+         "ranges": [
+          {
+           "startIndex": 27,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": "      ImmutableMap\u003cAspectKeyCreator.AspectKey, ConfiguredAspect\u003e topLevelAspects) {",
+         "matchingRanges": {
+          "lineNumber": "43"
+         },
+         "lineNumber": "43"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CCMSAggBOLaP57i-tv2dSUAASCM"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/analysis/ConfiguredTarget.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": " * {@link com.google.devtools.build.lib.packages.Target} and {@link",
+         "matchingRanges": {
+          "lineNumber": "30"
+         },
+         "lineNumber": "30",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 67
+           }
+          }
+         ]
+        },
+        {
+         "lineText": " * com.google.devtools.build.lib.analysis.config.BuildConfigurationValue} objects it was created",
+         "matchingRanges": {
+          "lineNumber": "31",
+          "columnRanges": [
+           {
+            "startIndex": 49,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "31",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 96
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 49,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": " * from.",
+         "matchingRanges": {
+          "lineNumber": "32"
+         },
+         "lineNumber": "32",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 8
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "   * Returns the {@link BuildConfigurationKey} naming the {@link",
+         "matchingRanges": {
+          "lineNumber": "63"
+         },
+         "lineNumber": "63",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 64
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "   * com.google.devtools.build.lib.analysis.config.BuildConfigurationValue} for which this",
+         "matchingRanges": {
+          "lineNumber": "64",
+          "columnRanges": [
+           {
+            "startIndex": 51,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "64",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 90
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 51,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": "   * configured target is defined. Configuration is defined for all configured targets with",
+         "matchingRanges": {
+          "lineNumber": "65"
+         },
+         "lineNumber": "65",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 91
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CCQSAggBOM6N0YnRj8b49AFAAEgk"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/runtime/BuildEventStreamerTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import com.google.devtools.build.lib.analysis.ServerDirectories;",
+         "matchingRanges": {
+          "lineNumber": "47"
+         },
+         "lineNumber": "47",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.analysis.config.BuildConfigurationValue;",
+         "matchingRanges": {
+          "lineNumber": "48",
+          "columnRanges": [
+           {
+            "startIndex": 53,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "48",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 53,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.analysis.config.BuildOptions;",
+         "matchingRanges": {
+          "lineNumber": "49"
+         },
+         "lineNumber": "49",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "            testId(\"Initial\"), ImmutableSet.of(ProgressEvent.INITIAL_PROGRESS_UPDATE));",
+         "matchingRanges": {
+          "lineNumber": "975"
+         },
+         "lineNumber": "975",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 19,
+            "length": 9
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    BuildConfigurationValue configuration = makeTestingBuildConfigurationValue();",
+         "matchingRanges": {
+          "lineNumber": "976",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 23
+           },
+           {
+            "startIndex": 55,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "976",
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 23
+          },
+          {
+           "startIndex": 55,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": "    BuildEvent firstWithConfiguration =",
+         "matchingRanges": {
+          "lineNumber": "977"
+         },
+         "lineNumber": "977"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  private BuildConfigurationValue makeTestingBuildConfigurationValue()",
+         "matchingRanges": {
+          "lineNumber": "1975",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 23
+           },
+           {
+            "startIndex": 45,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "1975",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 23
+          },
+          {
+           "startIndex": 45,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": "      throws InvalidConfigurationException, OptionsParsingException {",
+         "matchingRanges": {
+          "lineNumber": "1976"
+         },
+         "lineNumber": "1976",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    return BuildConfigurationValue.createForTesting(",
+         "matchingRanges": {
+          "lineNumber": "1977",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "1977",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": "        BuildOptions.of(ImmutableList.of(CoreOptions.class)),",
+         "matchingRanges": {
+          "lineNumber": "1978"
+         },
+         "lineNumber": "1978",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 53,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 6
+    },
+    "resultToken": "CCUSBAgBIAE4_v_T3MqBlbV4QABIJQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/analysis/config/SymlinkDefinition.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "      BuildRequestOptions buildRequestOptions,",
+         "matchingRanges": {
+          "lineNumber": "50"
+         },
+         "lineNumber": "50"
+        },
+        {
+         "lineText": "      Set\u003cBuildConfigurationValue\u003e targetConfigs,",
+         "matchingRanges": {
+          "lineNumber": "51",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "51",
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": "      RepositoryName repositoryName,",
+         "matchingRanges": {
+          "lineNumber": "52"
+         },
+         "lineNumber": "52"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CCYSAggBOOLhqPjCv7ShqAFAAEgm"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/skyframe/ConfiguredTargetKey.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import com.google.devtools.build.lib.actions.ActionLookupKey;",
+         "matchingRanges": {
+          "lineNumber": "24"
+         },
+         "lineNumber": "24",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.analysis.config.BuildConfigurationValue;",
+         "matchingRanges": {
+          "lineNumber": "25",
+          "columnRanges": [
+           {
+            "startIndex": 53,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "25",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 53,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.cmdline.Label;",
+         "matchingRanges": {
+          "lineNumber": "26"
+         },
+         "lineNumber": "26",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "/**",
+         "matchingRanges": {
+          "lineNumber": "44"
+         },
+         "lineNumber": "44",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": " * In simple form, a ({@link Label}, {@link BuildConfigurationValue}) pair used to trigger immediate",
+         "matchingRanges": {
+          "lineNumber": "45",
+          "columnRanges": [
+           {
+            "startIndex": 44,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "45",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 100
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 100
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 100
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 44,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": " * dependency resolution and the rule analysis.",
+         "matchingRanges": {
+          "lineNumber": "46"
+         },
+         "lineNumber": "46",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 47
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 47
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 47
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": " *",
+         "matchingRanges": {
+          "lineNumber": "50"
+         },
+         "lineNumber": "50",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": " * \u003cp\u003eA build should not request keys with equal ({@link Label}, {@link BuildConfigurationValue})",
+         "matchingRanges": {
+          "lineNumber": "51",
+          "columnRanges": [
+           {
+            "startIndex": 72,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "51",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 97
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 97
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 97
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 72,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": " * pairs but different execution platform override {@link Label} if the invoked rule will register",
+         "matchingRanges": {
+          "lineNumber": "52"
+         },
+         "lineNumber": "52",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 98
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 98
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 98
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 6
+    },
+    "resultToken": "CCcSAggBOPjwlYf155afhwFAAEgn"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/docs/configurable-attributes.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "$ bazel config 12e23b9a2b534a",
+         "matchingRanges": {
+          "lineNumber": "991"
+         },
+         "lineNumber": "991"
+        },
+        {
+         "lineText": "BuildConfigurationValue 12e23b9a2b534a",
+         "matchingRanges": {
+          "lineNumber": "992",
+          "columnRanges": [
+           {
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "992",
+         "ranges": [
+          {
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": "Fragment com.google.devtools.build.lib.analysis.config.CoreOptions {",
+         "matchingRanges": {
+          "lineNumber": "993"
+         },
+         "lineNumber": "993"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CCgSAggBOPi7qaW7wpulQ0AASCg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/rules/config/ConfigRuleClasses.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import com.google.devtools.build.lib.analysis.RuleDefinitionEnvironment;",
+         "matchingRanges": {
+          "lineNumber": "28"
+         },
+         "lineNumber": "28",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.analysis.config.BuildConfigurationValue;",
+         "matchingRanges": {
+          "lineNumber": "29",
+          "columnRanges": [
+           {
+            "startIndex": 53,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "29",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 53,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.analysis.config.CoreOptions;",
+         "matchingRanges": {
+          "lineNumber": "30"
+         },
+         "lineNumber": "30",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "        LabelListLateBoundDefault.fromTargetConfiguration(",
+         "matchingRanges": {
+          "lineNumber": "171"
+         },
+         "lineNumber": "171"
+        },
+        {
+         "lineText": "            BuildConfigurationValue.class,",
+         "matchingRanges": {
+          "lineNumber": "172",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "172",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 36,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": "            (rule, attributes, configuration) -\u003e {",
+         "matchingRanges": {
+          "lineNumber": "173"
+         },
+         "lineNumber": "173"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CCkSAggBONTmvp2anpnZ5AFAAEgp"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/buildtool/ConfigSymlink.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import com.google.devtools.build.lib.actions.ArtifactRoot;",
+         "matchingRanges": {
+          "lineNumber": "20"
+         },
+         "lineNumber": "20",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.analysis.config.BuildConfigurationValue;",
+         "matchingRanges": {
+          "lineNumber": "21",
+          "columnRanges": [
+           {
+            "startIndex": 53,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "21",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 53,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.analysis.config.SymlinkDefinition;",
+         "matchingRanges": {
+          "lineNumber": "22"
+         },
+         "lineNumber": "22",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  interface ConfigPathGetter {",
+         "matchingRanges": {
+          "lineNumber": "30"
+         },
+         "lineNumber": "30",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 9
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    ArtifactRoot apply(BuildConfigurationValue configuration, RepositoryName repositoryName);",
+         "matchingRanges": {
+          "lineNumber": "31",
+          "columnRanges": [
+           {
+            "startIndex": 23,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "31",
+         "ranges": [
+          {
+           "startIndex": 23,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": "  }",
+         "matchingRanges": {
+          "lineNumber": "32"
+         },
+         "lineNumber": "32"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "      BuildRequestOptions buildRequestOptions,",
+         "matchingRanges": {
+          "lineNumber": "49"
+         },
+         "lineNumber": "49"
+        },
+        {
+         "lineText": "      Set\u003cBuildConfigurationValue\u003e targetConfigs,",
+         "matchingRanges": {
+          "lineNumber": "50",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "50",
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": "      RepositoryName repositoryName,",
+         "matchingRanges": {
+          "lineNumber": "51"
+         },
+         "lineNumber": "51"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CCoSAggBOKi5k629xJXP0QFAAEgq"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/analysis/AspectConfiguredEvent.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import static com.google.devtools.build.lib.analysis.config.BuildConfigurationValue.buildEvent;",
+         "matchingRanges": {
+          "lineNumber": "16",
+          "columnRanges": [
+           {
+            "startIndex": 60,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "16",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 60,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": "import static com.google.devtools.build.lib.analysis.config.BuildConfigurationValue.configurationId;",
+         "matchingRanges": {
+          "lineNumber": "17",
+          "columnRanges": [
+           {
+            "startIndex": 60,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "17",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 60,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "18"
+         },
+         "lineNumber": "18"
+        },
+        {
+         "lineText": "import com.google.common.collect.ImmutableList;",
+         "matchingRanges": {
+          "lineNumber": "19"
+         },
+         "lineNumber": "19",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.analysis.config.BuildConfigurationValue;",
+         "matchingRanges": {
+          "lineNumber": "20",
+          "columnRanges": [
+           {
+            "startIndex": 53,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "20",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 53,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.buildeventstream.BuildEvent;",
+         "matchingRanges": {
+          "lineNumber": "21"
+         },
+         "lineNumber": "21",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  private final String aspectDescription;",
+         "matchingRanges": {
+          "lineNumber": "35"
+         },
+         "lineNumber": "35",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  @Nullable private final BuildConfigurationValue configuration;",
+         "matchingRanges": {
+          "lineNumber": "36",
+          "columnRanges": [
+           {
+            "startIndex": 26,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "36",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 20,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 26,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "37"
+         },
+         "lineNumber": "37"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 5
+    },
+    "resultToken": "CCsSAggBOOKSgJSj4OqKVUAASCs"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/analysis/TargetConfiguredEvent.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import com.google.common.flogger.GoogleLogger;",
+         "matchingRanges": {
+          "lineNumber": "17"
+         },
+         "lineNumber": "17",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.analysis.config.BuildConfigurationValue;",
+         "matchingRanges": {
+          "lineNumber": "18",
+          "columnRanges": [
+           {
+            "startIndex": 53,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "18",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 53,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.buildeventstream.BuildEvent;",
+         "matchingRanges": {
+          "lineNumber": "19"
+         },
+         "lineNumber": "19",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  private final Target target;",
+         "matchingRanges": {
+          "lineNumber": "38"
+         },
+         "lineNumber": "38",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  @Nullable private final BuildConfigurationValue configuration;",
+         "matchingRanges": {
+          "lineNumber": "39",
+          "columnRanges": [
+           {
+            "startIndex": 26,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "39",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 20,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 26,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": "  @Nullable private final Label actual;",
+         "matchingRanges": {
+          "lineNumber": "40"
+         },
+         "lineNumber": "40",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 20,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  public TargetConfiguredEvent(",
+         "matchingRanges": {
+          "lineNumber": "42"
+         },
+         "lineNumber": "42",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "      Target target, @Nullable BuildConfigurationValue configuration, @Nullable Label actual) {",
+         "matchingRanges": {
+          "lineNumber": "43",
+          "columnRanges": [
+           {
+            "startIndex": 31,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "43",
+         "ranges": [
+          {
+           "startIndex": 31,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": "    this.target = target;",
+         "matchingRanges": {
+          "lineNumber": "44"
+         },
+         "lineNumber": "44",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 5
+    },
+    "resultToken": "CCwSAggBOLyHpKaHxf_O-QFAAEgs"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/rules/cpp/CppCompileActionBuilder.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import com.google.devtools.build.lib.analysis.actions.ActionConstructionContext;",
+         "matchingRanges": {
+          "lineNumber": "25"
+         },
+         "lineNumber": "25",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.analysis.config.BuildConfigurationValue;",
+         "matchingRanges": {
+          "lineNumber": "26",
+          "columnRanges": [
+           {
+            "startIndex": 53,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "26",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 53,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.cmdline.Label;",
+         "matchingRanges": {
+          "lineNumber": "27"
+         },
+         "lineNumber": "27",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  private boolean shareable;",
+         "matchingRanges": {
+          "lineNumber": "48"
+         },
+         "lineNumber": "48",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  private final BuildConfigurationValue configuration;",
+         "matchingRanges": {
+          "lineNumber": "49",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "49",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": "  private CcToolchainFeatures.FeatureConfiguration featureConfiguration;",
+         "matchingRanges": {
+          "lineNumber": "50"
+         },
+         "lineNumber": "50",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  public CppCompileActionBuilder(",
+         "matchingRanges": {
+          "lineNumber": "85"
+         },
+         "lineNumber": "85",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "      ActionOwner owner, CcToolchainProvider ccToolchain, BuildConfigurationValue configuration) {",
+         "matchingRanges": {
+          "lineNumber": "86",
+          "columnRanges": [
+           {
+            "startIndex": 58,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "86",
+         "ranges": [
+          {
+           "startIndex": 58,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "87"
+         },
+         "lineNumber": "87"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 4
+    },
+    "resultToken": "CC0SAggBOJTe_Nv41qyzlwFAAEgt"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/analysis/ConfiguredTargetFactory.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import com.google.devtools.build.lib.analysis.ExecGroupCollection.InvalidExecGroupException;",
+         "matchingRanges": {
+          "lineNumber": "33"
+         },
+         "lineNumber": "33",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.analysis.config.BuildConfigurationValue;",
+         "matchingRanges": {
+          "lineNumber": "34",
+          "columnRanges": [
+           {
+            "startIndex": 53,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "34",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 53,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.analysis.config.ConfigConditions;",
+         "matchingRanges": {
+          "lineNumber": "35"
+         },
+         "lineNumber": "35",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "      Target target,",
+         "matchingRanges": {
+          "lineNumber": "223"
+         },
+         "lineNumber": "223"
+        },
+        {
+         "lineText": "      BuildConfigurationValue config,",
+         "matchingRanges": {
+          "lineNumber": "224",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "224",
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": "      ConfiguredTargetKey configuredTargetKey,",
+         "matchingRanges": {
+          "lineNumber": "225"
+         },
+         "lineNumber": "225"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "      Rule rule,",
+         "matchingRanges": {
+          "lineNumber": "363"
+         },
+         "lineNumber": "363"
+        },
+        {
+         "lineText": "      BuildConfigurationValue configuration,",
+         "matchingRanges": {
+          "lineNumber": "364",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "364",
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": "      ConfiguredTargetKey configuredTargetKey,",
+         "matchingRanges": {
+          "lineNumber": "365"
+         },
+         "lineNumber": "365"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 4
+    },
+    "resultToken": "CC4SAggBOICak5jZicDcjAFAAEgu"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/8.6.0/configure/attributes.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "$ bazel config 12e23b9a2b534a",
+         "matchingRanges": {
+          "lineNumber": "983"
+         },
+         "lineNumber": "983"
+        },
+        {
+         "lineText": "BuildConfigurationValue 12e23b9a2b534a",
+         "matchingRanges": {
+          "lineNumber": "984",
+          "columnRanges": [
+           {
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "984",
+         "ranges": [
+          {
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": "Fragment com.google.devtools.build.lib.analysis.config.CoreOptions {",
+         "matchingRanges": {
+          "lineNumber": "985"
+         },
+         "lineNumber": "985"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CC8SAggBOKr77YKX0ruU6QFAAEgv"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/8.1.1/configure/attributes.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "$ bazel config 12e23b9a2b534a",
+         "matchingRanges": {
+          "lineNumber": "983"
+         },
+         "lineNumber": "983"
+        },
+        {
+         "lineText": "BuildConfigurationValue 12e23b9a2b534a",
+         "matchingRanges": {
+          "lineNumber": "984",
+          "columnRanges": [
+           {
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "984",
+         "ranges": [
+          {
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": "Fragment com.google.devtools.build.lib.analysis.config.CoreOptions {",
+         "matchingRanges": {
+          "lineNumber": "985"
+         },
+         "lineNumber": "985"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CDASAggBONSk7-7UpZXQ-QFAAEgw"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/8.5.1/configure/attributes.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "$ bazel config 12e23b9a2b534a",
+         "matchingRanges": {
+          "lineNumber": "983"
+         },
+         "lineNumber": "983"
+        },
+        {
+         "lineText": "BuildConfigurationValue 12e23b9a2b534a",
+         "matchingRanges": {
+          "lineNumber": "984",
+          "columnRanges": [
+           {
+            "length": 23
+           }
+          ]
+         },
+         "lineNumber": "984",
+         "ranges": [
+          {
+           "length": 23
+          }
+         ]
+        },
+        {
+         "lineText": "Fragment com.google.devtools.build.lib.analysis.config.CoreOptions {",
+         "matchingRanges": {
+          "lineNumber": "985"
+         },
+         "lineNumber": "985"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CDESAggBOITIgIqG18PJ_QFAAEgx"
+   }
+  ],
+  "estimatedResultCount": "275",
+  "nextPageToken": "CL7z8/Dsp5PvAQjclZ+J1JHL2QcIwIrduM+eiaAICPywrqvjp9muDwiekPGJ6ca22REI0uywivSQ8ZwVCKr4xKjwhvqFNwig6PL92fDQhD8I+LuppbvCm6VDCOT7zr2lq7mWRAj+x6vhieHF8kYIto/nuL62/Z1JCOKSgJSj4OqKVQia//Ld3suL4FYIlsfLx8rw44pYCNyw1IWE2pzBXAiG6syIrtiVol8I+q+Hhb+Sw7xzCP7/09zKgZW1eAiyqNzDnYjo/XkI4LK3wJOkhMB6CPilidWo0bKtfAj4m7+bjrbu/IEBCOqlsvi976a8gwEI+PCVh/Xnlp+HAQiAmpOY2YnA3IwBCOCD3v3zkrX4lAEIlN782/jWrLOXAQjIw8D0jKzSq5gBCJaHh52DwbTxmgEI8Ni/qqXbl62lAQji4aj4wr+0oagBCPbNkbfSu9SDswEI2pqMisv/vLfJAQiouZOtvcSVz9EBCJTNu/fpxt6s0wEImOvgytelvr/TAQj40N/Nq47xzNYBCJCI0/e8i4eM1wEIovLT4oaTr/DYAQjU5r6dmp6Z2eQBCKr77YKX0ruU6QEIoKTQx7iM8s7tAQi8zvjWvrPDlu4BCM6N0YnRj8b49AEI9OKx8pCPyp/4AQi8h6Smh8X/zvkBCNSk7+7UpZXQ+QEI2P/R58WY4q79AQiEyICKhtfDyf0B",
+  "exhaustive": true,
+  "requestToken": "ChdCdWlsZENvbmZpZ3VyYXRpb25WYWx1ZRIjKCBnaXQ6YmF6ZWwvYmF6ZWxAbWFzdGVyIGNhc2U6eWVzICkaDAjF7KzRBhC3psKUASAMKgAyAEgB"
+ }
+}

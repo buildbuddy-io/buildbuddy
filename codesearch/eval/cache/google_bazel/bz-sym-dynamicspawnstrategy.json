@@ -1,0 +1,1076 @@
+{
+ "query": "DynamicSpawnStrategy",
+ "oss_project": "bazel",
+ "repo_name": "bazel",
+ "page_size": 50,
+ "fetched_at": "2026-06-11T22:27:36Z",
+ "response": {
+  "searchResults": [
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/dynamic/DynamicSpawnStrategy.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": " */",
+         "matchingRanges": {
+          "lineNumber": "77"
+         },
+         "lineNumber": "77",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "public class DynamicSpawnStrategy implements SpawnStrategy {",
+         "matchingRanges": {
+          "lineNumber": "78",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "78",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 34,
+            "length": 10
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "79"
+         },
+         "lineNumber": "79"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  /**",
+         "matchingRanges": {
+          "lineNumber": "110"
+         },
+         "lineNumber": "110",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "   * Constructs a {@code DynamicSpawnStrategy}.",
+         "matchingRanges": {
+          "lineNumber": "111",
+          "columnRanges": [
+           {
+            "startIndex": 25,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "111",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 47
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 47
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 25,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "   *",
+         "matchingRanges": {
+          "lineNumber": "112"
+         },
+         "lineNumber": "112",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "   */",
+         "matchingRanges": {
+          "lineNumber": "123"
+         },
+         "lineNumber": "123",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  public DynamicSpawnStrategy(",
+         "matchingRanges": {
+          "lineNumber": "124",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "124",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "      ExecutorService executorService,",
+         "matchingRanges": {
+          "lineNumber": "125"
+         },
+         "lineNumber": "125"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CAASBAgBIAE4tJb-vZO2z87qAUAASAA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/dynamic/DynamicSpawnStrategyTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "/** Tests for {@link DynamicSpawnStrategy}. */",
+         "matchingRanges": {
+          "lineNumber": "85",
+          "columnRanges": [
+           {
+            "startIndex": 21,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "85",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 46
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 21,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "@RunWith(JUnit4.class)",
+         "matchingRanges": {
+          "lineNumber": "86"
+         },
+         "lineNumber": "86",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 16,
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "public class DynamicSpawnStrategyTest {",
+         "matchingRanges": {
+          "lineNumber": "87",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "87",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "  private static final GoogleLogger logger = GoogleLogger.forEnclosingClass();",
+         "matchingRanges": {
+          "lineNumber": "88"
+         },
+         "lineNumber": "88",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 17,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    Optional\u003c? extends SpawnStrategy\u003e optionalContext =",
+         "matchingRanges": {
+          "lineNumber": "374"
+         },
+         "lineNumber": "374",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 15,
+            "length": 7
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "        dynamicStrategies.stream().filter(c -\u003e c instanceof DynamicSpawnStrategy).findAny();",
+         "matchingRanges": {
+          "lineNumber": "375",
+          "columnRanges": [
+           {
+            "startIndex": 60,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "375",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 49,
+            "length": 10
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 60,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "    checkState(optionalContext.isPresent(), \"Expected module to register a dynamic strategy\");",
+         "matchingRanges": {
+          "lineNumber": "376"
+         },
+         "lineNumber": "376",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 44,
+            "length": 48
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CAESBAgBIAE4hsnezcu9nabGAUAASAE"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/dynamic/DynamicSpawnStrategyUnitTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "/** Unit tests for {@link DynamicSpawnStrategy}. */",
+         "matchingRanges": {
+          "lineNumber": "76",
+          "columnRanges": [
+           {
+            "startIndex": 26,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "76",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 51
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 26,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "@RunWith(JUnit4.class)",
+         "matchingRanges": {
+          "lineNumber": "77"
+         },
+         "lineNumber": "77",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 16,
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "public class DynamicSpawnStrategyUnitTest {",
+         "matchingRanges": {
+          "lineNumber": "78",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "78",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "79"
+         },
+         "lineNumber": "79"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    DynamicSpawnStrategy dynamicSpawnStrategy =",
+         "matchingRanges": {
+          "lineNumber": "148",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 20
+           },
+           {
+            "startIndex": 25,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "148",
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 20
+          },
+          {
+           "startIndex": 25,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "        createDynamicSpawnStrategy(",
+         "matchingRanges": {
+          "lineNumber": "149",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "149",
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 20
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  private DynamicSpawnStrategy createDynamicSpawnStrategy(",
+         "matchingRanges": {
+          "lineNumber": "703",
+          "columnRanges": [
+           {
+            "startIndex": 37,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "703",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 37,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "      ExecutionPolicy executionPolicy,",
+         "matchingRanges": {
+          "lineNumber": "704"
+         },
+         "lineNumber": "704"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  private DynamicSpawnStrategy createDynamicSpawnStrategy(",
+         "matchingRanges": {
+          "lineNumber": "712",
+          "columnRanges": [
+           {
+            "startIndex": 37,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "712",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 37,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "      ExecutionPolicy executionPolicy,",
+         "matchingRanges": {
+          "lineNumber": "713"
+         },
+         "lineNumber": "713"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 33
+    },
+    "resultToken": "CAISBAgBIAE47IWwpcnbtbPaAUAASAI"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/dynamic/DynamicExecutionModule.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    SpawnStrategy strategy =",
+         "matchingRanges": {
+          "lineNumber": "170"
+         },
+         "lineNumber": "170"
+        },
+        {
+         "lineText": "        new DynamicSpawnStrategy(",
+         "matchingRanges": {
+          "lineNumber": "171",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "171",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "            executorService,",
+         "matchingRanges": {
+          "lineNumber": "172"
+         },
+         "lineNumber": "172"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAMSAggBOMDrgtW6x5-DKEAASAM"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/dynamic/RemoteBranch.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "            }",
+         "matchingRanges": {
+          "lineNumber": "129"
+         },
+         "lineNumber": "129"
+        },
+        {
+         "lineText": "            DynamicSpawnStrategy.stopBranch(",
+         "matchingRanges": {
+          "lineNumber": "130",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "130",
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "                otherBranch, this, strategyThatCancelled, options, this.context);",
+         "matchingRanges": {
+          "lineNumber": "131"
+         },
+         "lineNumber": "131",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 29,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 67,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAQSAggBONrSwenEwLSMRkAASAQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/dynamic/BUILD",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "java_test(",
+         "matchingRanges": {
+          "lineNumber": "16"
+         },
+         "lineNumber": "16"
+        },
+        {
+         "lineText": "    name = \"DynamicSpawnStrategyUnitTest\",",
+         "matchingRanges": {
+          "lineNumber": "17",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "17",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 30
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "    size = \"small\",",
+         "matchingRanges": {
+          "lineNumber": "18"
+         },
+         "lineNumber": "18",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 7
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    srcs = [\"DynamicSpawnStrategyUnitTest.java\"],",
+         "matchingRanges": {
+          "lineNumber": "19",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "19",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 12,
+            "length": 35
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "    deps = [",
+         "matchingRanges": {
+          "lineNumber": "20"
+         },
+         "lineNumber": "20"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "java_test(",
+         "matchingRanges": {
+          "lineNumber": "64"
+         },
+         "lineNumber": "64"
+        },
+        {
+         "lineText": "    name = \"DynamicSpawnStrategyTest\",",
+         "matchingRanges": {
+          "lineNumber": "65",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "65",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 26
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "    size = \"small\",",
+         "matchingRanges": {
+          "lineNumber": "66"
+         },
+         "lineNumber": "66",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 7
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    srcs = [\"DynamicSpawnStrategyTest.java\"],",
+         "matchingRanges": {
+          "lineNumber": "67",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "67",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 12,
+            "length": 31
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "    deps = [",
+         "matchingRanges": {
+          "lineNumber": "68"
+         },
+         "lineNumber": "68"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 4
+    },
+    "resultToken": "CAUSBAgBIAE4pOepmLm-57TdAUAASAU"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/dynamic/LocalBranch.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "            }",
+         "matchingRanges": {
+          "lineNumber": "163"
+         },
+         "lineNumber": "163"
+        },
+        {
+         "lineText": "            DynamicSpawnStrategy.stopBranch(",
+         "matchingRanges": {
+          "lineNumber": "164",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "164",
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "                otherBranch, this, strategyThatCancelled, options, this.context);",
+         "matchingRanges": {
+          "lineNumber": "165"
+         },
+         "lineNumber": "165",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 29,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 67,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAYSAggBOJ7-lfqlxfLu8gFAAEgG"
+   }
+  ],
+  "estimatedResultCount": "7",
+  "exhaustive": true,
+  "requestToken": "ChREeW5hbWljU3Bhd25TdHJhdGVneRIjKCBnaXQ6YmF6ZWwvYmF6ZWxAbWFzdGVyIGNhc2U6eWVzICkaDAjY7KzRBhCds8KEAiAMKgAyAEgB"
+ }
+}

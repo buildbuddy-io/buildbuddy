@@ -1,0 +1,282 @@
+{
+ "query": "file:WorkerPool",
+ "oss_project": "bazel",
+ "repo_name": "bazel",
+ "page_size": 50,
+ "fetched_at": "2026-06-11T22:29:25Z",
+ "response": {
+  "searchResults": [
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/worker/WorkerPool.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// Copyright 2022 The Bazel Authors. All rights reserved.",
+         "matchingRanges": {
+          "lineNumber": "1"
+         },
+         "lineNumber": "1",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 57
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "//",
+         "matchingRanges": {
+          "lineNumber": "2"
+         },
+         "lineNumber": "2",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "// Licensed under the Apache License, Version 2.0 (the \"License\");",
+         "matchingRanges": {
+          "lineNumber": "3"
+         },
+         "lineNumber": "3",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 66
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    },
+    "resultToken": "CAASADi66M-CpfGVop4BQABIAA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/worker/WorkerPoolImpl.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// Copyright 2024 The Bazel Authors. All rights reserved.",
+         "matchingRanges": {
+          "lineNumber": "1"
+         },
+         "lineNumber": "1",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 57
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "//",
+         "matchingRanges": {
+          "lineNumber": "2"
+         },
+         "lineNumber": "2",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "// Licensed under the Apache License, Version 2.0 (the \"License\");",
+         "matchingRanges": {
+          "lineNumber": "3"
+         },
+         "lineNumber": "3",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 66
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    },
+    "resultToken": "CAESADjo48XwjJH7oaoBQABIAQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/worker/WorkerPoolTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// Copyright 2020 The Bazel Authors. All rights reserved.",
+         "matchingRanges": {
+          "lineNumber": "1"
+         },
+         "lineNumber": "1",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 57
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "//",
+         "matchingRanges": {
+          "lineNumber": "2"
+         },
+         "lineNumber": "2",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "// Licensed under the Apache License, Version 2.0 (the \"License\");",
+         "matchingRanges": {
+          "lineNumber": "3"
+         },
+         "lineNumber": "3",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 66
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    },
+    "resultToken": "CAISADjugNqVwaqo2PABQABIAg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/worker/WorkerPoolConfig.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// Copyright 2024 The Bazel Authors. All rights reserved.",
+         "matchingRanges": {
+          "lineNumber": "1"
+         },
+         "lineNumber": "1",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 57
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "//",
+         "matchingRanges": {
+          "lineNumber": "2"
+         },
+         "lineNumber": "2",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "// Licensed under the Apache License, Version 2.0 (the \"License\");",
+         "matchingRanges": {
+          "lineNumber": "3"
+         },
+         "lineNumber": "3",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 66
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    },
+    "resultToken": "CAMSADj66c2Q89u2yLABQABIAw"
+   }
+  ],
+  "estimatedResultCount": "4",
+  "exhaustive": true,
+  "requestToken": "Cg9maWxlOldvcmtlclBvb2wSIyggZ2l0OmJhemVsL2JhemVsQG1hc3RlciBjYXNlOnllcyApGgwIxe2s0QYQqayMhgIgDCoAMgBIAQ"
+ }
+}

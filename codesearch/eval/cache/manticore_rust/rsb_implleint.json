@@ -1,0 +1,205 @@
+{
+ "query": "impl\\s+LeInt\\s+for\\s+u\\d+",
+ "oss_project": "opentitan",
+ "repo_name": "manticore",
+ "page_size": 50,
+ "fetched_at": "2026-06-17T23:22:39Z",
+ "response": {
+  "searchResults": [
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "manticore",
+        "ossProject": "opentitan"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/io/endian.rs",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "impl LeInt for u8 {",
+         "matchingRanges": {
+          "lineNumber": "28",
+          "columnRanges": [
+           {
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "28",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 11,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "    #[inline]",
+         "matchingRanges": {
+          "lineNumber": "29"
+         },
+         "lineNumber": "29"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "impl LeInt for u16 {",
+         "matchingRanges": {
+          "lineNumber": "42",
+          "columnRanges": [
+           {
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "42",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 11,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "length": 18
+          }
+         ]
+        },
+        {
+         "lineText": "    #[inline]",
+         "matchingRanges": {
+          "lineNumber": "43"
+         },
+         "lineNumber": "43"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "impl LeInt for u32 {",
+         "matchingRanges": {
+          "lineNumber": "62",
+          "columnRanges": [
+           {
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "62",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 11,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "length": 18
+          }
+         ]
+        },
+        {
+         "lineText": "    #[inline]",
+         "matchingRanges": {
+          "lineNumber": "63"
+         },
+         "lineNumber": "63"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "impl LeInt for u64 {",
+         "matchingRanges": {
+          "lineNumber": "82",
+          "columnRanges": [
+           {
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "82",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 11,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "length": 18
+          }
+         ]
+        },
+        {
+         "lineText": "    #[inline]",
+         "matchingRanges": {
+          "lineNumber": "83"
+         },
+         "lineNumber": "83"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 4
+    },
+    "resultToken": "CAASAggBOPap5MWXt_T59wFAAEgA"
+   }
+  ],
+  "estimatedResultCount": "1",
+  "exhaustive": true,
+  "requestToken": "ChlpbXBsXHMrTGVJbnRccytmb3Jccyt1XGQrEjAoIGdpdDpnaXRodWIvbG93UklTQy9tYW50aWNvcmVAbWFzdGVyIGNhc2U6eWVzICkaDAi_2MzRBhCL_c3kASAMIA8qADIASAE"
+ }
+}

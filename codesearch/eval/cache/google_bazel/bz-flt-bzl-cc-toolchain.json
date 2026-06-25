@@ -1,0 +1,1740 @@
+{
+ "query": "file:\\.bzl$ cc_toolchain",
+ "oss_project": "bazel",
+ "repo_name": "bazel",
+ "page_size": 50,
+ "fetched_at": "2026-06-11T22:29:22Z",
+ "response": {
+  "searchResults": [
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "tools/cpp/unix_cc_toolchain_config.bzl",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "# buildifier: disable=bzl-visibility",
+         "matchingRanges": {
+          "lineNumber": "16"
+         },
+         "lineNumber": "16",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 36
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "load(\"@rules_cc//cc/private/toolchain:unix_cc_toolchain_config.bzl\", _cc_toolchain_config = \"cc_toolchain_config\")",
+         "matchingRanges": {
+          "lineNumber": "17",
+          "columnRanges": [
+           {
+            "startIndex": 43,
+            "length": 12
+           },
+           {
+            "startIndex": 70,
+            "length": 12
+           },
+           {
+            "startIndex": 93,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "17",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 5,
+            "length": 62
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 92,
+            "length": 21
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 43,
+           "length": 12
+          },
+          {
+           "startIndex": 70,
+           "length": 12
+          },
+          {
+           "startIndex": 93,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "18"
+         },
+         "lineNumber": "18"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "# should not be used in new code.",
+         "matchingRanges": {
+          "lineNumber": "20"
+         },
+         "lineNumber": "20",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 33
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "cc_toolchain_config = _cc_toolchain_config",
+         "matchingRanges": {
+          "lineNumber": "21",
+          "columnRanges": [
+           {
+            "length": 12
+           },
+           {
+            "startIndex": 23,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "21",
+         "ranges": [
+          {
+           "length": 12
+          },
+          {
+           "startIndex": 23,
+           "length": 12
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAASBAgBIAE45MWZnufp_sj7AUAASAA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "tools/cpp/cc_toolchain_config_lib.bzl",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "load(",
+         "matchingRanges": {
+          "lineNumber": "16"
+         },
+         "lineNumber": "16",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    \"@rules_cc//cc:cc_toolchain_config_lib.bzl\",",
+         "matchingRanges": {
+          "lineNumber": "17",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "17",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 4,
+            "length": 43
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    _action_config = \"action_config\",",
+         "matchingRanges": {
+          "lineNumber": "18"
+         },
+         "lineNumber": "18",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 21,
+            "length": 15
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAESAggBOPzBgN2_xbuJ4wFAAEgB"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "tools/cpp/toolchain_utils.bzl",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "load(\"@rules_cc//cc:find_cc_toolchain.bzl\", \"find_cc_toolchain\", \"use_cc_toolchain\")",
+         "matchingRanges": {
+          "lineNumber": "16",
+          "columnRanges": [
+           {
+            "startIndex": 25,
+            "length": 12
+           },
+           {
+            "startIndex": 50,
+            "length": 12
+           },
+           {
+            "startIndex": 70,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "16",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 5,
+            "length": 37
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 44,
+            "length": 19
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 65,
+            "length": 18
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 25,
+           "length": 12
+          },
+          {
+           "startIndex": 50,
+           "length": 12
+          },
+          {
+           "startIndex": 70,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "17"
+         },
+         "lineNumber": "17"
+        },
+        {
+         "lineText": "find_cpp_toolchain = find_cc_toolchain",
+         "matchingRanges": {
+          "lineNumber": "18",
+          "columnRanges": [
+           {
+            "startIndex": 26,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "18",
+         "ranges": [
+          {
+           "startIndex": 26,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "use_cpp_toolchain = use_cc_toolchain",
+         "matchingRanges": {
+          "lineNumber": "19",
+          "columnRanges": [
+           {
+            "startIndex": 24,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "19",
+         "ranges": [
+          {
+           "startIndex": 24,
+           "length": 12
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CAISAggBOIaivcqJn4jrdkAASAI"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/analysis/mock/cc_toolchain_config.bzl",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\"\"\" A rule that mocks cc_toolchain configuration.\"\"\"",
+         "matchingRanges": {
+          "lineNumber": "15",
+          "columnRanges": [
+           {
+            "startIndex": 22,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "15",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "length": 52
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 22,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "16"
+         },
+         "lineNumber": "16"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "load(",
+         "matchingRanges": {
+          "lineNumber": "18"
+         },
+         "lineNumber": "18",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    \"@bazel_tools//tools/cpp:cc_toolchain_config_lib.bzl\",",
+         "matchingRanges": {
+          "lineNumber": "19",
+          "columnRanges": [
+           {
+            "startIndex": 29,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "19",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 4,
+            "length": 53
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 29,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    \"action_config\",",
+         "matchingRanges": {
+          "lineNumber": "20"
+         },
+         "lineNumber": "20",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 4,
+            "length": 15
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "load(\"@rules_cc//cc/common:cc_common.bzl\", \"cc_common\")",
+         "matchingRanges": {
+          "lineNumber": "33"
+         },
+         "lineNumber": "33",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 5,
+            "length": 36
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 43,
+            "length": 11
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "load(\"@rules_cc//cc/toolchains:cc_toolchain_config_info.bzl\", \"CcToolchainConfigInfo\")",
+         "matchingRanges": {
+          "lineNumber": "34",
+          "columnRanges": [
+           {
+            "startIndex": 31,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "34",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 5,
+            "length": 55
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 62,
+            "length": 23
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 31,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "35"
+         },
+         "lineNumber": "35"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "cc_toolchain_config = rule(",
+         "matchingRanges": {
+          "lineNumber": "1702",
+          "columnRanges": [
+           {
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "1702",
+         "ranges": [
+          {
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    implementation = _impl,",
+         "matchingRanges": {
+          "lineNumber": "1703"
+         },
+         "lineNumber": "1703"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 5
+    },
+    "resultToken": "CAMSBAgBIAE4nv32te3-8tkCQABIAw"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/packages/util/mock/osx_cc_toolchain_config.bzl",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "load(",
+         "matchingRanges": {
+          "lineNumber": "17"
+         },
+         "lineNumber": "17",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    \"@bazel_tools//tools/cpp:cc_toolchain_config_lib.bzl\",",
+         "matchingRanges": {
+          "lineNumber": "18",
+          "columnRanges": [
+           {
+            "startIndex": 29,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "18",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 4,
+            "length": 53
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 29,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    \"action_config\",",
+         "matchingRanges": {
+          "lineNumber": "19"
+         },
+         "lineNumber": "19",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 4,
+            "length": 15
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "load(\"@rules_cc//cc/common:cc_common.bzl\", \"cc_common\")",
+         "matchingRanges": {
+          "lineNumber": "33"
+         },
+         "lineNumber": "33",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 5,
+            "length": 36
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 43,
+            "length": 11
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "load(\"@rules_cc//cc/toolchains:cc_toolchain_config_info.bzl\", \"CcToolchainConfigInfo\")",
+         "matchingRanges": {
+          "lineNumber": "34",
+          "columnRanges": [
+           {
+            "startIndex": 31,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "34",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 5,
+            "length": 55
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 62,
+            "length": 23
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 31,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "35"
+         },
+         "lineNumber": "35"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "cc_toolchain_config = rule(",
+         "matchingRanges": {
+          "lineNumber": "7536",
+          "columnRanges": [
+           {
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "7536",
+         "ranges": [
+          {
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    implementation = _impl,",
+         "matchingRanges": {
+          "lineNumber": "7537"
+         },
+         "lineNumber": "7537"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 4
+    },
+    "resultToken": "CAQSBAgBIAE4lq2oufW7osvwAUAASAQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/packages/util/mock/android_cc_toolchain_config.bzl",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "# limitations under the License.",
+         "matchingRanges": {
+          "lineNumber": "13"
+         },
+         "lineNumber": "13",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 32
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\"\"\"Mock cc_toolchain_config rule for Android ndk tests.\"\"\"",
+         "matchingRanges": {
+          "lineNumber": "14",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "14",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "length": 58
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "15"
+         },
+         "lineNumber": "15"
+        },
+        {
+         "lineText": "load(",
+         "matchingRanges": {
+          "lineNumber": "16"
+         },
+         "lineNumber": "16",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    \"@bazel_tools//tools/cpp:cc_toolchain_config_lib.bzl\",",
+         "matchingRanges": {
+          "lineNumber": "17",
+          "columnRanges": [
+           {
+            "startIndex": 29,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "17",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 4,
+            "length": 53
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 29,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    \"artifact_name_pattern\",",
+         "matchingRanges": {
+          "lineNumber": "18"
+         },
+         "lineNumber": "18",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 4,
+            "length": 23
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "cc_toolchain_config = rule(",
+         "matchingRanges": {
+          "lineNumber": "127",
+          "columnRanges": [
+           {
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "127",
+         "ranges": [
+          {
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    implementation = _impl,",
+         "matchingRanges": {
+          "lineNumber": "128"
+         },
+         "lineNumber": "128"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 5
+    },
+    "resultToken": "CAUSBAgBIAE4lPvNyNO4n4CXAUAASAU"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/starlark/builtins_bzl/common/cc/cc_common.bzl",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "def _legacy_cc_flags_make_variable_do_not_use(*, cc_toolchain):",
+         "matchingRanges": {
+          "lineNumber": "40",
+          "columnRanges": [
+           {
+            "startIndex": 49,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "40",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 49,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    return _cc_common_internal.legacy_cc_flags_make_variable_do_not_use(cc_toolchain = cc_toolchain)",
+         "matchingRanges": {
+          "lineNumber": "41",
+          "columnRanges": [
+           {
+            "startIndex": 72,
+            "length": 12
+           },
+           {
+            "startIndex": 87,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "41",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 72,
+           "length": 12
+          },
+          {
+           "startIndex": 87,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "42"
+         },
+         "lineNumber": "42"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "        actions,",
+         "matchingRanges": {
+          "lineNumber": "61"
+         },
+         "lineNumber": "61"
+        },
+        {
+         "lineText": "        cc_toolchain,",
+         "matchingRanges": {
+          "lineNumber": "62",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "62",
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "        feature_configuration,",
+         "matchingRanges": {
+          "lineNumber": "63"
+         },
+         "lineNumber": "63"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "        actions = actions,",
+         "matchingRanges": {
+          "lineNumber": "73"
+         },
+         "lineNumber": "73"
+        },
+        {
+         "lineText": "        cc_toolchain = cc_toolchain,",
+         "matchingRanges": {
+          "lineNumber": "74",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 12
+           },
+           {
+            "startIndex": 23,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "74",
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 12
+          },
+          {
+           "startIndex": 23,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "        feature_configuration = feature_configuration,",
+         "matchingRanges": {
+          "lineNumber": "75"
+         },
+         "lineNumber": "75"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 4
+    },
+    "resultToken": "CAYSAggBOLDSuLyaotCNZkAASAY"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/starlark/builtins_bzl/common/cc/cc_common_bazel.bzl",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "def _legacy_cc_flags_make_variable_do_not_use(*, cc_toolchain):",
+         "matchingRanges": {
+          "lineNumber": "39",
+          "columnRanges": [
+           {
+            "startIndex": 49,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "39",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 49,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    return _cc_common_internal.legacy_cc_flags_make_variable_do_not_use(cc_toolchain = cc_toolchain)",
+         "matchingRanges": {
+          "lineNumber": "40",
+          "columnRanges": [
+           {
+            "startIndex": 72,
+            "length": 12
+           },
+           {
+            "startIndex": 87,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "40",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 72,
+           "length": 12
+          },
+          {
+           "startIndex": 87,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "41"
+         },
+         "lineNumber": "41"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAcSAggBOKr5s5-4k7OryQFAAEgH"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/starlark/builtins_bzl/bazel/exports.bzl",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    \"cc_test\",",
+         "matchingRanges": {
+          "lineNumber": "28"
+         },
+         "lineNumber": "28",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 4,
+            "length": 9
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    \"cc_toolchain\",",
+         "matchingRanges": {
+          "lineNumber": "29",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "29",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 4,
+            "length": 14
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    \"cc_toolchain_alias\",",
+         "matchingRanges": {
+          "lineNumber": "30",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "30",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 4,
+            "length": 20
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    \"fdo_prefetch_hints\",",
+         "matchingRanges": {
+          "lineNumber": "31"
+         },
+         "lineNumber": "31",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 4,
+            "length": 20
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "exported_rules = {",
+         "matchingRanges": {
+          "lineNumber": "53"
+         },
+         "lineNumber": "53"
+        },
+        {
+         "lineText": "    \"cc_toolchain_suite\": lambda name, **kwargs: _builtins.toplevel.native.filegroup(name = name),",
+         "matchingRanges": {
+          "lineNumber": "54",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "54",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 4,
+            "length": 20
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 26,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "} | {",
+         "matchingRanges": {
+          "lineNumber": "55"
+         },
+         "lineNumber": "55"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CAgSAggBOOj3xvjW7_nA9wFAAEgI"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/starlark/docgen/cpp.bzl",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": ")",
+         "matchingRanges": {
+          "lineNumber": "29"
+         },
+         "lineNumber": "29"
+        },
+        {
+         "lineText": "load(\"@rules_cc//cc/toolchains:cc_toolchain.bzl\", \"cc_toolchain\")",
+         "matchingRanges": {
+          "lineNumber": "30",
+          "columnRanges": [
+           {
+            "startIndex": 31,
+            "length": 12
+           },
+           {
+            "startIndex": 51,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "30",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 5,
+            "length": 43
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 50,
+            "length": 14
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 31,
+           "length": 12
+          },
+          {
+           "startIndex": 51,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "31"
+         },
+         "lineNumber": "31"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    propeller_optimize = propeller_optimize,",
+         "matchingRanges": {
+          "lineNumber": "52"
+         },
+         "lineNumber": "52"
+        },
+        {
+         "lineText": "    cc_toolchain = cc_toolchain,",
+         "matchingRanges": {
+          "lineNumber": "53",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 12
+           },
+           {
+            "startIndex": 19,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "53",
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 12
+          },
+          {
+           "startIndex": 19,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": ")",
+         "matchingRanges": {
+          "lineNumber": "54"
+         },
+         "lineNumber": "54"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAkSAggBOPzLye69wdnuLEAASAk"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/shell/bazel/cc_api_rules.bzl",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "def _cc_lib_impl(ctx):",
+         "matchingRanges": {
+          "lineNumber": "28"
+         },
+         "lineNumber": "28",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    cc_toolchain = find_cpp_toolchain(ctx)",
+         "matchingRanges": {
+          "lineNumber": "29",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "29",
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    feature_configuration = cc_common.configure_features(",
+         "matchingRanges": {
+          "lineNumber": "30"
+         },
+         "lineNumber": "30"
+        },
+        {
+         "lineText": "        ctx = ctx,",
+         "matchingRanges": {
+          "lineNumber": "31"
+         },
+         "lineNumber": "31"
+        },
+        {
+         "lineText": "        cc_toolchain = cc_toolchain,",
+         "matchingRanges": {
+          "lineNumber": "32",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 12
+           },
+           {
+            "startIndex": 23,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "32",
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 12
+          },
+          {
+           "startIndex": 23,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "        requested_features = ctx.features,",
+         "matchingRanges": {
+          "lineNumber": "33"
+         },
+         "lineNumber": "33"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "        feature_configuration = feature_configuration,",
+         "matchingRanges": {
+          "lineNumber": "46"
+         },
+         "lineNumber": "46"
+        },
+        {
+         "lineText": "        cc_toolchain = cc_toolchain,",
+         "matchingRanges": {
+          "lineNumber": "47",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 12
+           },
+           {
+            "startIndex": 23,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "47",
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 12
+          },
+          {
+           "startIndex": 23,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "        public_hdrs = ctx.files.public_hdrs,",
+         "matchingRanges": {
+          "lineNumber": "48"
+         },
+         "lineNumber": "48"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 8
+    },
+    "resultToken": "CAoSAggBONjg0ui-nPKha0AASAo"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/starlark/builtins_bzl/common/builtin_exec_platforms.bzl",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "        \"//command_line_option:incompatible_disable_legacy_cc_provider\",",
+         "matchingRanges": {
+          "lineNumber": "266"
+         },
+         "lineNumber": "266",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 63
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "        \"//command_line_option:incompatible_enable_cc_toolchain_resolution\",",
+         "matchingRanges": {
+          "lineNumber": "267",
+          "columnRanges": [
+           {
+            "startIndex": 51,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "267",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 67
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 51,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "        \"//command_line_option:incompatible_remove_legacy_whole_archive\",",
+         "matchingRanges": {
+          "lineNumber": "268"
+         },
+         "lineNumber": "268",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 64
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAsSAggBOMKOl_ixh439EEAASAs"
+   }
+  ],
+  "estimatedResultCount": "12",
+  "exhaustive": true,
+  "requestToken": "ChhmaWxlOlwuYnpsJCBjY190b29sY2hhaW4SIyggZ2l0OmJhemVsL2JhemVsQG1hc3RlciBjYXNlOnllcyApGgwIwu2s0QYQy4G08QEgDCoAMgBIAQ"
+ }
+}

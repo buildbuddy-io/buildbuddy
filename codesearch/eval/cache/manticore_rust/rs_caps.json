@@ -1,0 +1,1581 @@
+{
+ "query": "Caps",
+ "oss_project": "opentitan",
+ "repo_name": "manticore",
+ "page_size": 50,
+ "fetched_at": "2026-06-17T22:58:35Z",
+ "response": {
+  "searchResults": [
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "manticore",
+        "ossProject": "opentitan"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/protocol/spdm/get_caps.rs",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "        #[cfg_attr(feature = \"serde\", serde(with = \"crate::serde::bitflags\"))]",
+         "matchingRanges": {
+          "lineNumber": "32"
+         },
+         "lineNumber": "32",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 29,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 51,
+            "length": 24
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "        pub caps: BitFlags\u003cCaps\u003e,",
+         "matchingRanges": {
+          "lineNumber": "33",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 4
+           },
+           {
+            "startIndex": 27,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "33",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 4
+          },
+          {
+           "startIndex": 27,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "        /// The maximum packet size, in bytes.",
+         "matchingRanges": {
+          "lineNumber": "34"
+         },
+         "lineNumber": "34",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 8,
+            "length": 38
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "        let caps = BitFlags::\u003cCaps\u003e::from_wire(r, a)?;",
+         "matchingRanges": {
+          "lineNumber": "47",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 4
+           },
+           {
+            "startIndex": 30,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "47",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 4
+          },
+          {
+           "startIndex": 30,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "48"
+         },
+         "lineNumber": "48"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "        #[cfg_attr(feature = \"serde\", serde(with = \"crate::serde::bitflags\"))]",
+         "matchingRanges": {
+          "lineNumber": "78"
+         },
+         "lineNumber": "78",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 29,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 51,
+            "length": 24
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "        pub caps: BitFlags\u003cCaps\u003e,",
+         "matchingRanges": {
+          "lineNumber": "79",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 4
+           },
+           {
+            "startIndex": 27,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "79",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 4
+          },
+          {
+           "startIndex": 27,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "        /// The maximum packet size, in bytes.",
+         "matchingRanges": {
+          "lineNumber": "80"
+         },
+         "lineNumber": "80",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 8,
+            "length": 38
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "        let caps = BitFlags::\u003cCaps\u003e::from_wire(r, a)?;",
+         "matchingRanges": {
+          "lineNumber": "93",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 4
+           },
+           {
+            "startIndex": 30,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "93",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 4
+          },
+          {
+           "startIndex": 30,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "94"
+         },
+         "lineNumber": "94"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 25
+    },
+    "resultToken": "CAASAggBOPLKuJyXrqCe7QFAAEgA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "manticore",
+        "ossProject": "opentitan"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "fuzz/gen/manticore_protocol_spdm_GetCaps__req_to_wire.rs",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "use manticore::protocol::spdm::GetCaps as C;",
+         "matchingRanges": {
+          "lineNumber": "18",
+          "columnRanges": [
+           {
+            "startIndex": 34,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "18",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 39,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 34,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "type Req\u003c'a\u003e = \u003cC as Command\u003c'a\u003e\u003e::Req;",
+         "matchingRanges": {
+          "lineNumber": "19"
+         },
+         "lineNumber": "19",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 18,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAESAggBOMTGxtPRsvy5lgFAAEgB"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "manticore",
+        "ossProject": "opentitan"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "fuzz/gen/manticore_protocol_spdm_GetCaps__resp_to_wire.rs",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "use manticore::protocol::spdm::GetCaps as C;",
+         "matchingRanges": {
+          "lineNumber": "18",
+          "columnRanges": [
+           {
+            "startIndex": 34,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "18",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 39,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 34,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "type Resp\u003c'a\u003e = \u003cC as Command\u003c'a\u003e\u003e::Resp;",
+         "matchingRanges": {
+          "lineNumber": "19"
+         },
+         "lineNumber": "19",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 19,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAISAggBOMDi4v3B2oihQUAASAI"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "manticore",
+        "ossProject": "opentitan"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "fuzz/gen/manticore_protocol_spdm_GetCaps__req_from_wire.rs",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "use manticore::protocol::spdm::GetCaps as C;",
+         "matchingRanges": {
+          "lineNumber": "17",
+          "columnRanges": [
+           {
+            "startIndex": 34,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "17",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 39,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 34,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "18"
+         },
+         "lineNumber": "18"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAMSAggBOLSm2Znhgc7dV0AASAM"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "manticore",
+        "ossProject": "opentitan"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "fuzz/gen/manticore_protocol_spdm_GetCaps__resp_from_wire.rs",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "use manticore::protocol::spdm::GetCaps as C;",
+         "matchingRanges": {
+          "lineNumber": "17",
+          "columnRanges": [
+           {
+            "startIndex": 34,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "17",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 39,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 34,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "18"
+         },
+         "lineNumber": "18"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAQSAggBOPKwr-rjq47qJUAASAQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "manticore",
+        "ossProject": "opentitan"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "fuzz/Cargo.toml",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "name = \"manticore_protocol_spdm_GetCaps__req_to_wire\"",
+         "matchingRanges": {
+          "lineNumber": "265",
+          "columnRanges": [
+           {
+            "startIndex": 35,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "265",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 7,
+            "length": 46
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 35,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "path = \"gen/manticore_protocol_spdm_GetCaps__req_to_wire.rs\"",
+         "matchingRanges": {
+          "lineNumber": "266",
+          "columnRanges": [
+           {
+            "startIndex": 39,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "266",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 7,
+            "length": 53
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 39,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "267"
+         },
+         "lineNumber": "267"
+        },
+        {
+         "lineText": "[[bin]]",
+         "matchingRanges": {
+          "lineNumber": "268"
+         },
+         "lineNumber": "268"
+        },
+        {
+         "lineText": "name = \"manticore_protocol_spdm_GetCaps__resp_to_wire\"",
+         "matchingRanges": {
+          "lineNumber": "269",
+          "columnRanges": [
+           {
+            "startIndex": 35,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "269",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 7,
+            "length": 47
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 35,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "path = \"gen/manticore_protocol_spdm_GetCaps__resp_to_wire.rs\"",
+         "matchingRanges": {
+          "lineNumber": "270",
+          "columnRanges": [
+           {
+            "startIndex": 39,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "270",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 7,
+            "length": 54
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 39,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "271"
+         },
+         "lineNumber": "271"
+        },
+        {
+         "lineText": "[[bin]]",
+         "matchingRanges": {
+          "lineNumber": "272"
+         },
+         "lineNumber": "272"
+        },
+        {
+         "lineText": "name = \"manticore_protocol_spdm_GetCaps__resp_from_wire\"",
+         "matchingRanges": {
+          "lineNumber": "273",
+          "columnRanges": [
+           {
+            "startIndex": 35,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "273",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 7,
+            "length": 49
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 35,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "path = \"gen/manticore_protocol_spdm_GetCaps__resp_from_wire.rs\"",
+         "matchingRanges": {
+          "lineNumber": "274",
+          "columnRanges": [
+           {
+            "startIndex": 39,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "274",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 7,
+            "length": 56
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 39,
+           "length": 4
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 8
+    },
+    "resultToken": "CAUSAggBOJT0oeX2hpitDEAASAU"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "manticore",
+        "ossProject": "opentitan"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/server/pa_rot.rs",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "            })",
+         "matchingRanges": {
+          "lineNumber": "393"
+         },
+         "lineNumber": "393"
+        },
+        {
+         "lineText": "            .handle::\u003cspdm::GetCaps, _\u003e(|ctx| {",
+         "matchingRanges": {
+          "lineNumber": "394",
+          "columnRanges": [
+           {
+            "startIndex": 31,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "394",
+         "ranges": [
+          {
+           "startIndex": 31,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "                Ok(Resp::\u003cspdm::GetCaps\u003e {",
+         "matchingRanges": {
+          "lineNumber": "395",
+          "columnRanges": [
+           {
+            "startIndex": 35,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "395",
+         "ranges": [
+          {
+           "startIndex": 35,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "                    crypto_timeout: ctx.server.opts.timeouts.crypto,",
+         "matchingRanges": {
+          "lineNumber": "396"
+         },
+         "lineNumber": "396"
+        },
+        {
+         "lineText": "                    caps: spdm::get_caps::Caps::manticore(),",
+         "matchingRanges": {
+          "lineNumber": "397",
+          "columnRanges": [
+           {
+            "startIndex": 20,
+            "length": 4
+           },
+           {
+            "startIndex": 36,
+            "length": 4
+           },
+           {
+            "startIndex": 42,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "397",
+         "ranges": [
+          {
+           "startIndex": 20,
+           "length": 4
+          },
+          {
+           "startIndex": 36,
+           "length": 4
+          },
+          {
+           "startIndex": 42,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "                    max_packet_size: ctx.server.opts.networking.max_packet_size",
+         "matchingRanges": {
+          "lineNumber": "398"
+         },
+         "lineNumber": "398"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CAYSAggBOLjgtOfol76zW0AASAY"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "manticore",
+        "ossProject": "opentitan"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/protocol/spdm/mod.rs",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "pub mod get_caps;",
+         "matchingRanges": {
+          "lineNumber": "16",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "16",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "pub use get_caps::GetCaps;",
+         "matchingRanges": {
+          "lineNumber": "17",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 4
+           },
+           {
+            "startIndex": 21,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "17",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 4
+          },
+          {
+           "startIndex": 21,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "18"
+         },
+         "lineNumber": "18"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "        GetMeasurements = 0x60,",
+         "matchingRanges": {
+          "lineNumber": "39"
+         },
+         "lineNumber": "39",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 26,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "        GetCaps = 0x61,",
+         "matchingRanges": {
+          "lineNumber": "40",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "40",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 18,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "        GetAlgos = 0x62,",
+         "matchingRanges": {
+          "lineNumber": "41"
+         },
+         "lineNumber": "41",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 19,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CAcSAggBOJztqLWDnsf1qgFAAEgH"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "manticore",
+        "ossProject": "opentitan"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": ".github/workflows/fuzz.yml",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  'manticore_protocol_spdm_GetCaps__req_to_wire':",
+         "matchingRanges": {
+          "lineNumber": "889",
+          "columnRanges": [
+           {
+            "startIndex": 30,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "889",
+         "ranges": [
+          {
+           "startIndex": 30,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "    runs-on: ubuntu-latest",
+         "matchingRanges": {
+          "lineNumber": "890"
+         },
+         "lineNumber": "890"
+        },
+        {
+         "lineText": "    name: 'Fuzz `manticore::protocol::spdm::GetCaps` with `req_to_wire.rs`'",
+         "matchingRanges": {
+          "lineNumber": "891",
+          "columnRanges": [
+           {
+            "startIndex": 47,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "891",
+         "ranges": [
+          {
+           "startIndex": 47,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "    steps:",
+         "matchingRanges": {
+          "lineNumber": "892"
+         },
+         "lineNumber": "892"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  'manticore_protocol_spdm_GetCaps__resp_to_wire':",
+         "matchingRanges": {
+          "lineNumber": "904",
+          "columnRanges": [
+           {
+            "startIndex": 30,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "904",
+         "ranges": [
+          {
+           "startIndex": 30,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "    runs-on: ubuntu-latest",
+         "matchingRanges": {
+          "lineNumber": "905"
+         },
+         "lineNumber": "905"
+        },
+        {
+         "lineText": "    name: 'Fuzz `manticore::protocol::spdm::GetCaps` with `resp_to_wire.rs`'",
+         "matchingRanges": {
+          "lineNumber": "906",
+          "columnRanges": [
+           {
+            "startIndex": 47,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "906",
+         "ranges": [
+          {
+           "startIndex": 47,
+           "length": 4
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  'manticore_protocol_spdm_GetCaps__resp_from_wire':",
+         "matchingRanges": {
+          "lineNumber": "919",
+          "columnRanges": [
+           {
+            "startIndex": 30,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "919",
+         "ranges": [
+          {
+           "startIndex": 30,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "    runs-on: ubuntu-latest",
+         "matchingRanges": {
+          "lineNumber": "920"
+         },
+         "lineNumber": "920"
+        },
+        {
+         "lineText": "    name: 'Fuzz `manticore::protocol::spdm::GetCaps` with `resp_from_wire.rs`'",
+         "matchingRanges": {
+          "lineNumber": "921",
+          "columnRanges": [
+           {
+            "startIndex": 47,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "921",
+         "ranges": [
+          {
+           "startIndex": 47,
+           "length": 4
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 12
+    },
+    "resultToken": "CAgSAggBOKjAnrjaucCNYUAASAg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "manticore",
+        "ossProject": "opentitan"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "fuzz/proto_types.txt",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "manticore::protocol::spdm::GetVersion",
+         "matchingRanges": {
+          "lineNumber": "20"
+         },
+         "lineNumber": "20"
+        },
+        {
+         "lineText": "manticore::protocol::spdm::GetCaps",
+         "matchingRanges": {
+          "lineNumber": "21",
+          "columnRanges": [
+           {
+            "startIndex": 30,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "21",
+         "ranges": [
+          {
+           "startIndex": 30,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "22"
+         },
+         "lineNumber": "22"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAkSAggBONCO1fK-jrinUUAASAk"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "manticore",
+        "ossProject": "opentitan"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/crypto/sig.rs",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    ///",
+         "matchingRanges": {
+          "lineNumber": "135"
+         },
+         "lineNumber": "135",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    /// This function populates `caps` with whatever asymmetric cryptography",
+         "matchingRanges": {
+          "lineNumber": "136",
+          "columnRanges": [
+           {
+            "startIndex": 33,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "136",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 72
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 33,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "    /// it supports.",
+         "matchingRanges": {
+          "lineNumber": "137"
+         },
+         "lineNumber": "137",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 16
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    fn negotiate(\u0026self, caps: \u0026mut capabilities::Crypto);",
+         "matchingRanges": {
+          "lineNumber": "138",
+          "columnRanges": [
+           {
+            "startIndex": 24,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "138",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 31,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 24,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "139"
+         },
+         "lineNumber": "139"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAoSAggBOLya89OFpefSX0AASAo"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "manticore",
+        "ossProject": "opentitan"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/crypto/ring/sig.rs",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "impl sig::Ciphers for Ciphers {",
+         "matchingRanges": {
+          "lineNumber": "37"
+         },
+         "lineNumber": "37",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 18,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    fn negotiate(\u0026self, caps: \u0026mut capabilities::Crypto) {",
+         "matchingRanges": {
+          "lineNumber": "38",
+          "columnRanges": [
+           {
+            "startIndex": 24,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "38",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 31,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 24,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "        use capabilities::*;",
+         "matchingRanges": {
+          "lineNumber": "39"
+         },
+         "lineNumber": "39",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "        *caps = Crypto {",
+         "matchingRanges": {
+          "lineNumber": "40",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "40",
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "            has_ecdsa: true,",
+         "matchingRanges": {
+          "lineNumber": "41"
+         },
+         "lineNumber": "41"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "            rsa_strength: BitFlags::\u003cRsaKeyStrength\u003e::all(),",
+         "matchingRanges": {
+          "lineNumber": "46"
+         },
+         "lineNumber": "46"
+        },
+        {
+         "lineText": "            ..*caps",
+         "matchingRanges": {
+          "lineNumber": "47",
+          "columnRanges": [
+           {
+            "startIndex": 15,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "47",
+         "ranges": [
+          {
+           "startIndex": 15,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "        };",
+         "matchingRanges": {
+          "lineNumber": "48"
+         },
+         "lineNumber": "48"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CAsSAggBOJD-jZ_xkM3Q7AFAAEgL"
+   }
+  ],
+  "estimatedResultCount": "12",
+  "exhaustive": true,
+  "requestToken": "CgRDYXBzEjAoIGdpdDpnaXRodWIvbG93UklTQy9tYW50aWNvcmVAbWFzdGVyIGNhc2U6eWVzICkaCwibzczRBhDxju8BIAwqADIASAE"
+ }
+}

@@ -1,0 +1,961 @@
+{
+ "query": "die_if_null",
+ "oss_project": "abseil",
+ "repo_name": "abseil-cpp",
+ "page_size": 50,
+ "fetched_at": "2026-06-17T23:22:58Z",
+ "response": {
+  "searchResults": [
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "abseil-cpp",
+        "ossProject": "abseil"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "absl/log/die_if_null.h",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "//",
+         "matchingRanges": {
+          "lineNumber": "18"
+         },
+         "lineNumber": "18",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "// This header declares macro `ABSL_DIE_IF_NULL`.",
+         "matchingRanges": {
+          "lineNumber": "19",
+          "columnRanges": [
+           {
+            "startIndex": 36,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "19",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 49
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 36,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "20"
+         },
+         "lineNumber": "20"
+        },
+        {
+         "lineText": "#ifndef ABSL_LOG_DIE_IF_NULL_H_",
+         "matchingRanges": {
+          "lineNumber": "21",
+          "columnRanges": [
+           {
+            "startIndex": 17,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "21",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 17,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": "#define ABSL_LOG_DIE_IF_NULL_H_",
+         "matchingRanges": {
+          "lineNumber": "22",
+          "columnRanges": [
+           {
+            "startIndex": 17,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "22",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 17,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "23"
+         },
+         "lineNumber": "23"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// unused.",
+         "matchingRanges": {
+          "lineNumber": "49"
+         },
+         "lineNumber": "49",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 10
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "#define ABSL_DIE_IF_NULL(val) \\",
+         "matchingRanges": {
+          "lineNumber": "50",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "50",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": "  ::absl::log_internal::DieIfNull(__FILE__, __LINE__, #val, (val))",
+         "matchingRanges": {
+          "lineNumber": "51"
+         },
+         "lineNumber": "51"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 14
+    },
+    "resultToken": "CAASBAgBIAE40uqbjO3_4MpFQABIAA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "abseil-cpp",
+        "ossProject": "abseil"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "absl/log/die_if_null.cc",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "#include \"absl/log/die_if_null.h\"",
+         "matchingRanges": {
+          "lineNumber": "15",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "15",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 9,
+            "length": 24
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "16"
+         },
+         "lineNumber": "16"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAESAggBOMzZob2rmZPkiQFAAEgB"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "abseil-cpp",
+        "ossProject": "abseil"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "absl/log/die_if_null_test.cc",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  void* ptr = static_cast\u003cvoid*\u003e(\u0026t);",
+         "matchingRanges": {
+          "lineNumber": "36"
+         },
+         "lineNumber": "36",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 14,
+            "length": 11
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 26,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  void* ref = ABSL_DIE_IF_NULL(ptr);",
+         "matchingRanges": {
+          "lineNumber": "37",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "37",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "startIndex": 31,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": "  ASSERT_EQ(ptr, ref);",
+         "matchingRanges": {
+          "lineNumber": "38"
+         },
+         "lineNumber": "38",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "startIndex": 12,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "startIndex": 17,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  char* t_as_char;",
+         "matchingRanges": {
+          "lineNumber": "40"
+         },
+         "lineNumber": "40",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  t_as_char = ABSL_DIE_IF_NULL(reinterpret_cast\u003cchar*\u003e(\u0026t));",
+         "matchingRanges": {
+          "lineNumber": "41",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "41",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 31,
+            "length": 16
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 48,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": "  (void)t_as_char;",
+         "matchingRanges": {
+          "lineNumber": "42"
+         },
+         "lineNumber": "42",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 3,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  unsigned char* t_as_uchar;",
+         "matchingRanges": {
+          "lineNumber": "44"
+         },
+         "lineNumber": "44",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 11,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  t_as_uchar = ABSL_DIE_IF_NULL(reinterpret_cast\u003cunsigned char*\u003e(\u0026t));",
+         "matchingRanges": {
+          "lineNumber": "45",
+          "columnRanges": [
+           {
+            "startIndex": 20,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "45",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 32,
+            "length": 16
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 49,
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 58,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 20,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": "  (void)t_as_uchar;",
+         "matchingRanges": {
+          "lineNumber": "46"
+         },
+         "lineNumber": "46",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 3,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 20
+    },
+    "resultToken": "CAISAggBOOTo_O606beK2gFAAEgC"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "abseil-cpp",
+        "ossProject": "abseil"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "absl/log/BUILD.bazel",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "cc_library(",
+         "matchingRanges": {
+          "lineNumber": "73"
+         },
+         "lineNumber": "73"
+        },
+        {
+         "lineText": "    name = \"die_if_null\",",
+         "matchingRanges": {
+          "lineNumber": "74",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "74",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 13
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": "    srcs = [\"die_if_null.cc\"],",
+         "matchingRanges": {
+          "lineNumber": "75",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "75",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 12,
+            "length": 16
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": "    hdrs = [\"die_if_null.h\"],",
+         "matchingRanges": {
+          "lineNumber": "76",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "76",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 12,
+            "length": 15
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": "    copts = ABSL_DEFAULT_COPTS,",
+         "matchingRanges": {
+          "lineNumber": "77"
+         },
+         "lineNumber": "77"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    deps = [",
+         "matchingRanges": {
+          "lineNumber": "380"
+         },
+         "lineNumber": "380"
+        },
+        {
+         "lineText": "        \":die_if_null\",",
+         "matchingRanges": {
+          "lineNumber": "381",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "381",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 14
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": "        \"//absl/base:core_headers\",",
+         "matchingRanges": {
+          "lineNumber": "382"
+         },
+         "lineNumber": "382",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 26
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 6
+    },
+    "resultToken": "CAMSBAgBIAE4gr208qnJnZxnQABIAw"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "abseil-cpp",
+        "ossProject": "abseil"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "CMake/AbseilDll.cmake",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  \"log/check.h\"",
+         "matchingRanges": {
+          "lineNumber": "174"
+         },
+         "lineNumber": "174"
+        },
+        {
+         "lineText": "  \"log/die_if_null.cc\"",
+         "matchingRanges": {
+          "lineNumber": "175",
+          "columnRanges": [
+           {
+            "startIndex": 7,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "175",
+         "ranges": [
+          {
+           "startIndex": 7,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": "  \"log/die_if_null.h\"",
+         "matchingRanges": {
+          "lineNumber": "176",
+          "columnRanges": [
+           {
+            "startIndex": 7,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "176",
+         "ranges": [
+          {
+           "startIndex": 7,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": "  \"log/globals.cc\"",
+         "matchingRanges": {
+          "lineNumber": "177"
+         },
+         "lineNumber": "177"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  \"demangle_internal\"",
+         "matchingRanges": {
+          "lineNumber": "553"
+         },
+         "lineNumber": "553"
+        },
+        {
+         "lineText": "  \"die_if_null\"",
+         "matchingRanges": {
+          "lineNumber": "554",
+          "columnRanges": [
+           {
+            "startIndex": 3,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "554",
+         "ranges": [
+          {
+           "startIndex": 3,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": "  \"dynamic_annotations\"",
+         "matchingRanges": {
+          "lineNumber": "555"
+         },
+         "lineNumber": "555"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CAQSAggBOKiFlKzi8OOdngFAAEgE"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "abseil-cpp",
+        "ossProject": "abseil"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "absl/log/CMakeLists.txt",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  NAME",
+         "matchingRanges": {
+          "lineNumber": "456"
+         },
+         "lineNumber": "456"
+        },
+        {
+         "lineText": "    die_if_null",
+         "matchingRanges": {
+          "lineNumber": "457",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "457",
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": "  SRCS",
+         "matchingRanges": {
+          "lineNumber": "458"
+         },
+         "lineNumber": "458"
+        },
+        {
+         "lineText": "    \"die_if_null.cc\"",
+         "matchingRanges": {
+          "lineNumber": "459",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "459",
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": "  HDRS",
+         "matchingRanges": {
+          "lineNumber": "460"
+         },
+         "lineNumber": "460"
+        },
+        {
+         "lineText": "    \"die_if_null.h\"",
+         "matchingRanges": {
+          "lineNumber": "461",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "461",
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": "  COPTS",
+         "matchingRanges": {
+          "lineNumber": "462"
+         },
+         "lineNumber": "462"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    absl::core_headers",
+         "matchingRanges": {
+          "lineNumber": "907"
+         },
+         "lineNumber": "907"
+        },
+        {
+         "lineText": "    absl::die_if_null",
+         "matchingRanges": {
+          "lineNumber": "908",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "908",
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": "    absl::log_internal_test_helpers",
+         "matchingRanges": {
+          "lineNumber": "909"
+         },
+         "lineNumber": "909"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 6
+    },
+    "resultToken": "CAUSAggBOPri56vZlfGLpgFAAEgF"
+   }
+  ],
+  "estimatedResultCount": "6",
+  "exhaustive": true,
+  "requestToken": "CgtkaWVfaWZfbnVsbBIwKCBnaXQ6Z2l0aHViL2Fic2VpbC9hYnNlaWwtY3BwQG1hc3RlciBjYXNlOnllcyApGgwI0tjM0QYQ9YDMswMgDCoAMgBIAQ"
+ }
+}

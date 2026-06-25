@@ -1,0 +1,7552 @@
+{
+ "query": "BlazeRuntime",
+ "oss_project": "bazel",
+ "repo_name": "bazel",
+ "page_size": 50,
+ "fetched_at": "2026-06-11T22:26:52Z",
+ "response": {
+  "searchResults": [
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/runtime/BlazeRuntime.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "/**",
+         "matchingRanges": {
+          "lineNumber": "158"
+         },
+         "lineNumber": "158",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": " * The BlazeRuntime class encapsulates the immutable configuration of the current instance. These",
+         "matchingRanges": {
+          "lineNumber": "159",
+          "columnRanges": [
+           {
+            "startIndex": 7,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "159",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 97
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 97
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 7,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": " * runtime settings and services are available to most parts of any Blaze application for the",
+         "matchingRanges": {
+          "lineNumber": "160"
+         },
+         "lineNumber": "160",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 93
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 93
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": " */",
+         "matchingRanges": {
+          "lineNumber": "164"
+         },
+         "lineNumber": "164",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "public final class BlazeRuntime implements BugReport.BlazeRuntimeInterface {",
+         "matchingRanges": {
+          "lineNumber": "165",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 12
+           },
+           {
+            "startIndex": 53,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "165",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 13,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 32,
+            "length": 10
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 12
+          },
+          {
+           "startIndex": 53,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "166"
+         },
+         "lineNumber": "166"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  private BlazeRuntime(",
+         "matchingRanges": {
+          "lineNumber": "216",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "216",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "      FileSystem fileSystem,",
+         "matchingRanges": {
+          "lineNumber": "217"
+         },
+         "lineNumber": "217"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    BlazeRuntime runtime;",
+         "matchingRanges": {
+          "lineNumber": "1128",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "1128",
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    InvocationPolicy policy;",
+         "matchingRanges": {
+          "lineNumber": "1129"
+         },
+         "lineNumber": "1129"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 16
+    },
+    "resultToken": "CAASBAgBIAE44J-z-MfllcRqQABIAA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/runtime/BlazeRuntimeTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "/** Tests for {@link BlazeRuntime} static methods. */",
+         "matchingRanges": {
+          "lineNumber": "59",
+          "columnRanges": [
+           {
+            "startIndex": 21,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "59",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 53
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 21,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "@RunWith(JUnit4.class)",
+         "matchingRanges": {
+          "lineNumber": "60"
+         },
+         "lineNumber": "60",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 16,
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "public class BlazeRuntimeTest {",
+         "matchingRanges": {
+          "lineNumber": "61",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "61",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "62"
+         },
+         "lineNumber": "62"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    clock.advanceMillis(10);",
+         "matchingRanges": {
+          "lineNumber": "85"
+         },
+         "lineNumber": "85",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 24,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    var p1 = BlazeRuntime.manageProfiles(dir, \"p1\", 3);",
+         "matchingRanges": {
+          "lineNumber": "86",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "86",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 46,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 52,
+            "length": 1
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    assertThat(p1.getBaseName()).isEqualTo(\"command-p1.profile.gz\");",
+         "matchingRanges": {
+          "lineNumber": "87"
+         },
+         "lineNumber": "87",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 43,
+            "length": 23
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    clock.advanceMillis(10);",
+         "matchingRanges": {
+          "lineNumber": "89"
+         },
+         "lineNumber": "89",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 24,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    var p2 = BlazeRuntime.manageProfiles(dir, \"p2\", 3);",
+         "matchingRanges": {
+          "lineNumber": "90",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "90",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 46,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 52,
+            "length": 1
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    assertThat(p2.getBaseName()).isEqualTo(\"command-p2.profile.gz\");",
+         "matchingRanges": {
+          "lineNumber": "91"
+         },
+         "lineNumber": "91",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 43,
+            "length": 23
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 26
+    },
+    "resultToken": "CAESBAgBIAE4utCBzc6VmbznAUAASAE"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/buildtool/util/BlazeRuntimeWrapper.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import com.google.devtools.build.lib.runtime.BlazeModule;",
+         "matchingRanges": {
+          "lineNumber": "68"
+         },
+         "lineNumber": "68",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.runtime.BlazeRuntime;",
+         "matchingRanges": {
+          "lineNumber": "69",
+          "columnRanges": [
+           {
+            "startIndex": 45,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "69",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 45,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.runtime.ClientOptions;",
+         "matchingRanges": {
+          "lineNumber": "70"
+         },
+         "lineNumber": "70",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": " */",
+         "matchingRanges": {
+          "lineNumber": "112"
+         },
+         "lineNumber": "112",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "public class BlazeRuntimeWrapper {",
+         "matchingRanges": {
+          "lineNumber": "113",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "113",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "114"
+         },
+         "lineNumber": "114"
+        },
+        {
+         "lineText": "  private final BlazeRuntime runtime;",
+         "matchingRanges": {
+          "lineNumber": "115",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "115",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "  private CommandEnvironment env;",
+         "matchingRanges": {
+          "lineNumber": "116"
+         },
+         "lineNumber": "116",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  BlazeRuntimeWrapper(",
+         "matchingRanges": {
+          "lineNumber": "136",
+          "columnRanges": [
+           {
+            "startIndex": 2,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "136",
+         "ranges": [
+          {
+           "startIndex": 2,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "      EventCollectionApparatus events,",
+         "matchingRanges": {
+          "lineNumber": "137"
+         },
+         "lineNumber": "137"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 16
+    },
+    "resultToken": "CAISBAgBIAE4iKmlvqTq1KFmQABIAg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/runtime/BlazeOptionHandler.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  private final BlazeRuntime runtime;",
+         "matchingRanges": {
+          "lineNumber": "108",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "108",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "  private final OptionsParser optionsParser;",
+         "matchingRanges": {
+          "lineNumber": "109"
+         },
+         "lineNumber": "109",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  BlazeOptionHandler(",
+         "matchingRanges": {
+          "lineNumber": "117"
+         },
+         "lineNumber": "117"
+        },
+        {
+         "lineText": "      BlazeRuntime runtime,",
+         "matchingRanges": {
+          "lineNumber": "118",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "118",
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "      BlazeWorkspace workspace,",
+         "matchingRanges": {
+          "lineNumber": "119"
+         },
+         "lineNumber": "119"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAMSAggBOJKaqNbJzoz2dEAASAM"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/runtime/BlazeModule.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": " *",
+         "matchingRanges": {
+          "lineNumber": "62"
+         },
+         "lineNumber": "62",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": " * \u003cp\u003eThe set of modules is passed into {@link BlazeRuntime#main} and is fixed for the lifetime of",
+         "matchingRanges": {
+          "lineNumber": "63",
+          "columnRanges": [
+           {
+            "startIndex": 47,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "63",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 98
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 47,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": " * the server. A module can be obtained by calling {@link BlazeRuntime#getBlazeModule}.",
+         "matchingRanges": {
+          "lineNumber": "64",
+          "columnRanges": [
+           {
+            "startIndex": 58,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "64",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 87
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 58,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": " *",
+         "matchingRanges": {
+          "lineNumber": "65"
+         },
+         "lineNumber": "65",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  /**",
+         "matchingRanges": {
+          "lineNumber": "176"
+         },
+         "lineNumber": "176",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "   * Called to initialize a new server ({@link BlazeRuntime}). Modules can override this method to",
+         "matchingRanges": {
+          "lineNumber": "177",
+          "columnRanges": [
+           {
+            "startIndex": 47,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "177",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 98
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 47,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "   * affect how the server is configured. This is called after the startup options have been",
+         "matchingRanges": {
+          "lineNumber": "178"
+         },
+         "lineNumber": "178",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 92
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  public void workspaceInit(",
+         "matchingRanges": {
+          "lineNumber": "209"
+         },
+         "lineNumber": "209",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "      BlazeRuntime runtime, BlazeDirectories directories, WorkspaceBuilder builder) {}",
+         "matchingRanges": {
+          "lineNumber": "210",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "210",
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "211"
+         },
+         "lineNumber": "211"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 5
+    },
+    "resultToken": "CAQSAggBOLbO_dPB6pHyrgFAAEgE"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/runtime/BlazeService.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": " *",
+         "matchingRanges": {
+          "lineNumber": "29"
+         },
+         "lineNumber": "29",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": " * \u003cp\u003eThe set of services is passed into {@link BlazeRuntime#main} and fixed for the lifetime of the",
+         "matchingRanges": {
+          "lineNumber": "30",
+          "columnRanges": [
+           {
+            "startIndex": 48,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "30",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 100
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 48,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": " * server. A service can be obtained by calling {@link BlazeRuntime#getBlazeService} with the",
+         "matchingRanges": {
+          "lineNumber": "31",
+          "columnRanges": [
+           {
+            "startIndex": 55,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "31",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 93
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 55,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": " * interface type as the argument.",
+         "matchingRanges": {
+          "lineNumber": "32"
+         },
+         "lineNumber": "32",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 34
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAUSAggBOOq_2K68vNun9QFAAEgF"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/runtime/BlazeWorkspace.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": " * This class represents a workspace, and contains operations and data related to it. In contrast,",
+         "matchingRanges": {
+          "lineNumber": "61"
+         },
+         "lineNumber": "61",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 98
+           }
+          }
+         ]
+        },
+        {
+         "lineText": " * the BlazeRuntime class represents the Blaze server, and contains operations and data that are",
+         "matchingRanges": {
+          "lineNumber": "62",
+          "columnRanges": [
+           {
+            "startIndex": 7,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "62",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 96
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 7,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": " * (supposed to be) independent of the workspace or the current command.",
+         "matchingRanges": {
+          "lineNumber": "63"
+         },
+         "lineNumber": "63",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 72
+           }
+          }
+         ]
+        },
+        {
+         "lineText": " *",
+         "matchingRanges": {
+          "lineNumber": "64"
+         },
+         "lineNumber": "64",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": " * \u003cp\u003eAt this time, there is still a 1:1 relationship between the BlazeRuntime and the",
+         "matchingRanges": {
+          "lineNumber": "65",
+          "columnRanges": [
+           {
+            "startIndex": 66,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "65",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 86
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 66,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": " * BlazeWorkspace, but the introduction of this class is a step towards allowing 1:N relationships.",
+         "matchingRanges": {
+          "lineNumber": "66"
+         },
+         "lineNumber": "66",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 99
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  private final BlazeRuntime runtime;",
+         "matchingRanges": {
+          "lineNumber": "73",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "73",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "  private final SubscriberExceptionHandler eventBusExceptionHandler;",
+         "matchingRanges": {
+          "lineNumber": "74"
+         },
+         "lineNumber": "74",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  public BlazeRuntime getRuntime() {",
+         "matchingRanges": {
+          "lineNumber": "193",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "193",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    return runtime;",
+         "matchingRanges": {
+          "lineNumber": "194"
+         },
+         "lineNumber": "194",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 5
+    },
+    "resultToken": "CAYSAggBOPie_Z-k6_TDLkAASAY"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/runtime/BlazeOptionHandlerTestHelper.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    BlazeRuntime runtime =",
+         "matchingRanges": {
+          "lineNumber": "52",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "52",
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "        new BlazeRuntime.Builder()",
+         "matchingRanges": {
+          "lineNumber": "53",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "53",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "            .setFileSystem(scratch.getFileSystem())",
+         "matchingRanges": {
+          "lineNumber": "54"
+         },
+         "lineNumber": "54"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAcSAggBOK7c24qT7K7dAUAASAc"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/runtime/BlazeCommandDispatcher.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": " * appropriate command object, parses the options required by the object, and calls its exec method.",
+         "matchingRanges": {
+          "lineNumber": "103"
+         },
+         "lineNumber": "103",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 100
+           }
+          }
+         ]
+        },
+        {
+         "lineText": " * Also, this object provides the runtime state (BlazeRuntime) to the commands.",
+         "matchingRanges": {
+          "lineNumber": "104",
+          "columnRanges": [
+           {
+            "startIndex": 49,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "104",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 79
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 49,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": " */",
+         "matchingRanges": {
+          "lineNumber": "105"
+         },
+         "lineNumber": "105",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  private final BlazeRuntime runtime;",
+         "matchingRanges": {
+          "lineNumber": "116",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "116",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "  private final int serverPid;",
+         "matchingRanges": {
+          "lineNumber": "117"
+         },
+         "lineNumber": "117",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  BlazeCommandDispatcher(BlazeRuntime runtime, int serverPid) {",
+         "matchingRanges": {
+          "lineNumber": "137",
+          "columnRanges": [
+           {
+            "startIndex": 25,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "137",
+         "ranges": [
+          {
+           "startIndex": 25,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    this(runtime, serverPid, runtime.getBugReporter());",
+         "matchingRanges": {
+          "lineNumber": "138"
+         },
+         "lineNumber": "138",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  @VisibleForTesting",
+         "matchingRanges": {
+          "lineNumber": "142"
+         },
+         "lineNumber": "142"
+        },
+        {
+         "lineText": "  public BlazeCommandDispatcher(BlazeRuntime runtime) {",
+         "matchingRanges": {
+          "lineNumber": "143",
+          "columnRanges": [
+           {
+            "startIndex": 32,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "143",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 32,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    this(runtime, UNKNOWN_SERVER_PID, runtime.getBugReporter());",
+         "matchingRanges": {
+          "lineNumber": "144"
+         },
+         "lineNumber": "144",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 8
+    },
+    "resultToken": "CAgSAggBOKT7xtCLzLiduwFAAEgI"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/runtime/BlazeCommandDispatcherRcoptionsTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  private final ReportAllCommand reportAllInherited = new ReportAllInheritedCommand();",
+         "matchingRanges": {
+          "lineNumber": "110"
+         },
+         "lineNumber": "110",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 54,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  private BlazeRuntime runtime;",
+         "matchingRanges": {
+          "lineNumber": "111",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "111",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "112"
+         },
+         "lineNumber": "112"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    this.runtime =",
+         "matchingRanges": {
+          "lineNumber": "126"
+         },
+         "lineNumber": "126",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "        new BlazeRuntime.Builder()",
+         "matchingRanges": {
+          "lineNumber": "127",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "127",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "            .setFileSystem(scratch.getFileSystem())",
+         "matchingRanges": {
+          "lineNumber": "128"
+         },
+         "lineNumber": "128"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAkSAggBOM71orzGupWsaEAASAk"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/runtime/BlazeCommandDispatcherTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  private final Scratch scratch = new Scratch();",
+         "matchingRanges": {
+          "lineNumber": "82"
+         },
+         "lineNumber": "82",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 34,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  private BlazeRuntime runtime;",
+         "matchingRanges": {
+          "lineNumber": "83",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "83",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "  private final RecordingOutErr outErr = new RecordingOutErr();",
+         "matchingRanges": {
+          "lineNumber": "84"
+         },
+         "lineNumber": "84",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 41,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    // no ConfiguredTargetFactory is needed for testing command dispatch",
+         "matchingRanges": {
+          "lineNumber": "105"
+         },
+         "lineNumber": "105",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 68
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    BlazeRuntime.Builder builder =",
+         "matchingRanges": {
+          "lineNumber": "106",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "106",
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "        new BlazeRuntime.Builder()",
+         "matchingRanges": {
+          "lineNumber": "107",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "107",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "            .setFileSystem(scratch.getFileSystem())",
+         "matchingRanges": {
+          "lineNumber": "108"
+         },
+         "lineNumber": "108"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CAoSAggBONiv_ef5w7bo1gFAAEgK"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/cpp/blaze.cc",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  // Note that we always use the --flag=ARG form (instead of the --flag ARG",
+         "matchingRanges": {
+          "lineNumber": "475"
+         },
+         "lineNumber": "475",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 73
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  // one) so that BlazeRuntime#splitStartupOptions has an easy job.",
+         "matchingRanges": {
+          "lineNumber": "476",
+          "columnRanges": [
+           {
+            "startIndex": 18,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "476",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 65
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 18,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "477"
+         },
+         "lineNumber": "477"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAsSAggBOPTboqXfmoWOgwFAAEgL"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/runtime/CommandEnvironment.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  private final BlazeRuntime runtime;",
+         "matchingRanges": {
+          "lineNumber": "107",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "107",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "  private final BlazeWorkspace workspace;",
+         "matchingRanges": {
+          "lineNumber": "108"
+         },
+         "lineNumber": "108",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  CommandEnvironment(",
+         "matchingRanges": {
+          "lineNumber": "224"
+         },
+         "lineNumber": "224"
+        },
+        {
+         "lineText": "      BlazeRuntime runtime,",
+         "matchingRanges": {
+          "lineNumber": "225",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "225",
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "      BlazeWorkspace workspace,",
+         "matchingRanges": {
+          "lineNumber": "226"
+         },
+         "lineNumber": "226"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  public BlazeRuntime getRuntime() {",
+         "matchingRanges": {
+          "lineNumber": "462",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "462",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    return runtime;",
+         "matchingRanges": {
+          "lineNumber": "463"
+         },
+         "lineNumber": "463",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "   *",
+         "matchingRanges": {
+          "lineNumber": "729"
+         },
+         "lineNumber": "729",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "   * \u003cp\u003eThis may be equal to {@code BlazeRuntime#getWorkspace()}, or beneath it.",
+         "matchingRanges": {
+          "lineNumber": "730",
+          "columnRanges": [
+           {
+            "startIndex": 36,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "730",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 80
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 36,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "   *",
+         "matchingRanges": {
+          "lineNumber": "731"
+         },
+         "lineNumber": "731",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 4
+    },
+    "resultToken": "CAwSAggBOIDa35zIiq6hbUAASAw"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/runtime/CommandInterruptionTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "            scratch.dir(\"install\"), scratch.dir(\"output\"), scratch.dir(\"user_root\"));",
+         "matchingRanges": {
+          "lineNumber": "397"
+         },
+         "lineNumber": "397",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 24,
+            "length": 9
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 48,
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 71,
+            "length": 11
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    BlazeRuntime runtime =",
+         "matchingRanges": {
+          "lineNumber": "398",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "398",
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "        new BlazeRuntime.Builder()",
+         "matchingRanges": {
+          "lineNumber": "399",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "399",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "            .setFileSystem(scratch.getFileSystem())",
+         "matchingRanges": {
+          "lineNumber": "400"
+         },
+         "lineNumber": "400"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CA0SAggBOMao1MK00YbhZEAASA0"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/runtime/CrashEvent.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "/**",
+         "matchingRanges": {
+          "lineNumber": "16"
+         },
+         "lineNumber": "16",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": " * Posted during {@link BlazeRuntime#cleanUpForCrash} just prior to {@link CommandCompleteEvent}.",
+         "matchingRanges": {
+          "lineNumber": "17",
+          "columnRanges": [
+           {
+            "startIndex": 24,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "17",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 97
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 24,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": " */",
+         "matchingRanges": {
+          "lineNumber": "18"
+         },
+         "lineNumber": "18",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CA4SAggBOKznw6frj8i5f0AASA4"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/runtime/commands/PrintActionCommand.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import com.google.devtools.build.lib.runtime.BlazeCommandResult;",
+         "matchingRanges": {
+          "lineNumber": "47"
+         },
+         "lineNumber": "47",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.runtime.BlazeRuntime;",
+         "matchingRanges": {
+          "lineNumber": "48",
+          "columnRanges": [
+           {
+            "startIndex": 45,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "48",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 45,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.runtime.Command;",
+         "matchingRanges": {
+          "lineNumber": "49"
+         },
+         "lineNumber": "49",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "        throws PrintActionException, InterruptedException {",
+         "matchingRanges": {
+          "lineNumber": "179"
+         },
+         "lineNumber": "179",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "      BlazeRuntime runtime = env.getRuntime();",
+         "matchingRanges": {
+          "lineNumber": "180",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "180",
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "      String commandName = PrintActionCommand.this.getClass().getAnnotation(Command.class).name();",
+         "matchingRanges": {
+          "lineNumber": "181"
+         },
+         "lineNumber": "181",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 46,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 84,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CA8SAggBOMrPuO6JwdK6cUAASA8"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/runtime/BUILD",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "        \"BlazeOptionHandler.java\",",
+         "matchingRanges": {
+          "lineNumber": "984"
+         },
+         "lineNumber": "984",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 25
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "        \"BlazeRuntime.java\",",
+         "matchingRanges": {
+          "lineNumber": "985",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "985",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 19
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "        \"BlazeWorkspace.java\",",
+         "matchingRanges": {
+          "lineNumber": "986"
+         },
+         "lineNumber": "986",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 21
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBASAggBON7zqNjPkZHtJEAASBA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/runtime/commands/QueryEnvironmentBasedCommand.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import com.google.devtools.build.lib.runtime.BlazeCommandResult;",
+         "matchingRanges": {
+          "lineNumber": "43"
+         },
+         "lineNumber": "43",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.runtime.BlazeRuntime;",
+         "matchingRanges": {
+          "lineNumber": "44",
+          "columnRanges": [
+           {
+            "startIndex": 45,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "44",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 45,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.runtime.CommandEnvironment;",
+         "matchingRanges": {
+          "lineNumber": "45"
+         },
+         "lineNumber": "45",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  private BlazeCommandResult execInternal(CommandEnvironment env, OptionsParsingResult options) {",
+         "matchingRanges": {
+          "lineNumber": "105"
+         },
+         "lineNumber": "105",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    BlazeRuntime runtime = env.getRuntime();",
+         "matchingRanges": {
+          "lineNumber": "106",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "106",
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    QueryOptions queryOptions = options.getOptions(QueryOptions.class);",
+         "matchingRanges": {
+          "lineNumber": "107"
+         },
+         "lineNumber": "107",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 64,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CBESAggBOIDo49_4qK3hOUAASBE"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/runtime/commands/CanonicalizeCommand.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import com.google.devtools.build.lib.runtime.BlazeOptionHandler.SkyframeExecutorTargetLoader;",
+         "matchingRanges": {
+          "lineNumber": "28"
+         },
+         "lineNumber": "28",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.runtime.BlazeRuntime;",
+         "matchingRanges": {
+          "lineNumber": "29",
+          "columnRanges": [
+           {
+            "startIndex": 45,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "29",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 45,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.runtime.Command;",
+         "matchingRanges": {
+          "lineNumber": "30"
+         },
+         "lineNumber": "30",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  public BlazeCommandResult exec(CommandEnvironment env, OptionsParsingResult options) {",
+         "matchingRanges": {
+          "lineNumber": "149"
+         },
+         "lineNumber": "149",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    BlazeRuntime runtime = env.getRuntime();",
+         "matchingRanges": {
+          "lineNumber": "150",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "150",
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    Options canonicalizeOptions = options.getOptions(Options.class);",
+         "matchingRanges": {
+          "lineNumber": "151"
+         },
+         "lineNumber": "151",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 61,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CBISAggBOIbU_srg3rPISkAASBI"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/runtime/ServerBuilder.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "/**",
+         "matchingRanges": {
+          "lineNumber": "26"
+         },
+         "lineNumber": "26",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": " * Builder class to create a {@link BlazeRuntime} instance. This class is part of the module API,",
+         "matchingRanges": {
+          "lineNumber": "27",
+          "columnRanges": [
+           {
+            "startIndex": 36,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "27",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 97
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 36,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": " * which allows modules to affect how the server is initialized.",
+         "matchingRanges": {
+          "lineNumber": "28"
+         },
+         "lineNumber": "28",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 64
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBMSAggBOP6Zro_1oaSlqgFAAEgT"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/runtime/WorkspaceBuilder.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  BlazeWorkspace build(",
+         "matchingRanges": {
+          "lineNumber": "98"
+         },
+         "lineNumber": "98"
+        },
+        {
+         "lineText": "      BlazeRuntime runtime,",
+         "matchingRanges": {
+          "lineNumber": "99",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "99",
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "      PackageFactory packageFactory,",
+         "matchingRanges": {
+          "lineNumber": "100"
+         },
+         "lineNumber": "100"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBQSAggBONSd3qbj6M_C2AFAAEgU"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/runtime/commands/HelpCommand.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import com.google.devtools.build.lib.runtime.BlazeCommandUtils;",
+         "matchingRanges": {
+          "lineNumber": "38"
+         },
+         "lineNumber": "38",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.runtime.BlazeRuntime;",
+         "matchingRanges": {
+          "lineNumber": "39",
+          "columnRanges": [
+           {
+            "startIndex": 45,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "39",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 45,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.runtime.Command;",
+         "matchingRanges": {
+          "lineNumber": "40"
+         },
+         "lineNumber": "40",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    BlazeRuntime runtime = env.getRuntime();",
+         "matchingRanges": {
+          "lineNumber": "138",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "138",
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    OutErr outErr = env.getReporter().getOutErr();",
+         "matchingRanges": {
+          "lineNumber": "139"
+         },
+         "lineNumber": "139"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  private void emitStartupOptions(",
+         "matchingRanges": {
+          "lineNumber": "214"
+         },
+         "lineNumber": "214",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "      OutErr outErr, HelpVerbosity helpVerbosity, BlazeRuntime runtime) {",
+         "matchingRanges": {
+          "lineNumber": "215",
+          "columnRanges": [
+           {
+            "startIndex": 50,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "215",
+         "ranges": [
+          {
+           "startIndex": 50,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    outErr.printOut(",
+         "matchingRanges": {
+          "lineNumber": "216"
+         },
+         "lineNumber": "216"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  private static void emitCompletionVariables(BlazeRuntime runtime, OutErr outErr) {",
+         "matchingRanges": {
+          "lineNumber": "266",
+          "columnRanges": [
+           {
+            "startIndex": 46,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "266",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 17,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 46,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    Map\u003cString, BlazeCommand\u003e commandsByName = getSortedCommands(runtime);",
+         "matchingRanges": {
+          "lineNumber": "267"
+         },
+         "lineNumber": "267"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 11
+    },
+    "resultToken": "CBUSAggBOMyOi8r_l7SztwFAAEgV"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/runtime/commands/TestCommand.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import com.google.devtools.build.lib.runtime.BlazeCommandResult;",
+         "matchingRanges": {
+          "lineNumber": "38"
+         },
+         "lineNumber": "38",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.runtime.BlazeRuntime;",
+         "matchingRanges": {
+          "lineNumber": "39",
+          "columnRanges": [
+           {
+            "startIndex": 45,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "39",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 45,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.runtime.Command;",
+         "matchingRanges": {
+          "lineNumber": "40"
+         },
+         "lineNumber": "40",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  /** Returns the name of the command to ask the project file for. */",
+         "matchingRanges": {
+          "lineNumber": "76"
+         },
+         "lineNumber": "76",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 67
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  // TODO(hdm): move into BlazeRuntime?  It feels odd to duplicate the annotation here.",
+         "matchingRanges": {
+          "lineNumber": "77",
+          "columnRanges": [
+           {
+            "startIndex": 26,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "77",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 85
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 26,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "  protected String commandName() {",
+         "matchingRanges": {
+          "lineNumber": "78"
+         },
+         "lineNumber": "78",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 9
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "      AnsiTerminalPrinter printer) {",
+         "matchingRanges": {
+          "lineNumber": "128"
+         },
+         "lineNumber": "128"
+        },
+        {
+         "lineText": "    BlazeRuntime runtime = env.getRuntime();",
+         "matchingRanges": {
+          "lineNumber": "129",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "129",
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    // Run simultaneous build and test.",
+         "matchingRanges": {
+          "lineNumber": "130"
+         },
+         "lineNumber": "130",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 35
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 4
+    },
+    "resultToken": "CBYSAggBOMyi3sS735DMV0AASBY"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/runtime/commands/DumpCommand.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import com.google.devtools.build.lib.runtime.BlazeCommandUtils;",
+         "matchingRanges": {
+          "lineNumber": "36"
+         },
+         "lineNumber": "36",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.runtime.BlazeRuntime;",
+         "matchingRanges": {
+          "lineNumber": "37",
+          "columnRanges": [
+           {
+            "startIndex": 45,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "37",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 45,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.runtime.BlazeWorkspace;",
+         "matchingRanges": {
+          "lineNumber": "38"
+         },
+         "lineNumber": "38",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  public BlazeCommandResult exec(CommandEnvironment env, OptionsParsingResult options) {",
+         "matchingRanges": {
+          "lineNumber": "331"
+         },
+         "lineNumber": "331",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    BlazeRuntime runtime = env.getRuntime();",
+         "matchingRanges": {
+          "lineNumber": "332",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "332",
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    DumpOptions dumpOptions = options.getOptions(DumpOptions.class);",
+         "matchingRanges": {
+          "lineNumber": "333"
+         },
+         "lineNumber": "333",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 61,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  private static void dumpRuleClasses(BlazeRuntime runtime, PrintStream out) {",
+         "matchingRanges": {
+          "lineNumber": "456",
+          "columnRanges": [
+           {
+            "startIndex": 38,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "456",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 17,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 38,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    ImmutableMap\u003cString, RuleClass\u003e ruleClassMap = runtime.getRuleClassProvider().getRuleClassMap();",
+         "matchingRanges": {
+          "lineNumber": "457"
+         },
+         "lineNumber": "457"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CBcSAggBOIzNpbzJwaDuW0AASBc"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/runtime/commands/InfoCommand.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import com.google.devtools.build.lib.runtime.BlazeCommandResult;",
+         "matchingRanges": {
+          "lineNumber": "32"
+         },
+         "lineNumber": "32",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.runtime.BlazeRuntime;",
+         "matchingRanges": {
+          "lineNumber": "33",
+          "columnRanges": [
+           {
+            "startIndex": 45,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "33",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 45,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.runtime.Command;",
+         "matchingRanges": {
+          "lineNumber": "34"
+         },
+         "lineNumber": "34",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "      final CommandEnvironment env, final OptionsParsingResult optionsParsingResult) {",
+         "matchingRanges": {
+          "lineNumber": "172"
+         },
+         "lineNumber": "172",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 36,
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    final BlazeRuntime runtime = env.getRuntime();",
+         "matchingRanges": {
+          "lineNumber": "173",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "173",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    env.getReporter().switchToAnsiAllowingHandler();",
+         "matchingRanges": {
+          "lineNumber": "174"
+         },
+         "lineNumber": "174"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CBgSAggBOPiLooHpz-edUkAASBg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/runtime/commands/CleanCommand.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import com.google.devtools.build.lib.runtime.BlazeCommandResult;",
+         "matchingRanges": {
+          "lineNumber": "29"
+         },
+         "lineNumber": "29",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.runtime.BlazeRuntime;",
+         "matchingRanges": {
+          "lineNumber": "30",
+          "columnRanges": [
+           {
+            "startIndex": 45,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "30",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 45,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.runtime.Command;",
+         "matchingRanges": {
+          "lineNumber": "31"
+         },
+         "lineNumber": "31",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "      throws CleanException, InterruptedException {",
+         "matchingRanges": {
+          "lineNumber": "218"
+         },
+         "lineNumber": "218",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    BlazeRuntime runtime = env.getRuntime();",
+         "matchingRanges": {
+          "lineNumber": "219",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "219",
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "220"
+         },
+         "lineNumber": "220"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CBkSAggBOOry1vvJkLylgAFAAEgZ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/runtime/commands/BuildCommand.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import com.google.devtools.build.lib.runtime.BlazeCommandResult;",
+         "matchingRanges": {
+          "lineNumber": "31"
+         },
+         "lineNumber": "31",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.runtime.BlazeRuntime;",
+         "matchingRanges": {
+          "lineNumber": "32",
+          "columnRanges": [
+           {
+            "startIndex": 45,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "32",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 45,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.runtime.Command;",
+         "matchingRanges": {
+          "lineNumber": "33"
+         },
+         "lineNumber": "33",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  public BlazeCommandResult exec(CommandEnvironment env, OptionsParsingResult options) {",
+         "matchingRanges": {
+          "lineNumber": "71"
+         },
+         "lineNumber": "71",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    BlazeRuntime runtime = env.getRuntime();",
+         "matchingRanges": {
+          "lineNumber": "72",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "72",
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    List\u003cString\u003e targets;",
+         "matchingRanges": {
+          "lineNumber": "73"
+         },
+         "lineNumber": "73"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CBoSAggBOMqNp6zY5P6K5wFAAEga"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/runtime/commands/CqueryCommand.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import com.google.devtools.build.lib.runtime.BlazeCommandResult;",
+         "matchingRanges": {
+          "lineNumber": "39"
+         },
+         "lineNumber": "39",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.runtime.BlazeRuntime;",
+         "matchingRanges": {
+          "lineNumber": "40",
+          "columnRanges": [
+           {
+            "startIndex": 45,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "40",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 45,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.runtime.Command;",
+         "matchingRanges": {
+          "lineNumber": "41"
+         },
+         "lineNumber": "41",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    }",
+         "matchingRanges": {
+          "lineNumber": "179"
+         },
+         "lineNumber": "179"
+        },
+        {
+         "lineText": "    BlazeRuntime runtime = env.getRuntime();",
+         "matchingRanges": {
+          "lineNumber": "180",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "180",
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "181"
+         },
+         "lineNumber": "181"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CBsSAggBOK7Q1v2PpbfNQEAASBs"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/runtime/commands/AqueryCommand.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import com.google.devtools.build.lib.runtime.BlazeCommandResult;",
+         "matchingRanges": {
+          "lineNumber": "38"
+         },
+         "lineNumber": "38",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.runtime.BlazeRuntime;",
+         "matchingRanges": {
+          "lineNumber": "39",
+          "columnRanges": [
+           {
+            "startIndex": 45,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "39",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 45,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.runtime.Command;",
+         "matchingRanges": {
+          "lineNumber": "40"
+         },
+         "lineNumber": "40",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    BlazeRuntime runtime = env.getRuntime();",
+         "matchingRanges": {
+          "lineNumber": "139",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "139",
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "140"
+         },
+         "lineNumber": "140"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CBwSAggBOLy7v9m8nMXDjAFAAEgc"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/runtime/commands/DumpCommandTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import com.google.devtools.build.lib.runtime.BlazeCommandResult;",
+         "matchingRanges": {
+          "lineNumber": "22"
+         },
+         "lineNumber": "22",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.runtime.BlazeRuntime;",
+         "matchingRanges": {
+          "lineNumber": "23",
+          "columnRanges": [
+           {
+            "startIndex": 45,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "23",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 45,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.util.io.RecordingOutErr;",
+         "matchingRanges": {
+          "lineNumber": "24"
+         },
+         "lineNumber": "24",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  public void createDispatcher() {",
+         "matchingRanges": {
+          "lineNumber": "39"
+         },
+         "lineNumber": "39",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    BlazeRuntime runtime = getRuntime();",
+         "matchingRanges": {
+          "lineNumber": "40",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "40",
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    runtime.getCommandMap().put(\"dump\", new DumpCommand());",
+         "matchingRanges": {
+          "lineNumber": "41"
+         },
+         "lineNumber": "41",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 32,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 40,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CB0SAggBOITt4fjAu_KFREAASB0"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/skyframe/serialization/analysis/BazelSkycacheIntegrationTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import com.google.common.util.concurrent.ListenableFuture;",
+         "matchingRanges": {
+          "lineNumber": "23"
+         },
+         "lineNumber": "23",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.runtime.BlazeRuntime;",
+         "matchingRanges": {
+          "lineNumber": "24",
+          "columnRanges": [
+           {
+            "startIndex": 45,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "24",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 45,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.skyframe.SkyFunctions;",
+         "matchingRanges": {
+          "lineNumber": "25"
+         },
+         "lineNumber": "25",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  @Override",
+         "matchingRanges": {
+          "lineNumber": "118"
+         },
+         "lineNumber": "118"
+        },
+        {
+         "lineText": "  protected BlazeRuntime.Builder getRuntimeBuilder() throws Exception {",
+         "matchingRanges": {
+          "lineNumber": "119",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "119",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 9
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 53,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    return super.getRuntimeBuilder().addBlazeModule(new ModuleWithOverrides());",
+         "matchingRanges": {
+          "lineNumber": "120"
+         },
+         "lineNumber": "120",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 11,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 52,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CB4SAggBOLCAwKKug5yBmgFAAEge"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/runtime/commands/TargetPatternsHelperTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import com.google.devtools.build.lib.buildtool.BuildRequestOptions;",
+         "matchingRanges": {
+          "lineNumber": "25"
+         },
+         "lineNumber": "25",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.runtime.BlazeRuntime;",
+         "matchingRanges": {
+          "lineNumber": "26",
+          "columnRanges": [
+           {
+            "startIndex": 45,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "26",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 45,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.runtime.BlazeServerStartupOptions;",
+         "matchingRanges": {
+          "lineNumber": "27"
+         },
+         "lineNumber": "27",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    scratch = new Scratch();",
+         "matchingRanges": {
+          "lineNumber": "58"
+         },
+         "lineNumber": "58",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 14,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    BlazeRuntime runtime =",
+         "matchingRanges": {
+          "lineNumber": "59",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "59",
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "        new BlazeRuntime.Builder()",
+         "matchingRanges": {
+          "lineNumber": "60",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "60",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "            .setFileSystem(scratch.getFileSystem())",
+         "matchingRanges": {
+          "lineNumber": "61"
+         },
+         "lineNumber": "61"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CB8SAggBOPLDhe2_uOKYqwFAAEgf"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/bazel/Bazel.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import com.google.devtools.build.lib.runtime.BlazeModule;",
+         "matchingRanges": {
+          "lineNumber": "23"
+         },
+         "lineNumber": "23",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.runtime.BlazeRuntime;",
+         "matchingRanges": {
+          "lineNumber": "24",
+          "columnRanges": [
+           {
+            "startIndex": 45,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "24",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 45,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.shell.WindowsSubprocessFactory;",
+         "matchingRanges": {
+          "lineNumber": "25"
+         },
+         "lineNumber": "25",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    BlazeVersionInfo.setBuildInfo(tryGetBuildInfo());",
+         "matchingRanges": {
+          "lineNumber": "112"
+         },
+         "lineNumber": "112"
+        },
+        {
+         "lineText": "    BlazeRuntime.main(BAZEL_MODULES, BAZEL_SERVICES, args, JniLoader.getJniLoadError());",
+         "matchingRanges": {
+          "lineNumber": "113",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "113",
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "  }",
+         "matchingRanges": {
+          "lineNumber": "114"
+         },
+         "lineNumber": "114"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CCASAggBOOCBwvKBnpD4_AFAAEgg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/runtime/commands/ConfigCommandTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    List\u003cString\u003e params = Lists.newArrayList(\"build\");",
+         "matchingRanges": {
+          "lineNumber": "114"
+         },
+         "lineNumber": "114",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 45,
+            "length": 7
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    // Ideally we'd directly use BlazeRuntimeWrapper, but it's explicitly documented as not",
+         "matchingRanges": {
+          "lineNumber": "115",
+          "columnRanges": [
+           {
+            "startIndex": 33,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "115",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 87
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 33,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    // exercising the command dispatcher, which is exactly what we need here.",
+         "matchingRanges": {
+          "lineNumber": "116"
+         },
+         "lineNumber": "116",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 73
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    List\u003cString\u003e params = Lists.newArrayList(\"build\");",
+         "matchingRanges": {
+          "lineNumber": "129"
+         },
+         "lineNumber": "129",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 45,
+            "length": 7
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    // Ideally we'd directly use BlazeRuntimeWrapper, but it's explicitly documented as not",
+         "matchingRanges": {
+          "lineNumber": "130",
+          "columnRanges": [
+           {
+            "startIndex": 33,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "130",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 87
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 33,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    // exercising the command dispatcher, which is exactly what we need here.",
+         "matchingRanges": {
+          "lineNumber": "131"
+         },
+         "lineNumber": "131",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 73
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CCESAggBOOrWo5WOmJXf_AFAAEgh"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/skyframe/TimestampBuilderWithCompactPersistentActionCacheTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  public final void setCache() throws Exception  {",
+         "matchingRanges": {
+          "lineNumber": "50"
+         },
+         "lineNumber": "50",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 15,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 31,
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    // BlazeRuntime.setupLogging(Level.FINEST);  // Uncomment this for debugging.",
+         "matchingRanges": {
+          "lineNumber": "51",
+          "columnRanges": [
+           {
+            "startIndex": 7,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "51",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 77
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 7,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "52"
+         },
+         "lineNumber": "52"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CCISAggBONid-fGD7OybkAFAAEgi"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/packages/DocumentationTestUtil.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import com.google.devtools.build.lib.runtime.BlazeModule;",
+         "matchingRanges": {
+          "lineNumber": "25"
+         },
+         "lineNumber": "25",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.runtime.BlazeRuntime;",
+         "matchingRanges": {
+          "lineNumber": "26",
+          "columnRanges": [
+           {
+            "startIndex": 45,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "26",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 45,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.runtime.BlazeService;",
+         "matchingRanges": {
+          "lineNumber": "27"
+         },
+         "lineNumber": "27",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    Iterable\u003cOptionsSupplier\u003e optionsSuppliers =",
+         "matchingRanges": {
+          "lineNumber": "71"
+         },
+         "lineNumber": "71"
+        },
+        {
+         "lineText": "        Iterables.concat(BlazeRuntime.createBlazeModules(blazeModuleClasses), blazeServices);",
+         "matchingRanges": {
+          "lineNumber": "72",
+          "columnRanges": [
+           {
+            "startIndex": 25,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "72",
+         "ranges": [
+          {
+           "startIndex": 25,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "73"
+         },
+         "lineNumber": "73"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CCMSAggBOLia-qOMmKuce0AASCM"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/bugreport/BugReport.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  private static BlazeRuntimeInterface runtime = null;",
+         "matchingRanges": {
+          "lineNumber": "63",
+          "columnRanges": [
+           {
+            "startIndex": 17,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "63",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 17,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "64"
+         },
+         "lineNumber": "64"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  /**",
+         "matchingRanges": {
+          "lineNumber": "83"
+         },
+         "lineNumber": "83",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "   * This is a narrow interface for {@link BugReport}'s usage of BlazeRuntime. It lives in this",
+         "matchingRanges": {
+          "lineNumber": "84",
+          "columnRanges": [
+           {
+            "startIndex": 65,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "84",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 95
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 65,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "   * file, for the sake of avoiding a build-time cycle.",
+         "matchingRanges": {
+          "lineNumber": "85"
+         },
+         "lineNumber": "85",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 55
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "   */",
+         "matchingRanges": {
+          "lineNumber": "86"
+         },
+         "lineNumber": "86",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  public interface BlazeRuntimeInterface {",
+         "matchingRanges": {
+          "lineNumber": "87",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "87",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 9
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    String getProductName();",
+         "matchingRanges": {
+          "lineNumber": "88"
+         },
+         "lineNumber": "88"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  public static void setRuntime(BlazeRuntimeInterface newRuntime) {",
+         "matchingRanges": {
+          "lineNumber": "99",
+          "columnRanges": [
+           {
+            "startIndex": 32,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "99",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 16,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 32,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    Preconditions.checkNotNull(newRuntime);",
+         "matchingRanges": {
+          "lineNumber": "100"
+         },
+         "lineNumber": "100"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 5
+    },
+    "resultToken": "CCQSBAgBIAE4hr_a2MSdiok7QABIJA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/bazel/BazelRepositoryModule.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import com.google.devtools.build.lib.runtime.BlazeModule;",
+         "matchingRanges": {
+          "lineNumber": "86"
+         },
+         "lineNumber": "86",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.runtime.BlazeRuntime;",
+         "matchingRanges": {
+          "lineNumber": "87",
+          "columnRanges": [
+           {
+            "startIndex": 45,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "87",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 45,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.runtime.CommandEnvironment;",
+         "matchingRanges": {
+          "lineNumber": "88"
+         },
+         "lineNumber": "88",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  public void workspaceInit(",
+         "matchingRanges": {
+          "lineNumber": "210"
+         },
+         "lineNumber": "210",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "      BlazeRuntime runtime, BlazeDirectories directories, WorkspaceBuilder builder) {",
+         "matchingRanges": {
+          "lineNumber": "211",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "211",
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    builder.allowExternalRepositories(true);",
+         "matchingRanges": {
+          "lineNumber": "212"
+         },
+         "lineNumber": "212"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CCUSAggBOPzD8-CSl6fPtwFAAEgl"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/bazel/BazelDiffAwarenessModule.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import com.google.devtools.build.lib.runtime.BlazeModule;",
+         "matchingRanges": {
+          "lineNumber": "18"
+         },
+         "lineNumber": "18",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.runtime.BlazeRuntime;",
+         "matchingRanges": {
+          "lineNumber": "19",
+          "columnRanges": [
+           {
+            "startIndex": 45,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "19",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 45,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.runtime.WorkspaceBuilder;",
+         "matchingRanges": {
+          "lineNumber": "20"
+         },
+         "lineNumber": "20",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  public void workspaceInit(",
+         "matchingRanges": {
+          "lineNumber": "31"
+         },
+         "lineNumber": "31",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "      BlazeRuntime runtime, BlazeDirectories directories, WorkspaceBuilder builder) {",
+         "matchingRanges": {
+          "lineNumber": "32",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "32",
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    // Order here is important - LocalDiffAwareness creation always succeeds, so it must be last.",
+         "matchingRanges": {
+          "lineNumber": "33"
+         },
+         "lineNumber": "33",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 93
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CCYSAggBOJLQhJDLiIebHUAASCY"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/bazel/BazelWorkspaceStatusModule.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import com.google.devtools.build.lib.runtime.BlazeModule;",
+         "matchingRanges": {
+          "lineNumber": "39"
+         },
+         "lineNumber": "39",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.runtime.BlazeRuntime;",
+         "matchingRanges": {
+          "lineNumber": "40",
+          "columnRanges": [
+           {
+            "startIndex": 45,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "40",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 45,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.runtime.CommandEnvironment;",
+         "matchingRanges": {
+          "lineNumber": "41"
+         },
+         "lineNumber": "41",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  public void workspaceInit(",
+         "matchingRanges": {
+          "lineNumber": "331"
+         },
+         "lineNumber": "331",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "      BlazeRuntime runtime, BlazeDirectories directories, WorkspaceBuilder builder) {",
+         "matchingRanges": {
+          "lineNumber": "332",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "332",
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    builder.setWorkspaceStatusActionFactory(new BazelStatusActionFactory());",
+         "matchingRanges": {
+          "lineNumber": "333"
+         },
+         "lineNumber": "333",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 44,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CCcSAggBOMLvt_Wd-M2XPUAASCc"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/skyframe/SkyframeFilesystemIntegrationTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import com.google.devtools.build.lib.runtime.BlazeModule;",
+         "matchingRanges": {
+          "lineNumber": "28"
+         },
+         "lineNumber": "28",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.runtime.BlazeRuntime;",
+         "matchingRanges": {
+          "lineNumber": "29",
+          "columnRanges": [
+           {
+            "startIndex": 45,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "29",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 45,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.runtime.WorkspaceBuilder;",
+         "matchingRanges": {
+          "lineNumber": "30"
+         },
+         "lineNumber": "30",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  @Override",
+         "matchingRanges": {
+          "lineNumber": "52"
+         },
+         "lineNumber": "52"
+        },
+        {
+         "lineText": "  protected BlazeRuntime.Builder getRuntimeBuilder() throws Exception {",
+         "matchingRanges": {
+          "lineNumber": "53",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "53",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 9
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 53,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    DelegatingSyscallCache delegatingSyscallCache = new DelegatingSyscallCache();",
+         "matchingRanges": {
+          "lineNumber": "54"
+         },
+         "lineNumber": "54",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 52,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "              public void workspaceInit(",
+         "matchingRanges": {
+          "lineNumber": "60"
+         },
+         "lineNumber": "60",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 14,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 21,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "                  BlazeRuntime runtime, BlazeDirectories directories, WorkspaceBuilder builder) {",
+         "matchingRanges": {
+          "lineNumber": "61",
+          "columnRanges": [
+           {
+            "startIndex": 18,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "61",
+         "ranges": [
+          {
+           "startIndex": 18,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "                builder.setSyscallCache(delegatingSyscallCache);",
+         "matchingRanges": {
+          "lineNumber": "62"
+         },
+         "lineNumber": "62"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CCgSAggBOIqAydq55bLJ1wFAAEgo"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/skyframe/OutputsInvalidationIntegrationTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import com.google.devtools.build.lib.runtime.BlazeModule;",
+         "matchingRanges": {
+          "lineNumber": "28"
+         },
+         "lineNumber": "28",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.runtime.BlazeRuntime;",
+         "matchingRanges": {
+          "lineNumber": "29",
+          "columnRanges": [
+           {
+            "startIndex": 45,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "29",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 45,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.testutil.MoreAsserts;",
+         "matchingRanges": {
+          "lineNumber": "30"
+         },
+         "lineNumber": "30",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  @Override",
+         "matchingRanges": {
+          "lineNumber": "64"
+         },
+         "lineNumber": "64"
+        },
+        {
+         "lineText": "  protected BlazeRuntime.Builder getRuntimeBuilder() throws Exception {",
+         "matchingRanges": {
+          "lineNumber": "65",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "65",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 9
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 53,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    return super.getRuntimeBuilder()",
+         "matchingRanges": {
+          "lineNumber": "66"
+         },
+         "lineNumber": "66",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 11,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CCkSAggBOKqA5vSpkaqWMUAASCk"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/buildeventservice/BazelBuildEventServiceModule.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import com.google.devtools.build.lib.buildeventservice.client.BuildEventServiceGrpcClient;",
+         "matchingRanges": {
+          "lineNumber": "33"
+         },
+         "lineNumber": "33",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.runtime.BlazeRuntime;",
+         "matchingRanges": {
+          "lineNumber": "34",
+          "columnRanges": [
+           {
+            "startIndex": 45,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "34",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 45,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.runtime.CommandEnvironment;",
+         "matchingRanges": {
+          "lineNumber": "35"
+         },
+         "lineNumber": "35",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  public void workspaceInit(",
+         "matchingRanges": {
+          "lineNumber": "86"
+         },
+         "lineNumber": "86",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "      BlazeRuntime runtime, BlazeDirectories directories, WorkspaceBuilder builder) {",
+         "matchingRanges": {
+          "lineNumber": "87",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "87",
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    Preconditions.checkState(credentialModule == null, \"credentialModule must be null\");",
+         "matchingRanges": {
+          "lineNumber": "88"
+         },
+         "lineNumber": "88",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 55,
+            "length": 31
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CCoSAggBOLqcxIqrleG1OUAASCo"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/starlarkdebug/server/StarlarkDebugIntegrationTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import com.google.devtools.build.lib.events.EventKind;",
+         "matchingRanges": {
+          "lineNumber": "28"
+         },
+         "lineNumber": "28",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.runtime.BlazeRuntime;",
+         "matchingRanges": {
+          "lineNumber": "29",
+          "columnRanges": [
+           {
+            "startIndex": 45,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "29",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 45,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.skyframe.SkyFunctions;",
+         "matchingRanges": {
+          "lineNumber": "30"
+         },
+         "lineNumber": "30",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  @Override",
+         "matchingRanges": {
+          "lineNumber": "68"
+         },
+         "lineNumber": "68"
+        },
+        {
+         "lineText": "  protected BlazeRuntime.Builder getRuntimeBuilder() throws Exception {",
+         "matchingRanges": {
+          "lineNumber": "69",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "69",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 9
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 53,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    return super.getRuntimeBuilder().addBlazeModule(new StarlarkDebuggerModule());",
+         "matchingRanges": {
+          "lineNumber": "70"
+         },
+         "lineNumber": "70",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 11,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 52,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CCsSAggBONSk4sD-j8-Jc0AASCs"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/buildeventservice/BazelBuildEventServiceModuleTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import com.google.devtools.build.lib.runtime.BlazeModule;",
+         "matchingRanges": {
+          "lineNumber": "69"
+         },
+         "lineNumber": "69",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.runtime.BlazeRuntime;",
+         "matchingRanges": {
+          "lineNumber": "70",
+          "columnRanges": [
+           {
+            "startIndex": 45,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "70",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 45,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.runtime.CommandEnvironment;",
+         "matchingRanges": {
+          "lineNumber": "71"
+         },
+         "lineNumber": "71",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  @Override",
+         "matchingRanges": {
+          "lineNumber": "149"
+         },
+         "lineNumber": "149"
+        },
+        {
+         "lineText": "  protected BlazeRuntime.Builder getRuntimeBuilder() throws Exception {",
+         "matchingRanges": {
+          "lineNumber": "150",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "150",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 9
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 53,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    return super.getRuntimeBuilder()",
+         "matchingRanges": {
+          "lineNumber": "151"
+         },
+         "lineNumber": "151",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 11,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CCwSAggBOMbwm4nKxsTtsgFAAEgs"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/skyframe/serialization/analysis/SkycacheIntegrationTestBase.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import com.google.devtools.build.lib.runtime.BlazeModule;",
+         "matchingRanges": {
+          "lineNumber": "35"
+         },
+         "lineNumber": "35",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.runtime.BlazeRuntime;",
+         "matchingRanges": {
+          "lineNumber": "36",
+          "columnRanges": [
+           {
+            "startIndex": 45,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "36",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 45,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.runtime.CommandEnvironment;",
+         "matchingRanges": {
+          "lineNumber": "37"
+         },
+         "lineNumber": "37",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  @Override",
+         "matchingRanges": {
+          "lineNumber": "886"
+         },
+         "lineNumber": "886"
+        },
+        {
+         "lineText": "  protected BlazeRuntime.Builder getRuntimeBuilder() throws Exception {",
+         "matchingRanges": {
+          "lineNumber": "887",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "887",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 9
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 53,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    var builder = super.getRuntimeBuilder();",
+         "matchingRanges": {
+          "lineNumber": "888"
+         },
+         "lineNumber": "888",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 18,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    public void workspaceInit(",
+         "matchingRanges": {
+          "lineNumber": "931"
+         },
+         "lineNumber": "931",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 11,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "        BlazeRuntime runtime, BlazeDirectories directories, WorkspaceBuilder builder) {",
+         "matchingRanges": {
+          "lineNumber": "932",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "932",
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "      builder.setSyscallCache(syscallCache);",
+         "matchingRanges": {
+          "lineNumber": "933"
+         },
+         "lineNumber": "933"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CC0SAggBOMDAyMrLg-TcPkAASC0"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/platform/SleepPreventionModule.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import com.google.devtools.build.lib.runtime.BlazeModule;",
+         "matchingRanges": {
+          "lineNumber": "20"
+         },
+         "lineNumber": "20",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.runtime.BlazeRuntime;",
+         "matchingRanges": {
+          "lineNumber": "21",
+          "columnRanges": [
+           {
+            "startIndex": 45,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "21",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 45,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.runtime.CommandEnvironment;",
+         "matchingRanges": {
+          "lineNumber": "22"
+         },
+         "lineNumber": "22",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  public void workspaceInit(",
+         "matchingRanges": {
+          "lineNumber": "30"
+         },
+         "lineNumber": "30",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "      BlazeRuntime runtime, BlazeDirectories directories, WorkspaceBuilder builder) {",
+         "matchingRanges": {
+          "lineNumber": "31",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "31",
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    service = checkNotNull(runtime.getBlazeService(PlatformNativeDepsService.class));",
+         "matchingRanges": {
+          "lineNumber": "32"
+         },
+         "lineNumber": "32",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 77,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CC4SAggBONzw8Prfw6OMZ0AASC4"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "site/en/contribute/codebase.md",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "is somewhat embarrassing. The main blocker is the life cycle of `BlazeModule`s",
+         "matchingRanges": {
+          "lineNumber": "75"
+         },
+         "lineNumber": "75"
+        },
+        {
+         "lineText": "and some state in `BlazeRuntime`.",
+         "matchingRanges": {
+          "lineNumber": "76",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "76",
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "77"
+         },
+         "lineNumber": "77"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "The main entry point of the server is `BlazeRuntime.main()` and the gRPC calls",
+         "matchingRanges": {
+          "lineNumber": "91",
+          "columnRanges": [
+           {
+            "startIndex": 39,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "91",
+         "ranges": [
+          {
+           "startIndex": 39,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "from the client are handled by `CommandServer.serveAndAwaitTermination()`.",
+         "matchingRanges": {
+          "lineNumber": "92"
+         },
+         "lineNumber": "92"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "The profiler is started and stopped in `BlazeRuntime.initProfiler()` and",
+         "matchingRanges": {
+          "lineNumber": "1620",
+          "columnRanges": [
+           {
+            "startIndex": 40,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "1620",
+         "ranges": [
+          {
+           "startIndex": 40,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "`BlazeRuntime.afterCommand()` respectively and attempts to be live for as long",
+         "matchingRanges": {
+          "lineNumber": "1621",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "1621",
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "as possible so that we can profile everything. To add something to the profile,",
+         "matchingRanges": {
+          "lineNumber": "1622"
+         },
+         "lineNumber": "1622"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 4
+    },
+    "resultToken": "CC8SAggBON6k8vrd8L-0hwFAAEgv"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/remote/ChunkedCacheIntegrationTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import com.google.devtools.build.lib.runtime.BlazeModule;",
+         "matchingRanges": {
+          "lineNumber": "39"
+         },
+         "lineNumber": "39",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.runtime.BlazeRuntime;",
+         "matchingRanges": {
+          "lineNumber": "40",
+          "columnRanges": [
+           {
+            "startIndex": 45,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "40",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 45,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.runtime.BlockWaitingModule;",
+         "matchingRanges": {
+          "lineNumber": "41"
+         },
+         "lineNumber": "41",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  @Override",
+         "matchingRanges": {
+          "lineNumber": "82"
+         },
+         "lineNumber": "82"
+        },
+        {
+         "lineText": "  protected BlazeRuntime.Builder getRuntimeBuilder() throws Exception {",
+         "matchingRanges": {
+          "lineNumber": "83",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "83",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 9
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 53,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    return super.getRuntimeBuilder()",
+         "matchingRanges": {
+          "lineNumber": "84"
+         },
+         "lineNumber": "84",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 11,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CDASAggBOIyr-ZyR3ff6wAFAAEgw"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/remote/ChunkedDiskCacheIntegrationTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import com.google.devtools.build.lib.runtime.BlazeModule;",
+         "matchingRanges": {
+          "lineNumber": "26"
+         },
+         "lineNumber": "26",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.runtime.BlazeRuntime;",
+         "matchingRanges": {
+          "lineNumber": "27",
+          "columnRanges": [
+           {
+            "startIndex": 45,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "27",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 45,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.runtime.BlockWaitingModule;",
+         "matchingRanges": {
+          "lineNumber": "28"
+         },
+         "lineNumber": "28",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  @Override",
+         "matchingRanges": {
+          "lineNumber": "74"
+         },
+         "lineNumber": "74"
+        },
+        {
+         "lineText": "  protected BlazeRuntime.Builder getRuntimeBuilder() throws Exception {",
+         "matchingRanges": {
+          "lineNumber": "75",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "75",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 9
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 53,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    return super.getRuntimeBuilder()",
+         "matchingRanges": {
+          "lineNumber": "76"
+         },
+         "lineNumber": "76",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 11,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CDESAggBONalts_K_PGDnAFAAEgx"
+   }
+  ],
+  "estimatedResultCount": "110",
+  "nextPageToken": "CK7c24qT7K7dAQiS0ISQy4iHmx0I3vOo2M+Rke0kCPie/Z+k6/TDLgiqgOb0qZGqljEIupzEiquV4bU5CIDo49/4qK3hOQiGv9rYxJ2KiTsIwu+39Z34zZc9CMDAyMrLg+TcPgiu0Nb9j6W3zUAIhO3h+MC78oVECIbU/srg3rPISgj4i6KB6c/nnVIIzKLexLvfkMxXCIzNpbzJwaDuWwjGqNTCtNGG4WQIiKmlvqTq1KFmCNzw8Prfw6OMZwjO9aK8xrqVrGgI4J+z+MfllcRqCIDa35zIiq6hbQjKz7juicHSunEI1KTiwP6Pz4lzCJKaqNbJzoz2dAi4mvqjjJirnHsIrOfDp+uPyLl/COry1vvJkLylgAEI9Nuipd+ahY6DAQjepPL63fC/tIcBCLy7v9m8nMXDjAEI2J358YPs7JuQAQiwgMCiroOcgZoBCNalts/K/PGDnAEI/pmuj/WhpKWqAQjyw4Xtv7jimKsBCLbO/dPB6pHyrgEIxvCbicrGxO2yAQjMjovK/5e0s7cBCPzD8+CSl6fPtwEIpPvG0IvMuJ27AQiMq/mckd33+sABCNiv/ef5w7bo1gEIioDJ2rnlssnXAQjUnd6m4+jPwtgBCMqNp6zY5P6K5wEIutCBzc6VmbznAQjqv9iuvLzbp/UBCOrWo5WOmJXf/AEI4IHC8oGekPj8AQ==",
+  "exhaustive": true,
+  "requestToken": "CgxCbGF6ZVJ1bnRpbWUSIyggZ2l0OmJhemVsL2JhemVsQG1hc3RlciBjYXNlOnllcyApGgsIrOys0QYQ6ZPORiAMKgAyAEgB"
+ }
+}

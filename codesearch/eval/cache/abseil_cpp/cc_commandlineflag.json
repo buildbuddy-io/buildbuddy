@@ -1,0 +1,5007 @@
+{
+ "query": "CommandLineFlag",
+ "oss_project": "abseil",
+ "repo_name": "abseil-cpp",
+ "page_size": 50,
+ "fetched_at": "2026-06-17T23:04:02Z",
+ "response": {
+  "searchResults": [
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "abseil-cpp",
+        "ossProject": "abseil"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "absl/flags/commandlineflag.h",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// CommandLineFlag",
+         "matchingRanges": {
+          "lineNumber": "46",
+          "columnRanges": [
+           {
+            "startIndex": 3,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "46",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 18
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 3,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "lineText": "//",
+         "matchingRanges": {
+          "lineNumber": "47"
+         },
+         "lineNumber": "47",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "#endif",
+         "matchingRanges": {
+          "lineNumber": "71"
+         },
+         "lineNumber": "71",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "class CommandLineFlag {",
+         "matchingRanges": {
+          "lineNumber": "72",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "72",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "lineText": " public:",
+         "matchingRanges": {
+          "lineNumber": "73"
+         },
+         "lineNumber": "73",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  constexpr CommandLineFlag() = default;",
+         "matchingRanges": {
+          "lineNumber": "74",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "74",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 9
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 32,
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "75"
+         },
+         "lineNumber": "75"
+        },
+        {
+         "lineText": "  // Not copyable/assignable.",
+         "matchingRanges": {
+          "lineNumber": "76"
+         },
+         "lineNumber": "76",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 27
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  CommandLineFlag(const CommandLineFlag\u0026) = delete;",
+         "matchingRanges": {
+          "lineNumber": "77",
+          "columnRanges": [
+           {
+            "startIndex": 2,
+            "length": 15
+           },
+           {
+            "startIndex": 24,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "77",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 18,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 44,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 2,
+           "length": 15
+          },
+          {
+           "startIndex": 24,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "lineText": "  CommandLineFlag\u0026 operator=(const CommandLineFlag\u0026) = delete;",
+         "matchingRanges": {
+          "lineNumber": "78",
+          "columnRanges": [
+           {
+            "startIndex": 2,
+            "length": 15
+           },
+           {
+            "startIndex": 35,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "78",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 19,
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 29,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 55,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 2,
+           "length": 15
+          },
+          {
+           "startIndex": 35,
+           "length": 15
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 28
+    },
+    "resultToken": "CAASBAgBIAE4-LaHtqv4-MeRAUAASAA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "abseil-cpp",
+        "ossProject": "abseil"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "absl/flags/commandlineflag.cc",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "#include \"absl/flags/commandlineflag.h\"",
+         "matchingRanges": {
+          "lineNumber": "16",
+          "columnRanges": [
+           {
+            "startIndex": 21,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "16",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 9,
+            "length": 30
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 21,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "17"
+         },
+         "lineNumber": "17"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "#include \"absl/base/config.h\"",
+         "matchingRanges": {
+          "lineNumber": "20"
+         },
+         "lineNumber": "20",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 9,
+            "length": 20
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "#include \"absl/flags/internal/commandlineflag.h\"",
+         "matchingRanges": {
+          "lineNumber": "21",
+          "columnRanges": [
+           {
+            "startIndex": 30,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "21",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 9,
+            "length": 39
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 30,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "lineText": "#include \"absl/strings/string_view.h\"",
+         "matchingRanges": {
+          "lineNumber": "22"
+         },
+         "lineNumber": "22",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 9,
+            "length": 28
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "absl::string_view CommandLineFlag::TypeName() const { return \"\"; }",
+         "matchingRanges": {
+          "lineNumber": "27",
+          "columnRanges": [
+           {
+            "startIndex": 18,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "27",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 46,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 54,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 61,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 18,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "lineText": "bool CommandLineFlag::IsRetired() const { return false; }",
+         "matchingRanges": {
+          "lineNumber": "28",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "28",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 34,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 42,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 49,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "lineText": "bool CommandLineFlag::ParseFrom(absl::string_view value, std::string* error) {",
+         "matchingRanges": {
+          "lineNumber": "29",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "29",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "lineText": "  return ParseFrom(value, flags_internal::SET_FLAGS_VALUE,",
+         "matchingRanges": {
+          "lineNumber": "30"
+         },
+         "lineNumber": "30",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 5
+    },
+    "resultToken": "CAESBAgBIAE41L2brujJ3Jo_QABIAQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "abseil-cpp",
+        "ossProject": "abseil"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "absl/flags/internal/commandlineflag.h",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "#ifndef ABSL_FLAGS_INTERNAL_COMMANDLINEFLAG_H_",
+         "matchingRanges": {
+          "lineNumber": "16",
+          "columnRanges": [
+           {
+            "startIndex": 28,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "16",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 28,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "lineText": "#define ABSL_FLAGS_INTERNAL_COMMANDLINEFLAG_H_",
+         "matchingRanges": {
+          "lineNumber": "17",
+          "columnRanges": [
+           {
+            "startIndex": 28,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "17",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 28,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "18"
+         },
+         "lineNumber": "18"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// Handle to FlagState objects. Specific flag state objects will restore state",
+         "matchingRanges": {
+          "lineNumber": "54"
+         },
+         "lineNumber": "54",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 78
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "// of a flag produced this flag state from method CommandLineFlag::SaveState().",
+         "matchingRanges": {
+          "lineNumber": "55",
+          "columnRanges": [
+           {
+            "startIndex": 50,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "55",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 79
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 50,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "lineText": "class FlagStateInterface {",
+         "matchingRanges": {
+          "lineNumber": "56"
+         },
+         "lineNumber": "56",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "#endif  // ABSL_FLAGS_INTERNAL_COMMANDLINEFLAG_H_",
+         "matchingRanges": {
+          "lineNumber": "68",
+          "columnRanges": [
+           {
+            "startIndex": 31,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "68",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 8,
+            "length": 41
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 31,
+           "length": 15
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 4
+    },
+    "resultToken": "CAISBAgBIAE40J21zOTqh83hAUAASAI"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "abseil-cpp",
+        "ossProject": "abseil"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "absl/flags/commandlineflag_test.cc",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "class CommandLineFlagTest : public testing::Test {",
+         "matchingRanges": {
+          "lineNumber": "45",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "45",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 28,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "lineText": " protected:",
+         "matchingRanges": {
+          "lineNumber": "46"
+         },
+         "lineNumber": "46",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 9
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "TEST_F(CommandLineFlagTest, TestValueAccessMethods) {",
+         "matchingRanges": {
+          "lineNumber": "105",
+          "columnRanges": [
+           {
+            "startIndex": 7,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "105",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "startIndex": 7,
+            "length": 19
+           }
+          },
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "startIndex": 28,
+            "length": 22
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 7,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "lineText": "  absl::SetFlag(\u0026FLAGS_int_flag2, 301);",
+         "matchingRanges": {
+          "lineNumber": "106"
+         },
+         "lineNumber": "106",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 34,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "TEST_F(CommandLineFlagTest, TestParseFromCurrentValue) {",
+         "matchingRanges": {
+          "lineNumber": "123",
+          "columnRanges": [
+           {
+            "startIndex": 7,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "123",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "startIndex": 7,
+            "length": 19
+           }
+          },
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "startIndex": 28,
+            "length": 25
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 7,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "lineText": "  std::string err;",
+         "matchingRanges": {
+          "lineNumber": "124"
+         },
+         "lineNumber": "124"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "TEST_F(CommandLineFlagTest, TestParseFromDefaultValue) {",
+         "matchingRanges": {
+          "lineNumber": "187",
+          "columnRanges": [
+           {
+            "startIndex": 7,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "187",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "startIndex": 7,
+            "length": 19
+           }
+          },
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "startIndex": 28,
+            "length": 25
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 7,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "lineText": "  std::string err;",
+         "matchingRanges": {
+          "lineNumber": "188"
+         },
+         "lineNumber": "188"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "TEST_F(CommandLineFlagTest, TestParseFromIfDefault) {",
+         "matchingRanges": {
+          "lineNumber": "207",
+          "columnRanges": [
+           {
+            "startIndex": 7,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "207",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "startIndex": 7,
+            "length": 19
+           }
+          },
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "startIndex": 28,
+            "length": 22
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 7,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "lineText": "  std::string err;",
+         "matchingRanges": {
+          "lineNumber": "208"
+         },
+         "lineNumber": "208"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 19
+    },
+    "resultToken": "CAMSBAgBIAE4kqbk9_WMkdNVQABIAw"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "abseil-cpp",
+        "ossProject": "abseil"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "absl/flags/internal/commandlineflag.cc",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "#include \"absl/flags/internal/commandlineflag.h\"",
+         "matchingRanges": {
+          "lineNumber": "16",
+          "columnRanges": [
+           {
+            "startIndex": 30,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "16",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 9,
+            "length": 39
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 30,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "17"
+         },
+         "lineNumber": "17"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAQSAggBOMathovwjceuxwFAAEgE"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "abseil-cpp",
+        "ossProject": "abseil"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "absl/flags/flag_benchmark.cc",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "void BM_ThreadedFindCommandLineFlag(benchmark::State\u0026 state) {",
+         "matchingRanges": {
+          "lineNumber": "227",
+          "columnRanges": [
+           {
+            "startIndex": 20,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "227",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 20,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "lineText": "  char dummy[] = \"dummy\";",
+         "matchingRanges": {
+          "lineNumber": "228"
+         },
+         "lineNumber": "228",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 17,
+            "length": 7
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    for (auto* flag_ptr : FlagPtrs_bool) {",
+         "matchingRanges": {
+          "lineNumber": "235"
+         },
+         "lineNumber": "235",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "      benchmark::DoNotOptimize(absl::FindCommandLineFlag(flag_ptr-\u003eName()));",
+         "matchingRanges": {
+          "lineNumber": "236",
+          "columnRanges": [
+           {
+            "startIndex": 41,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "236",
+         "ranges": [
+          {
+           "startIndex": 41,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "lineText": "    }",
+         "matchingRanges": {
+          "lineNumber": "237"
+         },
+         "lineNumber": "237"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "}",
+         "matchingRanges": {
+          "lineNumber": "239"
+         },
+         "lineNumber": "239"
+        },
+        {
+         "lineText": "BENCHMARK(BM_ThreadedFindCommandLineFlag)-\u003eThreadRange(1, 16);",
+         "matchingRanges": {
+          "lineNumber": "240",
+          "columnRanges": [
+           {
+            "startIndex": 25,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "240",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "startIndex": 10,
+            "length": 30
+           }
+          },
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "startIndex": 43,
+            "length": 11
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 55,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 58,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 25,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "241"
+         },
+         "lineNumber": "241"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CAUSBAgBIAE4kOSpxP62p_uJAUAASAU"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "abseil-cpp",
+        "ossProject": "abseil"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "absl/flags/flag.h",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "#include \"absl/base/optimization.h\"",
+         "matchingRanges": {
+          "lineNumber": "39"
+         },
+         "lineNumber": "39",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 9,
+            "length": 26
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "#include \"absl/flags/commandlineflag.h\"",
+         "matchingRanges": {
+          "lineNumber": "40",
+          "columnRanges": [
+           {
+            "startIndex": 21,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "40",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 9,
+            "length": 30
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 21,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "lineText": "#include \"absl/flags/config.h\"",
+         "matchingRanges": {
+          "lineNumber": "41"
+         },
+         "lineNumber": "41",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 9,
+            "length": 21
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "template \u003ctypename T\u003e",
+         "matchingRanges": {
+          "lineNumber": "133"
+         },
+         "lineNumber": "133",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 8
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "const CommandLineFlag\u0026 GetFlagReflectionHandle(const absl::Flag\u003cT\u003e\u0026 f) {",
+         "matchingRanges": {
+          "lineNumber": "134",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "134",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 47,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "lineText": "  return flags_internal::FlagImplPeer::InvokeReflect(f);",
+         "matchingRanges": {
+          "lineNumber": "135"
+         },
+         "lineNumber": "135",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAYSAggBOJDA5ZaY0PXj1gFAAEgG"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "abseil-cpp",
+        "ossProject": "abseil"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "absl/flags/internal/flag.h",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "template \u003ctypename U\u003e",
+         "matchingRanges": {
+          "lineNumber": "68"
+         },
+         "lineNumber": "68",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 8
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "const CommandLineFlag\u0026 GetFlagReflectionHandle(const absl::Flag\u003cU\u003e\u0026 f);",
+         "matchingRanges": {
+          "lineNumber": "69",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "69",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 47,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "70"
+         },
+         "lineNumber": "70"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "#endif",
+         "matchingRanges": {
+          "lineNumber": "581"
+         },
+         "lineNumber": "581",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "class FlagImpl final : public CommandLineFlag {",
+         "matchingRanges": {
+          "lineNumber": "582",
+          "columnRanges": [
+           {
+            "startIndex": 30,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "582",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 23,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 30,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "lineText": " public:",
+         "matchingRanges": {
+          "lineNumber": "583"
+         },
+         "lineNumber": "583",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  // CommandLineFlag interface implementation",
+         "matchingRanges": {
+          "lineNumber": "699",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "699",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 43
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "lineText": "  absl::string_view Name() const override;",
+         "matchingRanges": {
+          "lineNumber": "700"
+         },
+         "lineNumber": "700",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 27,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  // CommandLineFlag interface",
+         "matchingRanges": {
+          "lineNumber": "803",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "803",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 28
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "lineText": "  absl::string_view Name() const { return impl_.Name(); }",
+         "matchingRanges": {
+          "lineNumber": "804"
+         },
+         "lineNumber": "804",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 27,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 35,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 10
+    },
+    "resultToken": "CAcSAggBOISmtJC5073YnwFAAEgH"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "abseil-cpp",
+        "ossProject": "abseil"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "absl/flags/internal/registry.h",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "#include \"absl/base/fast_type_id.h\"",
+         "matchingRanges": {
+          "lineNumber": "22"
+         },
+         "lineNumber": "22",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 9,
+            "length": 26
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "#include \"absl/flags/commandlineflag.h\"",
+         "matchingRanges": {
+          "lineNumber": "23",
+          "columnRanges": [
+           {
+            "startIndex": 21,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "23",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 9,
+            "length": 30
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 21,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "lineText": "#include \"absl/flags/internal/commandlineflag.h\"",
+         "matchingRanges": {
+          "lineNumber": "24",
+          "columnRanges": [
+           {
+            "startIndex": 30,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "24",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 9,
+            "length": 39
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 30,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "lineText": "#include \"absl/strings/string_view.h\"",
+         "matchingRanges": {
+          "lineNumber": "25"
+         },
+         "lineNumber": "25",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 9,
+            "length": 28
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// callback are executed, the registry is locked and can't be changed.",
+         "matchingRanges": {
+          "lineNumber": "35"
+         },
+         "lineNumber": "35",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 70
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "void ForEachFlag(std::function\u003cvoid(CommandLineFlag\u0026)\u003e visitor);",
+         "matchingRanges": {
+          "lineNumber": "36",
+          "columnRanges": [
+           {
+            "startIndex": 36,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "36",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 31,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 36,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "37"
+         },
+         "lineNumber": "37"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "bool RegisterCommandLineFlag(CommandLineFlag\u0026, const char* filename);",
+         "matchingRanges": {
+          "lineNumber": "40",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 15
+           },
+           {
+            "startIndex": 29,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "40",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 47,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 53,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 15
+          },
+          {
+           "startIndex": 29,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "41"
+         },
+         "lineNumber": "41"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 4
+    },
+    "resultToken": "CAgSBAgBIAE48pDdoM_Epde9AUAASAg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "abseil-cpp",
+        "ossProject": "abseil"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "absl/flags/reflection.cc",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  // Store a flag in this registry. Takes ownership of *flag.",
+         "matchingRanges": {
+          "lineNumber": "54"
+         },
+         "lineNumber": "54",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 59
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  void RegisterFlag(CommandLineFlag\u0026 flag, const char* filename);",
+         "matchingRanges": {
+          "lineNumber": "55",
+          "columnRanges": [
+           {
+            "startIndex": 20,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "55",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 43,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 49,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 20,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "56"
+         },
+         "lineNumber": "56"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  // Will emit a warning if a 'retired' flag is specified.",
+         "matchingRanges": {
+          "lineNumber": "64"
+         },
+         "lineNumber": "64",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 56
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  CommandLineFlag* FindFlag(absl::string_view name);",
+         "matchingRanges": {
+          "lineNumber": "65",
+          "columnRanges": [
+           {
+            "startIndex": 2,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "65",
+         "ranges": [
+          {
+           "startIndex": 2,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "66"
+         },
+         "lineNumber": "66"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "bool RegisterCommandLineFlag(CommandLineFlag\u0026 flag, const char* filename) {",
+         "matchingRanges": {
+          "lineNumber": "196",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 15
+           },
+           {
+            "startIndex": 29,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "196",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 52,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 58,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 15
+          },
+          {
+           "startIndex": 29,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "lineText": "  FlagRegistry::GlobalRegistry().RegisterFlag(flag, filename);",
+         "matchingRanges": {
+          "lineNumber": "197"
+         },
+         "lineNumber": "197"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "CommandLineFlag* FindCommandLineFlag(absl::string_view name) {",
+         "matchingRanges": {
+          "lineNumber": "350",
+          "columnRanges": [
+           {
+            "length": 15
+           },
+           {
+            "startIndex": 21,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "350",
+         "ranges": [
+          {
+           "length": 15
+          },
+          {
+           "startIndex": 21,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "lineText": "  if (name.empty()) return nullptr;",
+         "matchingRanges": {
+          "lineNumber": "351"
+         },
+         "lineNumber": "351",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 20,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 27,
+            "length": 7
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 19
+    },
+    "resultToken": "CAkSBAgBIAE47L7vh5ze2IvMAUAASAk"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "abseil-cpp",
+        "ossProject": "abseil"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "absl/flags/reflection.h",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// FindCommandLineFlag()",
+         "matchingRanges": {
+          "lineNumber": "39",
+          "columnRanges": [
+           {
+            "startIndex": 7,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "39",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 24
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 7,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "lineText": "//",
+         "matchingRanges": {
+          "lineNumber": "40"
+         },
+         "lineNumber": "40",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// 'retired' flag is specified.",
+         "matchingRanges": {
+          "lineNumber": "43"
+         },
+         "lineNumber": "43",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 31
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "absl::CommandLineFlag* FindCommandLineFlag(absl::string_view name);",
+         "matchingRanges": {
+          "lineNumber": "44",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 15
+           },
+           {
+            "startIndex": 27,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "44",
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 15
+          },
+          {
+           "startIndex": 27,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "45"
+         },
+         "lineNumber": "45"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// name to a flag reflection handle.",
+         "matchingRanges": {
+          "lineNumber": "47"
+         },
+         "lineNumber": "47",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 36
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "absl::flat_hash_map\u003cabsl::string_view, absl::CommandLineFlag*\u003e GetAllFlags();",
+         "matchingRanges": {
+          "lineNumber": "48",
+          "columnRanges": [
+           {
+            "startIndex": 45,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "48",
+         "ranges": [
+          {
+           "startIndex": 45,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "49"
+         },
+         "lineNumber": "49"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 5
+    },
+    "resultToken": "CAoSBAgBIAE4sonplJv774JpQABICg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "abseil-cpp",
+        "ossProject": "abseil"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "absl/flags/flag_test.cc",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  auto* handle = absl::FindCommandLineFlag(\"test_flag_01\");",
+         "matchingRanges": {
+          "lineNumber": "631",
+          "columnRanges": [
+           {
+            "startIndex": 27,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "631",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 43,
+            "length": 14
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 27,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "lineText": "  EXPECT_EQ(*handle-\u003eTryGet\u003cbool\u003e(), true);",
+         "matchingRanges": {
+          "lineNumber": "632"
+         },
+         "lineNumber": "632",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 28,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 37,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  handle = absl::FindCommandLineFlag(\"test_flag_02\");",
+         "matchingRanges": {
+          "lineNumber": "633",
+          "columnRanges": [
+           {
+            "startIndex": 21,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "633",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 37,
+            "length": 14
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 21,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "lineText": "  EXPECT_EQ(*handle-\u003eTryGet\u003cint\u003e(), 1234);",
+         "matchingRanges": {
+          "lineNumber": "634"
+         },
+         "lineNumber": "634",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 28,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 36,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  handle = absl::FindCommandLineFlag(\"test_flag_03\");",
+         "matchingRanges": {
+          "lineNumber": "635",
+          "columnRanges": [
+           {
+            "startIndex": 21,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "635",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 37,
+            "length": 14
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 21,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "lineText": "  EXPECT_EQ(*handle-\u003eTryGet\u003cint16_t\u003e(), -34);",
+         "matchingRanges": {
+          "lineNumber": "636"
+         },
+         "lineNumber": "636",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 41,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  handle = absl::FindCommandLineFlag(\"test_flag_04\");",
+         "matchingRanges": {
+          "lineNumber": "637",
+          "columnRanges": [
+           {
+            "startIndex": 21,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "637",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 37,
+            "length": 14
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 21,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "lineText": "  EXPECT_EQ(*handle-\u003eTryGet\u003cuint16_t\u003e(), 189);",
+         "matchingRanges": {
+          "lineNumber": "638"
+         },
+         "lineNumber": "638",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 41,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  handle = absl::FindCommandLineFlag(\"test_flag_05\");",
+         "matchingRanges": {
+          "lineNumber": "639",
+          "columnRanges": [
+           {
+            "startIndex": 21,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "639",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 37,
+            "length": 14
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 21,
+           "length": 15
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 20
+    },
+    "resultToken": "CAsSAggBOIrw0O3Rk5GuGUAASAs"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "abseil-cpp",
+        "ossProject": "abseil"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "absl/flags/internal/usage.h",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "#include \"absl/base/config.h\"",
+         "matchingRanges": {
+          "lineNumber": "23"
+         },
+         "lineNumber": "23",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 9,
+            "length": 20
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "#include \"absl/flags/commandlineflag.h\"",
+         "matchingRanges": {
+          "lineNumber": "24",
+          "columnRanges": [
+           {
+            "startIndex": 21,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "24",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 9,
+            "length": 30
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 21,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "lineText": "#include \"absl/strings/string_view.h\"",
+         "matchingRanges": {
+          "lineNumber": "25"
+         },
+         "lineNumber": "25",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 9,
+            "length": 28
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// The default value for `flag` is included in the output.",
+         "matchingRanges": {
+          "lineNumber": "52"
+         },
+         "lineNumber": "52",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 58
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "void FlagHelp(std::ostream\u0026 out, const CommandLineFlag\u0026 flag,",
+         "matchingRanges": {
+          "lineNumber": "53",
+          "columnRanges": [
+           {
+            "startIndex": 39,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "53",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 33,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 39,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "lineText": "              HelpFormat format = HelpFormat::kHumanReadable);",
+         "matchingRanges": {
+          "lineNumber": "54"
+         },
+         "lineNumber": "54"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAwSAggBOLLPjrfEibC9H0AASAw"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "abseil-cpp",
+        "ossProject": "abseil"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "absl/flags/internal/usage.cc",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "using PerFlagFilter = std::function\u003cbool(const absl::CommandLineFlag\u0026)\u003e;",
+         "matchingRanges": {
+          "lineNumber": "64",
+          "columnRanges": [
+           {
+            "startIndex": 53,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "64",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 36,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 41,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 53,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "65"
+         },
+         "lineNumber": "65"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "void FlagHelpHumanReadable(const CommandLineFlag\u0026 flag, std::ostream\u0026 out) {",
+         "matchingRanges": {
+          "lineNumber": "209",
+          "columnRanges": [
+           {
+            "startIndex": 33,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "209",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 27,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 33,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "lineText": "  FlagHelpPrettyPrinter printer(kHrfMaxLineLength, 4, 2, out);",
+         "matchingRanges": {
+          "lineNumber": "210"
+         },
+         "lineNumber": "210",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 51,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 54,
+            "length": 1
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  std::map\u003cstd::string,",
+         "matchingRanges": {
+          "lineNumber": "270"
+         },
+         "lineNumber": "270"
+        },
+        {
+         "lineText": "           std::map\u003cstd::string, std::vector\u003cconst absl::CommandLineFlag*\u003e\u003e\u003e",
+         "matchingRanges": {
+          "lineNumber": "271",
+          "columnRanges": [
+           {
+            "startIndex": 57,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "271",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 45,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 57,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "lineText": "      matching_flags;",
+         "matchingRanges": {
+          "lineNumber": "272"
+         },
+         "lineNumber": "272"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  flags_internal::ForEachFlag([\u0026](absl::CommandLineFlag\u0026 flag) {",
+         "matchingRanges": {
+          "lineNumber": "274",
+          "columnRanges": [
+           {
+            "startIndex": 40,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "274",
+         "ranges": [
+          {
+           "startIndex": 40,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "lineText": "    // Ignore retired flags.",
+         "matchingRanges": {
+          "lineNumber": "275"
+         },
+         "lineNumber": "275",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 24
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 9
+    },
+    "resultToken": "CA0SAggBOLyr-fqJnemlIEAASA0"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "abseil-cpp",
+        "ossProject": "abseil"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "absl/flags/reflection_test.cc",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "TEST_F(ReflectionTest, TestFindCommandLineFlag) {",
+         "matchingRanges": {
+          "lineNumber": "51",
+          "columnRanges": [
+           {
+            "startIndex": 31,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "51",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "startIndex": 7,
+            "length": 14
+           }
+          },
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "startIndex": 23,
+            "length": 23
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 31,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "lineText": "  auto* handle = absl::FindCommandLineFlag(\"some_flag\");",
+         "matchingRanges": {
+          "lineNumber": "52",
+          "columnRanges": [
+           {
+            "startIndex": 27,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "52",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 43,
+            "length": 11
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 27,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "lineText": "  EXPECT_EQ(handle, nullptr);",
+         "matchingRanges": {
+          "lineNumber": "53"
+         },
+         "lineNumber": "53",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "startIndex": 12,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 20,
+            "length": 7
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  handle = absl::FindCommandLineFlag(\"int_flag\");",
+         "matchingRanges": {
+          "lineNumber": "55",
+          "columnRanges": [
+           {
+            "startIndex": 21,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "55",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 37,
+            "length": 10
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 21,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "lineText": "  EXPECT_NE(handle, nullptr);",
+         "matchingRanges": {
+          "lineNumber": "56"
+         },
+         "lineNumber": "56",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "startIndex": 12,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 20,
+            "length": 7
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  handle = absl::FindCommandLineFlag(\"string_flag\");",
+         "matchingRanges": {
+          "lineNumber": "58",
+          "columnRanges": [
+           {
+            "startIndex": 21,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "58",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 37,
+            "length": 13
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 21,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "lineText": "  EXPECT_NE(handle, nullptr);",
+         "matchingRanges": {
+          "lineNumber": "59"
+         },
+         "lineNumber": "59",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "startIndex": 12,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 20,
+            "length": 7
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  handle = absl::FindCommandLineFlag(\"bool_retired_flag\");",
+         "matchingRanges": {
+          "lineNumber": "61",
+          "columnRanges": [
+           {
+            "startIndex": 21,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "61",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 37,
+            "length": 19
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 21,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "lineText": "  EXPECT_NE(handle, nullptr);",
+         "matchingRanges": {
+          "lineNumber": "62"
+         },
+         "lineNumber": "62",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "startIndex": 12,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 20,
+            "length": 7
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 19
+    },
+    "resultToken": "CA4SBAgBIAE4sKOXtdr3x-bsAUAASA4"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "abseil-cpp",
+        "ossProject": "abseil"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "absl/flags/internal/private_handle_accessor.h",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// This class serves as a trampoline to access private methods of",
+         "matchingRanges": {
+          "lineNumber": "31"
+         },
+         "lineNumber": "31",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 65
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "// CommandLineFlag. This class is intended for use exclusively internally inside",
+         "matchingRanges": {
+          "lineNumber": "32",
+          "columnRanges": [
+           {
+            "startIndex": 3,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "32",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 80
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 3,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "lineText": "// of the Abseil Flags implementation.",
+         "matchingRanges": {
+          "lineNumber": "33"
+         },
+         "lineNumber": "33",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 38
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  // Access to CommandLineFlag::TypeId.",
+         "matchingRanges": {
+          "lineNumber": "36",
+          "columnRanges": [
+           {
+            "startIndex": 15,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "36",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 37
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 15,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "lineText": "  static FlagFastTypeId TypeId(const CommandLineFlag\u0026 flag);",
+         "matchingRanges": {
+          "lineNumber": "37",
+          "columnRanges": [
+           {
+            "startIndex": 37,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "37",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 31,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 37,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "38"
+         },
+         "lineNumber": "38"
+        },
+        {
+         "lineText": "  // Access to CommandLineFlag::SaveState.",
+         "matchingRanges": {
+          "lineNumber": "39",
+          "columnRanges": [
+           {
+            "startIndex": 15,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "39",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 40
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 15,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "lineText": "  static std::unique_ptr\u003cFlagStateInterface\u003e SaveState(CommandLineFlag\u0026 flag);",
+         "matchingRanges": {
+          "lineNumber": "40",
+          "columnRanges": [
+           {
+            "startIndex": 55,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "40",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 55,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "41"
+         },
+         "lineNumber": "41"
+        },
+        {
+         "lineText": "  // Access to CommandLineFlag::IsSpecifiedOnCommandLine.",
+         "matchingRanges": {
+          "lineNumber": "42",
+          "columnRanges": [
+           {
+            "startIndex": 15,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "42",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 55
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 15,
+           "length": 15
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 16
+    },
+    "resultToken": "CA8SAggBOKDr9Y_JuJfSakAASA8"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "abseil-cpp",
+        "ossProject": "abseil"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "absl/flags/internal/private_handle_accessor.cc",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "FlagFastTypeId PrivateHandleAccessor::TypeId(const CommandLineFlag\u0026 flag) {",
+         "matchingRanges": {
+          "lineNumber": "30",
+          "columnRanges": [
+           {
+            "startIndex": 51,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "30",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 45,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 51,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "lineText": "  return flag.TypeId();",
+         "matchingRanges": {
+          "lineNumber": "31"
+         },
+         "lineNumber": "31",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "std::unique_ptr\u003cFlagStateInterface\u003e PrivateHandleAccessor::SaveState(",
+         "matchingRanges": {
+          "lineNumber": "34"
+         },
+         "lineNumber": "34"
+        },
+        {
+         "lineText": "    CommandLineFlag\u0026 flag) {",
+         "matchingRanges": {
+          "lineNumber": "35",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "35",
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "lineText": "  return flag.SaveState();",
+         "matchingRanges": {
+          "lineNumber": "36"
+         },
+         "lineNumber": "36",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "bool PrivateHandleAccessor::IsSpecifiedOnCommandLine(",
+         "matchingRanges": {
+          "lineNumber": "39"
+         },
+         "lineNumber": "39",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    const CommandLineFlag\u0026 flag) {",
+         "matchingRanges": {
+          "lineNumber": "40",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "40",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "lineText": "  return flag.IsSpecifiedOnCommandLine();",
+         "matchingRanges": {
+          "lineNumber": "41"
+         },
+         "lineNumber": "41",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "bool PrivateHandleAccessor::ValidateInputValue(const CommandLineFlag\u0026 flag,",
+         "matchingRanges": {
+          "lineNumber": "44",
+          "columnRanges": [
+           {
+            "startIndex": 53,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "44",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 47,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 53,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "lineText": "                                               absl::string_view value) {",
+         "matchingRanges": {
+          "lineNumber": "45"
+         },
+         "lineNumber": "45"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 9
+    },
+    "resultToken": "CBASAggBOLywxcCit6TCC0AASBA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "abseil-cpp",
+        "ossProject": "abseil"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "absl/flags/parse.cc",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "ABSL_CONST_INIT std::vector\u003cconst CommandLineFlag*\u003e* specified_flags",
+         "matchingRanges": {
+          "lineNumber": "84",
+          "columnRanges": [
+           {
+            "startIndex": 34,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "84",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 28,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 34,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "lineText": "    ABSL_GUARDED_BY(SpecifiedFlagsMutex()) = nullptr;",
+         "matchingRanges": {
+          "lineNumber": "85"
+         },
+         "lineNumber": "85",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 45,
+            "length": 7
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  bool operator()(const CommandLineFlag* a, const CommandLineFlag* b) const {",
+         "matchingRanges": {
+          "lineNumber": "93",
+          "columnRanges": [
+           {
+            "startIndex": 24,
+            "length": 15
+           },
+           {
+            "startIndex": 50,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "93",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 18,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 44,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 70,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 24,
+           "length": 15
+          },
+          {
+           "startIndex": 50,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "lineText": "    return a-\u003eName() \u003c b-\u003eName();",
+         "matchingRanges": {
+          "lineNumber": "94"
+         },
+         "lineNumber": "94",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  }",
+         "matchingRanges": {
+          "lineNumber": "95"
+         },
+         "lineNumber": "95"
+        },
+        {
+         "lineText": "  bool operator()(const CommandLineFlag* a, absl::string_view b) const {",
+         "matchingRanges": {
+          "lineNumber": "96",
+          "columnRanges": [
+           {
+            "startIndex": 24,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "96",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 18,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 65,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 24,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "lineText": "    return a-\u003eName() \u003c b;",
+         "matchingRanges": {
+          "lineNumber": "97"
+         },
+         "lineNumber": "97",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  }",
+         "matchingRanges": {
+          "lineNumber": "98"
+         },
+         "lineNumber": "98"
+        },
+        {
+         "lineText": "  bool operator()(absl::string_view a, const CommandLineFlag* b) const {",
+         "matchingRanges": {
+          "lineNumber": "99",
+          "columnRanges": [
+           {
+            "startIndex": 45,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "99",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 39,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 65,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 45,
+           "length": 15
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 14
+    },
+    "resultToken": "CBESAggBOIzM0MHlhsrw6gFAAEgR"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "abseil-cpp",
+        "ossProject": "abseil"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "absl/flags/internal/usage_test.cc",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "TEST_F(UsageReportingTest, TestFlagHelpHRF_on_flag_01) {",
+         "matchingRanges": {
+          "lineNumber": "133"
+         },
+         "lineNumber": "133",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "startIndex": 7,
+            "length": 18
+           }
+          },
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "startIndex": 27,
+            "length": 26
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  const auto* flag = absl::FindCommandLineFlag(\"usage_reporting_test_flag_01\");",
+         "matchingRanges": {
+          "lineNumber": "134",
+          "columnRanges": [
+           {
+            "startIndex": 31,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "134",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 47,
+            "length": 30
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 31,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "lineText": "  std::stringstream test_buf;",
+         "matchingRanges": {
+          "lineNumber": "135"
+         },
+         "lineNumber": "135"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "TEST_F(UsageReportingTest, TestFlagHelpHRF_on_flag_02) {",
+         "matchingRanges": {
+          "lineNumber": "145"
+         },
+         "lineNumber": "145",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "startIndex": 7,
+            "length": 18
+           }
+          },
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "startIndex": 27,
+            "length": 26
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  const auto* flag = absl::FindCommandLineFlag(\"usage_reporting_test_flag_02\");",
+         "matchingRanges": {
+          "lineNumber": "146",
+          "columnRanges": [
+           {
+            "startIndex": 31,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "146",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 47,
+            "length": 30
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 31,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "lineText": "  std::stringstream test_buf;",
+         "matchingRanges": {
+          "lineNumber": "147"
+         },
+         "lineNumber": "147"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "TEST_F(UsageReportingTest, TestFlagHelpHRF_on_flag_03) {",
+         "matchingRanges": {
+          "lineNumber": "157"
+         },
+         "lineNumber": "157",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "startIndex": 7,
+            "length": 18
+           }
+          },
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "startIndex": 27,
+            "length": 26
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  const auto* flag = absl::FindCommandLineFlag(\"usage_reporting_test_flag_03\");",
+         "matchingRanges": {
+          "lineNumber": "158",
+          "columnRanges": [
+           {
+            "startIndex": 31,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "158",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 47,
+            "length": 30
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 31,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "lineText": "  std::stringstream test_buf;",
+         "matchingRanges": {
+          "lineNumber": "159"
+         },
+         "lineNumber": "159"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 5
+    },
+    "resultToken": "CBISAggBONC8q8iw-e277wFAAEgS"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "abseil-cpp",
+        "ossProject": "abseil"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "absl/time/flag_test.cc",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "bool SetFlagValue(absl::string_view flag_name, absl::string_view value) {",
+         "matchingRanges": {
+          "lineNumber": "42"
+         },
+         "lineNumber": "42",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  auto* flag = absl::FindCommandLineFlag(flag_name);",
+         "matchingRanges": {
+          "lineNumber": "43",
+          "columnRanges": [
+           {
+            "startIndex": 25,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "43",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 25,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "lineText": "  if (!flag) return false;",
+         "matchingRanges": {
+          "lineNumber": "44"
+         },
+         "lineNumber": "44",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 13,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 20,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "bool GetFlagValue(absl::string_view flag_name, std::string\u0026 value) {",
+         "matchingRanges": {
+          "lineNumber": "49"
+         },
+         "lineNumber": "49",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  auto* flag = absl::FindCommandLineFlag(flag_name);",
+         "matchingRanges": {
+          "lineNumber": "50",
+          "columnRanges": [
+           {
+            "startIndex": 25,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "50",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 25,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "lineText": "  if (!flag) return false;",
+         "matchingRanges": {
+          "lineNumber": "51"
+         },
+         "lineNumber": "51",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 13,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 20,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CBMSAggBOM6Pp7fVn_SuNEAASBM"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "abseil-cpp",
+        "ossProject": "abseil"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "absl/flags/internal/flag.cc",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "#include \"absl/flags/config.h\"",
+         "matchingRanges": {
+          "lineNumber": "42"
+         },
+         "lineNumber": "42",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 9,
+            "length": 21
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "#include \"absl/flags/internal/commandlineflag.h\"",
+         "matchingRanges": {
+          "lineNumber": "43",
+          "columnRanges": [
+           {
+            "startIndex": 30,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "43",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 9,
+            "length": 39
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 30,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "lineText": "#include \"absl/flags/usage_config.h\"",
+         "matchingRanges": {
+          "lineNumber": "44"
+         },
+         "lineNumber": "44",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 9,
+            "length": 27
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBQSAggBOKDi-p3smOH16gFAAEgU"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "abseil-cpp",
+        "ossProject": "abseil"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "absl/flags/BUILD.bazel",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    srcs = [",
+         "matchingRanges": {
+          "lineNumber": "125"
+         },
+         "lineNumber": "125"
+        },
+        {
+         "lineText": "        \"internal/commandlineflag.cc\",",
+         "matchingRanges": {
+          "lineNumber": "126",
+          "columnRanges": [
+           {
+            "startIndex": 18,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "126",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 29
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 18,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "lineText": "    ],",
+         "matchingRanges": {
+          "lineNumber": "127"
+         },
+         "lineNumber": "127"
+        },
+        {
+         "lineText": "    hdrs = [",
+         "matchingRanges": {
+          "lineNumber": "128"
+         },
+         "lineNumber": "128"
+        },
+        {
+         "lineText": "        \"internal/commandlineflag.h\",",
+         "matchingRanges": {
+          "lineNumber": "129",
+          "columnRanges": [
+           {
+            "startIndex": 18,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "129",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 28
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 18,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "lineText": "    ],",
+         "matchingRanges": {
+          "lineNumber": "130"
+         },
+         "lineNumber": "130"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    name = \"commandlineflag\",",
+         "matchingRanges": {
+          "lineNumber": "143",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "143",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 17
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "lineText": "    srcs = [",
+         "matchingRanges": {
+          "lineNumber": "144"
+         },
+         "lineNumber": "144"
+        },
+        {
+         "lineText": "        \"commandlineflag.cc\",",
+         "matchingRanges": {
+          "lineNumber": "145",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "145",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 20
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 15
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 20
+    },
+    "resultToken": "CBUSBAgBIAE4wsj-1LX24OX3AUAASBU"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "abseil-cpp",
+        "ossProject": "abseil"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "absl/flags/CMakeLists.txt",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  SRCS",
+         "matchingRanges": {
+          "lineNumber": "102"
+         },
+         "lineNumber": "102"
+        },
+        {
+         "lineText": "    \"internal/commandlineflag.cc\"",
+         "matchingRanges": {
+          "lineNumber": "103",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "103",
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "lineText": "  HDRS",
+         "matchingRanges": {
+          "lineNumber": "104"
+         },
+         "lineNumber": "104"
+        },
+        {
+         "lineText": "    \"internal/commandlineflag.h\"",
+         "matchingRanges": {
+          "lineNumber": "105",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "105",
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "lineText": "  COPTS",
+         "matchingRanges": {
+          "lineNumber": "106"
+         },
+         "lineNumber": "106"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    flags_commandlineflag",
+         "matchingRanges": {
+          "lineNumber": "118",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "118",
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "lineText": "  SRCS",
+         "matchingRanges": {
+          "lineNumber": "119"
+         },
+         "lineNumber": "119"
+        },
+        {
+         "lineText": "    \"commandlineflag.cc\"",
+         "matchingRanges": {
+          "lineNumber": "120",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "120",
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "lineText": "  HDRS",
+         "matchingRanges": {
+          "lineNumber": "121"
+         },
+         "lineNumber": "121"
+        },
+        {
+         "lineText": "    \"commandlineflag.h\"",
+         "matchingRanges": {
+          "lineNumber": "122",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "122",
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 15
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 19
+    },
+    "resultToken": "CBYSAggBONbKrb_VrpztUUAASBY"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "abseil-cpp",
+        "ossProject": "abseil"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "CMake/AbseilDll.cmake",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  list(APPEND ABSL_INTERNAL_DLL_FILES",
+         "matchingRanges": {
+          "lineNumber": "480"
+         },
+         "lineNumber": "480"
+        },
+        {
+         "lineText": "    \"flags/commandlineflag.cc\"",
+         "matchingRanges": {
+          "lineNumber": "481",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "481",
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "lineText": "    \"flags/commandlineflag.h\"",
+         "matchingRanges": {
+          "lineNumber": "482",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "482",
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "lineText": "    \"flags/config.h\"",
+         "matchingRanges": {
+          "lineNumber": "483"
+         },
+         "lineNumber": "483"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    \"flags/flag.h\"",
+         "matchingRanges": {
+          "lineNumber": "485"
+         },
+         "lineNumber": "485"
+        },
+        {
+         "lineText": "    \"flags/internal/commandlineflag.cc\"",
+         "matchingRanges": {
+          "lineNumber": "486",
+          "columnRanges": [
+           {
+            "startIndex": 20,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "486",
+         "ranges": [
+          {
+           "startIndex": 20,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "lineText": "    \"flags/internal/commandlineflag.h\"",
+         "matchingRanges": {
+          "lineNumber": "487",
+          "columnRanges": [
+           {
+            "startIndex": 20,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "487",
+         "ranges": [
+          {
+           "startIndex": 20,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "lineText": "    \"flags/internal/flag.cc\"",
+         "matchingRanges": {
+          "lineNumber": "488"
+         },
+         "lineNumber": "488"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 6
+    },
+    "resultToken": "CBcSAggBOKiFlKzi8OOdngFAAEgX"
+   }
+  ],
+  "estimatedResultCount": "24",
+  "exhaustive": true,
+  "requestToken": "Cg9Db21tYW5kTGluZUZsYWcSMCggZ2l0OmdpdGh1Yi9hYnNlaWwvYWJzZWlsLWNwcEBtYXN0ZXIgY2FzZTp5ZXMgKRoMCOHPzNEGEN_2gpYDIAwqADIASAE"
+ }
+}

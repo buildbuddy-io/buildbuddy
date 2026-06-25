@@ -1,0 +1,3456 @@
+{
+ "query": "Notification",
+ "oss_project": "abseil",
+ "repo_name": "abseil-cpp",
+ "page_size": 50,
+ "fetched_at": "2026-06-17T23:03:51Z",
+ "response": {
+  "searchResults": [
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "abseil-cpp",
+        "ossProject": "abseil"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "absl/synchronization/notification.h",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// -----------------------------------------------------------------------------",
+         "matchingRanges": {
+          "lineNumber": "65"
+         },
+         "lineNumber": "65",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 80
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "class Notification {",
+         "matchingRanges": {
+          "lineNumber": "66",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "66",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": " public:",
+         "matchingRanges": {
+          "lineNumber": "67"
+         },
+         "lineNumber": "67",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  // Initializes the \"notified\" state to unnotified.",
+         "matchingRanges": {
+          "lineNumber": "68"
+         },
+         "lineNumber": "68",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 50
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  Notification() : notified_yet_(false) {}",
+         "matchingRanges": {
+          "lineNumber": "69",
+          "columnRanges": [
+           {
+            "startIndex": 2,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "69",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 33,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 2,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "  explicit Notification(bool prenotify) : notified_yet_(prenotify) {}",
+         "matchingRanges": {
+          "lineNumber": "70",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "70",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 24,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "  Notification(const Notification\u0026) = delete;",
+         "matchingRanges": {
+          "lineNumber": "71",
+          "columnRanges": [
+           {
+            "startIndex": 2,
+            "length": 12
+           },
+           {
+            "startIndex": 21,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "71",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 15,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 38,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 2,
+           "length": 12
+          },
+          {
+           "startIndex": 21,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "  Notification\u0026 operator=(const Notification\u0026) = delete;",
+         "matchingRanges": {
+          "lineNumber": "72",
+          "columnRanges": [
+           {
+            "startIndex": 2,
+            "length": 12
+           },
+           {
+            "startIndex": 32,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "72",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 16,
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 26,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 49,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 2,
+           "length": 12
+          },
+          {
+           "startIndex": 32,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "  ~Notification();",
+         "matchingRanges": {
+          "lineNumber": "73",
+          "columnRanges": [
+           {
+            "startIndex": 3,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "73",
+         "ranges": [
+          {
+           "startIndex": 3,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "74"
+         },
+         "lineNumber": "74"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 36
+    },
+    "resultToken": "CAASBAgBIAE4oq674IOgkqDrAUAASAA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "abseil-cpp",
+        "ossProject": "abseil"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "absl/synchronization/notification.cc",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "void Notification::Notify() {",
+         "matchingRanges": {
+          "lineNumber": "27",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "27",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "  base_internal::TraceSignal(this, TraceObjectKind());",
+         "matchingRanges": {
+          "lineNumber": "28"
+         },
+         "lineNumber": "28",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 29,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "Notification::~Notification() {",
+         "matchingRanges": {
+          "lineNumber": "43",
+          "columnRanges": [
+           {
+            "length": 12
+           },
+           {
+            "startIndex": 15,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "43",
+         "ranges": [
+          {
+           "length": 12
+          },
+          {
+           "startIndex": 15,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "  // Make sure that the thread running Notify() exits before the object is",
+         "matchingRanges": {
+          "lineNumber": "44"
+         },
+         "lineNumber": "44",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 72
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "void Notification::WaitForNotification() const {",
+         "matchingRanges": {
+          "lineNumber": "49",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 12
+           },
+           {
+            "startIndex": 26,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "49",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 41,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 12
+          },
+          {
+           "startIndex": 26,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "  base_internal::TraceWait(this, TraceObjectKind());",
+         "matchingRanges": {
+          "lineNumber": "50"
+         },
+         "lineNumber": "50",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 27,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "bool Notification::WaitForNotificationWithTimeout(",
+         "matchingRanges": {
+          "lineNumber": "59",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 12
+           },
+           {
+            "startIndex": 26,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "59",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 12
+          },
+          {
+           "startIndex": 26,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    absl::Duration timeout) const {",
+         "matchingRanges": {
+          "lineNumber": "60"
+         },
+         "lineNumber": "60",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 28,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "bool Notification::WaitForNotificationWithDeadline(absl::Time deadline) const {",
+         "matchingRanges": {
+          "lineNumber": "72",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 12
+           },
+           {
+            "startIndex": 26,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "72",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 72,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 12
+          },
+          {
+           "startIndex": 26,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "  base_internal::TraceWait(this, TraceObjectKind());",
+         "matchingRanges": {
+          "lineNumber": "73"
+         },
+         "lineNumber": "73",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 27,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 7
+    },
+    "resultToken": "CAESBAgBIAE4lMCT0OSbhZ6VAUAASAE"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "abseil-cpp",
+        "ossProject": "abseil"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "absl/synchronization/notification_test.cc",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "TEST(NotificationTest, SanityTest) {",
+         "matchingRanges": {
+          "lineNumber": "135",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "135",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "startIndex": 5,
+            "length": 16
+           }
+          },
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "startIndex": 23,
+            "length": 10
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "  Notification local_notification1, local_notification2;",
+         "matchingRanges": {
+          "lineNumber": "136",
+          "columnRanges": [
+           {
+            "startIndex": 2,
+            "length": 12
+           },
+           {
+            "startIndex": 21,
+            "length": 12
+           },
+           {
+            "startIndex": 42,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "136",
+         "ranges": [
+          {
+           "startIndex": 2,
+           "length": 12
+          },
+          {
+           "startIndex": 21,
+           "length": 12
+          },
+          {
+           "startIndex": 42,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "  BasicTests(false, \u0026local_notification1);",
+         "matchingRanges": {
+          "lineNumber": "137",
+          "columnRanges": [
+           {
+            "startIndex": 27,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "137",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 13,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 27,
+           "length": 12
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "TEST(NotificationTest, TracesNotify) {",
+         "matchingRanges": {
+          "lineNumber": "181",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "181",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "startIndex": 5,
+            "length": 16
+           }
+          },
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "startIndex": 23,
+            "length": 12
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "  Notification n;",
+         "matchingRanges": {
+          "lineNumber": "182",
+          "columnRanges": [
+           {
+            "startIndex": 2,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "182",
+         "ranges": [
+          {
+           "startIndex": 2,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "  tls_signal = {};",
+         "matchingRanges": {
+          "lineNumber": "183"
+         },
+         "lineNumber": "183"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "TEST(NotificationTest, TracesWaitForNotification) {",
+         "matchingRanges": {
+          "lineNumber": "188",
+          "columnRanges": [
+           {
+            "startIndex": 36,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "188",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "startIndex": 5,
+            "length": 16
+           }
+          },
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "startIndex": 23,
+            "length": 25
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 36,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "  Notification n;",
+         "matchingRanges": {
+          "lineNumber": "189"
+         },
+         "lineNumber": "189"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "TEST(NotificationTest, TracesWaitForNotificationWithTimeout) {",
+         "matchingRanges": {
+          "lineNumber": "197",
+          "columnRanges": [
+           {
+            "startIndex": 36,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "197",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "startIndex": 5,
+            "length": 16
+           }
+          },
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "startIndex": 23,
+            "length": 36
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 36,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "  Notification n;",
+         "matchingRanges": {
+          "lineNumber": "198"
+         },
+         "lineNumber": "198"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 30
+    },
+    "resultToken": "CAISBAgBIAE43NmfnNKmgJzOAUAASAI"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "abseil-cpp",
+        "ossProject": "abseil"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "absl/synchronization/lifetime_test.cc",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// A two-threaded test which checks that Mutex, CondVar, and Notification have",
+         "matchingRanges": {
+          "lineNumber": "28",
+          "columnRanges": [
+           {
+            "startIndex": 61,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "28",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 78
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 61,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "// correct basic functionality.  The intent is to establish that they",
+         "matchingRanges": {
+          "lineNumber": "29"
+         },
+         "lineNumber": "29",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 69
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "void ThreadOne(absl::Mutex* mutex, absl::CondVar* condvar,",
+         "matchingRanges": {
+          "lineNumber": "41"
+         },
+         "lineNumber": "41",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "               absl::Notification* notification, bool* state) {",
+         "matchingRanges": {
+          "lineNumber": "42",
+          "columnRanges": [
+           {
+            "startIndex": 21,
+            "length": 12
+           },
+           {
+            "startIndex": 35,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "42",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 49,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 21,
+           "length": 12
+          },
+          {
+           "startIndex": 35,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "  // Test that the notification is in a valid initial state.",
+         "matchingRanges": {
+          "lineNumber": "43",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "43",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 58
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "  CHECK(!notification-\u003eHasBeenNotified()) \u003c\u003c \"invalid Notification\";",
+         "matchingRanges": {
+          "lineNumber": "44",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 12
+           },
+           {
+            "startIndex": 54,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "44",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 45,
+            "length": 22
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 12
+          },
+          {
+           "startIndex": 54,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "  CHECK(!*state) \u003c\u003c \"*state not initialized\";",
+         "matchingRanges": {
+          "lineNumber": "45"
+         },
+         "lineNumber": "45",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 24
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    notification-\u003eNotify();",
+         "matchingRanges": {
+          "lineNumber": "50",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "50",
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    CHECK(notification-\u003eHasBeenNotified()) \u003c\u003c \"invalid Notification\";",
+         "matchingRanges": {
+          "lineNumber": "51",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 12
+           },
+           {
+            "startIndex": 55,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "51",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 46,
+            "length": 22
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 12
+          },
+          {
+           "startIndex": 55,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "52"
+         },
+         "lineNumber": "52"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 16
+    },
+    "resultToken": "CAMSAggBOJbImK3Q9dy2NUAASAM"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "abseil-cpp",
+        "ossProject": "abseil"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "absl/strings/internal/cordz_info_statistics_test.cc",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "#include \"absl/synchronization/internal/thread_pool.h\"",
+         "matchingRanges": {
+          "lineNumber": "33"
+         },
+         "lineNumber": "33",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 9,
+            "length": 45
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "#include \"absl/synchronization/notification.h\"",
+         "matchingRanges": {
+          "lineNumber": "34",
+          "columnRanges": [
+           {
+            "startIndex": 31,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "34",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 9,
+            "length": 37
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 31,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "35"
+         },
+         "lineNumber": "35"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "TEST(CordzInfoStatisticsTest, ThreadSafety) {",
+         "matchingRanges": {
+          "lineNumber": "414"
+         },
+         "lineNumber": "414",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "startIndex": 5,
+            "length": 23
+           }
+          },
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "startIndex": 30,
+            "length": 12
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  Notification stop;",
+         "matchingRanges": {
+          "lineNumber": "415",
+          "columnRanges": [
+           {
+            "startIndex": 2,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "415",
+         "ranges": [
+          {
+           "startIndex": 2,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "  static constexpr int kNumThreads = 8;",
+         "matchingRanges": {
+          "lineNumber": "416"
+         },
+         "lineNumber": "416",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 9
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 19,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 37,
+            "length": 1
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAQSAggBOJT02Nuvjp-YJkAASAQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "abseil-cpp",
+        "ossProject": "abseil"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "absl/time/simulated_clock_test.cc",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "void SleepAndNotify(absl::Clock* clock, absl::Duration sleep_secs,",
+         "matchingRanges": {
+          "lineNumber": "87"
+         },
+         "lineNumber": "87",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "                    absl::Notification* note) {",
+         "matchingRanges": {
+          "lineNumber": "88",
+          "columnRanges": [
+           {
+            "startIndex": 26,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "88",
+         "ranges": [
+          {
+           "startIndex": 26,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "  clock-\u003eSleep(sleep_secs);",
+         "matchingRanges": {
+          "lineNumber": "89"
+         },
+         "lineNumber": "89"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  absl::SimulatedClock simclock;",
+         "matchingRanges": {
+          "lineNumber": "98"
+         },
+         "lineNumber": "98"
+        },
+        {
+         "lineText": "  absl::Notification note;",
+         "matchingRanges": {
+          "lineNumber": "99",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "99",
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "100"
+         },
+         "lineNumber": "100"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  absl::SimulatedClock simclock;",
+         "matchingRanges": {
+          "lineNumber": "122"
+         },
+         "lineNumber": "122"
+        },
+        {
+         "lineText": "  absl::Notification note;",
+         "matchingRanges": {
+          "lineNumber": "123",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "123",
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "124"
+         },
+         "lineNumber": "124"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 40
+    },
+    "resultToken": "CAUSAggBOKzxj5egn6K7b0AASAU"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "abseil-cpp",
+        "ossProject": "abseil"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "absl/synchronization/BUILD.bazel",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "        \"mutex.cc\",",
+         "matchingRanges": {
+          "lineNumber": "108"
+         },
+         "lineNumber": "108",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 10
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "        \"notification.cc\",",
+         "matchingRanges": {
+          "lineNumber": "109",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "109",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 17
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    ],",
+         "matchingRanges": {
+          "lineNumber": "110"
+         },
+         "lineNumber": "110"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "        \"mutex.h\",",
+         "matchingRanges": {
+          "lineNumber": "124"
+         },
+         "lineNumber": "124",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 9
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "        \"notification.h\",",
+         "matchingRanges": {
+          "lineNumber": "125",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "125",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 16
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    ],",
+         "matchingRanges": {
+          "lineNumber": "126"
+         },
+         "lineNumber": "126"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    name = \"notification_test\",",
+         "matchingRanges": {
+          "lineNumber": "323",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "323",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 19
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    size = \"small\",",
+         "matchingRanges": {
+          "lineNumber": "324"
+         },
+         "lineNumber": "324",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 7
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    srcs = [\"notification_test.cc\"],",
+         "matchingRanges": {
+          "lineNumber": "325",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "325",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 12,
+            "length": 22
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 12
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 4
+    },
+    "resultToken": "CAYSBAgBIAE4tsuGzK-ZnMkQQABIBg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "abseil-cpp",
+        "ossProject": "abseil"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "absl/synchronization/CMakeLists.txt",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    \"mutex.h\"",
+         "matchingRanges": {
+          "lineNumber": "85"
+         },
+         "lineNumber": "85"
+        },
+        {
+         "lineText": "    \"notification.h\"",
+         "matchingRanges": {
+          "lineNumber": "86",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "86",
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "  SRCS",
+         "matchingRanges": {
+          "lineNumber": "87"
+         },
+         "lineNumber": "87"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    \"internal/win32_waiter.cc\"",
+         "matchingRanges": {
+          "lineNumber": "97"
+         },
+         "lineNumber": "97"
+        },
+        {
+         "lineText": "    \"notification.cc\"",
+         "matchingRanges": {
+          "lineNumber": "98",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "98",
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    \"mutex.cc\"",
+         "matchingRanges": {
+          "lineNumber": "99"
+         },
+         "lineNumber": "99"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    notification_test",
+         "matchingRanges": {
+          "lineNumber": "217",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "217",
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "  SRCS",
+         "matchingRanges": {
+          "lineNumber": "218"
+         },
+         "lineNumber": "218"
+        },
+        {
+         "lineText": "    \"notification_test.cc\"",
+         "matchingRanges": {
+          "lineNumber": "219",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "219",
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 12
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 4
+    },
+    "resultToken": "CAcSAggBOIz5w9DIt-7c4QFAAEgH"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "abseil-cpp",
+        "ossProject": "abseil"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "absl/time/clock_interface_test.cc",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "                                absl::Condition* cond, absl::Time wakeup_time,",
+         "matchingRanges": {
+          "lineNumber": "44"
+         },
+         "lineNumber": "44"
+        },
+        {
+         "lineText": "                                absl::Notification* note, bool* return_val) {",
+         "matchingRanges": {
+          "lineNumber": "45",
+          "columnRanges": [
+           {
+            "startIndex": 38,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "45",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 58,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 38,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "  mu-\u003elock_shared();",
+         "matchingRanges": {
+          "lineNumber": "46"
+         },
+         "lineNumber": "46"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  absl::Condition cond(\u0026f);",
+         "matchingRanges": {
+          "lineNumber": "60"
+         },
+         "lineNumber": "60"
+        },
+        {
+         "lineText": "  absl::Notification note;",
+         "matchingRanges": {
+          "lineNumber": "61",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "61",
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "  bool return_val;",
+         "matchingRanges": {
+          "lineNumber": "62"
+         },
+         "lineNumber": "62",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  absl::Condition cond(\u0026f);",
+         "matchingRanges": {
+          "lineNumber": "88"
+         },
+         "lineNumber": "88"
+        },
+        {
+         "lineText": "  absl::Notification note;",
+         "matchingRanges": {
+          "lineNumber": "89",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "89",
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "  bool return_val;",
+         "matchingRanges": {
+          "lineNumber": "90"
+         },
+         "lineNumber": "90",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 6
+    },
+    "resultToken": "CAgSAggBOJLD3fOs0YGwY0AASAg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "abseil-cpp",
+        "ossProject": "abseil"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "absl/base/spinlock_test_common.cc",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  struct Helper {",
+         "matchingRanges": {
+          "lineNumber": "241"
+         },
+         "lineNumber": "241",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    static void NotifyThenLock(Notification* locked, SpinLock* spinlock,",
+         "matchingRanges": {
+          "lineNumber": "242",
+          "columnRanges": [
+           {
+            "startIndex": 31,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "242",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 11,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 31,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "                               BlockingCounter* b) {",
+         "matchingRanges": {
+          "lineNumber": "243"
+         },
+         "lineNumber": "243"
+        },
+        {
+         "lineText": "      locked-\u003eWaitForNotification();  // Wait for LockThenWait() to hold \"s\".",
+         "matchingRanges": {
+          "lineNumber": "244",
+          "columnRanges": [
+           {
+            "startIndex": 21,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "244",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 38,
+            "length": 39
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 21,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "      b-\u003eDecrementCount();",
+         "matchingRanges": {
+          "lineNumber": "245"
+         },
+         "lineNumber": "245"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    static void LockThenWait(Notification* locked, SpinLock* spinlock,",
+         "matchingRanges": {
+          "lineNumber": "249",
+          "columnRanges": [
+           {
+            "startIndex": 29,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "249",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 11,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 29,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "                             BlockingCounter* b) {",
+         "matchingRanges": {
+          "lineNumber": "250"
+         },
+         "lineNumber": "250"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    static void DeadlockTest(SpinLock* spinlock, int num_spinners) {",
+         "matchingRanges": {
+          "lineNumber": "256"
+         },
+         "lineNumber": "256",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 11,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 49,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "      Notification locked;",
+         "matchingRanges": {
+          "lineNumber": "257",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "257",
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "      BlockingCounter counter(num_spinners);",
+         "matchingRanges": {
+          "lineNumber": "258"
+         },
+         "lineNumber": "258"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 5
+    },
+    "resultToken": "CAkSAggBOLDaq6O82f6VHkAASAk"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "abseil-cpp",
+        "ossProject": "abseil"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "absl/base/internal/tracing.h",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// Well known Abseil object types that have causality.",
+         "matchingRanges": {
+          "lineNumber": "24"
+         },
+         "lineNumber": "24",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 54
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "enum class ObjectKind { kUnknown, kBlockingCounter, kNotification };",
+         "matchingRanges": {
+          "lineNumber": "25",
+          "columnRanges": [
+           {
+            "startIndex": 53,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "25",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 5,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 53,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "26"
+         },
+         "lineNumber": "26"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// blocking wait operation on `object`. `object` typically represents a higher",
+         "matchingRanges": {
+          "lineNumber": "28"
+         },
+         "lineNumber": "28",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 78
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "// level synchronization object such as `absl::Notification`.",
+         "matchingRanges": {
+          "lineNumber": "29",
+          "columnRanges": [
+           {
+            "startIndex": 47,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "29",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 61
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 47,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "void TraceWait(const void* object, ObjectKind kind);",
+         "matchingRanges": {
+          "lineNumber": "30"
+         },
+         "lineNumber": "30",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 15,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 21,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAoSAggBOKaviNqMy_CmtAFAAEgK"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "abseil-cpp",
+        "ossProject": "abseil"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "absl/profiling/internal/sample_recorder_test.cc",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "#include \"absl/synchronization/mutex.h\"",
+         "matchingRanges": {
+          "lineNumber": "29"
+         },
+         "lineNumber": "29",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 9,
+            "length": 30
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "#include \"absl/synchronization/notification.h\"",
+         "matchingRanges": {
+          "lineNumber": "30",
+          "columnRanges": [
+           {
+            "startIndex": 31,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "30",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 9,
+            "length": 37
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 31,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "#include \"absl/time/clock.h\"",
+         "matchingRanges": {
+          "lineNumber": "31"
+         },
+         "lineNumber": "31",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 9,
+            "length": 19
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  SampleRecorder\u003cInfo\u003e sampler;",
+         "matchingRanges": {
+          "lineNumber": "117"
+         },
+         "lineNumber": "117"
+        },
+        {
+         "lineText": "  Notification stop;",
+         "matchingRanges": {
+          "lineNumber": "118",
+          "columnRanges": [
+           {
+            "startIndex": 2,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "118",
+         "ranges": [
+          {
+           "startIndex": 2,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "  ThreadPool pool(10);",
+         "matchingRanges": {
+          "lineNumber": "119"
+         },
+         "lineNumber": "119",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 18,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAsSAggBOMD_4I_I-ruLwQFAAEgL"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "abseil-cpp",
+        "ossProject": "abseil"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "absl/log/scoped_mock_log_test.cc",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "#include \"absl/synchronization/barrier.h\"",
+         "matchingRanges": {
+          "lineNumber": "33"
+         },
+         "lineNumber": "33",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 9,
+            "length": 32
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "#include \"absl/synchronization/notification.h\"",
+         "matchingRanges": {
+          "lineNumber": "34",
+          "columnRanges": [
+           {
+            "startIndex": 31,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "34",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 9,
+            "length": 37
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 31,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "35"
+         },
+         "lineNumber": "35"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  absl::Notification logging_started;",
+         "matchingRanges": {
+          "lineNumber": "270",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "270",
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "271"
+         },
+         "lineNumber": "271"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  logging_started.WaitForNotification();",
+         "matchingRanges": {
+          "lineNumber": "279",
+          "columnRanges": [
+           {
+            "startIndex": 25,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "279",
+         "ranges": [
+          {
+           "startIndex": 25,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "  log.reset();",
+         "matchingRanges": {
+          "lineNumber": "280"
+         },
+         "lineNumber": "280"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CAwSAggBOI6J7vKNpOSBTUAASAw"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "abseil-cpp",
+        "ossProject": "abseil"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "absl/container/internal/hashtablez_sampler_test.cc",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "#include \"absl/synchronization/mutex.h\"",
+         "matchingRanges": {
+          "lineNumber": "33"
+         },
+         "lineNumber": "33",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 9,
+            "length": 30
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "#include \"absl/synchronization/notification.h\"",
+         "matchingRanges": {
+          "lineNumber": "34",
+          "columnRanges": [
+           {
+            "startIndex": 31,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "34",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 9,
+            "length": 37
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 31,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "#include \"absl/time/clock.h\"",
+         "matchingRanges": {
+          "lineNumber": "35"
+         },
+         "lineNumber": "35",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 9,
+            "length": 19
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  HashtablezSampler sampler;",
+         "matchingRanges": {
+          "lineNumber": "429"
+         },
+         "lineNumber": "429"
+        },
+        {
+         "lineText": "  Notification stop;",
+         "matchingRanges": {
+          "lineNumber": "430",
+          "columnRanges": [
+           {
+            "startIndex": 2,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "430",
+         "ranges": [
+          {
+           "startIndex": 2,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "  ThreadPool pool(10);",
+         "matchingRanges": {
+          "lineNumber": "431"
+         },
+         "lineNumber": "431",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 18,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CA0SAggBONzqupiHre-7TUAASA0"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "abseil-cpp",
+        "ossProject": "abseil"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "absl/strings/internal/cordz_update_tracker_test.cc",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "#include \"absl/base/config.h\"",
+         "matchingRanges": {
+          "lineNumber": "23"
+         },
+         "lineNumber": "23",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 9,
+            "length": 20
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "#include \"absl/synchronization/notification.h\"",
+         "matchingRanges": {
+          "lineNumber": "24",
+          "columnRanges": [
+           {
+            "startIndex": 31,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "24",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 9,
+            "length": 37
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 31,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "25"
+         },
+         "lineNumber": "25"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "TEST(CordzUpdateTracker, ThreadSanitizedValueCheck) {",
+         "matchingRanges": {
+          "lineNumber": "116"
+         },
+         "lineNumber": "116",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "startIndex": 5,
+            "length": 18
+           }
+          },
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "startIndex": 25,
+            "length": 25
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  absl::Notification done;",
+         "matchingRanges": {
+          "lineNumber": "117",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "117",
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "  CordzUpdateTracker tracker;",
+         "matchingRanges": {
+          "lineNumber": "118"
+         },
+         "lineNumber": "118"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CA4SAggBOJbstdnwmNSEwQFAAEgO"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "abseil-cpp",
+        "ossProject": "abseil"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "absl/strings/internal/cordz_handle_test.cc",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "#include \"absl/synchronization/internal/thread_pool.h\"",
+         "matchingRanges": {
+          "lineNumber": "21"
+         },
+         "lineNumber": "21",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 9,
+            "length": 45
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "#include \"absl/synchronization/notification.h\"",
+         "matchingRanges": {
+          "lineNumber": "22",
+          "columnRanges": [
+           {
+            "startIndex": 31,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "22",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 9,
+            "length": 37
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 31,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "#include \"absl/time/clock.h\"",
+         "matchingRanges": {
+          "lineNumber": "23"
+         },
+         "lineNumber": "23",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 9,
+            "length": 19
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "TEST(CordzHandleTest, MultiThreaded) {",
+         "matchingRanges": {
+          "lineNumber": "179"
+         },
+         "lineNumber": "179",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "startIndex": 5,
+            "length": 15
+           }
+          },
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "startIndex": 22,
+            "length": 13
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  Notification stop;",
+         "matchingRanges": {
+          "lineNumber": "180",
+          "columnRanges": [
+           {
+            "startIndex": 2,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "180",
+         "ranges": [
+          {
+           "startIndex": 2,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "  static constexpr int kNumThreads = 4;",
+         "matchingRanges": {
+          "lineNumber": "181"
+         },
+         "lineNumber": "181",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 9
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 19,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 37,
+            "length": 1
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CA8SAggBOPTMobSu1_CfRkAASA8"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "abseil-cpp",
+        "ossProject": "abseil"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "absl/strings/internal/cordz_sample_token_test.cc",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "#include \"absl/synchronization/internal/thread_pool.h\"",
+         "matchingRanges": {
+          "lineNumber": "29"
+         },
+         "lineNumber": "29",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 9,
+            "length": 45
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "#include \"absl/synchronization/notification.h\"",
+         "matchingRanges": {
+          "lineNumber": "30",
+          "columnRanges": [
+           {
+            "startIndex": 31,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "30",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 9,
+            "length": 37
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 31,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "#include \"absl/time/clock.h\"",
+         "matchingRanges": {
+          "lineNumber": "31"
+         },
+         "lineNumber": "31",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 9,
+            "length": 19
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "TEST(CordzSampleTokenTest, MultiThreaded) {",
+         "matchingRanges": {
+          "lineNumber": "142"
+         },
+         "lineNumber": "142",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "startIndex": 5,
+            "length": 20
+           }
+          },
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "startIndex": 27,
+            "length": 13
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  Notification stop;",
+         "matchingRanges": {
+          "lineNumber": "143",
+          "columnRanges": [
+           {
+            "startIndex": 2,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "143",
+         "ranges": [
+          {
+           "startIndex": 2,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "  static constexpr int kNumThreads = 4;",
+         "matchingRanges": {
+          "lineNumber": "144"
+         },
+         "lineNumber": "144",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 9
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 19,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 37,
+            "length": 1
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CBASAggBOKiu_8DD6uq3ogFAAEgQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "abseil-cpp",
+        "ossProject": "abseil"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "absl/base/call_once_test.cc",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// Function to be called from absl::call_once.  Waits for a notification.",
+         "matchingRanges": {
+          "lineNumber": "40",
+          "columnRanges": [
+           {
+            "startIndex": 60,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "40",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 73
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 60,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "void WaitAndIncrement() {",
+         "matchingRanges": {
+          "lineNumber": "41"
+         },
+         "lineNumber": "41",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  // WaitAndIncrement should have been invoked by exactly one call_once()",
+         "matchingRanges": {
+          "lineNumber": "82"
+         },
+         "lineNumber": "82",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 71
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  // instance.  That thread should be blocking on a notification, and all other",
+         "matchingRanges": {
+          "lineNumber": "83",
+          "columnRanges": [
+           {
+            "startIndex": 52,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "83",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 77
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 52,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "  // call_once instances should be blocking as well.",
+         "matchingRanges": {
+          "lineNumber": "84"
+         },
+         "lineNumber": "84",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 50
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CBESAggBOPCJ0rXK4encZEAASBE"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "abseil-cpp",
+        "ossProject": "abseil"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "CMake/AbseilDll.cmake",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  \"synchronization/mutex.h\"",
+         "matchingRanges": {
+          "lineNumber": "422"
+         },
+         "lineNumber": "422"
+        },
+        {
+         "lineText": "  \"synchronization/notification.cc\"",
+         "matchingRanges": {
+          "lineNumber": "423",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "423",
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "  \"synchronization/notification.h\"",
+         "matchingRanges": {
+          "lineNumber": "424",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "424",
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "  \"time/civil_time.cc\"",
+         "matchingRanges": {
+          "lineNumber": "425"
+         },
+         "lineNumber": "425"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CBISAggBOKiFlKzi8OOdngFAAEgS"
+   }
+  ],
+  "estimatedResultCount": "19",
+  "exhaustive": true,
+  "requestToken": "CgxOb3RpZmljYXRpb24SMCggZ2l0OmdpdGh1Yi9hYnNlaWwvYWJzZWlsLWNwcEBtYXN0ZXIgY2FzZTp5ZXMgKRoMCNfPzNEGEPyXtbkDIAwqADIASAE"
+ }
+}

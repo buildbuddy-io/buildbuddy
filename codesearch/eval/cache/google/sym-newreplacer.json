@@ -1,0 +1,2586 @@
+{
+ "query": "NewReplacer",
+ "oss_project": "go",
+ "repo_name": "go",
+ "page_size": 50,
+ "fetched_at": "2026-06-11T02:27:43Z",
+ "response": {
+  "searchResults": [
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/strings/replace.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// NewReplacer returns a new [Replacer] from a list of old, new string",
+         "matchingRanges": {
+          "lineNumber": "26",
+          "columnRanges": [
+           {
+            "startIndex": 3,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "26",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 70
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 3,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": "// pairs. Replacements are performed in the order they appear in the",
+         "matchingRanges": {
+          "lineNumber": "27"
+         },
+         "lineNumber": "27",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 68
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "//",
+         "matchingRanges": {
+          "lineNumber": "30"
+         },
+         "lineNumber": "30",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "// NewReplacer panics if given an odd number of arguments.",
+         "matchingRanges": {
+          "lineNumber": "31",
+          "columnRanges": [
+           {
+            "startIndex": 3,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "31",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 58
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 3,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": "func NewReplacer(oldnew ...string) *Replacer {",
+         "matchingRanges": {
+          "lineNumber": "32",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "32",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": "\tif len(oldnew)%2 == 1 {",
+         "matchingRanges": {
+          "lineNumber": "33"
+         },
+         "lineNumber": "33",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 16,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 21,
+            "length": 1
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tpanic(\"strings.NewReplacer: odd argument count\")",
+         "matchingRanges": {
+          "lineNumber": "34",
+          "columnRanges": [
+           {
+            "startIndex": 17,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "34",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 41
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 17,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": "\t}",
+         "matchingRanges": {
+          "lineNumber": "35"
+         },
+         "lineNumber": "35"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 4
+    },
+    "resultToken": "CAASBAgBIAE48Kj42IeA6LAWQABIAA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/strings/replace_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "var htmlEscaper = NewReplacer(",
+         "matchingRanges": {
+          "lineNumber": "14",
+          "columnRanges": [
+           {
+            "startIndex": 18,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "14",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 18,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": "\t\"\u0026\", \"\u0026amp;\",",
+         "matchingRanges": {
+          "lineNumber": "15"
+         },
+         "lineNumber": "15",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 1,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 6,
+            "length": 7
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "var htmlUnescaper = NewReplacer(",
+         "matchingRanges": {
+          "lineNumber": "22",
+          "columnRanges": [
+           {
+            "startIndex": 20,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "22",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 20,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": "\t\"\u0026amp;\", \"\u0026\",",
+         "matchingRanges": {
+          "lineNumber": "23"
+         },
+         "lineNumber": "23",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 1,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 10,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "var capitalLetters = NewReplacer(\"a\", \"A\", \"b\", \"B\")",
+         "matchingRanges": {
+          "lineNumber": "40",
+          "columnRanges": [
+           {
+            "startIndex": 21,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "40",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 33,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 38,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 43,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 48,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 21,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "41"
+         },
+         "lineNumber": "41"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t}",
+         "matchingRanges": {
+          "lineNumber": "60"
+         },
+         "lineNumber": "60"
+        },
+        {
+         "lineText": "\tinc := NewReplacer(s...)",
+         "matchingRanges": {
+          "lineNumber": "61",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "61",
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "62"
+         },
+         "lineNumber": "62"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 37
+    },
+    "resultToken": "CAESAggBOPDpjfPh9ajX7AFAAEgB"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/strings/example_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "func ExampleNewReplacer() {",
+         "matchingRanges": {
+          "lineNumber": "369",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "369",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": "\tr := strings.NewReplacer(\"\u003c\", \"\u0026lt;\", \"\u003e\", \"\u0026gt;\")",
+         "matchingRanges": {
+          "lineNumber": "370",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "370",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 26,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 31,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 39,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 44,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": "\tfmt.Println(r.Replace(\"This is \u003cb\u003eHTML\u003c/b\u003e!\"))",
+         "matchingRanges": {
+          "lineNumber": "371"
+         },
+         "lineNumber": "371",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 23,
+            "length": 22
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAISBAgBIAE44IOfkZWJx7WfAUAASAI"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/http/server.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "var htmlReplacer = strings.NewReplacer(",
+         "matchingRanges": {
+          "lineNumber": "2477",
+          "columnRanges": [
+           {
+            "startIndex": 27,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "2477",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 27,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": "\t\"\u0026\", \"\u0026amp;\",",
+         "matchingRanges": {
+          "lineNumber": "2478"
+         },
+         "lineNumber": "2478",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 1,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 6,
+            "length": 7
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAMSAggBOKqw0MDfgYL9SEAASAM"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/cgo/internal/testplugin/testdata/plugin2/plugin2.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "func init() {",
+         "matchingRanges": {
+          "lineNumber": "21"
+         },
+         "lineNumber": "21",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t_ = strings.NewReplacer() // trigger stack unwind, Issue #18190.",
+         "matchingRanges": {
+          "lineNumber": "22",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "22",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 27,
+            "length": 38
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": "\tC.strerror(C.EIO)         // uses cgo_topofstack",
+         "matchingRanges": {
+          "lineNumber": "23"
+         },
+         "lineNumber": "23",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 27,
+            "length": 22
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAQSAggBOLz8vfn9jYvFJkAASAQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/html/template/html_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tr := strings.NewReplacer(\"\\x00\", \"\\ufffd\", \"\\x96\", \"\\ufffd\")",
+         "matchingRanges": {
+          "lineNumber": "43",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "43",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 26,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 34,
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 44,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 52,
+            "length": 8
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": "\tgot, want = html.UnescapeString(got), r.Replace(input)",
+         "matchingRanges": {
+          "lineNumber": "44"
+         },
+         "lineNumber": "44"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAUSAggBOMSyjv2I3NC95wFAAEgF"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/http/header.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "var headerNewlineToSpace = strings.NewReplacer(\"\\n\", \" \", \"\\r\", \" \")",
+         "matchingRanges": {
+          "lineNumber": "139",
+          "columnRanges": [
+           {
+            "startIndex": 35,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "139",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 47,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 53,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 58,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 64,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 35,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "140"
+         },
+         "lineNumber": "140"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAYSAggBOLiL-Ofh8ZGfL0AASAY"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/mime/multipart/writer.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "var quoteEscaper = strings.NewReplacer(\"\\\\\", \"\\\\\\\\\", `\"`, \"\\\\\\\"\", \"\\r\", \"%0D\", \"\\n\", \"%0A\")",
+         "matchingRanges": {
+          "lineNumber": "128",
+          "columnRanges": [
+           {
+            "startIndex": 27,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "128",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 39,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 45,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 53,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 58,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 66,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 72,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 79,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 85,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 27,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "129"
+         },
+         "lineNumber": "129"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAcSAggBOIqt9ajSy924vgFAAEgH"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/cgo/out.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "func (p *Package) cPrologGccgo() string {",
+         "matchingRanges": {
+          "lineNumber": "1872"
+         },
+         "lineNumber": "1872",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tr := strings.NewReplacer(",
+         "matchingRanges": {
+          "lineNumber": "1873",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "1873",
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\"PREFIX\", cPrefix,",
+         "matchingRanges": {
+          "lineNumber": "1874"
+         },
+         "lineNumber": "1874",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 8
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAgSAggBONCi5YugxOuxIUAASAg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/html/escape.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "var htmlEscaper = strings.NewReplacer(",
+         "matchingRanges": {
+          "lineNumber": "166",
+          "columnRanges": [
+           {
+            "startIndex": 26,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "166",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 26,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": "\t`\u0026`, \"\u0026amp;\",",
+         "matchingRanges": {
+          "lineNumber": "167"
+         },
+         "lineNumber": "167",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 1,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 6,
+            "length": 7
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAkSAggBOMKcu723gcygtgFAAEgJ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/go/internal/vcs/vcs.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t}",
+         "matchingRanges": {
+          "lineNumber": "1242"
+         },
+         "lineNumber": "1242"
+        },
+        {
+         "lineText": "\treturn strings.NewReplacer(oldNew...).Replace(s)",
+         "matchingRanges": {
+          "lineNumber": "1243",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "1243",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": "}",
+         "matchingRanges": {
+          "lineNumber": "1244"
+         },
+         "lineNumber": "1244"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAoSAggBONqC2cjVlevQiAFAAEgK"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/internal/script/cmds.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t\tr := strings.NewReplacer(oldNew...)",
+         "matchingRanges": {
+          "lineNumber": "864",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "864",
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\tfile := s.Path(args[len(args)-1])",
+         "matchingRanges": {
+          "lineNumber": "865"
+         },
+         "lineNumber": "865",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 33,
+            "length": 1
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAsSAggBOIaBsu-bksqRGUAASAs"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/encoding/json/v2_scanner.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// while v1 uses \"object key\", which is not a term found in JSON literature.",
+         "matchingRanges": {
+          "lineNumber": "84"
+         },
+         "lineNumber": "84",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 76
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "var syntaxErrorReplacer = strings.NewReplacer(",
+         "matchingRanges": {
+          "lineNumber": "85",
+          "columnRanges": [
+           {
+            "startIndex": 34,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "85",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 34,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": "\t\"object name\", \"object key\",",
+         "matchingRanges": {
+          "lineNumber": "86"
+         },
+         "lineNumber": "86",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 1,
+            "length": 13
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 16,
+            "length": 12
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAwSAggBONSqnuKMtYX0nQFAAEgM"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/crypto/md5/gen.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "func relabel(s string) string {",
+         "matchingRanges": {
+          "lineNumber": "74"
+         },
+         "lineNumber": "74",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\treturn strings.NewReplacer(\"arg0\", data.a, \"arg1\", data.b, \"arg2\", data.c, \"arg3\", data.d).Replace(s)",
+         "matchingRanges": {
+          "lineNumber": "75",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "75",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 28,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 44,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 60,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 76,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": "}",
+         "matchingRanges": {
+          "lineNumber": "76"
+         },
+         "lineNumber": "76"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CA0SAggBOP7JrNi67LPa2gFAAEgN"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/http/cookie.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "var cookieNameSanitizer = strings.NewReplacer(\"\\n\", \"-\", \"\\r\", \"-\")",
+         "matchingRanges": {
+          "lineNumber": "489",
+          "columnRanges": [
+           {
+            "startIndex": 34,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "489",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 46,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 52,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 57,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 63,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 34,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "490"
+         },
+         "lineNumber": "490"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CA4SAggBOPyD-NPInvufeEAASA4"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/vendor/golang.org/x/tools/internal/stdlib/manifest.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t{\"NewReader\", Func, 0, \"func(s string) *Reader\"},",
+         "matchingRanges": {
+          "lineNumber": "10817"
+         },
+         "lineNumber": "10817",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 3,
+            "length": 11
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 22,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 25,
+            "length": 24
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t{\"NewReplacer\", Func, 0, \"func(oldnew ...string) *Replacer\"},",
+         "matchingRanges": {
+          "lineNumber": "10818",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "10818",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 3,
+            "length": 13
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 24,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 27,
+            "length": 34
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t{\"Reader\", Type, 0, \"\"},",
+         "matchingRanges": {
+          "lineNumber": "10819"
+         },
+         "lineNumber": "10819",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 3,
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 19,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 22,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CA8SAggBOJrA-rfNvvHiBUAASA8"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/api/main_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// but for now the replacer is fine.",
+         "matchingRanges": {
+          "lineNumber": "290"
+         },
+         "lineNumber": "290",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 36
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "var aliasReplacer = strings.NewReplacer(",
+         "matchingRanges": {
+          "lineNumber": "291",
+          "columnRanges": [
+           {
+            "startIndex": 28,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "291",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 28,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": "\t\"os.FileInfo\", \"fs.FileInfo\",",
+         "matchingRanges": {
+          "lineNumber": "292"
+         },
+         "lineNumber": "292",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 1,
+            "length": 13
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 16,
+            "length": 13
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBASAggBONTBm7OWifSt0gFAAEgQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/path/filepath/path_windows_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\treplacer := strings.NewReplacer(\"{{tmp}}\", ctmp, \"{{tmpvol}}\", tmpVol, \"{{tmpnovol}}\", tmpNoVol)",
+         "matchingRanges": {
+          "lineNumber": "420",
+          "columnRanges": [
+           {
+            "startIndex": 21,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "420",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 33,
+            "length": 9
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 50,
+            "length": 12
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 72,
+            "length": 14
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 21,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "421"
+         },
+         "lineNumber": "421"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBESAggBOMad_svi0v3yjAFAAEgR"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/index/suffixarray/gen.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "var fix32 = strings.NewReplacer(",
+         "matchingRanges": {
+          "lineNumber": "72",
+          "columnRanges": [
+           {
+            "startIndex": 20,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "72",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 20,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": "\t\"32\", \"64\",",
+         "matchingRanges": {
+          "lineNumber": "73"
+         },
+         "lineNumber": "73",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 1,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 7,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "var fix8_32 = strings.NewReplacer(",
+         "matchingRanges": {
+          "lineNumber": "77",
+          "columnRanges": [
+           {
+            "startIndex": 22,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "77",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 22,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": "\t\"_8_32\", \"_32\",",
+         "matchingRanges": {
+          "lineNumber": "78"
+         },
+         "lineNumber": "78",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 1,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 10,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CBISAggBONb47umg79D8QkAASBI"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "api/go1.txt",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "pkg strings, func NewReader(string) *Reader",
+         "matchingRanges": {
+          "lineNumber": "5844"
+         },
+         "lineNumber": "5844"
+        },
+        {
+         "lineText": "pkg strings, func NewReplacer(...string) *Replacer",
+         "matchingRanges": {
+          "lineNumber": "5845",
+          "columnRanges": [
+           {
+            "startIndex": 18,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "5845",
+         "ranges": [
+          {
+           "startIndex": 18,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": "pkg strings, func Repeat(string, int) string",
+         "matchingRanges": {
+          "lineNumber": "5846"
+         },
+         "lineNumber": "5846"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBMSAggBOOjf65ehl6OAuQFAAEgT"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/go/internal/modfetch/codehost/codehost.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// See https://www.gnu.org/software/bash/manual/html_node/Double-Quotes.html.",
+         "matchingRanges": {
+          "lineNumber": "325"
+         },
+         "lineNumber": "325",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 77
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "var bashQuoter = strings.NewReplacer(`\"`, `\\\"`, `$`, `\\$`, \"`\", \"\\\\`\", `\\`, `\\\\`)",
+         "matchingRanges": {
+          "lineNumber": "326",
+          "columnRanges": [
+           {
+            "startIndex": 25,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "326",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 37,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 42,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 48,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 53,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 59,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 64,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 71,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 76,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 25,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "327"
+         },
+         "lineNumber": "327"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBQSAggBOLTCn_6ulPCYiQFAAEgU"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/vendor/golang.org/x/arch/arm/armasm/gnu.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "var saveDot = strings.NewReplacer(",
+         "matchingRanges": {
+          "lineNumber": "13",
+          "columnRanges": [
+           {
+            "startIndex": 22,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "13",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 22,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": "\t\".F16\", \"_dot_F16\",",
+         "matchingRanges": {
+          "lineNumber": "14"
+         },
+         "lineNumber": "14",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 1,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 9,
+            "length": 10
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBUSAggBOPbs8__C7-rGxAFAAEgV"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/vendor/rsc.io/markdown/tables.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "var htmlEscaper = strings.NewReplacer(",
+         "matchingRanges": {
+          "lineNumber": "75",
+          "columnRanges": [
+           {
+            "startIndex": 26,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "75",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 26,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": "\t\"\\\"\", \"\u0026quot;\",",
+         "matchingRanges": {
+          "lineNumber": "76"
+         },
+         "lineNumber": "76",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 1,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 7,
+            "length": 8
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "var htmlQuoteEscaper = strings.NewReplacer(",
+         "matchingRanges": {
+          "lineNumber": "82",
+          "columnRanges": [
+           {
+            "startIndex": 31,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "82",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 31,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": "\t\"\\\"\", \"\u0026quot;\",",
+         "matchingRanges": {
+          "lineNumber": "83"
+         },
+         "lineNumber": "83",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 1,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 7,
+            "length": 8
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "var htmlLinkEscaper = strings.NewReplacer(",
+         "matchingRanges": {
+          "lineNumber": "89",
+          "columnRanges": [
+           {
+            "startIndex": 30,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "89",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 30,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": "\t\"\\\"\", \"%22\",",
+         "matchingRanges": {
+          "lineNumber": "90"
+         },
+         "lineNumber": "90",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 1,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 7,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CBYSAggBOPT3jJSm29OCREAASBY"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/vendor/rsc.io/markdown/inline.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t}",
+         "matchingRanges": {
+          "lineNumber": "526"
+         },
+         "lineNumber": "526"
+        },
+        {
+         "lineText": "\treturn strings.NewReplacer(list...)",
+         "matchingRanges": {
+          "lineNumber": "527",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "527",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": "}()",
+         "matchingRanges": {
+          "lineNumber": "528"
+         },
+         "lineNumber": "528"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBcSAggBOOrzndGzmO6vlQFAAEgX"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/vendor/github.com/google/pprof/profile/legacy_profile.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tconst delimiter = \"=\"",
+         "matchingRanges": {
+          "lineNumber": "981"
+         },
+         "lineNumber": "981",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 19,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tr := strings.NewReplacer()",
+         "matchingRanges": {
+          "lineNumber": "982",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "982",
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": "\tfor s.Scan() {",
+         "matchingRanges": {
+          "lineNumber": "983"
+         },
+         "lineNumber": "983",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t\t\t\tattrs = append(attrs, \"$\"+strings.TrimSpace(attr[0]), strings.TrimSpace(attr[1]))",
+         "matchingRanges": {
+          "lineNumber": "991"
+         },
+         "lineNumber": "991",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 27,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 54,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 82,
+            "length": 1
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t\t\tr = strings.NewReplacer(attrs...)",
+         "matchingRanges": {
+          "lineNumber": "992",
+          "columnRanges": [
+           {
+            "startIndex": 17,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "992",
+         "ranges": [
+          {
+           "startIndex": 17,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t\t}",
+         "matchingRanges": {
+          "lineNumber": "993"
+         },
+         "lineNumber": "993"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CBgSAggBOMjG7pPL4LuGB0AASBg"
+   }
+  ],
+  "estimatedResultCount": "25",
+  "exhaustive": true,
+  "requestToken": "CgtOZXdSZXBsYWNlchIdKCBnaXQ6Z28vZ29AbWFzdGVyIGNhc2U6eWVzICkaDAieuqjRBhDdtpeZAyAMKgAyAEgB"
+ }
+}

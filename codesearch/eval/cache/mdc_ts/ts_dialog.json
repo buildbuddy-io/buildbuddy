@@ -1,0 +1,2118 @@
+{
+ "query": "MDCDialog",
+ "oss_project": "material-components",
+ "repo_name": "material-components-web",
+ "page_size": 50,
+ "fetched_at": "2026-06-17T23:05:48Z",
+ "response": {
+  "searchResults": [
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "material-components-web",
+        "ossProject": "material-components"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "packages/mdc-dialog/component.ts",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import {MDCDialogAdapter} from './adapter';",
+         "matchingRanges": {
+          "lineNumber": "30",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "30",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 26,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 31,
+            "length": 11
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "import {MDCDialogFoundation} from './foundation';",
+         "matchingRanges": {
+          "lineNumber": "31",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "31",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 29,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 34,
+            "length": 14
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "import {MDCDialogCloseEventDetail} from './types';",
+         "matchingRanges": {
+          "lineNumber": "32",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "32",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 35,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 40,
+            "length": 9
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "import * as util from './util';",
+         "matchingRanges": {
+          "lineNumber": "33"
+         },
+         "lineNumber": "33",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 17,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 22,
+            "length": 8
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "/** MDC Dialog */",
+         "matchingRanges": {
+          "lineNumber": "38"
+         },
+         "lineNumber": "38",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 17
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "export class MDCDialog extends MDCComponent\u003cMDCDialogFoundation\u003e {",
+         "matchingRanges": {
+          "lineNumber": "39",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 9
+           },
+           {
+            "startIndex": 44,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "39",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 23,
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 9
+          },
+          {
+           "startIndex": 44,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "  get isOpen() {",
+         "matchingRanges": {
+          "lineNumber": "40"
+         },
+         "lineNumber": "40",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  static override attachTo(root: HTMLElement) {",
+         "matchingRanges": {
+          "lineNumber": "68"
+         },
+         "lineNumber": "68",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 8
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    return new MDCDialog(root);",
+         "matchingRanges": {
+          "lineNumber": "69",
+          "columnRanges": [
+           {
+            "startIndex": 15,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "69",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 11,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 15,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "  }",
+         "matchingRanges": {
+          "lineNumber": "70"
+         },
+         "lineNumber": "70"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 13
+    },
+    "resultToken": "CAASBAgBIAE45om8zueOvIEKQABIAA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "material-components-web",
+        "ossProject": "material-components"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "packages/mdc-dialog/types.ts",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "export interface MDCDialogCloseEventDetail {",
+         "matchingRanges": {
+          "lineNumber": "24",
+          "columnRanges": [
+           {
+            "startIndex": 17,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "24",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 9
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 17,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "  action?: string;",
+         "matchingRanges": {
+          "lineNumber": "25"
+         },
+         "lineNumber": "25",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 11,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "export interface MDCDialogCloseEvent extends Event {",
+         "matchingRanges": {
+          "lineNumber": "30",
+          "columnRanges": [
+           {
+            "startIndex": 17,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "30",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 9
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 37,
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 17,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "  readonly detail: MDCDialogCloseEventDetail;",
+         "matchingRanges": {
+          "lineNumber": "31",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "31",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 8
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "}",
+         "matchingRanges": {
+          "lineNumber": "32"
+         },
+         "lineNumber": "32"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CAESBAgBIAE42M-d_tyahv1TQABIAQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "material-components-web",
+        "ossProject": "material-components"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "packages/mdc-dialog/util.ts",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "export type MDCDialogFocusTrapFactory = (",
+         "matchingRanges": {
+          "lineNumber": "26",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "26",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "    element: HTMLElement,",
+         "matchingRanges": {
+          "lineNumber": "27"
+         },
+         "lineNumber": "27"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    surfaceEl: HTMLElement,",
+         "matchingRanges": {
+          "lineNumber": "32"
+         },
+         "lineNumber": "32"
+        },
+        {
+         "lineText": "    focusTrapFactory: MDCDialogFocusTrapFactory,",
+         "matchingRanges": {
+          "lineNumber": "33",
+          "columnRanges": [
+           {
+            "startIndex": 22,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "33",
+         "ranges": [
+          {
+           "startIndex": 22,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "    initialFocusEl?: HTMLElement,",
+         "matchingRanges": {
+          "lineNumber": "34"
+         },
+         "lineNumber": "34"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAISBAgBIAE4ovDviu-mjbJEQABIAg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "material-components-web",
+        "ossProject": "material-components"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "packages/mdc-dialog/adapter.ts",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": " */",
+         "matchingRanges": {
+          "lineNumber": "32"
+         },
+         "lineNumber": "32",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "export interface MDCDialogAdapter {",
+         "matchingRanges": {
+          "lineNumber": "33",
+          "columnRanges": [
+           {
+            "startIndex": 17,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "33",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 9
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 17,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "  addClass(className: string): void;",
+         "matchingRanges": {
+          "lineNumber": "34"
+         },
+         "lineNumber": "34",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 22,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 31,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAMSBAgBIAE41riRmtCY770gQABIAw"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "material-components-web",
+        "ossProject": "material-components"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "packages/mdc-dialog/foundation.ts",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import {MDCDialogAdapter} from './adapter';",
+         "matchingRanges": {
+          "lineNumber": "28",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "28",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 26,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 31,
+            "length": 11
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "import {cssClasses, numbers, strings} from './constants';",
+         "matchingRanges": {
+          "lineNumber": "29"
+         },
+         "lineNumber": "29",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 38,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 43,
+            "length": 13
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "/** MDC Dialog Foundation */",
+         "matchingRanges": {
+          "lineNumber": "37"
+         },
+         "lineNumber": "37",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 28
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "export class MDCDialogFoundation extends MDCFoundation\u003cMDCDialogAdapter\u003e {",
+         "matchingRanges": {
+          "lineNumber": "38",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 9
+           },
+           {
+            "startIndex": 55,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "38",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 33,
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 9
+          },
+          {
+           "startIndex": 55,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "  static override get cssClasses() {",
+         "matchingRanges": {
+          "lineNumber": "39"
+         },
+         "lineNumber": "39",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 18,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  static override get defaultAdapter(): MDCDialogAdapter {",
+         "matchingRanges": {
+          "lineNumber": "51",
+          "columnRanges": [
+           {
+            "startIndex": 40,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "51",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 18,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 40,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "    return {",
+         "matchingRanges": {
+          "lineNumber": "52"
+         },
+         "lineNumber": "52",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  constructor(adapter?: Partial\u003cMDCDialogAdapter\u003e) {",
+         "matchingRanges": {
+          "lineNumber": "96",
+          "columnRanges": [
+           {
+            "startIndex": 32,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "96",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 11
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 32,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "    super({...MDCDialogFoundation.defaultAdapter, ...adapter});",
+         "matchingRanges": {
+          "lineNumber": "97",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "97",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "98"
+         },
+         "lineNumber": "98"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 6
+    },
+    "resultToken": "CAQSBAgBIAE4jO2W8uuQsbBwQABIBA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "material-components-web",
+        "ossProject": "material-components"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "packages/mdc-dialog/README.md",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "```js",
+         "matchingRanges": {
+          "lineNumber": "47"
+         },
+         "lineNumber": "47"
+        },
+        {
+         "lineText": "import {MDCDialog} from '@material/dialog';",
+         "matchingRanges": {
+          "lineNumber": "48",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "48",
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "const dialog = new MDCDialog(document.querySelector('.mdc-dialog'));",
+         "matchingRanges": {
+          "lineNumber": "49",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "49",
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "```",
+         "matchingRanges": {
+          "lineNumber": "50"
+         },
+         "lineNumber": "50"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "etc. must also be instantiated. If your dialog contains any layout-sensitive components, you should wait until",
+         "matchingRanges": {
+          "lineNumber": "55"
+         },
+         "lineNumber": "55"
+        },
+        {
+         "lineText": "`MDCDialog:opened` is emitted to instantiate them (or call `layout` on them) so that the dialog's transition finishes",
+         "matchingRanges": {
+          "lineNumber": "56",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "56",
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "first.",
+         "matchingRanges": {
+          "lineNumber": "57"
+         },
+         "lineNumber": "57"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "dialog.listen('MDCDialog:opened', () =\u003e {",
+         "matchingRanges": {
+          "lineNumber": "65",
+          "columnRanges": [
+           {
+            "startIndex": 15,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "65",
+         "ranges": [
+          {
+           "startIndex": 15,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "  list.layout();",
+         "matchingRanges": {
+          "lineNumber": "66"
+         },
+         "lineNumber": "66"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 18
+    },
+    "resultToken": "CAUSAggBOLKFwYeRkPCI9QFAAEgF"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "material-components-web",
+        "ossProject": "material-components"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "packages/mdc-dialog/constants.ts",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  BUTTON_SELECTOR: '.mdc-dialog__button',",
+         "matchingRanges": {
+          "lineNumber": "62"
+         },
+         "lineNumber": "62",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 19,
+            "length": 21
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  CLOSED_EVENT: 'MDCDialog:closed',",
+         "matchingRanges": {
+          "lineNumber": "63",
+          "columnRanges": [
+           {
+            "startIndex": 17,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "63",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 16,
+            "length": 18
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 17,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "  CLOSE_ACTION: 'close',",
+         "matchingRanges": {
+          "lineNumber": "64"
+         },
+         "lineNumber": "64",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 16,
+            "length": 7
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  CLOSING_EVENT: 'MDCDialog:closing',",
+         "matchingRanges": {
+          "lineNumber": "65",
+          "columnRanges": [
+           {
+            "startIndex": 18,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "65",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 17,
+            "length": 19
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 18,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "  CONTAINER_SELECTOR: '.mdc-dialog__container',",
+         "matchingRanges": {
+          "lineNumber": "66"
+         },
+         "lineNumber": "66",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 22,
+            "length": 24
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  INITIAL_FOCUS_ATTRIBUTE: 'data-mdc-dialog-initial-focus',",
+         "matchingRanges": {
+          "lineNumber": "69"
+         },
+         "lineNumber": "69",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 27,
+            "length": 31
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  OPENED_EVENT: 'MDCDialog:opened',",
+         "matchingRanges": {
+          "lineNumber": "70",
+          "columnRanges": [
+           {
+            "startIndex": 17,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "70",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 16,
+            "length": 18
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 17,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "  OPENING_EVENT: 'MDCDialog:opening',",
+         "matchingRanges": {
+          "lineNumber": "71",
+          "columnRanges": [
+           {
+            "startIndex": 18,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "71",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 17,
+            "length": 19
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 18,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "  SCRIM_SELECTOR: '.mdc-dialog__scrim',",
+         "matchingRanges": {
+          "lineNumber": "72"
+         },
+         "lineNumber": "72",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 18,
+            "length": 20
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 4
+    },
+    "resultToken": "CAYSAggBOPyhpsTS9fv57gFAAEgG"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "material-components-web",
+        "ossProject": "material-components"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "packages/mdc-dialog/test/util.test.ts",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "describe('MDCDialog - util', () =\u003e {",
+         "matchingRanges": {
+          "lineNumber": "28",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "28",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 9,
+            "length": 18
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "  it('createFocusTrapInstance creates a properly configured focus trap instance with all args specified',",
+         "matchingRanges": {
+          "lineNumber": "29"
+         },
+         "lineNumber": "29",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 5,
+            "length": 99
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAcSAggBOPbexO31x5CFvQFAAEgH"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "material-components-web",
+        "ossProject": "material-components"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "packages/mdc-dialog/test/component.test.ts",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import {numbers, strings} from '../constants';",
+         "matchingRanges": {
+          "lineNumber": "29"
+         },
+         "lineNumber": "29",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 26,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 31,
+            "length": 14
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "import {MDCDialog, MDCDialogFoundation, util} from '../index';",
+         "matchingRanges": {
+          "lineNumber": "30",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 9
+           },
+           {
+            "startIndex": 19,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "30",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 46,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 51,
+            "length": 10
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 9
+          },
+          {
+           "startIndex": 19,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "31"
+         },
+         "lineNumber": "31"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  const root = fixture.querySelector\u003cHTMLElement\u003e('.mdc-dialog')!;",
+         "matchingRanges": {
+          "lineNumber": "71"
+         },
+         "lineNumber": "71",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 50,
+            "length": 13
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  const component = new MDCDialog(root);",
+         "matchingRanges": {
+          "lineNumber": "72",
+          "columnRanges": [
+           {
+            "startIndex": 24,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "72",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 20,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 24,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "  const title = fixture.querySelector\u003cHTMLElement\u003e('.mdc-dialog__title')!;",
+         "matchingRanges": {
+          "lineNumber": "73"
+         },
+         "lineNumber": "73",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 51,
+            "length": 20
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  const component =",
+         "matchingRanges": {
+          "lineNumber": "101"
+         },
+         "lineNumber": "101",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "      new MDCDialog(root, mockFoundation, () =\u003e mockFocusTrapInstance);",
+         "matchingRanges": {
+          "lineNumber": "102",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "102",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "  return {root, component, mockFoundation, mockFocusTrapInstance};",
+         "matchingRanges": {
+          "lineNumber": "103"
+         },
+         "lineNumber": "103",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 18
+    },
+    "resultToken": "CAgSAggBOMC6voHuy_Hi2QFAAEgI"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "material-components-web",
+        "ossProject": "material-components"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "packages/mdc-dialog/test/foundation.test.ts",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import {cssClasses, numbers, strings} from '../constants';",
+         "matchingRanges": {
+          "lineNumber": "26"
+         },
+         "lineNumber": "26",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 38,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 43,
+            "length": 14
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "import {MDCDialogFoundation} from '../foundation';",
+         "matchingRanges": {
+          "lineNumber": "27",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "27",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 29,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 34,
+            "length": 15
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "28"
+         },
+         "lineNumber": "28"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "describe('MDCDialogFoundation', () =\u003e {",
+         "matchingRanges": {
+          "lineNumber": "34",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "34",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 9,
+            "length": 21
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "  setUpMdcTestEnvironment();",
+         "matchingRanges": {
+          "lineNumber": "35"
+         },
+         "lineNumber": "35"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  it('exports cssClasses', () =\u003e {",
+         "matchingRanges": {
+          "lineNumber": "37"
+         },
+         "lineNumber": "37",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 5,
+            "length": 20
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    expect(MDCDialogFoundation.cssClasses).toEqual(cssClasses);",
+         "matchingRanges": {
+          "lineNumber": "38",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "38",
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "  });",
+         "matchingRanges": {
+          "lineNumber": "39"
+         },
+         "lineNumber": "39"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 7
+    },
+    "resultToken": "CAkSAggBOMa15NKkiceg7wFAAEgJ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "material-components-web",
+        "ossProject": "material-components"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "packages/material-components-web/index.ts",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "autoInit.register('MDCDataTable', dataTable.MDCDataTable);",
+         "matchingRanges": {
+          "lineNumber": "64"
+         },
+         "lineNumber": "64",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 18,
+            "length": 14
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "autoInit.register('MDCDialog', dialog.MDCDialog);",
+         "matchingRanges": {
+          "lineNumber": "65",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 9
+           },
+           {
+            "startIndex": 38,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "65",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 18,
+            "length": 11
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 9
+          },
+          {
+           "startIndex": 38,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "autoInit.register('MDCDrawer', drawer.MDCDrawer);",
+         "matchingRanges": {
+          "lineNumber": "66"
+         },
+         "lineNumber": "66",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 18,
+            "length": 11
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAoSAggBOKSavb_srJO-jQFAAEgK"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "material-components-web",
+        "ossProject": "material-components"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "CHANGELOG.md",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "* **chips:** Truncate long chip labels by default ([f5c6db8](https://github.com/material-components/material-components-web/commit/f5c6db8fc71c654c47c68a4c717f8d8995f43e30))",
+         "matchingRanges": {
+          "lineNumber": "407"
+         },
+         "lineNumber": "407"
+        },
+        {
+         "lineText": "* **dialog:** Adding `resize` and `orientationchange` event handlers into `MDCDialogFoundation`. ([1e06534](https://github.com/material-compo ...",
+         "matchingRanges": {
+          "lineNumber": "408",
+          "columnRanges": [
+           {
+            "startIndex": 75,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "408",
+         "ranges": [
+          {
+           "startIndex": 75,
+           "length": 9
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAsSAggBOMKh3sHakYC9wAFAAEgL"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "material-components-web",
+        "ossProject": "material-components"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "CHANGELOG_ARCHIVE.md",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "... ly rounded corners to provide a straightforward CSS-only solution. Replaced all *-corner-radius component mixins with *-shape-radius mixins to integrate with Shape system.",
+         "matchingRanges": {
+          "lineNumber": "657"
+         },
+         "lineNumber": "657"
+        },
+        {
+         "lineText": "* **dialog:** MDCDialog has been reimplemented to support more use cases, so APIs and the DOM structure have changed. See the mdc-dialog README for more information.",
+         "matchingRanges": {
+          "lineNumber": "658",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "658",
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "* **text-field:** Component API's for interacting with icons has changed. Please refer to the documentation.",
+         "matchingRanges": {
+          "lineNumber": "659"
+         },
+         "lineNumber": "659"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "- `applyPassive`, `saveElementTabState`, and `restoreElementTabState`",
+         "matchingRanges": {
+          "lineNumber": "2162"
+         },
+         "lineNumber": "2162"
+        },
+        {
+         "lineText": "  have all been removed from `mdcDialog.util`.",
+         "matchingRanges": {
+          "lineNumber": "2163",
+          "columnRanges": [
+           {
+            "startIndex": 30,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "2163",
+         "ranges": [
+          {
+           "startIndex": 30,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "* grid-list: Adds getNumberOfTiles to grid-list's adapter API. Please update adapters to implement getNumberOfTiles.",
+         "matchingRanges": {
+          "lineNumber": "2164"
+         },
+         "lineNumber": "2164"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAwSAggBONT5mIKTi-KCXUAASAw"
+   }
+  ],
+  "estimatedResultCount": "13",
+  "exhaustive": true,
+  "requestToken": "CglNRENEaWFsb2cSSiggZ2l0OmdpdGh1Yi9tYXRlcmlhbC1jb21wb25lbnRzL21hdGVyaWFsLWNvbXBvbmVudHMtd2ViQG1hc3RlciBjYXNlOnllcyApGgwIzNDM0QYQ_MyUiAIgDCoAMgBIAQ"
+ }
+}

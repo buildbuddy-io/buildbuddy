@@ -1,0 +1,248 @@
+{
+ "query": "file:_test.go TestCookie",
+ "oss_project": "go",
+ "repo_name": "go",
+ "page_size": 50,
+ "fetched_at": "2026-06-11T02:31:03Z",
+ "response": {
+  "searchResults": [
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/http/cookie_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "func TestCookieSanitizeValue(t *testing.T) {",
+         "matchingRanges": {
+          "lineNumber": "555",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "555",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\tdefer log.SetOutput(os.Stderr)",
+         "matchingRanges": {
+          "lineNumber": "556"
+         },
+         "lineNumber": "556",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func TestCookieSanitizePath(t *testing.T) {",
+         "matchingRanges": {
+          "lineNumber": "591",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "591",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\tdefer log.SetOutput(os.Stderr)",
+         "matchingRanges": {
+          "lineNumber": "592"
+         },
+         "lineNumber": "592",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func TestCookieValid(t *testing.T) {",
+         "matchingRanges": {
+          "lineNumber": "614",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "614",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\ttests := []struct {",
+         "matchingRanges": {
+          "lineNumber": "615"
+         },
+         "lineNumber": "615",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CAASBAgBIAE46PSojfCT8q4jQABIAA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/http/internal/http2/server_push_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\tuserAgent  = \"testagent\"",
+         "matchingRanges": {
+          "lineNumber": "26"
+         },
+         "lineNumber": "26",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 15,
+            "length": 11
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tcookie     = \"testcookie\"",
+         "matchingRanges": {
+          "lineNumber": "27",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "27",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 15,
+            "length": 12
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t)",
+         "matchingRanges": {
+          "lineNumber": "28"
+         },
+         "lineNumber": "28"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAESAggBON7V37KipYTmxgFAAEgB"
+   }
+  ],
+  "estimatedResultCount": "2",
+  "exhaustive": true,
+  "requestToken": "ChhmaWxlOl90ZXN0LmdvIFRlc3RDb29raWUSHSggZ2l0OmdvL2dvQG1hc3RlciBjYXNlOnllcyApGgwI57uo0QYQxpbJjAMgDCoAMgBIAQ"
+ }
+}

@@ -1,0 +1,5981 @@
+{
+ "query": "dns resolver lookup",
+ "oss_project": "go",
+ "repo_name": "go",
+ "page_size": 50,
+ "fetched_at": "2026-06-11T02:29:03Z",
+ "response": {
+  "searchResults": [
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/lookup.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// A nil *Resolver is equivalent to a zero Resolver.",
+         "matchingRanges": {
+          "lineNumber": "133",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 8
+           },
+           {
+            "startIndex": 43,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "133",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 52
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 8
+          },
+          {
+           "startIndex": 43,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "type Resolver struct {",
+         "matchingRanges": {
+          "lineNumber": "134",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "134",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 14,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t// PreferGo controls whether Go's built-in DNS resolver is preferred",
+         "matchingRanges": {
+          "lineNumber": "135",
+          "columnRanges": [
+           {
+            "startIndex": 44,
+            "length": 3
+           },
+           {
+            "startIndex": 48,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "135",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 68
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 44,
+           "length": 3
+          },
+          {
+           "startIndex": 48,
+           "length": 8
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// It returns a slice of that host's IPv4 and IPv6 addresses.",
+         "matchingRanges": {
+          "lineNumber": "205"
+         },
+         "lineNumber": "205",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 61
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "func LookupIP(host string) ([]IP, error) {",
+         "matchingRanges": {
+          "lineNumber": "206",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "206",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\taddrs, err := DefaultResolver.LookupIPAddr(context.Background(), host)",
+         "matchingRanges": {
+          "lineNumber": "207",
+          "columnRanges": [
+           {
+            "startIndex": 22,
+            "length": 8
+           },
+           {
+            "startIndex": 31,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "207",
+         "ranges": [
+          {
+           "startIndex": 22,
+           "length": 8
+          },
+          {
+           "startIndex": 31,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// results which have had the malformed records filtered out.",
+         "matchingRanges": {
+          "lineNumber": "691"
+         },
+         "lineNumber": "691",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 61
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "var errMalformedDNSRecordsDetail = \"DNS response contained records which contain invalid names\"",
+         "matchingRanges": {
+          "lineNumber": "692",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "692",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 35,
+            "length": 60
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "693"
+         },
+         "lineNumber": "693"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 113
+    },
+    "resultToken": "CAASBAgBIAE4gKiu6OHUjOWgAUAASAA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/lookup_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "var goResolver = Resolver{PreferGo: true}",
+         "matchingRanges": {
+          "lineNumber": "23",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 8
+           },
+           {
+            "startIndex": 17,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "23",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 8
+          },
+          {
+           "startIndex": 17,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "24"
+         },
+         "lineNumber": "24"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func TestDNSFlood(t *testing.T) {",
+         "matchingRanges": {
+          "lineNumber": "501",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "501",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "\tif !*testDNSFlood {",
+         "matchingRanges": {
+          "lineNumber": "502",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "502",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 3
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// crashes if nil is used.",
+         "matchingRanges": {
+          "lineNumber": "942"
+         },
+         "lineNumber": "942",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 26
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "func TestNilResolverLookup(t *testing.T) {",
+         "matchingRanges": {
+          "lineNumber": "943",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "943",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "\tmustHaveExternalNetwork(t)",
+         "matchingRanges": {
+          "lineNumber": "944"
+         },
+         "lineNumber": "944"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "type lookupCustomResolver struct {",
+         "matchingRanges": {
+          "lineNumber": "1004",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 6
+           },
+           {
+            "startIndex": 17,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "1004",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 26,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 6
+          },
+          {
+           "startIndex": 17,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t*Resolver",
+         "matchingRanges": {
+          "lineNumber": "1005",
+          "columnRanges": [
+           {
+            "startIndex": 2,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "1005",
+         "ranges": [
+          {
+           "startIndex": 2,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\tmu     sync.RWMutex",
+         "matchingRanges": {
+          "lineNumber": "1006"
+         },
+         "lineNumber": "1006"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 124
+    },
+    "resultToken": "CAESBAgBIAE4kvae-qySnPoOQABIAQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/dnsclient_unix.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// exchange sends a query on the connection and hopes for a response.",
+         "matchingRanges": {
+          "lineNumber": "168"
+         },
+         "lineNumber": "168",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 69
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "func (r *Resolver) exchange(ctx context.Context, server string, q dnsmessa ...",
+         "matchingRanges": {
+          "lineNumber": "169",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "169",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 8
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// A resolverConfig represents a DNS stub resolver configuration.",
+         "matchingRanges": {
+          "lineNumber": "354",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 8
+           },
+           {
+            "startIndex": 42,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "354",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 65
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 8
+          },
+          {
+           "startIndex": 42,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "type resolverConfig struct {",
+         "matchingRanges": {
+          "lineNumber": "355",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "355",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 20,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\tinitOnce sync.Once // guards init of resolverConfig",
+         "matchingRanges": {
+          "lineNumber": "356",
+          "columnRanges": [
+           {
+            "startIndex": 38,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "356",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 20,
+            "length": 32
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 38,
+           "length": 8
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func (r *Resolver) lookup(ctx context.Context, name string, qtype dnsmessage.Type, conf *dnsConfig) (dnsmessage.Parser, string, error) {",
+         "matchingRanges": {
+          "lineNumber": "472",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 8
+           },
+           {
+            "startIndex": 19,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "472",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 8
+          },
+          {
+           "startIndex": 19,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tif !isDomainName(name) {",
+         "matchingRanges": {
+          "lineNumber": "473"
+         },
+         "lineNumber": "473",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// see golang.org/issue/16739.",
+         "matchingRanges": {
+          "lineNumber": "517"
+         },
+         "lineNumber": "517",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 30
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "func avoidDNS(name string) bool {",
+         "matchingRanges": {
+          "lineNumber": "518",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "518",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "\tif name == \"\" {",
+         "matchingRanges": {
+          "lineNumber": "519"
+         },
+         "lineNumber": "519",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 12,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 80
+    },
+    "resultToken": "CAISBAgBIAE4kLKcufaRtqF5QABIAg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/resolverdialfunc_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// Test that Resolver.Dial can be a func returning an in-memory net.Conn",
+         "matchingRanges": {
+          "lineNumber": "5",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "5",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 72
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "// speaking DNS.",
+         "matchingRanges": {
+          "lineNumber": "6",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "6",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 16
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "7"
+         },
+         "lineNumber": "7"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tt.Run(\"LookupIP\", func(t *testing.T) {",
+         "matchingRanges": {
+          "lineNumber": "57",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "57",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 7,
+            "length": 10
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 19,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tips, err := r.LookupIP(ctx, \"ip\", fakeDomain)",
+         "matchingRanges": {
+          "lineNumber": "58",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "58",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 30,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tif err != nil {",
+         "matchingRanges": {
+          "lineNumber": "59"
+         },
+         "lineNumber": "59",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tt.Run(\"LookupSRV\", func(t *testing.T) {",
+         "matchingRanges": {
+          "lineNumber": "67",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "67",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 7,
+            "length": 11
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 20,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t_, got, err := r.LookupSRV(ctx, \"some-service\", \"tcp\", fakeDomain)",
+         "matchingRanges": {
+          "lineNumber": "68",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "68",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 34,
+            "length": 14
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 50,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "type resolverFuncConn struct {",
+         "matchingRanges": {
+          "lineNumber": "212",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "212",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 22,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\th       *resolverDialHandler",
+         "matchingRanges": {
+          "lineNumber": "213",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "213",
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 8
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 49
+    },
+    "resultToken": "CAMSBAgBIAE43vzdiYy74bUSQABIAw"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/lookup_plan9.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "func queryDNS(ctx context.Context, addr string, typ string) (res []string, err error) {",
+         "matchingRanges": {
+          "lineNumber": "102",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "102",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "\treturn query(ctx, netdir+\"/dns\", addr+\" \"+typ, 1024)",
+         "matchingRanges": {
+          "lineNumber": "103",
+          "columnRanges": [
+           {
+            "startIndex": 28,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "103",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 26,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 39,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 48,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 28,
+           "length": 3
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func handlePlan9DNSError(err error, name string) error {",
+         "matchingRanges": {
+          "lineNumber": "106",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "106",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "\tif stringslite.HasSuffix(err.Error(), \"dns: name does not exist\") ||",
+         "matchingRanges": {
+          "lineNumber": "107",
+          "columnRanges": [
+           {
+            "startIndex": 40,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "107",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 39,
+            "length": 26
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 40,
+           "length": 3
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func (*Resolver) lookupHost(ctx context.Context, host string) (addrs []string, err error) {",
+         "matchingRanges": {
+          "lineNumber": "158",
+          "columnRanges": [
+           {
+            "startIndex": 7,
+            "length": 8
+           },
+           {
+            "startIndex": 17,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "158",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 7,
+           "length": 8
+          },
+          {
+           "startIndex": 17,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t// Use netdir/cs instead of netdir/dns because cs knows about",
+         "matchingRanges": {
+          "lineNumber": "159",
+          "columnRanges": [
+           {
+            "startIndex": 36,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "159",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 61
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 36,
+           "length": 3
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func (r *Resolver) lookupIP(ctx context.Context, network, host string) (addrs []IPAddr, err error) {",
+         "matchingRanges": {
+          "lineNumber": "189",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 8
+           },
+           {
+            "startIndex": 19,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "189",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 8
+          },
+          {
+           "startIndex": 19,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tif order, conf := systemConf().hostLookupOrder(r, host); order != hostLookupCgo {",
+         "matchingRanges": {
+          "lineNumber": "190",
+          "columnRanges": [
+           {
+            "startIndex": 36,
+            "length": 6
+           },
+           {
+            "startIndex": 71,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "190",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 36,
+           "length": 6
+          },
+          {
+           "startIndex": 71,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func (r *Resolver) lookupMX(ctx context.Context, name string) (mx []*MX, err error) {",
+         "matchingRanges": {
+          "lineNumber": "303",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 8
+           },
+           {
+            "startIndex": 19,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "303",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 8
+          },
+          {
+           "startIndex": 19,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tif systemConf().mustUseGoResolver(r) {",
+         "matchingRanges": {
+          "lineNumber": "304",
+          "columnRanges": [
+           {
+            "startIndex": 26,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "304",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 26,
+           "length": 8
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 65
+    },
+    "resultToken": "CAQSBAgBIAE43L-Q7Knjzb7VAUAASAQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/lookup_unix.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "func (r *Resolver) lookupHost(ctx context.Context, host string) (addrs []string, err error) {",
+         "matchingRanges": {
+          "lineNumber": "53",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 8
+           },
+           {
+            "startIndex": 19,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "53",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 8
+          },
+          {
+           "startIndex": 19,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\torder, conf := systemConf().hostLookupOrder(r, host)",
+         "matchingRanges": {
+          "lineNumber": "54",
+          "columnRanges": [
+           {
+            "startIndex": 33,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "54",
+         "ranges": [
+          {
+           "startIndex": 33,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func (r *Resolver) lookupIP(ctx context.Context, network, host string) (addrs []IPAddr, err error) {",
+         "matchingRanges": {
+          "lineNumber": "61",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 8
+           },
+           {
+            "startIndex": 19,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "61",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 8
+          },
+          {
+           "startIndex": 19,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\torder, conf := systemConf().hostLookupOrder(r, host)",
+         "matchingRanges": {
+          "lineNumber": "62",
+          "columnRanges": [
+           {
+            "startIndex": 33,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "62",
+         "ranges": [
+          {
+           "startIndex": 33,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func (r *Resolver) lookupPort(ctx context.Context, network, service string) (int, error) {",
+         "matchingRanges": {
+          "lineNumber": "70",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 8
+           },
+           {
+            "startIndex": 19,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "70",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 8
+          },
+          {
+           "startIndex": 19,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t// Port lookup is not a DNS operation.",
+         "matchingRanges": {
+          "lineNumber": "71",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 6
+           },
+           {
+            "startIndex": 25,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "71",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 38
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 6
+          },
+          {
+           "startIndex": 25,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "\t// Prefer the cgo resolver if possible.",
+         "matchingRanges": {
+          "lineNumber": "72",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "72",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 39
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 8
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func (r *Resolver) lookupMX(ctx context.Context, name string) ([]*MX, error) {",
+         "matchingRanges": {
+          "lineNumber": "101",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 8
+           },
+           {
+            "startIndex": 19,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "101",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 8
+          },
+          {
+           "startIndex": 19,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\treturn r.goLookupMX(ctx, name)",
+         "matchingRanges": {
+          "lineNumber": "102",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "102",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 38
+    },
+    "resultToken": "CAUSBAgBIAE46oX8vNTokbjHAUAASAU"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/lookup_windows.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "const (",
+         "matchingRanges": {
+          "lineNumber": "22"
+         },
+         "lineNumber": "22",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t_DNS_ERROR_RCODE_NAME_ERROR = syscall.Errno(9003)",
+         "matchingRanges": {
+          "lineNumber": "23",
+          "columnRanges": [
+           {
+            "startIndex": 2,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "23",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 45,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 2,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "\t_DNS_INFO_NO_RECORDS        = syscall.Errno(9501)",
+         "matchingRanges": {
+          "lineNumber": "24",
+          "columnRanges": [
+           {
+            "startIndex": 2,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "24",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 45,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 2,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "25"
+         },
+         "lineNumber": "25"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func (r *Resolver) lookupHost(ctx context.Context, name string) ([]string, error) {",
+         "matchingRanges": {
+          "lineNumber": "81",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 8
+           },
+           {
+            "startIndex": 19,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "81",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 8
+          },
+          {
+           "startIndex": 19,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tips, err := r.lookupIP(ctx, \"ip\", name)",
+         "matchingRanges": {
+          "lineNumber": "82",
+          "columnRanges": [
+           {
+            "startIndex": 15,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "82",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 29,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 15,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func (r *Resolver) lookupIP(ctx context.Context, network, name string) ([]IPAddr, error) {",
+         "matchingRanges": {
+          "lineNumber": "93",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 8
+           },
+           {
+            "startIndex": 19,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "93",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 8
+          },
+          {
+           "startIndex": 19,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tif order, conf := systemConf().hostLookupOrder(r, name); order != hostLookupCgo {",
+         "matchingRanges": {
+          "lineNumber": "94",
+          "columnRanges": [
+           {
+            "startIndex": 36,
+            "length": 6
+           },
+           {
+            "startIndex": 71,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "94",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 36,
+           "length": 6
+          },
+          {
+           "startIndex": 71,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func (r *Resolver) lookupMX(ctx context.Context, name string) ([]*MX, error) {",
+         "matchingRanges": {
+          "lineNumber": "318",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 8
+           },
+           {
+            "startIndex": 19,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "318",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 8
+          },
+          {
+           "startIndex": 19,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tif systemConf().mustUseGoResolver(r) {",
+         "matchingRanges": {
+          "lineNumber": "319",
+          "columnRanges": [
+           {
+            "startIndex": 26,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "319",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 26,
+           "length": 8
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 71
+    },
+    "resultToken": "CAYSBAgBIAE4oK2N_uqzsdTAAUAASAY"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/lookup_windows_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "func testLookup(t *testing.T, fn func(*testing.T, *Resolver, string)) {",
+         "matchingRanges": {
+          "lineNumber": "31",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 6
+           },
+           {
+            "startIndex": 51,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "31",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 33,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 6
+          },
+          {
+           "startIndex": 51,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\tfor _, def := range []bool{true, false} {",
+         "matchingRanges": {
+          "lineNumber": "32"
+         },
+         "lineNumber": "32",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 15,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t\t\tif !def {",
+         "matchingRanges": {
+          "lineNumber": "43"
+         },
+         "lineNumber": "43",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t\t\tr = \u0026Resolver{PreferGo: true}",
+         "matchingRanges": {
+          "lineNumber": "44",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "44",
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t\t}",
+         "matchingRanges": {
+          "lineNumber": "45"
+         },
+         "lineNumber": "45"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\tif err != nil {",
+         "matchingRanges": {
+          "lineNumber": "181"
+         },
+         "lineNumber": "181",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t// The DNSError type stores the error as a string, so it cannot wrap the",
+         "matchingRanges": {
+          "lineNumber": "182",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "182",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 3,
+            "length": 72
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t// original error code and we cannot check for it here. However, we can at",
+         "matchingRanges": {
+          "lineNumber": "183"
+         },
+         "lineNumber": "183",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 3,
+            "length": 74
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func nslookup(qtype, name string) (string, error) {",
+         "matchingRanges": {
+          "lineNumber": "208",
+          "columnRanges": [
+           {
+            "startIndex": 7,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "208",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 7,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tvar out strings.Builder",
+         "matchingRanges": {
+          "lineNumber": "209"
+         },
+         "lineNumber": "209",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 49
+    },
+    "resultToken": "CAcSBAgBIAE41ojsnems351jQABIBw"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/dial.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// Resolver optionally specifies an alternate resolver to use.",
+         "matchingRanges": {
+          "lineNumber": "196",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 8
+           },
+           {
+            "startIndex": 47,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "196",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 62
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 8
+          },
+          {
+           "startIndex": 47,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\tResolver *Resolver",
+         "matchingRanges": {
+          "lineNumber": "197",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 8
+           },
+           {
+            "startIndex": 11,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "197",
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 8
+          },
+          {
+           "startIndex": 11,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "198"
+         },
+         "lineNumber": "198"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func (d *Dialer) resolver() *Resolver {",
+         "matchingRanges": {
+          "lineNumber": "264",
+          "columnRanges": [
+           {
+            "startIndex": 17,
+            "length": 8
+           },
+           {
+            "startIndex": 29,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "264",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 17,
+           "length": 8
+          },
+          {
+           "startIndex": 29,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\tif d.Resolver != nil {",
+         "matchingRanges": {
+          "lineNumber": "265",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "265",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 8
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\tif !ok || i != len(protostr) {",
+         "matchingRanges": {
+          "lineNumber": "324"
+         },
+         "lineNumber": "324",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\tproto, err = lookupProtocol(ctx, protostr)",
+         "matchingRanges": {
+          "lineNumber": "325",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "325",
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\tif err != nil {",
+         "matchingRanges": {
+          "lineNumber": "326"
+         },
+         "lineNumber": "326",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 3,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// Shadow the nettrace (if any) during resolve so Connect events don't fire for DNS lookups.",
+         "matchingRanges": {
+          "lineNumber": "533",
+          "columnRanges": [
+           {
+            "startIndex": 81,
+            "length": 3
+           },
+           {
+            "startIndex": 85,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "533",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 92
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 81,
+           "length": 3
+          },
+          {
+           "startIndex": 85,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tresolveCtx := ctx",
+         "matchingRanges": {
+          "lineNumber": "534"
+         },
+         "lineNumber": "534"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 12
+    },
+    "resultToken": "CAgSBAgBIAE4_vbIteX49LbEAUAASAg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/dnsclient_unix_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "func TestNameListAvoidDNS(t *testing.T) {",
+         "matchingRanges": {
+          "lineNumber": "248",
+          "columnRanges": [
+           {
+            "startIndex": 22,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "248",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 22,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "\tc := \u0026dnsConfig{search: []string{\"go.dev.\", \"onion.\"}}",
+         "matchingRanges": {
+          "lineNumber": "249"
+         },
+         "lineNumber": "249",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 34,
+            "length": 9
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 45,
+            "length": 8
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tpath string",
+         "matchingRanges": {
+          "lineNumber": "302"
+         },
+         "lineNumber": "302"
+        },
+        {
+         "lineText": "\t*resolverConfig",
+         "matchingRanges": {
+          "lineNumber": "303",
+          "columnRanges": [
+           {
+            "startIndex": 2,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "303",
+         "ranges": [
+          {
+           "startIndex": 2,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "}",
+         "matchingRanges": {
+          "lineNumber": "304"
+         },
+         "lineNumber": "304"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func lookupWithFake(fake fakeDNSServer, name string, typ dnsmessage.Type) error {",
+         "matchingRanges": {
+          "lineNumber": "1533",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "1533",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tr := Resolver{PreferGo: true, Dial: fake.DialContext}",
+         "matchingRanges": {
+          "lineNumber": "1534",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "1534",
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 8
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// The A and AAAA queries will be sent sequentially, not in parallel.",
+         "matchingRanges": {
+          "lineNumber": "1756"
+         },
+         "lineNumber": "1756",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 69
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "func TestSingleRequestLookup(t *testing.T) {",
+         "matchingRanges": {
+          "lineNumber": "1757",
+          "columnRanges": [
+           {
+            "startIndex": 22,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "1757",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 22,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tdefer dnsWaitGroup.Wait()",
+         "matchingRanges": {
+          "lineNumber": "1758"
+         },
+         "lineNumber": "1758",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 126
+    },
+    "resultToken": "CAkSBAgBIAE4pPvzmZTG9rq9AUAASAk"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/dnsclient.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// reverseaddr returns the in-addr.arpa. or ip6.arpa. hostname of the IP",
+         "matchingRanges": {
+          "lineNumber": "30"
+         },
+         "lineNumber": "30",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 72
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "// address addr suitable for rDNS (PTR) record lookup or an error if it fails",
+         "matchingRanges": {
+          "lineNumber": "31",
+          "columnRanges": [
+           {
+            "startIndex": 30,
+            "length": 3
+           },
+           {
+            "startIndex": 47,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "31",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 77
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 30,
+           "length": 3
+          },
+          {
+           "startIndex": 47,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "// to parse the IP address.",
+         "matchingRanges": {
+          "lineNumber": "32"
+         },
+         "lineNumber": "32",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 27
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// absDomainName returns an absolute domain name which ends with a",
+         "matchingRanges": {
+          "lineNumber": "148"
+         },
+         "lineNumber": "148",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 66
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "// trailing dot to match pure Go reverse resolver and all other lookup",
+         "matchingRanges": {
+          "lineNumber": "149",
+          "columnRanges": [
+           {
+            "startIndex": 41,
+            "length": 8
+           },
+           {
+            "startIndex": 64,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "149",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 70
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 41,
+           "length": 8
+          },
+          {
+           "startIndex": 64,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "// routines.",
+         "matchingRanges": {
+          "lineNumber": "150"
+         },
+         "lineNumber": "150",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 12
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// An SRV represents a single DNS SRV record.",
+         "matchingRanges": {
+          "lineNumber": "163",
+          "columnRanges": [
+           {
+            "startIndex": 30,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "163",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 45
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 30,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "type SRV struct {",
+         "matchingRanges": {
+          "lineNumber": "164"
+         },
+         "lineNumber": "164",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// An MX represents a single DNS MX record.",
+         "matchingRanges": {
+          "lineNumber": "216",
+          "columnRanges": [
+           {
+            "startIndex": 29,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "216",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 43
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 29,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "type MX struct {",
+         "matchingRanges": {
+          "lineNumber": "217"
+         },
+         "lineNumber": "217",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 8
+    },
+    "resultToken": "CAoSAggBOIjk1OXDxaDbPkAASAo"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/conf.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// required to use the go resolver. The provided Resolver is optional.",
+         "matchingRanges": {
+          "lineNumber": "194",
+          "columnRanges": [
+           {
+            "startIndex": 26,
+            "length": 8
+           },
+           {
+            "startIndex": 49,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "194",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 70
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 26,
+           "length": 8
+          },
+          {
+           "startIndex": 49,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "// This will report true if the cgo resolver is not available.",
+         "matchingRanges": {
+          "lineNumber": "195",
+          "columnRanges": [
+           {
+            "startIndex": 36,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "195",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 62
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 36,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "func (c *conf) mustUseGoResolver(r *Resolver) bool {",
+         "matchingRanges": {
+          "lineNumber": "196",
+          "columnRanges": [
+           {
+            "startIndex": 24,
+            "length": 8
+           },
+           {
+            "startIndex": 36,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "196",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 24,
+           "length": 8
+          },
+          {
+           "startIndex": 36,
+           "length": 8
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func (c *conf) lookupOrder(r *Resolver, hostname string) (ret hostLookupOrder, dnsConf *dnsConfig) {",
+         "matchingRanges": {
+          "lineNumber": "241",
+          "columnRanges": [
+           {
+            "startIndex": 15,
+            "length": 6
+           },
+           {
+            "startIndex": 66,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "241",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 15,
+           "length": 6
+          },
+          {
+           "startIndex": 66,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t// fallbackOrder is the order we return if we can't figure it out.",
+         "matchingRanges": {
+          "lineNumber": "242"
+         },
+         "lineNumber": "242",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 66
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "var netdns = godebug.New(\"netdns\")",
+         "matchingRanges": {
+          "lineNumber": "484",
+          "columnRanges": [
+           {
+            "startIndex": 7,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "484",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 25,
+            "length": 8
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 7,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "485"
+         },
+         "lineNumber": "485"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// etc.",
+         "matchingRanges": {
+          "lineNumber": "497"
+         },
+         "lineNumber": "497",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 7
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "func goDebugNetDNS() (dnsMode string, debugLevel int) {",
+         "matchingRanges": {
+          "lineNumber": "498",
+          "columnRanges": [
+           {
+            "startIndex": 15,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "498",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 15,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "\tgoDebug := netdns.Value()",
+         "matchingRanges": {
+          "lineNumber": "499"
+         },
+         "lineNumber": "499"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 99
+    },
+    "resultToken": "CAsSBAgBIAE4gMLW9pTAyK8KQABICw"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/internal/nettrace/nettrace.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "//\tfunc lookupIP(ctx context.Context, host string) ([]IPAddr, error)",
+         "matchingRanges": {
+          "lineNumber": "20",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "20",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 68
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "type LookupIPAltResolverKey struct{}",
+         "matchingRanges": {
+          "lineNumber": "21",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 6
+           },
+           {
+            "startIndex": 16,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "21",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 28,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 6
+          },
+          {
+           "startIndex": 16,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "22"
+         },
+         "lineNumber": "22"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "type Trace struct {",
+         "matchingRanges": {
+          "lineNumber": "25"
+         },
+         "lineNumber": "25",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 11,
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t// DNSStart is called with the hostname of a DNS lookup",
+         "matchingRanges": {
+          "lineNumber": "26",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 3
+           },
+           {
+            "startIndex": 46,
+            "length": 3
+           },
+           {
+            "startIndex": 50,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "26",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 55
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 3
+          },
+          {
+           "startIndex": 46,
+           "length": 3
+          },
+          {
+           "startIndex": 50,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t// before it begins.",
+         "matchingRanges": {
+          "lineNumber": "27"
+         },
+         "lineNumber": "27",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 20
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tDNSStart func(name string)",
+         "matchingRanges": {
+          "lineNumber": "28",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "28",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 3
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// actually be for circular dependency reasons.",
+         "matchingRanges": {
+          "lineNumber": "33"
+         },
+         "lineNumber": "33",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 47
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tDNSDone func(netIPs []any, coalesced bool, err error)",
+         "matchingRanges": {
+          "lineNumber": "34",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "34",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "35"
+         },
+         "lineNumber": "35"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 11
+    },
+    "resultToken": "CAwSBAgBIAE4pPKOiYDs_uEGQABIDA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/vendor/golang.org/x/tools/internal/stdlib/manifest.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t{\"Certificate.CRLDistributionPoints\", Field, 2, \"\"},",
+         "matchingRanges": {
+          "lineNumber": "1301"
+         },
+         "lineNumber": "1301",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 3,
+            "length": 35
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 47,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 50,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t{\"Certificate.DNSNames\", Field, 0, \"\"},",
+         "matchingRanges": {
+          "lineNumber": "1302",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "1302",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 3,
+            "length": 22
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 34,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 37,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t{\"Certificate.EmailAddresses\", Field, 0, \"\"},",
+         "matchingRanges": {
+          "lineNumber": "1303"
+         },
+         "lineNumber": "1303",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 3,
+            "length": 28
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 40,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 43,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t{\"(*FlagSet).IntVar\", Method, 0, \"\"},",
+         "matchingRanges": {
+          "lineNumber": "5256"
+         },
+         "lineNumber": "5256",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 3,
+            "length": 19
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 32,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 35,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t{\"(*FlagSet).Lookup\", Method, 0, \"\"},",
+         "matchingRanges": {
+          "lineNumber": "5257",
+          "columnRanges": [
+           {
+            "startIndex": 15,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "5257",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 3,
+            "length": 19
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 32,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 35,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 15,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t{\"(*FlagSet).NArg\", Method, 0, \"\"},",
+         "matchingRanges": {
+          "lineNumber": "5258"
+         },
+         "lineNumber": "5258",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 3,
+            "length": 17
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 30,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 33,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t{\"(*Resolver).LookupAddr\", Method, 8, \"\"},",
+         "matchingRanges": {
+          "lineNumber": "8457",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 8
+           },
+           {
+            "startIndex": 16,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "8457",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 3,
+            "length": 24
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 37,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 40,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 8
+          },
+          {
+           "startIndex": 16,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t{\"(*Resolver).LookupCNAME\", Method, 8, \"\"},",
+         "matchingRanges": {
+          "lineNumber": "8458",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 8
+           },
+           {
+            "startIndex": 16,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "8458",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 3,
+            "length": 25
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 38,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 41,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 8
+          },
+          {
+           "startIndex": 16,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t{\"(*Resolver).LookupHost\", Method, 8, \"\"},",
+         "matchingRanges": {
+          "lineNumber": "8459",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 8
+           },
+           {
+            "startIndex": 16,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "8459",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 3,
+            "length": 24
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 37,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 40,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 8
+          },
+          {
+           "startIndex": 16,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 85
+    },
+    "resultToken": "CA0SAggBOJrA-rfNvvHiBUAASA0"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/main_conf_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "func allResolvers(t *testing.T, f func(t *testing.T)) {",
+         "matchingRanges": {
+          "lineNumber": "13",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "13",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 34,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\tt.Run(\"default resolver\", f)",
+         "matchingRanges": {
+          "lineNumber": "14",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "14",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 7,
+            "length": 18
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 8
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// and returns a fixup function to restore the old settings.",
+         "matchingRanges": {
+          "lineNumber": "29"
+         },
+         "lineNumber": "29",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 60
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "func forceGoDNS() func() {",
+         "matchingRanges": {
+          "lineNumber": "30",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "30",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 18,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "\tc := systemConf()",
+         "matchingRanges": {
+          "lineNumber": "31"
+         },
+         "lineNumber": "31"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tdefer forceCgoDNS()()",
+         "matchingRanges": {
+          "lineNumber": "62",
+          "columnRanges": [
+           {
+            "startIndex": 15,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "62",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 15,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "\torder, _ := systemConf().hostLookupOrder(nil, \"go.dev\")",
+         "matchingRanges": {
+          "lineNumber": "63",
+          "columnRanges": [
+           {
+            "startIndex": 30,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "63",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 47,
+            "length": 8
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 30,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tif order != hostLookupCgo {",
+         "matchingRanges": {
+          "lineNumber": "64",
+          "columnRanges": [
+           {
+            "startIndex": 17,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "64",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 17,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tt.Fatalf(\"hostLookupOrder returned: %v, want cgo\", order)",
+         "matchingRanges": {
+          "lineNumber": "65",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "65",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 40
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t}",
+         "matchingRanges": {
+          "lineNumber": "66"
+         },
+         "lineNumber": "66"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 36
+    },
+    "resultToken": "CA4SBAgBIAE4irWJ0oCpu-H4AUAASA4"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/conf_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "func TestConfHostLookupOrder(t *testing.T) {",
+         "matchingRanges": {
+          "lineNumber": "45",
+          "columnRanges": [
+           {
+            "startIndex": 17,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "45",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 17,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t// These tests are written for a system with cgo available,",
+         "matchingRanges": {
+          "lineNumber": "46"
+         },
+         "lineNumber": "46",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 59
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\tnss       *nssConf",
+         "matchingRanges": {
+          "lineNumber": "58"
+         },
+         "lineNumber": "58"
+        },
+        {
+         "lineText": "\t\tresolver  *Resolver",
+         "matchingRanges": {
+          "lineNumber": "59",
+          "columnRanges": [
+           {
+            "startIndex": 2,
+            "length": 8
+           },
+           {
+            "startIndex": 13,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "59",
+         "ranges": [
+          {
+           "startIndex": 2,
+           "length": 8
+          },
+          {
+           "startIndex": 13,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tresolv    *dnsConfig",
+         "matchingRanges": {
+          "lineNumber": "60",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "60",
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 3
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t\thostTests: []nssHostTest{{\"google.com\", \"myhostname\", hostLookupFilesDNS}},",
+         "matchingRanges": {
+          "lineNumber": "120",
+          "columnRanges": [
+           {
+            "startIndex": 61,
+            "length": 6
+           },
+           {
+            "startIndex": 72,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "120",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 29,
+            "length": 12
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 43,
+            "length": 12
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 61,
+           "length": 6
+          },
+          {
+           "startIndex": 72,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t},",
+         "matchingRanges": {
+          "lineNumber": "121"
+         },
+         "lineNumber": "121"
+        },
+        {
+         "lineText": "\t\t// On OpenBSD, no resolv.conf means no DNS.",
+         "matchingRanges": {
+          "lineNumber": "122",
+          "columnRanges": [
+           {
+            "startIndex": 41,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "122",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 43
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 41,
+           "length": 3
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func TestAddrLookupOrder(t *testing.T) {",
+         "matchingRanges": {
+          "lineNumber": "414",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "414",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t// This test is written for a system with cgo available,",
+         "matchingRanges": {
+          "lineNumber": "415"
+         },
+         "lineNumber": "415",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 56
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 66
+    },
+    "resultToken": "CA8SBAgBIAE40LyBtP3F9_TaAUAASA8"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/net.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "The method for resolving domain names, whether indirectly with functions like Dial",
+         "matchingRanges": {
+          "lineNumber": "41"
+         },
+         "lineNumber": "41",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 82
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 82
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "or directly with functions like [LookupHost] and [LookupAddr], varies by operating system.",
+         "matchingRanges": {
+          "lineNumber": "42",
+          "columnRanges": [
+           {
+            "startIndex": 33,
+            "length": 6
+           },
+           {
+            "startIndex": 50,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "42",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 90
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 90
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 33,
+           "length": 6
+          },
+          {
+           "startIndex": 50,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "43"
+         },
+         "lineNumber": "43",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {}
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {}
+          }
+         ]
+        },
+        {
+         "lineText": "On Unix systems, the resolver has two options for resolving names.",
+         "matchingRanges": {
+          "lineNumber": "44",
+          "columnRanges": [
+           {
+            "startIndex": 21,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "44",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 66
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 66
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 21,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "It can use a pure Go resolver that sends DNS requests directly to the servers",
+         "matchingRanges": {
+          "lineNumber": "45",
+          "columnRanges": [
+           {
+            "startIndex": 21,
+            "length": 8
+           },
+           {
+            "startIndex": 41,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "45",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 77
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 77
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 21,
+           "length": 8
+          },
+          {
+           "startIndex": 41,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "listed in /etc/resolv.conf, or it can use a cgo-based resolver that calls C",
+         "matchingRanges": {
+          "lineNumber": "46",
+          "columnRanges": [
+           {
+            "startIndex": 54,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "46",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 75
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 75
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 54,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "library routines such as getaddrinfo and getnameinfo.",
+         "matchingRanges": {
+          "lineNumber": "47"
+         },
+         "lineNumber": "47",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 53
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 53
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// DNSError represents a DNS lookup error.",
+         "matchingRanges": {
+          "lineNumber": "667",
+          "columnRanges": [
+           {
+            "startIndex": 3,
+            "length": 3
+           },
+           {
+            "startIndex": 25,
+            "length": 3
+           },
+           {
+            "startIndex": 29,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "667",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 42
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 3,
+           "length": 3
+          },
+          {
+           "startIndex": 25,
+           "length": 3
+          },
+          {
+           "startIndex": 29,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "type DNSError struct {",
+         "matchingRanges": {
+          "lineNumber": "668",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "668",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 14,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "\tUnwrapErr   error  // error returned by the [DNSError.Unwrap] method, might be nil",
+         "matchingRanges": {
+          "lineNumber": "669",
+          "columnRanges": [
+           {
+            "startIndex": 46,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "669",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 20,
+            "length": 63
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 46,
+           "length": 3
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 51
+    },
+    "resultToken": "CBASBAgBIAE42KDulaPc3bD7AUAASBA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/http/transport_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// Install a fake DNS server.",
+         "matchingRanges": {
+          "lineNumber": "5305",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "5305",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 29
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "\tctx := context.WithValue(context.Background(), nettrace.LookupIPAltResolverKey{}, func(ctx context.Context, network, host string) ([]net.IPAddr, error) {",
+         "matchingRanges": {
+          "lineNumber": "5306",
+          "columnRanges": [
+           {
+            "startIndex": 57,
+            "length": 6
+           },
+           {
+            "startIndex": 68,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "5306",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 83,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 57,
+           "length": 6
+          },
+          {
+           "startIndex": 68,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tif host != \"dns-is-faked.golang\" {",
+         "matchingRanges": {
+          "lineNumber": "5307",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "5307",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 13,
+            "length": 21
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 3
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "var isDNSHijacked = sync.OnceValue(func() bool {",
+         "matchingRanges": {
+          "lineNumber": "5513",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "5513",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 35,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "\taddrs, _ := net.LookupHost(\"dns-should-not-resolve.golang\")",
+         "matchingRanges": {
+          "lineNumber": "5514",
+          "columnRanges": [
+           {
+            "startIndex": 17,
+            "length": 6
+           },
+           {
+            "startIndex": 29,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "5514",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 28,
+            "length": 31
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 17,
+           "length": 6
+          },
+          {
+           "startIndex": 29,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "\treturn len(addrs) != 0",
+         "matchingRanges": {
+          "lineNumber": "5515"
+         },
+         "lineNumber": "5515",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 22,
+            "length": 1
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func skipIfDNSHijacked(t *testing.T) {",
+         "matchingRanges": {
+          "lineNumber": "5518",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "5518",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "\t// Skip this test if the user is using a shady/ISP",
+         "matchingRanges": {
+          "lineNumber": "5519"
+         },
+         "lineNumber": "5519",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 50
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func TestTransportEventTraceRealDNS(t *testing.T) {",
+         "matchingRanges": {
+          "lineNumber": "5527",
+          "columnRanges": [
+           {
+            "startIndex": 32,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "5527",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 32,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "\tskipIfDNSHijacked(t)",
+         "matchingRanges": {
+          "lineNumber": "5528",
+          "columnRanges": [
+           {
+            "startIndex": 7,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "5528",
+         "ranges": [
+          {
+           "startIndex": 7,
+           "length": 3
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 34
+    },
+    "resultToken": "CBESBAgBIAE4gra1q5DLi8ZXQABIEQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/ipsock.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// internetAddrList resolves addr, which may be a literal IP",
+         "matchingRanges": {
+          "lineNumber": "245"
+         },
+         "lineNumber": "245",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 60
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "// address or a DNS name, and returns a list of internet protocol",
+         "matchingRanges": {
+          "lineNumber": "246",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "246",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 65
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "// family addresses. The result contains at least one address when",
+         "matchingRanges": {
+          "lineNumber": "247"
+         },
+         "lineNumber": "247",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 66
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "// error is nil.",
+         "matchingRanges": {
+          "lineNumber": "248"
+         },
+         "lineNumber": "248",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 16
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "func (r *Resolver) internetAddrList(ctx context.Context, net, addr string) (addrList, error) {",
+         "matchingRanges": {
+          "lineNumber": "249",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "249",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\tvar (",
+         "matchingRanges": {
+          "lineNumber": "250"
+         },
+         "lineNumber": "250",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t\t}",
+         "matchingRanges": {
+          "lineNumber": "260"
+         },
+         "lineNumber": "260"
+        },
+        {
+         "lineText": "\t\t\tif portnum, err = r.LookupPort(ctx, net, port); err != nil {",
+         "matchingRanges": {
+          "lineNumber": "261",
+          "columnRanges": [
+           {
+            "startIndex": 23,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "261",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 3,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 23,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t\treturn nil, err",
+         "matchingRanges": {
+          "lineNumber": "262"
+         },
+         "lineNumber": "262",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 5
+    },
+    "resultToken": "CBISAggBOLyQwvWggOa3swFAAEgS"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/cgo_unix.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// cgoAvailable set to true to indicate that the cgo resolver",
+         "matchingRanges": {
+          "lineNumber": "26",
+          "columnRanges": [
+           {
+            "startIndex": 53,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "26",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 61
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 53,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "// is available on this system.",
+         "matchingRanges": {
+          "lineNumber": "27"
+         },
+         "lineNumber": "27",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 31
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func cgoLookupIP(ctx context.Context, network, name string) (addrs []IPAddr, err error) {",
+         "matchingRanges": {
+          "lineNumber": "227",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "227",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\treturn doBlockingWithCtx(ctx, name, func() ([]IPAddr, error) {",
+         "matchingRanges": {
+          "lineNumber": "228"
+         },
+         "lineNumber": "228",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 37,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "//\t Unicast DNS\t\tASCII or\t\t\t\u003c=253 + a NUL terminator",
+         "matchingRanges": {
+          "lineNumber": "236",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "236",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 52
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "//\t\t\t\tUnicode in RFC 5892\t\t252 * total number of labels + delimiters + a NUL terminator",
+         "matchingRanges": {
+          "lineNumber": "237"
+         },
+         "lineNumber": "237",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 87
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "//\t Multicast DNS\tUTF-8 in RFC 5198 or\t\t\u003c=253 + a NUL terminator",
+         "matchingRanges": {
+          "lineNumber": "238",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "238",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 64
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "//\t\t\t\tthe same as unicast DNS ASCII\t\u003c=253 + a NUL terminator",
+         "matchingRanges": {
+          "lineNumber": "239",
+          "columnRanges": [
+           {
+            "startIndex": 26,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "239",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 60
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 26,
+           "length": 3
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func cgoLookupPTR(ctx context.Context, addr string) (names []string, err error) {",
+         "matchingRanges": {
+          "lineNumber": "246",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "246",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tip, err := netip.ParseAddr(addr)",
+         "matchingRanges": {
+          "lineNumber": "247"
+         },
+         "lineNumber": "247"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 45
+    },
+    "resultToken": "CBMSBAgBIAE4xv_s7ebs2MznAUAASBM"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "doc/godebug.md",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "Go 1.19 made it an error for path lookups to resolve to binaries in the current directory,",
+         "matchingRanges": {
+          "lineNumber": "530",
+          "columnRanges": [
+           {
+            "startIndex": 34,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "530",
+         "ranges": [
+          {
+           "startIndex": 34,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "controlled by the [`execerrdot` setting](/pkg/os/exec#hdr-Executables_in_the_current_directory).",
+         "matchingRanges": {
+          "lineNumber": "531"
+         },
+         "lineNumber": "531",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 18,
+            "length": 77
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "Go 1.19 started sending EDNS0 additional headers on DNS requests.",
+         "matchingRanges": {
+          "lineNumber": "534",
+          "columnRanges": [
+           {
+            "startIndex": 25,
+            "length": 3
+           },
+           {
+            "startIndex": 52,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "534",
+         "ranges": [
+          {
+           "startIndex": 25,
+           "length": 3
+          },
+          {
+           "startIndex": 52,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "This can reportedly break the DNS server provided on some routers,",
+         "matchingRanges": {
+          "lineNumber": "535",
+          "columnRanges": [
+           {
+            "startIndex": 30,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "535",
+         "ranges": [
+          {
+           "startIndex": 30,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "such as CenturyLink Zyxel C3000Z.",
+         "matchingRanges": {
+          "lineNumber": "536"
+         },
+         "lineNumber": "536"
+        },
+        {
+         "lineText": "This can be changed by the [`netedns0` setting](/pkg/net#hdr-Name_Resolution).",
+         "matchingRanges": {
+          "lineNumber": "537",
+          "columnRanges": [
+           {
+            "startIndex": 33,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "537",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 27,
+            "length": 50
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 33,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "This setting is available in Go 1.21.12, Go 1.22.5, Go 1.23, and later.",
+         "matchingRanges": {
+          "lineNumber": "538"
+         },
+         "lineNumber": "538"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "Go 1.5 introduced a pure Go DNS resolver,",
+         "matchingRanges": {
+          "lineNumber": "561",
+          "columnRanges": [
+           {
+            "startIndex": 28,
+            "length": 3
+           },
+           {
+            "startIndex": 32,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "561",
+         "ranges": [
+          {
+           "startIndex": 28,
+           "length": 3
+          },
+          {
+           "startIndex": 32,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "controlled by the [`netdns` setting](/pkg/net/#hdr-Name_Resolution).",
+         "matchingRanges": {
+          "lineNumber": "562",
+          "columnRanges": [
+           {
+            "startIndex": 23,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "562",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 18,
+            "length": 49
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 23,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "There is no plan to remove this setting.",
+         "matchingRanges": {
+          "lineNumber": "563"
+         },
+         "lineNumber": "563"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 6
+    },
+    "resultToken": "CBQSAggBOKSLsvzWs_eNRUAASBQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "api/go1.txt",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "pkg crypto/x509, type Certificate struct, BasicConstraintsValid bool",
+         "matchingRanges": {
+          "lineNumber": "622"
+         },
+         "lineNumber": "622"
+        },
+        {
+         "lineText": "pkg crypto/x509, type Certificate struct, DNSNames []string",
+         "matchingRanges": {
+          "lineNumber": "623",
+          "columnRanges": [
+           {
+            "startIndex": 42,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "623",
+         "ranges": [
+          {
+           "startIndex": 42,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "pkg crypto/x509, type Certificate struct, EmailAddresses []string",
+         "matchingRanges": {
+          "lineNumber": "624"
+         },
+         "lineNumber": "624"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "pkg flag, func IntVar(*int, string, int, string)",
+         "matchingRanges": {
+          "lineNumber": "2517"
+         },
+         "lineNumber": "2517"
+        },
+        {
+         "lineText": "pkg flag, func Lookup(string) *Flag",
+         "matchingRanges": {
+          "lineNumber": "2518",
+          "columnRanges": [
+           {
+            "startIndex": 15,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "2518",
+         "ranges": [
+          {
+           "startIndex": 15,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "pkg flag, func NArg() int",
+         "matchingRanges": {
+          "lineNumber": "2519"
+         },
+         "lineNumber": "2519"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "pkg net/url, method (*URL) RequestURI() string",
+         "matchingRanges": {
+          "lineNumber": "5095"
+         },
+         "lineNumber": "5095"
+        },
+        {
+         "lineText": "pkg net/url, method (*URL) ResolveReference(*URL) *URL",
+         "matchingRanges": {
+          "lineNumber": "5096",
+          "columnRanges": [
+           {
+            "startIndex": 27,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "5096",
+         "ranges": [
+          {
+           "startIndex": 27,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "pkg net/url, method (*URL) String() string",
+         "matchingRanges": {
+          "lineNumber": "5097"
+         },
+         "lineNumber": "5097"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 77
+    },
+    "resultToken": "CBUSAggBOOjf65ehl6OAuQFAAEgV"
+   }
+  ],
+  "estimatedResultCount": "23",
+  "exhaustive": true,
+  "requestToken": "ChNkbnMgcmVzb2x2ZXIgbG9va3VwEh0oIGdpdDpnby9nb0BtYXN0ZXIgY2FzZTp5ZXMgKRoMCO66qNEGEPa8o6MDIAwqADIASAE"
+ }
+}

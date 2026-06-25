@@ -1,0 +1,2283 @@
+{
+ "query": "mapaccess1",
+ "oss_project": "go",
+ "repo_name": "go",
+ "page_size": 50,
+ "fetched_at": "2026-06-11T02:27:26Z",
+ "response": {
+  "searchResults": [
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/map.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// mapaccess1 returns a pointer to h[key].  Never returns nil, instead",
+         "matchingRanges": {
+          "lineNumber": "70",
+          "columnRanges": [
+           {
+            "startIndex": 3,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "70",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 70
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 3,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "// it will return a reference to the zero object for the elem type if",
+         "matchingRanges": {
+          "lineNumber": "71"
+         },
+         "lineNumber": "71",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 69
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// mapaccess1 is pushed from internal/runtime/maps. We could just call it, but",
+         "matchingRanges": {
+          "lineNumber": "76",
+          "columnRanges": [
+           {
+            "startIndex": 3,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "76",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 78
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 3,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "// we want to avoid one layer of call.",
+         "matchingRanges": {
+          "lineNumber": "77"
+         },
+         "lineNumber": "77",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 38
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "//",
+         "matchingRanges": {
+          "lineNumber": "78"
+         },
+         "lineNumber": "78",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "//go:linkname mapaccess1",
+         "matchingRanges": {
+          "lineNumber": "79",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "79",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 24
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "func mapaccess1(t *abi.MapType, m *maps.Map, key unsafe.Pointer) unsafe.Pointer",
+         "matchingRanges": {
+          "lineNumber": "80",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "80",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 10
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func mapaccess1_fat(t *abi.MapType, m *maps.Map, key, zero unsafe.Pointer) unsafe.Pointer {",
+         "matchingRanges": {
+          "lineNumber": "93",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "93",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\te, ok := mapaccess2(t, m, key)",
+         "matchingRanges": {
+          "lineNumber": "94"
+         },
+         "lineNumber": "94"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 5
+    },
+    "resultToken": "CAASBAgBIAE49o_YgvLZv9i-AUAASAA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/link/testdata/linkname/builtin.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// Linkname builtin symbols (that is not already linknamed,",
+         "matchingRanges": {
+          "lineNumber": "5"
+         },
+         "lineNumber": "5",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 59
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "// e.g. mapaccess1) is not allowed.",
+         "matchingRanges": {
+          "lineNumber": "6",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "6",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 35
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "7"
+         },
+         "lineNumber": "7"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func main() {",
+         "matchingRanges": {
+          "lineNumber": "12"
+         },
+         "lineNumber": "12",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tmapaccess1(nil, nil, nil)",
+         "matchingRanges": {
+          "lineNumber": "13",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "13",
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "}",
+         "matchingRanges": {
+          "lineNumber": "14"
+         },
+         "lineNumber": "14"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "//go:linkname mapaccess1 runtime.mapaccess1",
+         "matchingRanges": {
+          "lineNumber": "16",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 10
+           },
+           {
+            "startIndex": 33,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "16",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 43
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 10
+          },
+          {
+           "startIndex": 33,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "func mapaccess1(t, m, k unsafe.Pointer) unsafe.Pointer",
+         "matchingRanges": {
+          "lineNumber": "17",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "17",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 10
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 4
+    },
+    "resultToken": "CAESBAgBIAE41u_FpMXOrKmEAUAASAE"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/compile/internal/typecheck/_builtin/runtime.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "func makemap_small() (hmap map[any]any)",
+         "matchingRanges": {
+          "lineNumber": "141"
+         },
+         "lineNumber": "141",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 27,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "func mapaccess1(mapType *byte, hmap map[any]any, key *any) (val *any)",
+         "matchingRanges": {
+          "lineNumber": "142",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "142",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 36,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "func mapaccess1_fast32(mapType *byte, hmap map[any]any, key uint32) (val *any)",
+         "matchingRanges": {
+          "lineNumber": "143",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "143",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 43,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "func mapaccess1_fast64(mapType *byte, hmap map[any]any, key uint64) (val *any)",
+         "matchingRanges": {
+          "lineNumber": "144",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "144",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 43,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "func mapaccess1_faststr(mapType *byte, hmap map[any]any, key string) (val *any)",
+         "matchingRanges": {
+          "lineNumber": "145",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "145",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 44,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "func mapaccess1_fat(mapType *byte, hmap map[any]any, key *any, zero *byte) (val *any)",
+         "matchingRanges": {
+          "lineNumber": "146",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "146",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 40,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "func mapaccess2(mapType *byte, hmap map[any]any, key *any) (val *any, pres bool)",
+         "matchingRanges": {
+          "lineNumber": "147"
+         },
+         "lineNumber": "147",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 36,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 5
+    },
+    "resultToken": "CAISBAgBIAE4usyf097cqsZaQABIAg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/map_fast32.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "//go:linkname mapaccess1_fast32",
+         "matchingRanges": {
+          "lineNumber": "15",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "15",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 31
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "func mapaccess1_fast32(t *abi.MapType, m *maps.Map, key uint32) unsafe.Pointer",
+         "matchingRanges": {
+          "lineNumber": "16",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "16",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "17"
+         },
+         "lineNumber": "17"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAMSBAgBIAE4pOz_9talsvMHQABIAw"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/map_fast64.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "//go:linkname mapaccess1_fast64",
+         "matchingRanges": {
+          "lineNumber": "15",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "15",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 31
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "func mapaccess1_fast64(t *abi.MapType, m *maps.Map, key uint64) unsafe.Pointer",
+         "matchingRanges": {
+          "lineNumber": "16",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "16",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "17"
+         },
+         "lineNumber": "17"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAQSBAgBIAE4gP7v74Cb8Ma1AUAASAQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/map_faststr.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "//go:linkname mapaccess1_faststr",
+         "matchingRanges": {
+          "lineNumber": "15",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "15",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 32
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "func mapaccess1_faststr(t *abi.MapType, m *maps.Map, ky string) unsafe.Pointer",
+         "matchingRanges": {
+          "lineNumber": "16",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "16",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "17"
+         },
+         "lineNumber": "17"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAUSBAgBIAE4qKms2_v7ptj_AUAASAU"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/internal/runtime/maps/runtime.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// mapaccess1 returns a pointer to h[key].  Never returns nil, instead",
+         "matchingRanges": {
+          "lineNumber": "50",
+          "columnRanges": [
+           {
+            "startIndex": 3,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "50",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 70
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 3,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "// it will return a reference to the zero object for the elem type if",
+         "matchingRanges": {
+          "lineNumber": "51"
+         },
+         "lineNumber": "51",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 69
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "//",
+         "matchingRanges": {
+          "lineNumber": "55"
+         },
+         "lineNumber": "55",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "//go:linkname runtime_mapaccess1 runtime.mapaccess1",
+         "matchingRanges": {
+          "lineNumber": "56",
+          "columnRanges": [
+           {
+            "startIndex": 22,
+            "length": 10
+           },
+           {
+            "startIndex": 41,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "56",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 51
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 22,
+           "length": 10
+          },
+          {
+           "startIndex": 41,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "func runtime_mapaccess1(typ *abi.MapType, m *Map, key unsafe.Pointer) unsafe.Pointer {",
+         "matchingRanges": {
+          "lineNumber": "57",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "57",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\tp, _ := runtime_mapaccess2(typ, m, key)",
+         "matchingRanges": {
+          "lineNumber": "58"
+         },
+         "lineNumber": "58"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CAYSBAgBIAE4oMSita-S_6MVQABIBg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/internal/runtime/maps/runtime_fast32.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "//go:linkname runtime_mapaccess1_fast32 runtime.mapaccess1_fast32",
+         "matchingRanges": {
+          "lineNumber": "15",
+          "columnRanges": [
+           {
+            "startIndex": 22,
+            "length": 10
+           },
+           {
+            "startIndex": 48,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "15",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 65
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 22,
+           "length": 10
+          },
+          {
+           "startIndex": 48,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "func runtime_mapaccess1_fast32(typ *abi.MapType, m *Map, key uint32) unsafe.Pointer {",
+         "matchingRanges": {
+          "lineNumber": "16",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "16",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\tp, _ := runtime_mapaccess2_fast32(typ, m, key)",
+         "matchingRanges": {
+          "lineNumber": "17"
+         },
+         "lineNumber": "17"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAcSBAgBIAE4zsqk_t-AivUFQABIBw"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/internal/runtime/maps/runtime_fast64.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "//go:linkname runtime_mapaccess1_fast64 runtime.mapaccess1_fast64",
+         "matchingRanges": {
+          "lineNumber": "15",
+          "columnRanges": [
+           {
+            "startIndex": 22,
+            "length": 10
+           },
+           {
+            "startIndex": 48,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "15",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 65
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 22,
+           "length": 10
+          },
+          {
+           "startIndex": 48,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "func runtime_mapaccess1_fast64(typ *abi.MapType, m *Map, key uint64) unsafe.Pointer {",
+         "matchingRanges": {
+          "lineNumber": "16",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "16",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\tp, _ := runtime_mapaccess2_fast64(typ, m, key)",
+         "matchingRanges": {
+          "lineNumber": "17"
+         },
+         "lineNumber": "17"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAgSBAgBIAE4qpLY_9Wx68SGAUAASAg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/internal/runtime/maps/runtime_faststr.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "//go:linkname runtime_mapaccess1_faststr runtime.mapaccess1_faststr",
+         "matchingRanges": {
+          "lineNumber": "113",
+          "columnRanges": [
+           {
+            "startIndex": 22,
+            "length": 10
+           },
+           {
+            "startIndex": 49,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "113",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 67
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 22,
+           "length": 10
+          },
+          {
+           "startIndex": 49,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "func runtime_mapaccess1_faststr(typ *abi.MapType, m *Map, key string) unsafe.Pointer {",
+         "matchingRanges": {
+          "lineNumber": "114",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "114",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\tp, _ := runtime_mapaccess2_faststr(typ, m, key)",
+         "matchingRanges": {
+          "lineNumber": "115"
+         },
+         "lineNumber": "115"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAkSBAgBIAE4pLX6pvDas8w4QABICQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "test/codegen/comparisons.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// This was a TODO in mapaccess1_faststr",
+         "matchingRanges": {
+          "lineNumber": "80",
+          "columnRanges": [
+           {
+            "startIndex": 22,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "80",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 40
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 22,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "func CompareArray6(a, b unsafe.Pointer) bool {",
+         "matchingRanges": {
+          "lineNumber": "81"
+         },
+         "lineNumber": "81",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAoSAggBON7u5oXyuZGTpwFAAEgK"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/compile/internal/ssa/_gen/generic.rules",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "(StaticLECall {f} [argsize] typ_ map_ key:(SelectN [0] sbts:(StaticLECall {g} _ ptr len mem)) m:(SelectN [1] sbts))",
+         "matchingRanges": {
+          "lineNumber": "2299"
+         },
+         "lineNumber": "2299"
+        },
+        {
+         "lineText": "  \u0026\u0026    (isSameCall(f, \"runtime.mapaccess1_faststr\")",
+         "matchingRanges": {
+          "lineNumber": "2300",
+          "columnRanges": [
+           {
+            "startIndex": 32,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "2300",
+         "ranges": [
+          {
+           "startIndex": 32,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "      || isSameCall(f, \"runtime.mapaccess2_faststr\")",
+         "matchingRanges": {
+          "lineNumber": "2301"
+         },
+         "lineNumber": "2301"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAsSAggBOOKNnrCGt5T_OkAASAs"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/internal/goobj/builtinlist.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t{\"runtime.makemap_small\", 1},",
+         "matchingRanges": {
+          "lineNumber": "98"
+         },
+         "lineNumber": "98",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 23
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 27,
+            "length": 1
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t{\"runtime.mapaccess1\", 1},",
+         "matchingRanges": {
+          "lineNumber": "99",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "99",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 20
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 24,
+            "length": 1
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t{\"runtime.mapaccess1_fast32\", 1},",
+         "matchingRanges": {
+          "lineNumber": "100",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "100",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 27
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 31,
+            "length": 1
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t{\"runtime.mapaccess1_fast64\", 1},",
+         "matchingRanges": {
+          "lineNumber": "101",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "101",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 27
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 31,
+            "length": 1
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t{\"runtime.mapaccess1_faststr\", 1},",
+         "matchingRanges": {
+          "lineNumber": "102",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "102",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 28
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 32,
+            "length": 1
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t{\"runtime.mapaccess1_fat\", 1},",
+         "matchingRanges": {
+          "lineNumber": "103",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "103",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 24
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 28,
+            "length": 1
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t{\"runtime.mapaccess2\", 1},",
+         "matchingRanges": {
+          "lineNumber": "104"
+         },
+         "lineNumber": "104",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 20
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 24,
+            "length": 1
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 5
+    },
+    "resultToken": "CAwSAggBOPq95vSLnP28B0AASAw"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/link/internal/loader/loader.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// (other map functions are already linknamed in Go 1.23)",
+         "matchingRanges": {
+          "lineNumber": "2463"
+         },
+         "lineNumber": "2463",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 57
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\"runtime.mapaccess1\":         {\"runtime\"},",
+         "matchingRanges": {
+          "lineNumber": "2464",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "2464",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 1,
+            "length": 20
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 32,
+            "length": 9
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t\"runtime.mapaccess1_fast32\":  {\"runtime\"},",
+         "matchingRanges": {
+          "lineNumber": "2465",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "2465",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 1,
+            "length": 27
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 32,
+            "length": 9
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t\"runtime.mapaccess1_fast64\":  {\"runtime\"},",
+         "matchingRanges": {
+          "lineNumber": "2466",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "2466",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 1,
+            "length": 27
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 32,
+            "length": 9
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t\"runtime.mapaccess1_faststr\": {\"runtime\"},",
+         "matchingRanges": {
+          "lineNumber": "2467",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "2467",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 1,
+            "length": 28
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 32,
+            "length": 9
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t\"runtime.mapdelete_fast32\":   {\"runtime\"},",
+         "matchingRanges": {
+          "lineNumber": "2468"
+         },
+         "lineNumber": "2468",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 1,
+            "length": 26
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 32,
+            "length": 9
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 4
+    },
+    "resultToken": "CA0SAggBOLj4473NmunClgFAAEgN"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/compile/internal/typecheck/builtin.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t{\"makemap_small\", funcTag, 86},",
+         "matchingRanges": {
+          "lineNumber": "119"
+         },
+         "lineNumber": "119",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 15
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 28,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t{\"mapaccess1\", funcTag, 87},",
+         "matchingRanges": {
+          "lineNumber": "120",
+          "columnRanges": [
+           {
+            "startIndex": 3,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "120",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 12
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 25,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 3,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t{\"mapaccess1_fast32\", funcTag, 88},",
+         "matchingRanges": {
+          "lineNumber": "121",
+          "columnRanges": [
+           {
+            "startIndex": 3,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "121",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 19
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 32,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 3,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t{\"mapaccess1_fast64\", funcTag, 89},",
+         "matchingRanges": {
+          "lineNumber": "122",
+          "columnRanges": [
+           {
+            "startIndex": 3,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "122",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 19
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 32,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 3,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t{\"mapaccess1_faststr\", funcTag, 90},",
+         "matchingRanges": {
+          "lineNumber": "123",
+          "columnRanges": [
+           {
+            "startIndex": 3,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "123",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 20
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 33,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 3,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t{\"mapaccess1_fat\", funcTag, 91},",
+         "matchingRanges": {
+          "lineNumber": "124",
+          "columnRanges": [
+           {
+            "startIndex": 3,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "124",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 16
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 29,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 3,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t{\"mapaccess2\", funcTag, 92},",
+         "matchingRanges": {
+          "lineNumber": "125"
+         },
+         "lineNumber": "125",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 12
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 25,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 5
+    },
+    "resultToken": "CA4SAggBONqYpPbJ2cvTowFAAEgO"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/compile/internal/ssa/rewritegeneric.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// match: (StaticLECall {f} [argsize] typ_ map_ key:(SelectN [0] sbts:(StaticLECall {g} _ ptr len mem)) m:(SelectN [1] sbts))",
+         "matchingRanges": {
+          "lineNumber": "34697"
+         },
+         "lineNumber": "34697",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 125
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t// cond: (isSameCall(f, \"runtime.mapaccess1_faststr\") || isSameCall(f, \"runtime.mapaccess2_faststr\") ...",
+         "matchingRanges": {
+          "lineNumber": "34698",
+          "columnRanges": [
+           {
+            "startIndex": 34,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "34698",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 100
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 34,
+           "length": 10
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\tm := v.Args[3]",
+         "matchingRanges": {
+          "lineNumber": "34721"
+         },
+         "lineNumber": "34721",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 14,
+            "length": 1
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tif m.Op != OpSelectN || auxIntToInt64(m.AuxInt) != 1 || sbts != m.Args[0] || !((isSameCall(f, \"runtime.mapaccess1_faststr\") || isSameCall(f, \"runtime.mapaccess2_faststr\") ...",
+         "matchingRanges": {
+          "lineNumber": "34722",
+          "columnRanges": [
+           {
+            "startIndex": 105,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "34722",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 53,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 73,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 96,
+            "length": 28
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 143,
+            "length": 28
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 105,
+           "length": 10
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CA8SAggBONqE46WXx9-q7wFAAEgP"
+   }
+  ],
+  "estimatedResultCount": "16",
+  "exhaustive": true,
+  "requestToken": "CgptYXBhY2Nlc3MxEh0oIGdpdDpnby9nb0BtYXN0ZXIgY2FzZTp5ZXMgKRoMCI66qNEGENjfpNQCIAwqADIASAE"
+ }
+}

@@ -1,0 +1,88 @@
+{
+ "query": "\"start the build\"",
+ "oss_project": "bazel",
+ "repo_name": "bazel",
+ "page_size": 50,
+ "fetched_at": "2026-06-11T22:28:36Z",
+ "response": {
+  "searchResults": [
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/runtime/commands/TestCommand.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "      // (original exitcode=SUCCESS).",
+         "matchingRanges": {
+          "lineNumber": "175"
+         },
+         "lineNumber": "175",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 6,
+            "length": 31
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "      String message = \"Couldn't start the build. Unable to run tests\";",
+         "matchingRanges": {
+          "lineNumber": "176",
+          "columnRanges": [
+           {
+            "startIndex": 33,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "176",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 23,
+            "length": 47
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 33,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "lineText": "      env.getReporter().handle(Event.error(message));",
+         "matchingRanges": {
+          "lineNumber": "177"
+         },
+         "lineNumber": "177"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAASAggBOMyi3sS735DMV0AASAA"
+   }
+  ],
+  "estimatedResultCount": "1",
+  "exhaustive": true,
+  "requestToken": "ChEic3RhcnQgdGhlIGJ1aWxkIhIjKCBnaXQ6YmF6ZWwvYmF6ZWxAbWFzdGVyIGNhc2U6eWVzICkaDAiU7azRBhCQ4sHbAiAMIA8qADIASAE"
+ }
+}

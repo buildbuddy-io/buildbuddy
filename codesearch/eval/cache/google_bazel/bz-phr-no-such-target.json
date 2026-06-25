@@ -1,0 +1,3141 @@
+{
+ "query": "\"no such target\"",
+ "oss_project": "bazel",
+ "repo_name": "bazel",
+ "page_size": 50,
+ "fetched_at": "2026-06-11T22:28:27Z",
+ "response": {
+  "searchResults": [
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/packages/NoSuchTargetException.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    this(",
+         "matchingRanges": {
+          "lineNumber": "50"
+         },
+         "lineNumber": "50",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "        \"no such target '\" + label + \"': \" + message,",
+         "matchingRanges": {
+          "lineNumber": "51",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "51",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 18
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 37,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "        label,",
+         "matchingRanges": {
+          "lineNumber": "52"
+         },
+         "lineNumber": "52"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAASAggBOPTLsJvEpPapEUAASAA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/pkgcache/TargetPatternEvaluatorTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    expectError(",
+         "matchingRanges": {
+          "lineNumber": "367"
+         },
+         "lineNumber": "367"
+        },
+        {
+         "lineText": "        \"no such target '//bar:quux': target 'quux' not declared in package 'bar' defined by \"",
+         "matchingRanges": {
+          "lineNumber": "368",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "368",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 86
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "            + \"/workspace/bar/BUILD; however, a source directory of this name exists.  (Perhaps \"",
+         "matchingRanges": {
+          "lineNumber": "369"
+         },
+         "lineNumber": "369",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 14,
+            "length": 83
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "        rulesBeneathFoo,",
+         "matchingRanges": {
+          "lineNumber": "416"
+         },
+         "lineNumber": "416"
+        },
+        {
+         "lineText": "        \"Skipping '//otherrules:missing_target': no such target \"",
+         "matchingRanges": {
+          "lineNumber": "417",
+          "columnRanges": [
+           {
+            "startIndex": 49,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "417",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 57
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 49,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "            + \"'//otherrules:missing_target': target 'missing_target' not declared in \"",
+         "matchingRanges": {
+          "lineNumber": "418"
+         },
+         "lineNumber": "418",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 14,
+            "length": 73
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "        rulesBeneathFoo,",
+         "matchingRanges": {
+          "lineNumber": "497"
+         },
+         "lineNumber": "497"
+        },
+        {
+         "lineText": "        \"no such target '//:bad/filename/target'\",",
+         "matchingRanges": {
+          "lineNumber": "498",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "498",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 41
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "        \"bad/filename/target\",",
+         "matchingRanges": {
+          "lineNumber": "499"
+         },
+         "lineNumber": "499",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 21
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 7
+    },
+    "resultToken": "CAESAggBOLb1jbL5v5nXdkAASAE"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/analysis/starlark/StarlarkRuleTransitionProviderTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    assertContainsEvent(",
+         "matchingRanges": {
+          "lineNumber": "586"
+         },
+         "lineNumber": "586"
+        },
+        {
+         "lineText": "        \"no such target '//test:i-am-not-real': target \"",
+         "matchingRanges": {
+          "lineNumber": "587",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "587",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 48
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "            + \"'i-am-not-real' not declared in package 'test'\");",
+         "matchingRanges": {
+          "lineNumber": "588"
+         },
+         "lineNumber": "588",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 14,
+            "length": 48
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    assertContainsEvent(",
+         "matchingRanges": {
+          "lineNumber": "850"
+         },
+         "lineNumber": "850"
+        },
+        {
+         "lineText": "        \"no such target '//test:i-am-not-real': target \"",
+         "matchingRanges": {
+          "lineNumber": "851",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "851",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 48
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "            + \"'i-am-not-real' not declared in package 'test'\");",
+         "matchingRanges": {
+          "lineNumber": "852"
+         },
+         "lineNumber": "852",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 14,
+            "length": 48
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAISAggBOJip4PH8h67aYUAASAI"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/analysis/starlark/StarlarkAttrTransitionProviderTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    assertContainsEvent(",
+         "matchingRanges": {
+          "lineNumber": "2750"
+         },
+         "lineNumber": "2750"
+        },
+        {
+         "lineText": "        \"no such target '//test/starlark:the-answer': target \"",
+         "matchingRanges": {
+          "lineNumber": "2751",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "2751",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 54
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "            + \"'the-answer' not declared in package\");",
+         "matchingRanges": {
+          "lineNumber": "2752"
+         },
+         "lineNumber": "2752",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 14,
+            "length": 38
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAMSAggBOLy4gc-LpMKz9gFAAEgD"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/shell/integration/starlark_configurations_test.sh",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  expect_log \"no such target '//$pkg:my_flag'\"",
+         "matchingRanges": {
+          "lineNumber": "247",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "247",
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "}",
+         "matchingRanges": {
+          "lineNumber": "248"
+         },
+         "lineNumber": "248"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  expect_log \"no such target '//$pkg:my_flag'\"",
+         "matchingRanges": {
+          "lineNumber": "288",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "288",
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "}",
+         "matchingRanges": {
+          "lineNumber": "289"
+         },
+         "lineNumber": "289"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAQSAggBOPKuvaje27_yQUAASAQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "site/en/build/style-guide.md",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "containing directory) should provide the functionality described by the",
+         "matchingRanges": {
+          "lineNumber": "114"
+         },
+         "lineNumber": "114"
+        },
+        {
+         "lineText": "directory name. If there is no such target, do not create an eponymous",
+         "matchingRanges": {
+          "lineNumber": "115",
+          "columnRanges": [
+           {
+            "startIndex": 28,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "115",
+         "ranges": [
+          {
+           "startIndex": 28,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "target.",
+         "matchingRanges": {
+          "lineNumber": "116"
+         },
+         "lineNumber": "116"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAUSAggBOLS5t9m9usavDkAASAU"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/shell/integration/toolchain_test.sh",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "... chains for target //${pkg}/demo:use[^:]*: invalid registered toolchain '//${pkg}/demo:not_a_target': no such target '//${pkg}/demo:not_a_target': target 'not_a_target' not  ...",
+         "matchingRanges": {
+          "lineNumber": "1086",
+          "columnRanges": [
+           {
+            "startIndex": 105,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "1086",
+         "ranges": [
+          {
+           "startIndex": 105,
+           "length": 14
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  # It's uncertain which error will happen first, so handle either.",
+         "matchingRanges": {
+          "lineNumber": "1151"
+         },
+         "lineNumber": "1151"
+        },
+        {
+         "lineText": "  expect_log \"While resolving toolchains for target //${pkg}:foo[^:]*: invalid registered toolchain '//${pkg}:bad[12]': no such target\"",
+         "matchingRanges": {
+          "lineNumber": "1152",
+          "columnRanges": [
+           {
+            "startIndex": 120,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "1152",
+         "ranges": [
+          {
+           "startIndex": 120,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "}",
+         "matchingRanges": {
+          "lineNumber": "1153"
+         },
+         "lineNumber": "1153"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "... '//${pkg}/demo:use' depends on toolchain '//${pkg}/toolchain:does_not_exist', which cannot be found: no such target '//${pkg}/toolchain:does_not_exist': target 'does_not_ex ...",
+         "matchingRanges": {
+          "lineNumber": "1192",
+          "columnRanges": [
+           {
+            "startIndex": 105,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "1192",
+         "ranges": [
+          {
+           "startIndex": 105,
+           "length": 14
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CAYSAggBOI6f-sn68sTmjgFAAEgG"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/packages/PackageFactoryTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "        .hasMessageThat()",
+         "matchingRanges": {
+          "lineNumber": "342"
+         },
+         "lineNumber": "342"
+        },
+        {
+         "lineText": "        .contains(\"no such target '//foo:B': target 'B' not declared in package 'foo'\");",
+         "matchingRanges": {
+          "lineNumber": "343",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "343",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 18,
+            "length": 68
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "344"
+         },
+         "lineNumber": "344"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "        .isEqualTo(",
+         "matchingRanges": {
+          "lineNumber": "473"
+         },
+         "lineNumber": "473"
+        },
+        {
+         "lineText": "            \"no such target '//x:y.cc': \"",
+         "matchingRanges": {
+          "lineNumber": "474",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "474",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 12,
+            "length": 29
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "                + \"target 'y.cc' not declared in package 'x' \"",
+         "matchingRanges": {
+          "lineNumber": "475"
+         },
+         "lineNumber": "475",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 18,
+            "length": 44
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "        .isEqualTo(",
+         "matchingRanges": {
+          "lineNumber": "483"
+         },
+         "lineNumber": "483"
+        },
+        {
+         "lineText": "            \"no such target '//x:z.cc': \"",
+         "matchingRanges": {
+          "lineNumber": "484",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "484",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 12,
+            "length": 29
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "                + \"target 'z.cc' not declared in package 'x' \"",
+         "matchingRanges": {
+          "lineNumber": "485"
+         },
+         "lineNumber": "485",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 18,
+            "length": 44
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 4
+    },
+    "resultToken": "CAcSAggBOKDC4NLsg5mt1QFAAEgH"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/shell/bazel/check_external_files_test.sh",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  bazel build --noexperimental_check_external_repository_files @local_rep//:g \u003e\u0026 \"$TEST_log\" \u0026\u0026 fail \"Expected build to fail\" || true",
+         "matchingRanges": {
+          "lineNumber": "153"
+         },
+         "lineNumber": "153"
+        },
+        {
+         "lineText": "  expect_log \"no such target '@@+local_repository+local_rep//:g'\"",
+         "matchingRanges": {
+          "lineNumber": "154",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "154",
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "}",
+         "matchingRanges": {
+          "lineNumber": "155"
+         },
+         "lineNumber": "155"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    @local_rep//:g \u003e\u0026 \"$TEST_log\" \u0026\u0026 fail \"Expected build to fail\" || true",
+         "matchingRanges": {
+          "lineNumber": "190"
+         },
+         "lineNumber": "190"
+        },
+        {
+         "lineText": "  expect_log \"no such target '@@+local_repository+local_rep//:g'\"",
+         "matchingRanges": {
+          "lineNumber": "191",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "191",
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "}",
+         "matchingRanges": {
+          "lineNumber": "192"
+         },
+         "lineNumber": "192"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAgSAggBOJD367HJi67ZuwFAAEgI"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/shell/bazel/build_files_test.sh",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  bazel build //:build_only \u003e\u0026 $TEST_log \u0026\u0026 fail \"build shouldn't succeed\"",
+         "matchingRanges": {
+          "lineNumber": "69"
+         },
+         "lineNumber": "69"
+        },
+        {
+         "lineText": "  expect_log \"no such target '//:build_only'\"",
+         "matchingRanges": {
+          "lineNumber": "70",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "70",
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "}",
+         "matchingRanges": {
+          "lineNumber": "71"
+         },
+         "lineNumber": "71"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  bazel build //:build_bazel_only \u003e\u0026 $TEST_log \u0026\u0026 fail \"build shouldn't succeed\"",
+         "matchingRanges": {
+          "lineNumber": "86"
+         },
+         "lineNumber": "86"
+        },
+        {
+         "lineText": "  expect_log \"no such target '//:build_bazel_only'\"",
+         "matchingRanges": {
+          "lineNumber": "87",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "87",
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "}",
+         "matchingRanges": {
+          "lineNumber": "88"
+         },
+         "lineNumber": "88"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAkSAggBOKyoquzr27_0dUAASAk"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/skyframe/toolchains/ToolchainResolutionFunctionTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "        .isInstanceOf(InvalidToolchainTypeException.class);",
+         "matchingRanges": {
+          "lineNumber": "687"
+         },
+         "lineNumber": "687",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 52,
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    assertContainsEvent(\"no such target '//fake/toolchain:type_1'\");",
+         "matchingRanges": {
+          "lineNumber": "688",
+          "columnRanges": [
+           {
+            "startIndex": 25,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "688",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 24,
+            "length": 42
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 25,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "  }",
+         "matchingRanges": {
+          "lineNumber": "689"
+         },
+         "lineNumber": "689"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAoSAggBOKTp2vTjktmDoQFAAEgK"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/shell/integration/loading_phase_test.sh",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  bazel query \"$pkg/subdir1/subdir2/BUILD\" \u0026\u003e \"$TEST_log\" \u0026\u0026 fail \"Should fail\"",
+         "matchingRanges": {
+          "lineNumber": "572"
+         },
+         "lineNumber": "572"
+        },
+        {
+         "lineText": "  expect_log \"no such target '//${pkg}:subdir1/subdir2/BUILD'\"",
+         "matchingRanges": {
+          "lineNumber": "573",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "573",
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "}",
+         "matchingRanges": {
+          "lineNumber": "574"
+         },
+         "lineNumber": "574"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAsSAggBOJas9dHf6Zz7c0AASAs"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/packages/ExportsFilesTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "        .hasMessageThat()",
+         "matchingRanges": {
+          "lineNumber": "61"
+         },
+         "lineNumber": "61"
+        },
+        {
+         "lineText": "        .contains(\"no such target '//pkg:baz.txt': target 'baz.txt' not declared in package 'pkg'\");",
+         "matchingRanges": {
+          "lineNumber": "62",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "62",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 18,
+            "length": 80
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "  }",
+         "matchingRanges": {
+          "lineNumber": "63"
+         },
+         "lineNumber": "63"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAwSAggBOITNmKWKwfXnFEAASAw"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/pkgcache/LoadingPhaseRunnerTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    assertThat(loadingResult.getTestsToRunLabels()).isNull();",
+         "matchingRanges": {
+          "lineNumber": "174"
+         },
+         "lineNumber": "174"
+        },
+        {
+         "lineText": "    tester.assertContainsError(\"Skipping '//base:missing': no such target '//base:missing'\");",
+         "matchingRanges": {
+          "lineNumber": "175",
+          "columnRanges": [
+           {
+            "startIndex": 59,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "175",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 31,
+            "length": 60
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 59,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "    tester.assertContainsWarning(\"Target pattern parsing failed.\");",
+         "matchingRanges": {
+          "lineNumber": "176"
+         },
+         "lineNumber": "176",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 33,
+            "length": 32
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    assertThat(loadingResult.getTestsToRunLabels()).isEmpty();",
+         "matchingRanges": {
+          "lineNumber": "287"
+         },
+         "lineNumber": "287"
+        },
+        {
+         "lineText": "    tester.assertContainsError(\"Skipping '//base:missing': no such target '//base:missing'\");",
+         "matchingRanges": {
+          "lineNumber": "288",
+          "columnRanges": [
+           {
+            "startIndex": 59,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "288",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 31,
+            "length": 60
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 59,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "    tester.assertContainsWarning(\"Target pattern parsing failed.\");",
+         "matchingRanges": {
+          "lineNumber": "289"
+         },
+         "lineNumber": "289",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 33,
+            "length": 32
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    assertThat(result.hasPostExpansionError()).isTrue();",
+         "matchingRanges": {
+          "lineNumber": "598"
+         },
+         "lineNumber": "598"
+        },
+        {
+         "lineText": "    tester.assertContainsError(\"no such target '//other:no_such_test'\");",
+         "matchingRanges": {
+          "lineNumber": "599",
+          "columnRanges": [
+           {
+            "startIndex": 32,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "599",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 31,
+            "length": 39
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 32,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "  }",
+         "matchingRanges": {
+          "lineNumber": "600"
+         },
+         "lineNumber": "600"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 4
+    },
+    "resultToken": "CA0SAggBOPaYwtDmyvXNLEAASA0"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/7.7.1/tutorials/ccp-toolchain-config.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    ```",
+         "matchingRanges": {
+          "lineNumber": "116"
+         },
+         "lineNumber": "116"
+        },
+        {
+         "lineText": "    No such target '//toolchain:clang_suite': target 'clang_suite' not declared",
+         "matchingRanges": {
+          "lineNumber": "117",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "117",
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "    in package 'toolchain' defined by .../toolchain/BUILD",
+         "matchingRanges": {
+          "lineNumber": "118"
+         },
+         "lineNumber": "118"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CA4SAggBOKDLhbKgg5mlGkAASA4"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/7.6.1/tutorials/ccp-toolchain-config.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    ```",
+         "matchingRanges": {
+          "lineNumber": "116"
+         },
+         "lineNumber": "116"
+        },
+        {
+         "lineText": "    No such target '//toolchain:clang_suite': target 'clang_suite' not declared",
+         "matchingRanges": {
+          "lineNumber": "117",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "117",
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "    in package 'toolchain' defined by .../toolchain/BUILD",
+         "matchingRanges": {
+          "lineNumber": "118"
+         },
+         "lineNumber": "118"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CA8SAggBOMC25pLa2bLZjgFAAEgP"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/testutil/TestUtils.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    final String suggestedTargetsBaseString =",
+         "matchingRanges": {
+          "lineNumber": "170"
+         },
+         "lineNumber": "170",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "        \"no such target '%s': target '%s' not declared in package '%s' \"",
+         "matchingRanges": {
+          "lineNumber": "171",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "171",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 64
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "            + \"defined by %s\"",
+         "matchingRanges": {
+          "lineNumber": "172"
+         },
+         "lineNumber": "172",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 14,
+            "length": 15
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBASAggBOKK-wfPvuZmtZkAASBA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/analysis/BuildViewTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    assertThrows(ViewCreationFailedException.class, () -\u003e update(\"//foo:top\"));",
+         "matchingRanges": {
+          "lineNumber": "679"
+         },
+         "lineNumber": "679",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 45,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 65,
+            "length": 11
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    assertContainsEvent(\"no such target '//badbuild:isweird': target 'isweird' not declared in \"",
+         "matchingRanges": {
+          "lineNumber": "680",
+          "columnRanges": [
+           {
+            "startIndex": 25,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "680",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 24,
+            "length": 72
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 25,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "        + \"package 'badbuild'\");",
+         "matchingRanges": {
+          "lineNumber": "681"
+         },
+         "lineNumber": "681",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 10,
+            "length": 20
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    update(defaultFlags().with(Flag.KEEP_GOING), \"//foo:top\");",
+         "matchingRanges": {
+          "lineNumber": "706"
+         },
+         "lineNumber": "706",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 49,
+            "length": 11
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    assertContainsEvent(\"no such target '//badbuild:isweird': target 'isweird' not declared in \"",
+         "matchingRanges": {
+          "lineNumber": "707",
+          "columnRanges": [
+           {
+            "startIndex": 25,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "707",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 24,
+            "length": 72
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 25,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "        + \"package 'badbuild'\");",
+         "matchingRanges": {
+          "lineNumber": "708"
+         },
+         "lineNumber": "708",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 10,
+            "length": 20
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    assertContainsEvent(",
+         "matchingRanges": {
+          "lineNumber": "750"
+         },
+         "lineNumber": "750"
+        },
+        {
+         "lineText": "        \"no such target '//x:z': target 'z' not declared in package 'x' defined by\"",
+         "matchingRanges": {
+          "lineNumber": "751",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "751",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 75
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "            + \" /workspace/x/BUILD\");",
+         "matchingRanges": {
+          "lineNumber": "752"
+         },
+         "lineNumber": "752",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 14,
+            "length": 21
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CBESAggBOLaGsfOzgqfU0gFAAEgR"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/skyframe/toolchains/RegisteredExecutionPlatformsFunctionTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "        \"invalid registered execution platform '//test:bad_exec_platform_label': \"",
+         "matchingRanges": {
+          "lineNumber": "507"
+         },
+         "lineNumber": "507",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 74
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "            + \"no such target '//test:bad_exec_platform_label'\",",
+         "matchingRanges": {
+          "lineNumber": "508",
+          "columnRanges": [
+           {
+            "startIndex": 15,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "508",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 14,
+            "length": 49
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 15,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "        ViewCreationFailedException.class,",
+         "matchingRanges": {
+          "lineNumber": "509"
+         },
+         "lineNumber": "509",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 36,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBISAggBOPiMi4zpw5jGAkAASBI"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/buildtool/GenQueryIntegrationTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    events.assertContainsError(",
+         "matchingRanges": {
+          "lineNumber": "425"
+         },
+         "lineNumber": "425"
+        },
+        {
+         "lineText": "        \"in genquery rule //a:query: query failed: no such target '//b:nosuchtarget'\");",
+         "matchingRanges": {
+          "lineNumber": "426",
+          "columnRanges": [
+           {
+            "startIndex": 51,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "426",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 77
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 51,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "  }",
+         "matchingRanges": {
+          "lineNumber": "427"
+         },
+         "lineNumber": "427"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "        Pattern.compile(",
+         "matchingRanges": {
+          "lineNumber": "438"
+         },
+         "lineNumber": "438"
+        },
+        {
+         "lineText": "            \"no such target '//b:target': target 'target' not declared in package 'b' defined by\"",
+         "matchingRanges": {
+          "lineNumber": "439",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "439",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 12,
+            "length": 85
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "                + \" .*/b/BUILD\"));",
+         "matchingRanges": {
+          "lineNumber": "440"
+         },
+         "lineNumber": "440",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 18,
+            "length": 13
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "        Pattern.compile(",
+         "matchingRanges": {
+          "lineNumber": "466"
+         },
+         "lineNumber": "466"
+        },
+        {
+         "lineText": "            \"no such target '//b:target': target 'target' not declared in package 'b' defined by\"",
+         "matchingRanges": {
+          "lineNumber": "467",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "467",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 12,
+            "length": 85
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "                + \" .*/b/BUILD\"));",
+         "matchingRanges": {
+          "lineNumber": "468"
+         },
+         "lineNumber": "468",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 18,
+            "length": 13
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CBMSAggBOJ6K_4zqqe2_WEAASBM"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/query2/testutil/AbstractQueryTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    assertStartsWith(",
+         "matchingRanges": {
+          "lineNumber": "1390"
+         },
+         "lineNumber": "1390"
+        },
+        {
+         "lineText": "        \"couldn't expand 'tests' attribute of test_suite //c:c: \" + \"no such target '//d:d'\",",
+         "matchingRanges": {
+          "lineNumber": "1391",
+          "columnRanges": [
+           {
+            "startIndex": 69,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "1391",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 57
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 68,
+            "length": 24
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 69,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "        result.getMessage());",
+         "matchingRanges": {
+          "lineNumber": "1392"
+         },
+         "lineNumber": "1392"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBQSAggBOMrw_f-mhqX2PEAASBQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/query2/common/QueryPreloadingTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    assertContainsEvent(\"Label '//pkg2:q/sub' crosses boundary of subpackage 'pkg2/q'\");",
+         "matchingRanges": {
+          "lineNumber": "499"
+         },
+         "lineNumber": "499",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 24,
+            "length": 62
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    assertContainsEvent(\"no such target '//pkg2:q/sub'\");",
+         "matchingRanges": {
+          "lineNumber": "500",
+          "columnRanges": [
+           {
+            "startIndex": 25,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "500",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 24,
+            "length": 31
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 25,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "    // Check stability (not redundant).",
+         "matchingRanges": {
+          "lineNumber": "501"
+         },
+         "lineNumber": "501",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 35
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBUSAggBOOzKtYm3-br56gFAAEgV"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/analysis/ConfigurableAttributesTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    getConfiguredTarget(\"//java/hello:hello\");",
+         "matchingRanges": {
+          "lineNumber": "538"
+         },
+         "lineNumber": "538",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 24,
+            "length": 20
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    assertContainsEvent(\"no such target '//conditions:b'\");",
+         "matchingRanges": {
+          "lineNumber": "539",
+          "columnRanges": [
+           {
+            "startIndex": 25,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "539",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 24,
+            "length": 33
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 25,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "  }",
+         "matchingRanges": {
+          "lineNumber": "540"
+         },
+         "lineNumber": "540"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    assertThat(getConfiguredTarget(\"//foo:g\")).isNull();",
+         "matchingRanges": {
+          "lineNumber": "602"
+         },
+         "lineNumber": "602",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 35,
+            "length": 9
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    assertContainsEvent(\"bar/BUILD: no such target '//bar:fake'\");",
+         "matchingRanges": {
+          "lineNumber": "603",
+          "columnRanges": [
+           {
+            "startIndex": 36,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "603",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 24,
+            "length": 40
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 36,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "    assertContainsEvent(\"foo/BUILD:1:8: errors encountered resolving select() keys for //foo:g\");",
+         "matchingRanges": {
+          "lineNumber": "604"
+         },
+         "lineNumber": "604",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 24,
+            "length": 71
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CBYSAggBOP7Msuyx7_Oj2AFAAEgW"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/buildtool/EnvironmentRestrictedBuildTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "        .hasMessageThat()",
+         "matchingRanges": {
+          "lineNumber": "186"
+         },
+         "lineNumber": "186"
+        },
+        {
+         "lineText": "        .contains(\"invalid target environment: no such target '//buildenv:nada'\");",
+         "matchingRanges": {
+          "lineNumber": "187",
+          "columnRanges": [
+           {
+            "startIndex": 47,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "187",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 18,
+            "length": 62
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 47,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "  }",
+         "matchingRanges": {
+          "lineNumber": "188"
+         },
+         "lineNumber": "188"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBcSAggBOILFoIbr_KeMHUAASBc"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/build/style-guide.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "containing directory) should provide the functionality described by the",
+         "matchingRanges": {
+          "lineNumber": "113"
+         },
+         "lineNumber": "113"
+        },
+        {
+         "lineText": "directory name. If there is no such target, do not create an eponymous",
+         "matchingRanges": {
+          "lineNumber": "114",
+          "columnRanges": [
+           {
+            "startIndex": 28,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "114",
+         "ranges": [
+          {
+           "startIndex": 28,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "target.",
+         "matchingRanges": {
+          "lineNumber": "115"
+         },
+         "lineNumber": "115"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBgSAggBOL6uuO3rm8H_eUAASBg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/8.1.1/build/style-guide.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "containing directory) should provide the functionality described by the",
+         "matchingRanges": {
+          "lineNumber": "95"
+         },
+         "lineNumber": "95"
+        },
+        {
+         "lineText": "directory name. If there is no such target, do not create an eponymous",
+         "matchingRanges": {
+          "lineNumber": "96",
+          "columnRanges": [
+           {
+            "startIndex": 28,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "96",
+         "ranges": [
+          {
+           "startIndex": 28,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "target.",
+         "matchingRanges": {
+          "lineNumber": "97"
+         },
+         "lineNumber": "97"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBkSAggBOPKGi7y2_Z-cMEAASBk"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/9.0.0/build/style-guide.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "containing directory) should provide the functionality described by the",
+         "matchingRanges": {
+          "lineNumber": "111"
+         },
+         "lineNumber": "111"
+        },
+        {
+         "lineText": "directory name. If there is no such target, do not create an eponymous",
+         "matchingRanges": {
+          "lineNumber": "112",
+          "columnRanges": [
+           {
+            "startIndex": 28,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "112",
+         "ranges": [
+          {
+           "startIndex": 28,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "target.",
+         "matchingRanges": {
+          "lineNumber": "113"
+         },
+         "lineNumber": "113"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBoSAggBOPrm55SG8_GUNUAASBo"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/8.2.1/build/style-guide.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "containing directory) should provide the functionality described by the",
+         "matchingRanges": {
+          "lineNumber": "95"
+         },
+         "lineNumber": "95"
+        },
+        {
+         "lineText": "directory name. If there is no such target, do not create an eponymous",
+         "matchingRanges": {
+          "lineNumber": "96",
+          "columnRanges": [
+           {
+            "startIndex": 28,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "96",
+         "ranges": [
+          {
+           "startIndex": 28,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "target.",
+         "matchingRanges": {
+          "lineNumber": "97"
+         },
+         "lineNumber": "97"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBsSAggBOL7z-MCZq4zTQ0AASBs"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/8.6.0/build/style-guide.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "containing directory) should provide the functionality described by the",
+         "matchingRanges": {
+          "lineNumber": "95"
+         },
+         "lineNumber": "95"
+        },
+        {
+         "lineText": "directory name. If there is no such target, do not create an eponymous",
+         "matchingRanges": {
+          "lineNumber": "96",
+          "columnRanges": [
+           {
+            "startIndex": 28,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "96",
+         "ranges": [
+          {
+           "startIndex": 28,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "target.",
+         "matchingRanges": {
+          "lineNumber": "97"
+         },
+         "lineNumber": "97"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBwSAggBOMDAxrPbtuDTY0AASBw"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/9.1.0/build/style-guide.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "containing directory) should provide the functionality described by the",
+         "matchingRanges": {
+          "lineNumber": "111"
+         },
+         "lineNumber": "111"
+        },
+        {
+         "lineText": "directory name. If there is no such target, do not create an eponymous",
+         "matchingRanges": {
+          "lineNumber": "112",
+          "columnRanges": [
+           {
+            "startIndex": 28,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "112",
+         "ranges": [
+          {
+           "startIndex": 28,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "target.",
+         "matchingRanges": {
+          "lineNumber": "113"
+         },
+         "lineNumber": "113"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CB0SAggBOIremcj_v_2dakAASB0"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/7.7.1/build/style-guide.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "containing directory) should provide the functionality described by the",
+         "matchingRanges": {
+          "lineNumber": "95"
+         },
+         "lineNumber": "95"
+        },
+        {
+         "lineText": "directory name. If there is no such target, do not create an eponymous",
+         "matchingRanges": {
+          "lineNumber": "96",
+          "columnRanges": [
+           {
+            "startIndex": 28,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "96",
+         "ranges": [
+          {
+           "startIndex": 28,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "target.",
+         "matchingRanges": {
+          "lineNumber": "97"
+         },
+         "lineNumber": "97"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CB4SAggBOISB6OaZ_L2IggFAAEge"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/8.3.1/build/style-guide.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "containing directory) should provide the functionality described by the",
+         "matchingRanges": {
+          "lineNumber": "95"
+         },
+         "lineNumber": "95"
+        },
+        {
+         "lineText": "directory name. If there is no such target, do not create an eponymous",
+         "matchingRanges": {
+          "lineNumber": "96",
+          "columnRanges": [
+           {
+            "startIndex": 28,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "96",
+         "ranges": [
+          {
+           "startIndex": 28,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "target.",
+         "matchingRanges": {
+          "lineNumber": "97"
+         },
+         "lineNumber": "97"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CB8SAggBOK6P_o6o77OGnQFAAEgf"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/8.0.1/build/style-guide.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "containing directory) should provide the functionality described by the",
+         "matchingRanges": {
+          "lineNumber": "95"
+         },
+         "lineNumber": "95"
+        },
+        {
+         "lineText": "directory name. If there is no such target, do not create an eponymous",
+         "matchingRanges": {
+          "lineNumber": "96",
+          "columnRanges": [
+           {
+            "startIndex": 28,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "96",
+         "ranges": [
+          {
+           "startIndex": 28,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "target.",
+         "matchingRanges": {
+          "lineNumber": "97"
+         },
+         "lineNumber": "97"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CCASAggBOJiS3eO4o9S6vQFAAEgg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/7.6.1/build/style-guide.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "containing directory) should provide the functionality described by the",
+         "matchingRanges": {
+          "lineNumber": "95"
+         },
+         "lineNumber": "95"
+        },
+        {
+         "lineText": "directory name. If there is no such target, do not create an eponymous",
+         "matchingRanges": {
+          "lineNumber": "96",
+          "columnRanges": [
+           {
+            "startIndex": 28,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "96",
+         "ranges": [
+          {
+           "startIndex": 28,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "target.",
+         "matchingRanges": {
+          "lineNumber": "97"
+         },
+         "lineNumber": "97"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CCESAggBOJi-1brs2uWExgFAAEgh"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/8.4.2/build/style-guide.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "containing directory) should provide the functionality described by the",
+         "matchingRanges": {
+          "lineNumber": "95"
+         },
+         "lineNumber": "95"
+        },
+        {
+         "lineText": "directory name. If there is no such target, do not create an eponymous",
+         "matchingRanges": {
+          "lineNumber": "96",
+          "columnRanges": [
+           {
+            "startIndex": 28,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "96",
+         "ranges": [
+          {
+           "startIndex": 28,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "target.",
+         "matchingRanges": {
+          "lineNumber": "97"
+         },
+         "lineNumber": "97"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CCISAggBOOCqg7aP_rzXywFAAEgi"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/8.5.1/build/style-guide.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "containing directory) should provide the functionality described by the",
+         "matchingRanges": {
+          "lineNumber": "95"
+         },
+         "lineNumber": "95"
+        },
+        {
+         "lineText": "directory name. If there is no such target, do not create an eponymous",
+         "matchingRanges": {
+          "lineNumber": "96",
+          "columnRanges": [
+           {
+            "startIndex": 28,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "96",
+         "ranges": [
+          {
+           "startIndex": 28,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "target.",
+         "matchingRanges": {
+          "lineNumber": "97"
+         },
+         "lineNumber": "97"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CCMSAggBOKDgh861lf6s9wFAAEgj"
+   }
+  ],
+  "estimatedResultCount": "36",
+  "exhaustive": true,
+  "requestToken": "ChAibm8gc3VjaCB0YXJnZXQiEiMoIGdpdDpiYXplbC9iYXplbEBtYXN0ZXIgY2FzZTp5ZXMgKRoMCIrtrNEGEPmj1ukCIAwqADIASAE"
+ }
+}

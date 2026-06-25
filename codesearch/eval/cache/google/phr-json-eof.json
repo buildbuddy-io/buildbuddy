@@ -1,0 +1,663 @@
+{
+ "query": "\"unexpected end of JSON input\"",
+ "oss_project": "go",
+ "repo_name": "go",
+ "page_size": 50,
+ "fetched_at": "2026-06-11T02:29:45Z",
+ "response": {
+  "searchResults": [
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/encoding/json/decode_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// syntax errors",
+         "matchingRanges": {
+          "lineNumber": "478"
+         },
+         "lineNumber": "478",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 16
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t{CaseName: Name(\"\"), in: ``, ptr: new(any), err: \u0026SyntaxError{\"unexpected end of JSON input\", 0}},",
+         "matchingRanges": {
+          "lineNumber": "479",
+          "columnRanges": [
+           {
+            "startIndex": 64,
+            "length": 28
+           }
+          ]
+         },
+         "lineNumber": "479",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 17,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 26,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 63,
+            "length": 30
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 95,
+            "length": 1
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 64,
+           "length": 28
+          }
+         ]
+        },
+        {
+         "lineText": "\t{CaseName: Name(\"\"), in: \" \\n\\r\\t\", ptr: new(any), err: \u0026SyntaxError{\"unexpected end of JSON input\", len64(\" \\n\\r\\t\")}},",
+         "matchingRanges": {
+          "lineNumber": "480",
+          "columnRanges": [
+           {
+            "startIndex": 71,
+            "length": 28
+           }
+          ]
+         },
+         "lineNumber": "480",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 17,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 26,
+            "length": 9
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 70,
+            "length": 30
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 108,
+            "length": 9
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 71,
+           "length": 28
+          }
+         ]
+        },
+        {
+         "lineText": "\t{CaseName: Name(\"\"), in: `[2, 3`, ptr: new(any), err: \u0026SyntaxError{\"unexpected end of JSON input\", len64(`[2, 3`)}},",
+         "matchingRanges": {
+          "lineNumber": "481",
+          "columnRanges": [
+           {
+            "startIndex": 69,
+            "length": 28
+           }
+          ]
+         },
+         "lineNumber": "481",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 17,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 26,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 68,
+            "length": 30
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 106,
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 69,
+           "length": 28
+          }
+         ]
+        },
+        {
+         "lineText": "\t{CaseName: Name(\"\"), in: `{\"X\": \"foo\", \"Y\"}`, err: \u0026SyntaxError{\"invalid character '}' after object key\", len64(`{\"X\": \"foo\", \"Y\"}`)}},",
+         "matchingRanges": {
+          "lineNumber": "482"
+         },
+         "lineNumber": "482",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 17,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 26,
+            "length": 19
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 65,
+            "length": 40
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 113,
+            "length": 19
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t\t}",
+         "matchingRanges": {
+          "lineNumber": "1466"
+         },
+         "lineNumber": "1466"
+        },
+        {
+         "lineText": "\t\t\tif tt.err != nil \u0026\u0026 strings.Contains(tt.err.Error(), \"unexpected end of JSON input\") {",
+         "matchingRanges": {
+          "lineNumber": "1467",
+          "columnRanges": [
+           {
+            "startIndex": 57,
+            "length": 28
+           }
+          ]
+         },
+         "lineNumber": "1467",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 3,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 56,
+            "length": 30
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 57,
+           "length": 28
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t\t// In streaming mode, we expect EOF or ErrUnexpectedEOF instead.",
+         "matchingRanges": {
+          "lineNumber": "1468"
+         },
+         "lineNumber": "1468",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 64
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 4
+    },
+    "resultToken": "CAASAggBOLiGh__gpryOM0AASAA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/encoding/json/v2_decode_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t{Name(\"\"), `{\"result\":123}`, `json: cannot unmarshal number into Go struct field WrongString.result of type string`},",
+         "matchingRanges": {
+          "lineNumber": "1638"
+         },
+         "lineNumber": "1638",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 13,
+            "length": 16
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 31,
+            "length": 86
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t{Name(\"\"), `{\"result\":\"\\\"\"}`, `json: cannot unmarshal string into Go struct field WrongString.result of type string: unexpected end of JSON input`},",
+         "matchingRanges": {
+          "lineNumber": "1639",
+          "columnRanges": [
+           {
+            "startIndex": 119,
+            "length": 28
+           }
+          ]
+         },
+         "lineNumber": "1639",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 13,
+            "length": 17
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 32,
+            "length": 116
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 119,
+           "length": 28
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t{Name(\"\"), `{\"result\":\"\\\"foo\"}`, `json: cannot unmarshal string into Go struct field WrongString.result of type string: unexpected end of JSON input`},",
+         "matchingRanges": {
+          "lineNumber": "1640",
+          "columnRanges": [
+           {
+            "startIndex": 122,
+            "length": 28
+           }
+          ]
+         },
+         "lineNumber": "1640",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 13,
+            "length": 20
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 35,
+            "length": 116
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 122,
+           "length": 28
+          }
+         ]
+        },
+        {
+         "lineText": "\t}",
+         "matchingRanges": {
+          "lineNumber": "1641"
+         },
+         "lineNumber": "1641"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAESAggBONSur8LdwPahI0AASAE"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/encoding/json/scanner.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tif s.err == nil {",
+         "matchingRanges": {
+          "lineNumber": "172"
+         },
+         "lineNumber": "172",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\ts.err = \u0026SyntaxError{\"unexpected end of JSON input\", s.bytes}",
+         "matchingRanges": {
+          "lineNumber": "173",
+          "columnRanges": [
+           {
+            "startIndex": 24,
+            "length": 28
+           }
+          ]
+         },
+         "lineNumber": "173",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 23,
+            "length": 30
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 24,
+           "length": 28
+          }
+         ]
+        },
+        {
+         "lineText": "\t}",
+         "matchingRanges": {
+          "lineNumber": "174"
+         },
+         "lineNumber": "174"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAISAggBOIzV6Ou6ytn3sgFAAEgC"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/encoding/json/v2_scanner.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "var errUnexpectedEnd = errors.New(\"unexpected end of JSON input\")",
+         "matchingRanges": {
+          "lineNumber": "54",
+          "columnRanges": [
+           {
+            "startIndex": 35,
+            "length": 28
+           }
+          ]
+         },
+         "lineNumber": "54",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 34,
+            "length": 30
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 35,
+           "length": 28
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "55"
+         },
+         "lineNumber": "55"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAMSAggBONSqnuKMtYX0nQFAAEgD"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/go/internal/fsys/fsys_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t{`{`,",
+         "matchingRanges": {
+          "lineNumber": "1272"
+         },
+         "lineNumber": "1272",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\"parsing overlay JSON: unexpected end of JSON input\"},",
+         "matchingRanges": {
+          "lineNumber": "1273",
+          "columnRanges": [
+           {
+            "startIndex": 25,
+            "length": 28
+           }
+          ]
+         },
+         "lineNumber": "1273",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 52
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 25,
+           "length": 28
+          }
+         ]
+        },
+        {
+         "lineText": "\t{`{\"Replace\": {\"\":\"a\"}}`,",
+         "matchingRanges": {
+          "lineNumber": "1274"
+         },
+         "lineNumber": "1274",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 23
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAQSAggBOOSa9qDgodDdfUAASAQ"
+   }
+  ],
+  "estimatedResultCount": "5",
+  "exhaustive": true,
+  "requestToken": "Ch4idW5leHBlY3RlZCBlbmQgb2YgSlNPTiBpbnB1dCISHSggZ2l0OmdvL2dvQG1hc3RlciBjYXNlOnllcyApGgwImbuo0QYQscm7hAIgDCoAMgBIAQ"
+ }
+}

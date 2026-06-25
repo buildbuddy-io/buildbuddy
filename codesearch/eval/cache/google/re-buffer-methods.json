@@ -1,0 +1,5438 @@
+{
+ "query": "func \\(b \\*Buffer\\)",
+ "oss_project": "go",
+ "repo_name": "go",
+ "page_size": 50,
+ "fetched_at": "2026-06-11T02:30:15Z",
+ "response": {
+  "searchResults": [
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/log/slog/internal/buffer/buffer.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "var bufPool = sync.Pool{",
+         "matchingRanges": {
+          "lineNumber": "17"
+         },
+         "lineNumber": "17",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tNew: func() any {",
+         "matchingRanges": {
+          "lineNumber": "18",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "18",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tb := make([]byte, 0, 1024)",
+         "matchingRanges": {
+          "lineNumber": "19"
+         },
+         "lineNumber": "19",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 23,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\treturn (*Buffer)(\u0026b)",
+         "matchingRanges": {
+          "lineNumber": "20",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "20",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t},",
+         "matchingRanges": {
+          "lineNumber": "21"
+         },
+         "lineNumber": "21"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func New() *Buffer {",
+         "matchingRanges": {
+          "lineNumber": "24",
+          "columnRanges": [
+           {
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "24",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\treturn bufPool.Get().(*Buffer)",
+         "matchingRanges": {
+          "lineNumber": "25",
+          "columnRanges": [
+           {
+            "startIndex": 23,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "25",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 23,
+           "length": 8
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t*b = (*b)[:0]",
+         "matchingRanges": {
+          "lineNumber": "32"
+         },
+         "lineNumber": "32",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 13,
+            "length": 1
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tbufPool.Put(b)",
+         "matchingRanges": {
+          "lineNumber": "33",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 2
+           }
+          ]
+         },
+         "lineNumber": "33",
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 2
+          }
+         ]
+        },
+        {
+         "lineText": "\t}",
+         "matchingRanges": {
+          "lineNumber": "34"
+         },
+         "lineNumber": "34"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 13
+    },
+    "resultToken": "CAASAggBOPr769qH1IDE4wFAAEgA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/bytes/buffer.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// so immediate changes to the slice will affect the result of future reads.",
+         "matchingRanges": {
+          "lineNumber": "59"
+         },
+         "lineNumber": "59",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 76
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "func (b *Buffer) Bytes() []byte { return b.buf[b.off:] }",
+         "matchingRanges": {
+          "lineNumber": "60",
+          "columnRanges": [
+           {
+            "length": 4
+           },
+           {
+            "startIndex": 5,
+            "length": 2
+           },
+           {
+            "startIndex": 8,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "60",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 34,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "length": 4
+          },
+          {
+           "startIndex": 5,
+           "length": 2
+          },
+          {
+           "startIndex": 8,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "61"
+         },
+         "lineNumber": "61"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// The buffer is only valid until the next write operation on b.",
+         "matchingRanges": {
+          "lineNumber": "65"
+         },
+         "lineNumber": "65",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 64
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "func (b *Buffer) AvailableBuffer() []byte { return b.buf[len(b.buf):] }",
+         "matchingRanges": {
+          "lineNumber": "66",
+          "columnRanges": [
+           {
+            "length": 4
+           },
+           {
+            "startIndex": 5,
+            "length": 2
+           },
+           {
+            "startIndex": 8,
+            "length": 8
+           },
+           {
+            "startIndex": 60,
+            "length": 2
+           }
+          ]
+         },
+         "lineNumber": "66",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 44,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "length": 4
+          },
+          {
+           "startIndex": 5,
+           "length": 2
+          },
+          {
+           "startIndex": 8,
+           "length": 8
+          },
+          {
+           "startIndex": 60,
+           "length": 2
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "67"
+         },
+         "lineNumber": "67"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t}",
+         "matchingRanges": {
+          "lineNumber": "76"
+         },
+         "lineNumber": "76"
+        },
+        {
+         "lineText": "\treturn string(b.buf[b.off:])",
+         "matchingRanges": {
+          "lineNumber": "77",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 2
+           }
+          ]
+         },
+         "lineNumber": "77",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 2
+          }
+         ]
+        },
+        {
+         "lineText": "}",
+         "matchingRanges": {
+          "lineNumber": "78"
+         },
+         "lineNumber": "78"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 47
+    },
+    "resultToken": "CAESAggBOIaMvpOJ7JCbUUAASAE"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/bytes/buffer_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "func (r *negativeReader) Read([]byte) (int, error) { return -1, nil }",
+         "matchingRanges": {
+          "lineNumber": "24",
+          "columnRanges": [
+           {
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "24",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 53,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 61,
+            "length": 1
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "length": 4
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "25"
+         },
+         "lineNumber": "25"
+        },
+        {
+         "lineText": "func init() {",
+         "matchingRanges": {
+          "lineNumber": "26",
+          "columnRanges": [
+           {
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "26",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\ttestBytes = make([]byte, N)",
+         "matchingRanges": {
+          "lineNumber": "27"
+         },
+         "lineNumber": "27"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func TestReadEmptyAtEOF(t *testing.T) {",
+         "matchingRanges": {
+          "lineNumber": "627",
+          "columnRanges": [
+           {
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "627",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\tb := new(Buffer)",
+         "matchingRanges": {
+          "lineNumber": "628",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 2
+           }
+          ]
+         },
+         "lineNumber": "628",
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 2
+          }
+         ]
+        },
+        {
+         "lineText": "\tslice := make([]byte, 0)",
+         "matchingRanges": {
+          "lineNumber": "629"
+         },
+         "lineNumber": "629",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 23,
+            "length": 1
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tcap1 := b.Cap()",
+         "matchingRanges": {
+          "lineNumber": "693"
+         },
+         "lineNumber": "693"
+        },
+        {
+         "lineText": "\t// (*Buffer).grow allows for 2x capacity slop before sliding,",
+         "matchingRanges": {
+          "lineNumber": "694",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "694",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 61
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t// so set our error threshold at 3x.",
+         "matchingRanges": {
+          "lineNumber": "695"
+         },
+         "lineNumber": "695",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 36
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 78
+    },
+    "resultToken": "CAISAggBOJSYtIus7M7IW0AASAI"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "test/escape2.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "func foo1(x int) { // ERROR \"moved to heap: x$\"",
+         "matchingRanges": {
+          "lineNumber": "21",
+          "columnRanges": [
+           {
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "21",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 19,
+            "length": 28
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\tgxx = \u0026x",
+         "matchingRanges": {
+          "lineNumber": "22"
+         },
+         "lineNumber": "22"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func (b *Buffer) foo() { // ERROR \"b does not escape$\"",
+         "matchingRanges": {
+          "lineNumber": "1602",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 2
+           },
+           {
+            "startIndex": 8,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "1602",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 25,
+            "length": 29
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 2
+          },
+          {
+           "startIndex": 8,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\tb.buf1 = b.buf1[1:2]   // ERROR \"\\(\\*Buffer\\).foo ignoring self-assignment in b.buf1 = b.buf1\\[1:2\\]$\"",
+         "matchingRanges": {
+          "lineNumber": "1603"
+         },
+         "lineNumber": "1603",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 17,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 19,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 24,
+            "length": 79
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func (b *Buffer) bar() { // ERROR \"leaking param: b$\"",
+         "matchingRanges": {
+          "lineNumber": "1609",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 2
+           },
+           {
+            "startIndex": 8,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "1609",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 25,
+            "length": 28
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 2
+          },
+          {
+           "startIndex": 8,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\tb.buf1 = b.arr[1:2]",
+         "matchingRanges": {
+          "lineNumber": "1610"
+         },
+         "lineNumber": "1610",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 16,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 18,
+            "length": 1
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func (b *Buffer) bat() { // ERROR \"leaking param content: b$\"",
+         "matchingRanges": {
+          "lineNumber": "1623",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 2
+           },
+           {
+            "startIndex": 8,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "1623",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 25,
+            "length": 36
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 2
+          },
+          {
+           "startIndex": 8,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\to := new(Buffer) // ERROR \"new\\(Buffer\\) escapes to heap$\"",
+         "matchingRanges": {
+          "lineNumber": "1624",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 2
+           },
+           {
+            "startIndex": 32,
+            "length": 2
+           }
+          ]
+         },
+         "lineNumber": "1624",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 18,
+            "length": 41
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 2
+          },
+          {
+           "startIndex": 32,
+           "length": 2
+          }
+         ]
+        },
+        {
+         "lineText": "\to.buf1 = b.buf1[1:2]",
+         "matchingRanges": {
+          "lineNumber": "1625"
+         },
+         "lineNumber": "1625",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 17,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 19,
+            "length": 1
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 58
+    },
+    "resultToken": "CAMSAggBOOzDpbjLyJDwuQFAAEgD"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "test/escape2n.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "func foo1(x int) { // ERROR \"moved to heap: x$\"",
+         "matchingRanges": {
+          "lineNumber": "21",
+          "columnRanges": [
+           {
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "21",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 19,
+            "length": 28
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\tgxx = \u0026x",
+         "matchingRanges": {
+          "lineNumber": "22"
+         },
+         "lineNumber": "22"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func (b *Buffer) foo() { // ERROR \"b does not escape$\"",
+         "matchingRanges": {
+          "lineNumber": "1602",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 2
+           },
+           {
+            "startIndex": 8,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "1602",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 25,
+            "length": 29
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 2
+          },
+          {
+           "startIndex": 8,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\tb.buf1 = b.buf1[1:2]   // ERROR \"\\(\\*Buffer\\).foo ignoring self-assignment in b.buf1 = b.buf1\\[1:2\\]$\"",
+         "matchingRanges": {
+          "lineNumber": "1603"
+         },
+         "lineNumber": "1603",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 17,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 19,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 24,
+            "length": 79
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func (b *Buffer) bar() { // ERROR \"leaking param: b$\"",
+         "matchingRanges": {
+          "lineNumber": "1609",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 2
+           },
+           {
+            "startIndex": 8,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "1609",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 25,
+            "length": 28
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 2
+          },
+          {
+           "startIndex": 8,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\tb.buf1 = b.arr[1:2]",
+         "matchingRanges": {
+          "lineNumber": "1610"
+         },
+         "lineNumber": "1610",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 16,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 18,
+            "length": 1
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func (b *Buffer) bat() { // ERROR \"leaking param content: b$\"",
+         "matchingRanges": {
+          "lineNumber": "1623",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 2
+           },
+           {
+            "startIndex": 8,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "1623",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 25,
+            "length": 36
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 2
+          },
+          {
+           "startIndex": 8,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\to := new(Buffer) // ERROR \"new\\(Buffer\\) escapes to heap$\"",
+         "matchingRanges": {
+          "lineNumber": "1624",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 2
+           },
+           {
+            "startIndex": 32,
+            "length": 2
+           }
+          ]
+         },
+         "lineNumber": "1624",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 18,
+            "length": 41
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 2
+          },
+          {
+           "startIndex": 32,
+           "length": 2
+          }
+         ]
+        },
+        {
+         "lineText": "\to.buf1 = b.buf1[1:2]",
+         "matchingRanges": {
+          "lineNumber": "1625"
+         },
+         "lineNumber": "1625",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 17,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 19,
+            "length": 1
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 58
+    },
+    "resultToken": "CAQSAggBOO7GztO6s77iTUAASAQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/vendor/golang.org/x/tools/internal/stdlib/manifest.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t{\"ErrWriteTooLong\", Var, 0, \"\"},",
+         "matchingRanges": {
+          "lineNumber": "32"
+         },
+         "lineNumber": "32",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 3,
+            "length": 17
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 27,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 30,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t{\"FileInfoHeader\", Func, 1, \"func(fi fs.FileInfo, link string) (*Header, error)\"},",
+         "matchingRanges": {
+          "lineNumber": "33",
+          "columnRanges": [
+           {
+            "startIndex": 21,
+            "length": 4
+           },
+           {
+            "startIndex": 31,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "33",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 3,
+            "length": 16
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 27,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 30,
+            "length": 52
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 21,
+           "length": 4
+          },
+          {
+           "startIndex": 31,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t{\"FileInfoNames\", Type, 23, \"\"},",
+         "matchingRanges": {
+          "lineNumber": "34"
+         },
+         "lineNumber": "34",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 3,
+            "length": 15
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 26,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 30,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t{\"(*Buffer).Available\", Method, 21, \"\"},",
+         "matchingRanges": {
+          "lineNumber": "229",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "229",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 3,
+            "length": 21
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 34,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 38,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t{\"(*Buffer).AvailableBuffer\", Method, 21, \"\"},",
+         "matchingRanges": {
+          "lineNumber": "230",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "230",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 3,
+            "length": 27
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 40,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 44,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t{\"(*Buffer).Bytes\", Method, 0, \"\"},",
+         "matchingRanges": {
+          "lineNumber": "231",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "231",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 3,
+            "length": 17
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 30,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 33,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 8
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t{\"Clone\", Func, 20, \"func(b []byte) []byte\"},",
+         "matchingRanges": {
+          "lineNumber": "265",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 4
+           },
+           {
+            "startIndex": 27,
+            "length": 2
+           }
+          ]
+         },
+         "lineNumber": "265",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 3,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 18,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 22,
+            "length": 23
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 4
+          },
+          {
+           "startIndex": 27,
+           "length": 2
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t{\"Compare\", Func, 0, \"func(a []byte, b []byte) int\"},",
+         "matchingRanges": {
+          "lineNumber": "266"
+         },
+         "lineNumber": "266",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 3,
+            "length": 9
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 23,
+            "length": 30
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t{\"Contains\", Func, 0, \"func(b []byte, subslice []byte) bool\"},",
+         "matchingRanges": {
+          "lineNumber": "267",
+          "columnRanges": [
+           {
+            "startIndex": 29,
+            "length": 2
+           }
+          ]
+         },
+         "lineNumber": "267",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 3,
+            "length": 10
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 21,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 24,
+            "length": 38
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 29,
+           "length": 2
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t{\"ContainsAny\", Func, 7, \"func(b []byte, chars string) bool\"},",
+         "matchingRanges": {
+          "lineNumber": "268",
+          "columnRanges": [
+           {
+            "startIndex": 32,
+            "length": 2
+           }
+          ]
+         },
+         "lineNumber": "268",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 3,
+            "length": 13
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 24,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 27,
+            "length": 35
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 32,
+           "length": 2
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 84
+    },
+    "resultToken": "CAUSAggBOJrA-rfNvvHiBUAASAU"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/internal/edit/edit.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "func (x edits) Len() int      { return len(x) }",
+         "matchingRanges": {
+          "lineNumber": "29",
+          "columnRanges": [
+           {
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "29",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 32,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "func (x edits) Swap(i, j int) { x[i], x[j] = x[j], x[i] }",
+         "matchingRanges": {
+          "lineNumber": "30",
+          "columnRanges": [
+           {
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "30",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "func (x edits) Less(i, j int) bool {",
+         "matchingRanges": {
+          "lineNumber": "31",
+          "columnRanges": [
+           {
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "31",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "length": 4
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func (b *Buffer) Insert(pos int, new string) {",
+         "matchingRanges": {
+          "lineNumber": "45",
+          "columnRanges": [
+           {
+            "length": 4
+           },
+           {
+            "startIndex": 5,
+            "length": 2
+           },
+           {
+            "startIndex": 8,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "45",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "length": 4
+          },
+          {
+           "startIndex": 5,
+           "length": 2
+          },
+          {
+           "startIndex": 8,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\tif pos \u003c 0 || pos \u003e len(b.old) {",
+         "matchingRanges": {
+          "lineNumber": "46",
+          "columnRanges": [
+           {
+            "startIndex": 24,
+            "length": 2
+           }
+          ]
+         },
+         "lineNumber": "46",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 10,
+            "length": 1
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 24,
+           "length": 2
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tpanic(\"invalid edit position\")",
+         "matchingRanges": {
+          "lineNumber": "47"
+         },
+         "lineNumber": "47",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 23
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t}",
+         "matchingRanges": {
+          "lineNumber": "48"
+         },
+         "lineNumber": "48"
+        },
+        {
+         "lineText": "\tb.q = append(b.q, edit{pos, pos, new})",
+         "matchingRanges": {
+          "lineNumber": "49",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 2
+           }
+          ]
+         },
+         "lineNumber": "49",
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 2
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func (b *Buffer) Delete(start, end int) {",
+         "matchingRanges": {
+          "lineNumber": "52",
+          "columnRanges": [
+           {
+            "length": 4
+           },
+           {
+            "startIndex": 5,
+            "length": 2
+           },
+           {
+            "startIndex": 8,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "52",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "length": 4
+          },
+          {
+           "startIndex": 5,
+           "length": 2
+          },
+          {
+           "startIndex": 8,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\tif end \u003c start || start \u003c 0 || end \u003e len(b.old) {",
+         "matchingRanges": {
+          "lineNumber": "53",
+          "columnRanges": [
+           {
+            "startIndex": 41,
+            "length": 2
+           }
+          ]
+         },
+         "lineNumber": "53",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 27,
+            "length": 1
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 41,
+           "length": 2
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 17
+    },
+    "resultToken": "CAYSAggBOJak2ZWAq-Sk5wFAAEgG"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/compile/internal/test/inl_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t\t\"heapSetTypeSmallHeader\",",
+         "matchingRanges": {
+          "lineNumber": "48"
+         },
+         "lineNumber": "48",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 3,
+            "length": 24
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t\"itabHashFunc\",",
+         "matchingRanges": {
+          "lineNumber": "49",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "49",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 3,
+            "length": 14
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t\"nextslicecap\",",
+         "matchingRanges": {
+          "lineNumber": "50"
+         },
+         "lineNumber": "50",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 3,
+            "length": 14
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t\t\"(*Buffer).Bytes\",",
+         "matchingRanges": {
+          "lineNumber": "96",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "96",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 3,
+            "length": 17
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t\"(*Buffer).Cap\",",
+         "matchingRanges": {
+          "lineNumber": "97",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "97",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 3,
+            "length": 15
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t\"(*Buffer).Len\",",
+         "matchingRanges": {
+          "lineNumber": "98",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "98",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 3,
+            "length": 15
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t\"(*Buffer).Grow\",",
+         "matchingRanges": {
+          "lineNumber": "99",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "99",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 3,
+            "length": 16
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 8
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t}",
+         "matchingRanges": {
+          "lineNumber": "412"
+         },
+         "lineNumber": "412"
+        },
+        {
+         "lineText": "\t\tmbase := collectInlCands(string(b))",
+         "matchingRanges": {
+          "lineNumber": "413",
+          "columnRanges": [
+           {
+            "startIndex": 33,
+            "length": 2
+           }
+          ]
+         },
+         "lineNumber": "413",
+         "ranges": [
+          {
+           "startIndex": 33,
+           "length": 2
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "414"
+         },
+         "lineNumber": "414"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 31
+    },
+    "resultToken": "CAcSAggBOITvtpTvjYv62wFAAEgH"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "api/go1.txt",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "pkg bytes, func Fields([]uint8) [][]uint8",
+         "matchingRanges": {
+          "lineNumber": "141",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "141",
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "pkg bytes, func FieldsFunc([]uint8, func(int32) bool) [][]uint8",
+         "matchingRanges": {
+          "lineNumber": "142",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 4
+           },
+           {
+            "startIndex": 22,
+            "length": 4
+           },
+           {
+            "startIndex": 36,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "142",
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 4
+          },
+          {
+           "startIndex": 22,
+           "length": 4
+          },
+          {
+           "startIndex": 36,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "pkg bytes, func HasPrefix([]uint8, []uint8) bool",
+         "matchingRanges": {
+          "lineNumber": "143",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "143",
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 4
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "pkg bytes, method (*Buffer) Bytes() []uint8",
+         "matchingRanges": {
+          "lineNumber": "179",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "179",
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "pkg bytes, method (*Buffer) Len() int",
+         "matchingRanges": {
+          "lineNumber": "180",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "180",
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "pkg bytes, method (*Buffer) Next(int) []uint8",
+         "matchingRanges": {
+          "lineNumber": "181",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "181",
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "pkg bytes, method (*Buffer) Read([]uint8) (int, error)",
+         "matchingRanges": {
+          "lineNumber": "182",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "182",
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 8
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "pkg crypto/cipher, func NewCBCDecrypter(Block, []uint8) BlockMode",
+         "matchingRanges": {
+          "lineNumber": "341",
+          "columnRanges": [
+           {
+            "startIndex": 39,
+            "length": 2
+           }
+          ]
+         },
+         "lineNumber": "341",
+         "ranges": [
+          {
+           "startIndex": 39,
+           "length": 2
+          }
+         ]
+        },
+        {
+         "lineText": "pkg crypto/cipher, func NewCBCEncrypter(Block, []uint8) BlockMode",
+         "matchingRanges": {
+          "lineNumber": "342",
+          "columnRanges": [
+           {
+            "startIndex": 39,
+            "length": 2
+           }
+          ]
+         },
+         "lineNumber": "342",
+         "ranges": [
+          {
+           "startIndex": 39,
+           "length": 2
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 80
+    },
+    "resultToken": "CAgSAggBOOjf65ehl6OAuQFAAEgI"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "test/fixedbugs/bug184.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "func (*Buffer) Read() {}",
+         "matchingRanges": {
+          "lineNumber": "13",
+          "columnRanges": [
+           {
+            "length": 4
+           },
+           {
+            "startIndex": 6,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "13",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "length": 4
+          },
+          {
+           "startIndex": 6,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "14"
+         },
+         "lineNumber": "14"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func f() *Buffer { return nil }",
+         "matchingRanges": {
+          "lineNumber": "19",
+          "columnRanges": [
+           {
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "19",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 19,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "length": 4
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "20"
+         },
+         "lineNumber": "20"
+        },
+        {
+         "lineText": "func g() Reader {",
+         "matchingRanges": {
+          "lineNumber": "21",
+          "columnRanges": [
+           {
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "21",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "length": 4
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func h() (b *Buffer, ok bool) { return }",
+         "matchingRanges": {
+          "lineNumber": "26",
+          "columnRanges": [
+           {
+            "length": 4
+           },
+           {
+            "startIndex": 9,
+            "length": 2
+           }
+          ]
+         },
+         "lineNumber": "26",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 32,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "length": 4
+          },
+          {
+           "startIndex": 9,
+           "length": 2
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "27"
+         },
+         "lineNumber": "27"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tb := g()",
+         "matchingRanges": {
+          "lineNumber": "36"
+         },
+         "lineNumber": "36"
+        },
+        {
+         "lineText": "\tbb, ok := b.(*Buffer)",
+         "matchingRanges": {
+          "lineNumber": "37",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "37",
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t_, _, _ = b, bb, ok",
+         "matchingRanges": {
+          "lineNumber": "38"
+         },
+         "lineNumber": "38"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 9
+    },
+    "resultToken": "CAkSAggBOObQj_PlyOuilAFAAEgJ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "api/go1.5.txt",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "pkg bufio, method (ReadWriter) Discard(int) (int, error)",
+         "matchingRanges": {
+          "lineNumber": "3"
+         },
+         "lineNumber": "3"
+        },
+        {
+         "lineText": "pkg bytes, func LastIndexByte([]uint8, uint8) int",
+         "matchingRanges": {
+          "lineNumber": "4",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "4",
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "pkg bytes, method (*Buffer) Cap() int",
+         "matchingRanges": {
+          "lineNumber": "5",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "5",
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "pkg bytes, method (*Reader) Size() int64",
+         "matchingRanges": {
+          "lineNumber": "6"
+         },
+         "lineNumber": "6"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "pkg crypto, type DecrypterOpts interface {}",
+         "matchingRanges": {
+          "lineNumber": "14"
+         },
+         "lineNumber": "14"
+        },
+        {
+         "lineText": "pkg crypto/cipher, func NewGCMWithNonceSize(Block, int) (AEAD, error)",
+         "matchingRanges": {
+          "lineNumber": "15",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 4
+           },
+           {
+            "startIndex": 43,
+            "length": 2
+           }
+          ]
+         },
+         "lineNumber": "15",
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 4
+          },
+          {
+           "startIndex": 43,
+           "length": 2
+          }
+         ]
+        },
+        {
+         "lineText": "pkg crypto/elliptic, type CurveParams struct, Name string",
+         "matchingRanges": {
+          "lineNumber": "16"
+         },
+         "lineNumber": "16"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "pkg go/constant, func Int64Val(Value) (int64, bool)",
+         "matchingRanges": {
+          "lineNumber": "311",
+          "columnRanges": [
+           {
+            "startIndex": 17,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "311",
+         "ranges": [
+          {
+           "startIndex": 17,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "pkg go/constant, func MakeBool(bool) Value",
+         "matchingRanges": {
+          "lineNumber": "312",
+          "columnRanges": [
+           {
+            "startIndex": 17,
+            "length": 4
+           },
+           {
+            "startIndex": 30,
+            "length": 2
+           }
+          ]
+         },
+         "lineNumber": "312",
+         "ranges": [
+          {
+           "startIndex": 17,
+           "length": 4
+          },
+          {
+           "startIndex": 30,
+           "length": 2
+          }
+         ]
+        },
+        {
+         "lineText": "pkg go/constant, func MakeFloat64(float64) Value",
+         "matchingRanges": {
+          "lineNumber": "313",
+          "columnRanges": [
+           {
+            "startIndex": 17,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "313",
+         "ranges": [
+          {
+           "startIndex": 17,
+           "length": 4
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 42
+    },
+    "resultToken": "CAoSAggBOKDvtdzlq9S4H0AASAo"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/compile/internal/escape/utils.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "func isSliceSelfAssign(dst, src ir.Node) bool {",
+         "matchingRanges": {
+          "lineNumber": "13",
+          "columnRanges": [
+           {
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "13",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\t// Detect the following special case.",
+         "matchingRanges": {
+          "lineNumber": "14"
+         },
+         "lineNumber": "14",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 37
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t//",
+         "matchingRanges": {
+          "lineNumber": "15"
+         },
+         "lineNumber": "15",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t//\tfunc (b *Buffer) Foo() {",
+         "matchingRanges": {
+          "lineNumber": "16",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 4
+           },
+           {
+            "startIndex": 9,
+            "length": 2
+           },
+           {
+            "startIndex": 12,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "16",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 27
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 4
+          },
+          {
+           "startIndex": 9,
+           "length": 2
+          },
+          {
+           "startIndex": 12,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t//\t\tn, m := ...",
+         "matchingRanges": {
+          "lineNumber": "17"
+         },
+         "lineNumber": "17",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 15
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// be ignored by the escape analysis as it's effectively a self-assignment.",
+         "matchingRanges": {
+          "lineNumber": "85"
+         },
+         "lineNumber": "85",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 75
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "func isSelfAssign(dst, src ir.Node) bool {",
+         "matchingRanges": {
+          "lineNumber": "86",
+          "columnRanges": [
+           {
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "86",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\tif isSliceSelfAssign(dst, src) {",
+         "matchingRanges": {
+          "lineNumber": "87"
+         },
+         "lineNumber": "87",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 5
+    },
+    "resultToken": "CAsSAggBOJS7pY_3n66pM0AASAs"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "api/go1.21.txt",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "pkg bytes, func ContainsFunc([]uint8, func(int32) bool) bool #54386",
+         "matchingRanges": {
+          "lineNumber": "1",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 4
+           },
+           {
+            "startIndex": 24,
+            "length": 4
+           },
+           {
+            "startIndex": 38,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "1",
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 4
+          },
+          {
+           "startIndex": 24,
+           "length": 4
+          },
+          {
+           "startIndex": 38,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "pkg bytes, method (*Buffer) AvailableBuffer() []uint8 #53685",
+         "matchingRanges": {
+          "lineNumber": "2",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "2",
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "pkg bytes, method (*Buffer) Available() int #53685",
+         "matchingRanges": {
+          "lineNumber": "3",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "3",
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "pkg cmp, func Compare[$0 Ordered]($0, $0) int #59488",
+         "matchingRanges": {
+          "lineNumber": "4",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "4",
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 4
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "pkg context, func AfterFunc(Context, func()) func() bool #57928",
+         "matchingRanges": {
+          "lineNumber": "7",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 4
+           },
+           {
+            "startIndex": 23,
+            "length": 4
+           },
+           {
+            "startIndex": 37,
+            "length": 4
+           },
+           {
+            "startIndex": 45,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "7",
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 4
+          },
+          {
+           "startIndex": 23,
+           "length": 4
+          },
+          {
+           "startIndex": 37,
+           "length": 4
+          },
+          {
+           "startIndex": 45,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "pkg context, func WithDeadlineCause(Context, time.Time, error) (Context, CancelFunc) #56661",
+         "matchingRanges": {
+          "lineNumber": "8",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 4
+           },
+           {
+            "startIndex": 79,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "8",
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 4
+          },
+          {
+           "startIndex": 79,
+           "length": 4
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "pkg log/slog, func Bool(string, bool) Attr #56345",
+         "matchingRanges": {
+          "lineNumber": "227",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "227",
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "pkg log/slog, func BoolValue(bool) Value #56345",
+         "matchingRanges": {
+          "lineNumber": "228",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 4
+           },
+           {
+            "startIndex": 28,
+            "length": 2
+           }
+          ]
+         },
+         "lineNumber": "228",
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 4
+          },
+          {
+           "startIndex": 28,
+           "length": 2
+          }
+         ]
+        },
+        {
+         "lineText": "pkg log/slog, func DebugContext(context.Context, string, ...interface{}) #61200",
+         "matchingRanges": {
+          "lineNumber": "229",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "229",
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 4
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 35
+    },
+    "resultToken": "CAwSAggBOMb-pu3bmZn5xgFAAEgM"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/internal/profile/encode.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\tfor i, ln := range l.Line {",
+         "matchingRanges": {
+          "lineNumber": "75"
+         },
+         "lineNumber": "75",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 15,
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\tif ln.Function != nil {",
+         "matchingRanges": {
+          "lineNumber": "76",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "76",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 3,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t\tl.Line[i].functionIDX = ln.Function.ID",
+         "matchingRanges": {
+          "lineNumber": "77",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 4
+           },
+           {
+            "startIndex": 31,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "77",
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 4
+          },
+          {
+           "startIndex": 31,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t} else {",
+         "matchingRanges": {
+          "lineNumber": "78"
+         },
+         "lineNumber": "78",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 5,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func (p *Profile) encode(b *buffer) {",
+         "matchingRanges": {
+          "lineNumber": "108",
+          "columnRanges": [
+           {
+            "length": 4
+           },
+           {
+            "startIndex": 24,
+            "length": 2
+           },
+           {
+            "startIndex": 27,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "108",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "length": 4
+          },
+          {
+           "startIndex": 24,
+           "length": 2
+          },
+          {
+           "startIndex": 27,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\tfor _, x := range p.SampleType {",
+         "matchingRanges": {
+          "lineNumber": "109"
+         },
+         "lineNumber": "109",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 13,
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tencodeMessage(b, 1, x)",
+         "matchingRanges": {
+          "lineNumber": "110",
+          "columnRanges": [
+           {
+            "startIndex": 15,
+            "length": 2
+           }
+          ]
+         },
+         "lineNumber": "110",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 19,
+            "length": 1
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 15,
+           "length": 2
+          }
+         ]
+        },
+        {
+         "lineText": "\t}",
+         "matchingRanges": {
+          "lineNumber": "111"
+         },
+         "lineNumber": "111"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "var functionDecoder = []decoder{",
+         "matchingRanges": {
+          "lineNumber": "449",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "449",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\tnil, // 0",
+         "matchingRanges": {
+          "lineNumber": "450"
+         },
+         "lineNumber": "450",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 6,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 62
+    },
+    "resultToken": "CA0SBAgBIAE4sreA_rbQxaUNQABIDQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/text/tabwriter/tabwriter_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "func (b *buffer) init(n int) { b.a = make([]byte, 0, n) }",
+         "matchingRanges": {
+          "lineNumber": "19",
+          "columnRanges": [
+           {
+            "length": 4
+           },
+           {
+            "startIndex": 5,
+            "length": 2
+           },
+           {
+            "startIndex": 8,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "19",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 50,
+            "length": 1
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "length": 4
+          },
+          {
+           "startIndex": 5,
+           "length": 2
+          },
+          {
+           "startIndex": 8,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "20"
+         },
+         "lineNumber": "20"
+        },
+        {
+         "lineText": "func (b *buffer) clear() { b.a = b.a[0:0] }",
+         "matchingRanges": {
+          "lineNumber": "21",
+          "columnRanges": [
+           {
+            "length": 4
+           },
+           {
+            "startIndex": 5,
+            "length": 2
+           },
+           {
+            "startIndex": 8,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "21",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 37,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 39,
+            "length": 1
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "length": 4
+          },
+          {
+           "startIndex": 5,
+           "length": 2
+          },
+          {
+           "startIndex": 8,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "22"
+         },
+         "lineNumber": "22"
+        },
+        {
+         "lineText": "func (b *buffer) Write(buf []byte) (written int, err error) {",
+         "matchingRanges": {
+          "lineNumber": "23",
+          "columnRanges": [
+           {
+            "length": 4
+           },
+           {
+            "startIndex": 5,
+            "length": 2
+           },
+           {
+            "startIndex": 8,
+            "length": 8
+           },
+           {
+            "startIndex": 22,
+            "length": 2
+           }
+          ]
+         },
+         "lineNumber": "23",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "length": 4
+          },
+          {
+           "startIndex": 5,
+           "length": 2
+          },
+          {
+           "startIndex": 8,
+           "length": 8
+          },
+          {
+           "startIndex": 22,
+           "length": 2
+          }
+         ]
+        },
+        {
+         "lineText": "\tn := len(b.a)",
+         "matchingRanges": {
+          "lineNumber": "24",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 2
+           }
+          ]
+         },
+         "lineNumber": "24",
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 2
+          }
+         ]
+        },
+        {
+         "lineText": "\tm := len(buf)",
+         "matchingRanges": {
+          "lineNumber": "25",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 2
+           }
+          ]
+         },
+         "lineNumber": "25",
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 2
+          }
+         ]
+        },
+        {
+         "lineText": "\tif n+m \u003c= cap(b.a) {",
+         "matchingRanges": {
+          "lineNumber": "26",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 2
+           }
+          ]
+         },
+         "lineNumber": "26",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 2
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tb.a = b.a[0 : n+m]",
+         "matchingRanges": {
+          "lineNumber": "27"
+         },
+         "lineNumber": "27",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 12,
+            "length": 1
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 25
+    },
+    "resultToken": "CA4SAggBOKzU3pGC3ISgK0AASA4"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/vendor/github.com/google/pprof/profile/encode.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\tfor i, ln := range l.Line {",
+         "matchingRanges": {
+          "lineNumber": "92"
+         },
+         "lineNumber": "92",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 15,
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\tif ln.Function != nil {",
+         "matchingRanges": {
+          "lineNumber": "93",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "93",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 3,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t\tl.Line[i].functionIDX = ln.Function.ID",
+         "matchingRanges": {
+          "lineNumber": "94",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 4
+           },
+           {
+            "startIndex": 31,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "94",
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 4
+          },
+          {
+           "startIndex": 31,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t} else {",
+         "matchingRanges": {
+          "lineNumber": "95"
+         },
+         "lineNumber": "95",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 5,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func (p *Profile) encode(b *buffer) {",
+         "matchingRanges": {
+          "lineNumber": "133",
+          "columnRanges": [
+           {
+            "length": 4
+           },
+           {
+            "startIndex": 24,
+            "length": 2
+           },
+           {
+            "startIndex": 27,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "133",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "length": 4
+          },
+          {
+           "startIndex": 24,
+           "length": 2
+          },
+          {
+           "startIndex": 27,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\tfor _, x := range p.SampleType {",
+         "matchingRanges": {
+          "lineNumber": "134"
+         },
+         "lineNumber": "134",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 13,
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tencodeMessage(b, 1, x)",
+         "matchingRanges": {
+          "lineNumber": "135",
+          "columnRanges": [
+           {
+            "startIndex": 15,
+            "length": 2
+           }
+          ]
+         },
+         "lineNumber": "135",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 19,
+            "length": 1
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 15,
+           "length": 2
+          }
+         ]
+        },
+        {
+         "lineText": "\t}",
+         "matchingRanges": {
+          "lineNumber": "136"
+         },
+         "lineNumber": "136"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "var functionDecoder = []decoder{",
+         "matchingRanges": {
+          "lineNumber": "563",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "563",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\tnil, // 0",
+         "matchingRanges": {
+          "lineNumber": "564"
+         },
+         "lineNumber": "564",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 6,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 64
+    },
+    "resultToken": "CA8SBAgBIAE4_tmmtpSAoMo_QABIDw"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/fmt/print.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// Write is the function to call to emit formatted output to be printed.",
+         "matchingRanges": {
+          "lineNumber": "40",
+          "columnRanges": [
+           {
+            "startIndex": 17,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "40",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 72
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 17,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\tWrite(b []byte) (n int, err error)",
+         "matchingRanges": {
+          "lineNumber": "41",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 2
+           }
+          ]
+         },
+         "lineNumber": "41",
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 2
+          }
+         ]
+        },
+        {
+         "lineText": "\t// Width returns the value of the width option and whether it has been set.",
+         "matchingRanges": {
+          "lineNumber": "42"
+         },
+         "lineNumber": "42",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 75
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// directive triggering the call to Format.",
+         "matchingRanges": {
+          "lineNumber": "80"
+         },
+         "lineNumber": "80",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 43
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "func FormatString(state State, verb rune) string {",
+         "matchingRanges": {
+          "lineNumber": "81",
+          "columnRanges": [
+           {
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "81",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\tvar tmp [16]byte // Use a local buffer.",
+         "matchingRanges": {
+          "lineNumber": "82"
+         },
+         "lineNumber": "82",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 10,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 18,
+            "length": 22
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func (b *buffer) write(p []byte) {",
+         "matchingRanges": {
+          "lineNumber": "103",
+          "columnRanges": [
+           {
+            "length": 4
+           },
+           {
+            "startIndex": 5,
+            "length": 2
+           },
+           {
+            "startIndex": 8,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "103",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "length": 4
+          },
+          {
+           "startIndex": 5,
+           "length": 2
+          },
+          {
+           "startIndex": 8,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t*b = append(*b, p...)",
+         "matchingRanges": {
+          "lineNumber": "104"
+         },
+         "lineNumber": "104"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func (b *buffer) writeString(s string) {",
+         "matchingRanges": {
+          "lineNumber": "107",
+          "columnRanges": [
+           {
+            "length": 4
+           },
+           {
+            "startIndex": 5,
+            "length": 2
+           },
+           {
+            "startIndex": 8,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "107",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "length": 4
+          },
+          {
+           "startIndex": 5,
+           "length": 2
+          },
+          {
+           "startIndex": 8,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t*b = append(*b, s...)",
+         "matchingRanges": {
+          "lineNumber": "108"
+         },
+         "lineNumber": "108"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 59
+    },
+    "resultToken": "CBASAggBOMTpwciY6ffDeEAASBA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/fmt/format.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "func (f *fmt) clearflags() {",
+         "matchingRanges": {
+          "lineNumber": "54",
+          "columnRanges": [
+           {
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "54",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\tf.fmtFlags = fmtFlags{}",
+         "matchingRanges": {
+          "lineNumber": "55"
+         },
+         "lineNumber": "55"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func (f *fmt) init(buf *buffer) {",
+         "matchingRanges": {
+          "lineNumber": "60",
+          "columnRanges": [
+           {
+            "length": 4
+           },
+           {
+            "startIndex": 18,
+            "length": 2
+           },
+           {
+            "startIndex": 23,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "60",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "length": 4
+          },
+          {
+           "startIndex": 18,
+           "length": 2
+          },
+          {
+           "startIndex": 23,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\tf.buf = buf",
+         "matchingRanges": {
+          "lineNumber": "61"
+         },
+         "lineNumber": "61"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func (f *fmt) pad(b []byte) {",
+         "matchingRanges": {
+          "lineNumber": "93",
+          "columnRanges": [
+           {
+            "length": 4
+           },
+           {
+            "startIndex": 17,
+            "length": 2
+           }
+          ]
+         },
+         "lineNumber": "93",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "length": 4
+          },
+          {
+           "startIndex": 17,
+           "length": 2
+          }
+         ]
+        },
+        {
+         "lineText": "\tif !f.widPresent || f.wid == 0 {",
+         "matchingRanges": {
+          "lineNumber": "94"
+         },
+         "lineNumber": "94",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 30,
+            "length": 1
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tf.buf.write(b)",
+         "matchingRanges": {
+          "lineNumber": "95",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 2
+           }
+          ]
+         },
+         "lineNumber": "95",
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 2
+          }
+         ]
+        },
+        {
+         "lineText": "\t\treturn",
+         "matchingRanges": {
+          "lineNumber": "96"
+         },
+         "lineNumber": "96",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t}",
+         "matchingRanges": {
+          "lineNumber": "97"
+         },
+         "lineNumber": "97"
+        },
+        {
+         "lineText": "\twidth := f.wid - utf8.RuneCount(b)",
+         "matchingRanges": {
+          "lineNumber": "98",
+          "columnRanges": [
+           {
+            "startIndex": 32,
+            "length": 2
+           }
+          ]
+         },
+         "lineNumber": "98",
+         "ranges": [
+          {
+           "startIndex": 32,
+           "length": 2
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 50
+    },
+    "resultToken": "CBESAggBOLDH6uLS2LWIS0AASBE"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/internal/profile/proto.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "//   decoder() []decoder",
+         "matchingRanges": {
+          "lineNumber": "8"
+         },
+         "lineNumber": "8",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 24
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "//   encode(*buffer)",
+         "matchingRanges": {
+          "lineNumber": "9",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "9",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 20
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "//",
+         "matchingRanges": {
+          "lineNumber": "10"
+         },
+         "lineNumber": "10",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "type decoder func(*buffer, message) error",
+         "matchingRanges": {
+          "lineNumber": "38",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "38",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 13,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "39"
+         },
+         "lineNumber": "39"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func marshal(m message) []byte {",
+         "matchingRanges": {
+          "lineNumber": "45",
+          "columnRanges": [
+           {
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "45",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\tvar b buffer",
+         "matchingRanges": {
+          "lineNumber": "46"
+         },
+         "lineNumber": "46",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func encodeVarint(b *buffer, x uint64) {",
+         "matchingRanges": {
+          "lineNumber": "51",
+          "columnRanges": [
+           {
+            "length": 4
+           },
+           {
+            "startIndex": 17,
+            "length": 2
+           }
+          ]
+         },
+         "lineNumber": "51",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "length": 4
+          },
+          {
+           "startIndex": 17,
+           "length": 2
+          }
+         ]
+        },
+        {
+         "lineText": "\tfor x \u003e= 128 {",
+         "matchingRanges": {
+          "lineNumber": "52"
+         },
+         "lineNumber": "52",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 10,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tb.data = append(b.data, byte(x)|0x80)",
+         "matchingRanges": {
+          "lineNumber": "53",
+          "columnRanges": [
+           {
+            "startIndex": 17,
+            "length": 2
+           }
+          ]
+         },
+         "lineNumber": "53",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 34,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 17,
+           "length": 2
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 63
+    },
+    "resultToken": "CBISAggBOOj7qbmGpqfYX0AASBI"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/internal/profile/proto_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "func TestPackedEncoding(t *testing.T) {",
+         "matchingRanges": {
+          "lineNumber": "12",
+          "columnRanges": [
+           {
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "12",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "length": 4
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "13"
+         },
+         "lineNumber": "13"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func (u *packedInts) decoder() []decoder {",
+         "matchingRanges": {
+          "lineNumber": "60",
+          "columnRanges": [
+           {
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "60",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\treturn []decoder{",
+         "matchingRanges": {
+          "lineNumber": "61"
+         },
+         "lineNumber": "61",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tnil,",
+         "matchingRanges": {
+          "lineNumber": "62"
+         },
+         "lineNumber": "62"
+        },
+        {
+         "lineText": "\t\tfunc(b *buffer, m message) error { return decodeUint64s(b, \u0026m.(*packedInts).uint64s) },",
+         "matchingRanges": {
+          "lineNumber": "63",
+          "columnRanges": [
+           {
+            "startIndex": 2,
+            "length": 6
+           },
+           {
+            "startIndex": 57,
+            "length": 2
+           }
+          ]
+         },
+         "lineNumber": "63",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 37,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 2,
+           "length": 6
+          },
+          {
+           "startIndex": 57,
+           "length": 2
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tfunc(b *buffer, m message) error { return decodeInt64s(b, \u0026m.(*packedInts).int64s) },",
+         "matchingRanges": {
+          "lineNumber": "64",
+          "columnRanges": [
+           {
+            "startIndex": 2,
+            "length": 6
+           },
+           {
+            "startIndex": 56,
+            "length": 2
+           }
+          ]
+         },
+         "lineNumber": "64",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 37,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 2,
+           "length": 6
+          },
+          {
+           "startIndex": 56,
+           "length": 2
+          }
+         ]
+        },
+        {
+         "lineText": "\t}",
+         "matchingRanges": {
+          "lineNumber": "65"
+         },
+         "lineNumber": "65"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func (u *packedInts) encode(b *buffer) {",
+         "matchingRanges": {
+          "lineNumber": "68",
+          "columnRanges": [
+           {
+            "length": 4
+           },
+           {
+            "startIndex": 27,
+            "length": 2
+           },
+           {
+            "startIndex": 30,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "68",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "length": 4
+          },
+          {
+           "startIndex": 27,
+           "length": 2
+          },
+          {
+           "startIndex": 30,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\tencodeUint64s(b, 1, u.uint64s)",
+         "matchingRanges": {
+          "lineNumber": "69",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 2
+           }
+          ]
+         },
+         "lineNumber": "69",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 18,
+            "length": 1
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 2
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 7
+    },
+    "resultToken": "CBMSAggBOLznzMmu0qvrogFAAEgT"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/vendor/github.com/google/pprof/profile/proto.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "//   decoder() []decoder",
+         "matchingRanges": {
+          "lineNumber": "20"
+         },
+         "lineNumber": "20",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 24
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "//   encode(*buffer)",
+         "matchingRanges": {
+          "lineNumber": "21",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "21",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 20
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "//",
+         "matchingRanges": {
+          "lineNumber": "22"
+         },
+         "lineNumber": "22",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "type decoder func(*buffer, message) error",
+         "matchingRanges": {
+          "lineNumber": "51",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "51",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 13,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "52"
+         },
+         "lineNumber": "52"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func marshal(m message) []byte {",
+         "matchingRanges": {
+          "lineNumber": "58",
+          "columnRanges": [
+           {
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "58",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\tvar b buffer",
+         "matchingRanges": {
+          "lineNumber": "59"
+         },
+         "lineNumber": "59",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func encodeVarint(b *buffer, x uint64) {",
+         "matchingRanges": {
+          "lineNumber": "64",
+          "columnRanges": [
+           {
+            "length": 4
+           },
+           {
+            "startIndex": 17,
+            "length": 2
+           }
+          ]
+         },
+         "lineNumber": "64",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "length": 4
+          },
+          {
+           "startIndex": 17,
+           "length": 2
+          }
+         ]
+        },
+        {
+         "lineText": "\tfor x \u003e= 128 {",
+         "matchingRanges": {
+          "lineNumber": "65"
+         },
+         "lineNumber": "65",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 10,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tb.data = append(b.data, byte(x)|0x80)",
+         "matchingRanges": {
+          "lineNumber": "66",
+          "columnRanges": [
+           {
+            "startIndex": 17,
+            "length": 2
+           }
+          ]
+         },
+         "lineNumber": "66",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 34,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 17,
+           "length": 2
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 63
+    },
+    "resultToken": "CBQSAggBOKyj09HHgKWs1wFAAEgU"
+   }
+  ],
+  "estimatedResultCount": "21",
+  "exhaustive": true,
+  "requestToken": "ChNmdW5jIFwoYiBcKkJ1ZmZlclwpEh0oIGdpdDpnby9nb0BtYXN0ZXIgY2FzZTp5ZXMgKRoMCLe7qNEGEK3C8ZYBIAwqADIASAE"
+ }
+}

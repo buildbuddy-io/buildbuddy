@@ -1,0 +1,92 @@
+{
+ "query": "type_to_deserialize_method",
+ "oss_project": "protobuf",
+ "repo_name": "protobuf",
+ "page_size": 50,
+ "fetched_at": "2026-06-17T23:21:44Z",
+ "response": {
+  "searchResults": [
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "protobuf",
+        "ossProject": "protobuf"
+       },
+       "refSpec": "refs/heads/main"
+      },
+      "path": "python/google/protobuf/internal/type_checkers.py",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  corresponding wire types.",
+         "matchingRanges": {
+          "lineNumber": "17"
+         },
+         "lineNumber": "17",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "length": 27
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "TYPE_TO_DESERIALIZE_METHOD: A dictionary with field types and deserialization",
+         "matchingRanges": {
+          "lineNumber": "18",
+          "columnRanges": [
+           {
+            "length": 26
+           }
+          ]
+         },
+         "lineNumber": "18",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "length": 77
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "length": 26
+          }
+         ]
+        },
+        {
+         "lineText": "  function.",
+         "matchingRanges": {
+          "lineNumber": "19"
+         },
+         "lineNumber": "19",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "length": 11
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAASAggBOMaw78ik97fA6gFAAEgA"
+   }
+  ],
+  "estimatedResultCount": "1",
+  "exhaustive": true,
+  "requestToken": "Chp0eXBlX3RvX2Rlc2VyaWFsaXplX21ldGhvZBI1KCBnaXQ6Z2l0aHViL3Byb3RvY29sYnVmZmVycy9wcm90b2J1ZkBtYWluIGNhc2U6eWVzICkaDAiI2MzRBhDQzdfHASAMIA8qADIASAE"
+ }
+}

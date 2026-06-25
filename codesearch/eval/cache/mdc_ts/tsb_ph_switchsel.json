@@ -1,0 +1,94 @@
+{
+ "query": "\"Query selectors used for switch\"",
+ "oss_project": "material-components",
+ "repo_name": "material-components-web",
+ "page_size": 50,
+ "fetched_at": "2026-06-17T23:23:47Z",
+ "response": {
+  "searchResults": [
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "material-components-web",
+        "ossProject": "material-components"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "packages/mdc-switch/constants.ts",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "/**",
+         "matchingRanges": {
+          "lineNumber": "33"
+         },
+         "lineNumber": "33",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": " * Query selectors used for switch.",
+         "matchingRanges": {
+          "lineNumber": "34",
+          "columnRanges": [
+           {
+            "startIndex": 3,
+            "length": 31
+           }
+          ]
+         },
+         "lineNumber": "34",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 35
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 3,
+           "length": 31
+          }
+         ]
+        },
+        {
+         "lineText": " */",
+         "matchingRanges": {
+          "lineNumber": "35"
+         },
+         "lineNumber": "35",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAASAggBONaD4bK6naSTmQFAAEgA"
+   }
+  ],
+  "estimatedResultCount": "1",
+  "exhaustive": true,
+  "requestToken": "CiEiUXVlcnkgc2VsZWN0b3JzIHVzZWQgZm9yIHN3aXRjaCISSiggZ2l0OmdpdGh1Yi9tYXRlcmlhbC1jb21wb25lbnRzL21hdGVyaWFsLWNvbXBvbmVudHMtd2ViQG1hc3RlciBjYXNlOnllcyApGgwIg9nM0QYQ46jomAEgDCAPKgAyAEgB"
+ }
+}

@@ -1,0 +1,211 @@
+{
+ "query": "deterministic",
+ "oss_project": "opentitan",
+ "repo_name": "manticore",
+ "page_size": 50,
+ "fetched_at": "2026-06-17T23:22:22Z",
+ "response": {
+  "searchResults": [
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "manticore",
+        "ossProject": "opentitan"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "testutil/regenerate-testdata.sh",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "X509_GEN=\"$DATA_DIR/x509/generated\"",
+         "matchingRanges": {
+          "lineNumber": "193"
+         },
+         "lineNumber": "193"
+        },
+        {
+         "lineText": "# This assumes signing is deterministic for idempotence.",
+         "matchingRanges": {
+          "lineNumber": "194",
+          "columnRanges": [
+           {
+            "startIndex": 26,
+            "length": 13
+           }
+          ]
+         },
+         "lineNumber": "194",
+         "ranges": [
+          {
+           "startIndex": 26,
+           "length": 13
+          }
+         ]
+        },
+        {
+         "lineText": "# Once we start doing things with ECDSA, we'll have to do something a bit",
+         "matchingRanges": {
+          "lineNumber": "195"
+         },
+         "lineNumber": "195"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAASAggBOOrH-MrGtd719QFAAEgA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "manticore",
+        "ossProject": "opentitan"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cert/cwt/cbor/mod.rs",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "//! needed for COSE or CWT. We also reject all CBOR that is not encoded",
+         "matchingRanges": {
+          "lineNumber": "8"
+         },
+         "lineNumber": "8",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 71
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "//! according to S4.2.1 \"Core Deterministic Encoding Requirements\". Concisely:",
+         "matchingRanges": {
+          "lineNumber": "9",
+          "columnRanges": [
+           {
+            "startIndex": 30,
+            "length": 13
+           }
+          ]
+         },
+         "lineNumber": "9",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 78
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 30,
+           "length": 13
+          }
+         ]
+        },
+        {
+         "lineText": "//! - No tags, floats, bools, null, or undefined.",
+         "matchingRanges": {
+          "lineNumber": "10"
+         },
+         "lineNumber": "10",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 49
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// NOTE: This needs to be implemented manually, since Rust defines slice",
+         "matchingRanges": {
+          "lineNumber": "110"
+         },
+         "lineNumber": "110",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 72
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "// equality such that \"aa\" \u003e \"z\", even though \"z\" \u003c \"aa\" in deterministic",
+         "matchingRanges": {
+          "lineNumber": "111",
+          "columnRanges": [
+           {
+            "startIndex": 60,
+            "length": 13
+           }
+          ]
+         },
+         "lineNumber": "111",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 73
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 60,
+           "length": 13
+          }
+         ]
+        },
+        {
+         "lineText": "// CBOR.",
+         "matchingRanges": {
+          "lineNumber": "112"
+         },
+         "lineNumber": "112",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 8
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAESAggBONiR2NLzsevXgAFAAEgB"
+   }
+  ],
+  "estimatedResultCount": "2",
+  "exhaustive": true,
+  "requestToken": "Cg1kZXRlcm1pbmlzdGljEjAoIGdpdDpnaXRodWIvbG93UklTQy9tYW50aWNvcmVAbWFzdGVyIGNhc2U6eWVzICkaDAiu2MzRBhDN5N-TAyAMKgAyAEgB"
+ }
+}

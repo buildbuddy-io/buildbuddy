@@ -1,0 +1,64 @@
+// Eval query set for the bazelbuild/bazel corpus (Java + Starlark).
+// Same categories as the Go set; targets are repo-relative paths.
+{"id":"bz-sym-rulecontext","category":"symbol","query":"RuleContext","targets":["src/main/java/com/google/devtools/build/lib/analysis/RuleContext.java"]}
+{"id":"bz-sym-skyframeexecutor","category":"symbol","query":"SkyframeExecutor","targets":["src/main/java/com/google/devtools/build/lib/skyframe/SkyframeExecutor.java"]}
+{"id":"bz-sym-parallelevaluator","category":"symbol","query":"ParallelEvaluator","targets":["src/main/java/com/google/devtools/build/skyframe/ParallelEvaluator.java"]}
+{"id":"bz-sym-nestedset","category":"symbol","query":"class NestedSet","targets":["src/main/java/com/google/devtools/build/lib/collect/nestedset/NestedSet.java"]}
+{"id":"bz-sym-blazeruntime","category":"symbol","query":"BlazeRuntime","targets":["src/main/java/com/google/devtools/build/lib/runtime/BlazeRuntime.java"]}
+{"id":"bz-sym-actionexecutioncontext","category":"symbol","query":"ActionExecutionContext","targets":["src/main/java/com/google/devtools/build/lib/actions/ActionExecutionContext.java"]}
+{"id":"bz-sym-label","category":"symbol","query":"class Label","targets":["src/main/java/com/google/devtools/build/lib/cmdline/Label.java"]}
+{"id":"bz-sym-packagefactory","category":"symbol","query":"PackageFactory","targets":["src/main/java/com/google/devtools/build/lib/packages/PackageFactory.java"]}
+{"id":"bz-sym-starlarkfunction","category":"symbol","query":"StarlarkFunction","targets":["src/main/java/net/starlark/java/eval/StarlarkFunction.java"]}
+{"id":"bz-sym-starlarkthread","category":"symbol","query":"StarlarkThread","targets":["src/main/java/net/starlark/java/eval/StarlarkThread.java"]}
+{"id":"bz-sym-javacompileaction","category":"symbol","query":"JavaCompileAction","targets":["src/main/java/com/google/devtools/build/lib/rules/java/JavaCompileAction.java"]}
+{"id":"bz-sym-remoteexecutionservice","category":"symbol","query":"RemoteExecutionService","targets":["src/main/java/com/google/devtools/build/lib/remote/RemoteExecutionService.java"]}
+{"id":"bz-sym-buildconfigurationvalue","category":"symbol","query":"BuildConfigurationValue","targets":["src/main/java/com/google/devtools/build/lib/analysis/config/BuildConfigurationValue.java"]}
+{"id":"bz-sym-workerpool","category":"symbol","query":"WorkerPool","targets":["src/main/java/com/google/devtools/build/lib/worker/WorkerPool.java"]}
+{"id":"bz-sym-memoizingevaluator","category":"symbol","query":"MemoizingEvaluator","targets":["src/main/java/com/google/devtools/build/skyframe/MemoizingEvaluator.java"]}
+{"id":"bz-sym-actioncache","category":"symbol","query":"interface ActionCache","targets":["src/main/java/com/google/devtools/build/lib/actions/cache/ActionCache.java"]}
+{"id":"bz-sym-spawnresult","category":"symbol","query":"SpawnResult","targets":["src/main/java/com/google/devtools/build/lib/actions/SpawnResult.java"]}
+{"id":"bz-sym-retrier","category":"symbol","query":"class Retrier","targets":["src/main/java/com/google/devtools/build/lib/remote/Retrier.java"]}
+{"id":"bz-sym-dynamicspawnstrategy","category":"symbol","query":"DynamicSpawnStrategy","targets":["src/main/java/com/google/devtools/build/lib/dynamic/DynamicSpawnStrategy.java"]}
+{"id":"bz-sym-symlinktreehelper","category":"symbol","query":"SymlinkTreeHelper","targets":["src/main/java/com/google/devtools/build/lib/exec/SymlinkTreeHelper.java"]}
+{"id":"bz-kw-toolchain-resolution","category":"keyword","query":"toolchain resolution","targets":["src/main/java/com/google/devtools/build/lib/skyframe/toolchains/ToolchainResolutionFunction.java"]}
+{"id":"bz-kw-worker-pool","category":"keyword","query":"worker pool borrow","targets":["src/main/java/com/google/devtools/build/lib/worker/WorkerPool.java","src/main/java/com/google/devtools/build/lib/worker/WorkerPoolImpl.java"]}
+{"id":"bz-kw-remote-cache-upload","category":"keyword","query":"remote cache upload","targets":["src/main/java/com/google/devtools/build/lib/remote/common/RemoteCacheClient.java","src/main/java/com/google/devtools/build/lib/remote/RemoteExecutionService.java"]}
+{"id":"bz-kw-action-cache-check","category":"keyword","query":"action cache hit","targets":["src/main/java/com/google/devtools/build/lib/actions/ActionCacheChecker.java"]}
+{"id":"bz-kw-nested-set-flatten","category":"keyword","query":"nested set flatten","targets":["src/main/java/com/google/devtools/build/lib/collect/nestedset/NestedSet.java"]}
+{"id":"bz-kw-sandbox-mount","category":"keyword","query":"sandbox mount","targets":["src/main/java/com/google/devtools/build/lib/sandbox/LinuxSandboxUtil.java","src/main/java/com/google/devtools/build/lib/sandbox/LinuxSandboxedSpawnRunner.java"]}
+{"id":"bz-kw-build-event-protocol","category":"keyword","query":"build event protocol","targets":["src/main/java/com/google/devtools/build/lib/buildeventservice/BuildEventServiceModule.java"]}
+{"id":"bz-kw-cycle-detection","category":"keyword","query":"skyframe cycle detection","targets":["src/main/java/com/google/devtools/build/skyframe/CycleDetector.java","src/main/java/com/google/devtools/build/skyframe/SimpleCycleDetector.java"]}
+{"id":"bz-kw-starlark-evaluation","category":"keyword","query":"starlark eval","targets":["src/main/java/net/starlark/java/eval/Eval.java"]}
+{"id":"bz-kw-dirty-node-invalidation","category":"keyword","query":"node invalidation dirty","targets":["src/main/java/com/google/devtools/build/skyframe/InvalidatingNodeVisitor.java"]}
+{"id":"bz-kw-exponential-backoff","category":"keyword","query":"retry exponential backoff","targets":["src/main/java/com/google/devtools/build/lib/remote/Retrier.java"]}
+{"id":"bz-kw-symlink-tree","category":"keyword","query":"runfiles symlink tree","targets":["src/main/java/com/google/devtools/build/lib/exec/SymlinkTreeHelper.java","src/main/java/com/google/devtools/build/lib/analysis/actions/SymlinkTreeAction.java"]}
+{"id":"bz-phr-no-such-package","category":"phrase","query":"\"no such package\"","targets":["src/main/java/com/google/devtools/build/lib/packages/NoSuchPackageException.java"]}
+{"id":"bz-phr-no-such-target","category":"phrase","query":"\"no such target\"","targets":["src/main/java/com/google/devtools/build/lib/packages/NoSuchTargetException.java"]}
+{"id":"bz-phr-missing-input","category":"phrase","query":"\"missing input file\"","targets":["src/main/java/com/google/devtools/build/lib/skyframe/ArtifactFunction.java"]}
+{"id":"bz-phr-error-loading-package","category":"phrase","query":"\"error loading package\"","targets":["src/main/java/com/google/devtools/build/lib/packages/BuildFileContainsErrorsException.java","src/main/java/com/google/devtools/build/lib/skyframe/RecursivePackageProviderBackedTargetPatternResolver.java"]}
+{"id":"bz-phr-couldnt-start-build","category":"phrase","query":"\"start the build\"","targets":["src/main/java/com/google/devtools/build/lib/runtime/commands/TestCommand.java"]}
+{"id":"bz-phr-failed-output-dir","category":"phrase","query":"\"failed to create output directory\"","targets":["src/main/java/com/google/devtools/build/lib/skyframe/SkyframeActionExecutor.java"]}
+{"id":"bz-phr-invalid-label","category":"phrase","query":"\"Invalid label\"","targets":["src/main/java/com/google/devtools/build/lib/rules/config/ConfigSetting.java"]}
+{"id":"bz-phr-is-not-defined","category":"phrase","query":"\"is not defined\"","targets":["src/main/java/net/starlark/java/eval/Module.java","src/main/java/net/starlark/java/syntax/Resolver.java"]}
+{"id":"bz-re-skyfunction-impl","category":"regex","query":"class \\w+Function implements SkyFunction"}
+{"id":"bz-re-bzl-impl","category":"regex","query":"def _.*_impl\\(ctx"}
+{"id":"bz-re-abrupt-exit","category":"regex","query":"throw new AbruptExitException\\("}
+{"id":"bz-re-starlark-method","category":"regex","query":"@StarlarkMethod\\(name = \"(get|to)"}
+{"id":"bz-re-spawn-action-result","category":"regex","query":"(Spawn|Action)Result","targets":["src/main/java/com/google/devtools/build/lib/actions/SpawnResult.java"]}
+{"id":"bz-re-visible-for-testing","category":"regex","query":"@VisibleForTesting (static|public)"}
+{"id":"bz-re-label-parse","category":"regex","query":"Label\\.parse(Canonical|WithRepoContext)?","targets":["src/main/java/com/google/devtools/build/lib/cmdline/Label.java"]}
+{"id":"bz-re-singleton-instance","category":"regex","query":"private static final \\w+ INSTANCE"}
+{"id":"bz-flt-build-java-library","category":"filter","query":"file:BUILD$ java_library"}
+{"id":"bz-flt-rulecontext-analysis","category":"filter","query":"lang:java file:analysis RuleContext","targets":["src/main/java/com/google/devtools/build/lib/analysis/RuleContext.java"]}
+{"id":"bz-flt-bzl-cc-toolchain","category":"filter","query":"file:\\.bzl$ cc_toolchain"}
+{"id":"bz-flt-workerpool-file","category":"filter","query":"file:WorkerPool","targets":["src/main/java/com/google/devtools/build/lib/worker/WorkerPool.java"]}
+{"id":"bz-flt-case-instance","category":"filter","query":"case:yes INSTANCE file:skyframe"}
+{"id":"bz-flt-proto-build-event","category":"filter","query":"file:\\.proto$ build_event"}
+{"id":"bz-rank-spawn","category":"ranking","query":"spawn"}
+{"id":"bz-rank-action","category":"ranking","query":"action"}
+{"id":"bz-rank-rule","category":"ranking","query":"rule"}
+{"id":"bz-rank-label","category":"ranking","query":"label"}
+{"id":"bz-rank-worker","category":"ranking","query":"worker"}
+{"id":"bz-rank-remote","category":"ranking","query":"remote"}
+{"id":"bz-rank-sandbox","category":"ranking","query":"sandbox"}
+{"id":"bz-rank-toolchain","category":"ranking","query":"toolchain"}

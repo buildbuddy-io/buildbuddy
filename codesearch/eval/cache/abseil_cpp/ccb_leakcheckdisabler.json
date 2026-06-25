@@ -1,0 +1,750 @@
+{
+ "query": "leakcheckdisabler",
+ "oss_project": "abseil",
+ "repo_name": "abseil-cpp",
+ "page_size": 50,
+ "fetched_at": "2026-06-17T23:22:53Z",
+ "response": {
+  "searchResults": [
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "abseil-cpp",
+        "ossProject": "abseil"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "absl/debugging/leak_check.h",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// LeakCheckDisabler",
+         "matchingRanges": {
+          "lineNumber": "110",
+          "columnRanges": [
+           {
+            "startIndex": 3,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "110",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 20
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 3,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "//",
+         "matchingRanges": {
+          "lineNumber": "111"
+         },
+         "lineNumber": "111",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "//   void Foo() {",
+         "matchingRanges": {
+          "lineNumber": "119"
+         },
+         "lineNumber": "119",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 17
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "//     LeakCheckDisabler disabler;",
+         "matchingRanges": {
+          "lineNumber": "120",
+          "columnRanges": [
+           {
+            "startIndex": 7,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "120",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 34
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 7,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "//     ... code that allocates objects whose leaks should be ignored ...",
+         "matchingRanges": {
+          "lineNumber": "121"
+         },
+         "lineNumber": "121",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 72
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// REQUIRES: Destructor runs in same thread as constructor",
+         "matchingRanges": {
+          "lineNumber": "124"
+         },
+         "lineNumber": "124",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 58
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "class LeakCheckDisabler {",
+         "matchingRanges": {
+          "lineNumber": "125",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "125",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": " public:",
+         "matchingRanges": {
+          "lineNumber": "126"
+         },
+         "lineNumber": "126",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  LeakCheckDisabler();",
+         "matchingRanges": {
+          "lineNumber": "127",
+          "columnRanges": [
+           {
+            "startIndex": 2,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "127",
+         "ranges": [
+          {
+           "startIndex": 2,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "  LeakCheckDisabler(const LeakCheckDisabler\u0026) = delete;",
+         "matchingRanges": {
+          "lineNumber": "128",
+          "columnRanges": [
+           {
+            "startIndex": 2,
+            "length": 17
+           },
+           {
+            "startIndex": 26,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "128",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 20,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 48,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 2,
+           "length": 17
+          },
+          {
+           "startIndex": 26,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "  LeakCheckDisabler\u0026 operator=(const LeakCheckDisabler\u0026) = delete;",
+         "matchingRanges": {
+          "lineNumber": "129",
+          "columnRanges": [
+           {
+            "startIndex": 2,
+            "length": 17
+           },
+           {
+            "startIndex": 37,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "129",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 21,
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 31,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 59,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 2,
+           "length": 17
+          },
+          {
+           "startIndex": 37,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "  ~LeakCheckDisabler();",
+         "matchingRanges": {
+          "lineNumber": "130",
+          "columnRanges": [
+           {
+            "startIndex": 3,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "130",
+         "ranges": [
+          {
+           "startIndex": 3,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "};",
+         "matchingRanges": {
+          "lineNumber": "131"
+         },
+         "lineNumber": "131"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 7
+    },
+    "resultToken": "CAASBAgBIAE47OvZrf3lk57vAUAASAA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "abseil-cpp",
+        "ossProject": "abseil"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "absl/debugging/leak_check.cc",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "}",
+         "matchingRanges": {
+          "lineNumber": "53"
+         },
+         "lineNumber": "53"
+        },
+        {
+         "lineText": "LeakCheckDisabler::LeakCheckDisabler() { __lsan_disable(); }",
+         "matchingRanges": {
+          "lineNumber": "54",
+          "columnRanges": [
+           {
+            "length": 17
+           },
+           {
+            "startIndex": 19,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "54",
+         "ranges": [
+          {
+           "length": 17
+          },
+          {
+           "startIndex": 19,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "LeakCheckDisabler::~LeakCheckDisabler() { __lsan_enable(); }",
+         "matchingRanges": {
+          "lineNumber": "55",
+          "columnRanges": [
+           {
+            "length": 17
+           },
+           {
+            "startIndex": 20,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "55",
+         "ranges": [
+          {
+           "length": 17
+          },
+          {
+           "startIndex": 20,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "ABSL_NAMESPACE_END",
+         "matchingRanges": {
+          "lineNumber": "56"
+         },
+         "lineNumber": "56"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "void UnRegisterLivePointers(const void*, size_t) { }",
+         "matchingRanges": {
+          "lineNumber": "67"
+         },
+         "lineNumber": "67",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 28,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 34,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "LeakCheckDisabler::LeakCheckDisabler() = default;",
+         "matchingRanges": {
+          "lineNumber": "68",
+          "columnRanges": [
+           {
+            "length": 17
+           },
+           {
+            "startIndex": 19,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "68",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 41,
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "length": 17
+          },
+          {
+           "startIndex": 19,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "LeakCheckDisabler::~LeakCheckDisabler() = default;",
+         "matchingRanges": {
+          "lineNumber": "69",
+          "columnRanges": [
+           {
+            "length": 17
+           },
+           {
+            "startIndex": 20,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "69",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 42,
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "length": 17
+          },
+          {
+           "startIndex": 20,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "ABSL_NAMESPACE_END",
+         "matchingRanges": {
+          "lineNumber": "70"
+         },
+         "lineNumber": "70"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 4
+    },
+    "resultToken": "CAESBAgBIAE4_PfmxvW34uNYQABIAQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "abseil-cpp",
+        "ossProject": "abseil"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "absl/debugging/leak_check_test.cc",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "TEST(LeakCheckTest, LeakCheckDisablerIgnoresLeak) {",
+         "matchingRanges": {
+          "lineNumber": "32",
+          "columnRanges": [
+           {
+            "startIndex": 20,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "32",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "startIndex": 5,
+            "length": 13
+           }
+          },
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "startIndex": 20,
+            "length": 28
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 20,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "  if (!absl::LeakCheckerIsActive()) {",
+         "matchingRanges": {
+          "lineNumber": "33"
+         },
+         "lineNumber": "33",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  }",
+         "matchingRanges": {
+          "lineNumber": "35"
+         },
+         "lineNumber": "35"
+        },
+        {
+         "lineText": "  absl::LeakCheckDisabler disabler;",
+         "matchingRanges": {
+          "lineNumber": "36",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "36",
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "  auto foo = new std::string(\"some string leaked while checks are disabled\");",
+         "matchingRanges": {
+          "lineNumber": "37"
+         },
+         "lineNumber": "37",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 13,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 29,
+            "length": 46
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAISBAgBIAE4zKC2gcvRztUOQABIAg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "abseil-cpp",
+        "ossProject": "abseil"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "absl/debugging/leak_check_fail_test.cc",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  // failed exit code.",
+         "matchingRanges": {
+          "lineNumber": "35"
+         },
+         "lineNumber": "35",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 20
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  { absl::LeakCheckDisabler disabler; }",
+         "matchingRanges": {
+          "lineNumber": "36",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "36",
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "  char* foo = strdup(\"lsan should also complain about this leaked string\");",
+         "matchingRanges": {
+          "lineNumber": "37"
+         },
+         "lineNumber": "37",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 21,
+            "length": 52
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAMSAggBOIacx97i0IzKiAFAAEgD"
+   }
+  ],
+  "estimatedResultCount": "4",
+  "exhaustive": true,
+  "requestToken": "ChFsZWFrY2hlY2tkaXNhYmxlchIwKCBnaXQ6Z2l0aHViL2Fic2VpbC9hYnNlaWwtY3BwQG1hc3RlciBjYXNlOnllcyApGgwIzdjM0QYQl8zHzwIgDCoAMgBIAQ"
+ }
+}

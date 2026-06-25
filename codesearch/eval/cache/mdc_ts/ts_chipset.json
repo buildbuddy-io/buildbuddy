@@ -1,0 +1,4299 @@
+{
+ "query": "MDCChipSet",
+ "oss_project": "material-components",
+ "repo_name": "material-components-web",
+ "page_size": 50,
+ "fetched_at": "2026-06-17T23:05:52Z",
+ "response": {
+  "searchResults": [
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "material-components-web",
+        "ossProject": "material-components"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "packages/mdc-chips/chip-set/component.ts",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import {MDCChipSetAdapter} from './adapter';",
+         "matchingRanges": {
+          "lineNumber": "32",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "32",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 27,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 32,
+            "length": 11
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "import {MDCChipSetCssClasses} from './constants';",
+         "matchingRanges": {
+          "lineNumber": "33",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "33",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 30,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 35,
+            "length": 13
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "import {MDCChipSetFoundation} from './foundation';",
+         "matchingRanges": {
+          "lineNumber": "34",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "34",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 30,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 35,
+            "length": 14
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "import {ChipAnimationEvent, ChipInteractionEvent, ChipNavigationEvent} from './types';",
+         "matchingRanges": {
+          "lineNumber": "35"
+         },
+         "lineNumber": "35",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 71,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 76,
+            "length": 9
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": " */",
+         "matchingRanges": {
+          "lineNumber": "39"
+         },
+         "lineNumber": "39",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "export class MDCChipSet extends MDCComponent\u003cMDCChipSetFoundation\u003e {",
+         "matchingRanges": {
+          "lineNumber": "40",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 10
+           },
+           {
+            "startIndex": 45,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "40",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 24,
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 10
+          },
+          {
+           "startIndex": 45,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "  static override attachTo(root: HTMLElement): MDCChipSet {",
+         "matchingRanges": {
+          "lineNumber": "41",
+          "columnRanges": [
+           {
+            "startIndex": 47,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "41",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 8
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 47,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "    return new MDCChipSet(root);",
+         "matchingRanges": {
+          "lineNumber": "42",
+          "columnRanges": [
+           {
+            "startIndex": 15,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "42",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 11,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 15,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "  }",
+         "matchingRanges": {
+          "lineNumber": "43"
+         },
+         "lineNumber": "43"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 9
+    },
+    "resultToken": "CAASBAgBIAE46rGDuITSqNr3AUAASAA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "material-components-web",
+        "ossProject": "material-components"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "packages/mdc-chips/deprecated/chip-set/component.ts",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import {MDCChipSetAdapter} from './adapter';",
+         "matchingRanges": {
+          "lineNumber": "31",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "31",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 27,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 32,
+            "length": 11
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "import {MDCChipSetFoundation} from './foundation';",
+         "matchingRanges": {
+          "lineNumber": "32",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "32",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 30,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 35,
+            "length": 14
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "33"
+         },
+         "lineNumber": "33"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "/** MDC Chip Set */",
+         "matchingRanges": {
+          "lineNumber": "40"
+         },
+         "lineNumber": "40",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 19
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "export class MDCChipSet extends MDCComponent\u003cMDCChipSetFoundation\u003e {",
+         "matchingRanges": {
+          "lineNumber": "41",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 10
+           },
+           {
+            "startIndex": 45,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "41",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 24,
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 10
+          },
+          {
+           "startIndex": 45,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "  static override attachTo(root: HTMLElement) {",
+         "matchingRanges": {
+          "lineNumber": "42"
+         },
+         "lineNumber": "42",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 8
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    return new MDCChipSet(root);",
+         "matchingRanges": {
+          "lineNumber": "43",
+          "columnRanges": [
+           {
+            "startIndex": 15,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "43",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 11,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 15,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "  }",
+         "matchingRanges": {
+          "lineNumber": "44"
+         },
+         "lineNumber": "44"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 7
+    },
+    "resultToken": "CAESBAgBIAE4vpWdkqvW6umYAUAASAE"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "material-components-web",
+        "ossProject": "material-components"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "packages/mdc-chips/chip-set/adapter.ts",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import {MDCChipSetAttributes, MDCChipSetEvents} from './constants';",
+         "matchingRanges": {
+          "lineNumber": "27",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 10
+           },
+           {
+            "startIndex": 30,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "27",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 48,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 53,
+            "length": 13
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 10
+          },
+          {
+           "startIndex": 30,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "28"
+         },
+         "lineNumber": "28"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": " */",
+         "matchingRanges": {
+          "lineNumber": "35"
+         },
+         "lineNumber": "35",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "export interface MDCChipSetAdapter {",
+         "matchingRanges": {
+          "lineNumber": "36",
+          "columnRanges": [
+           {
+            "startIndex": 17,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "36",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 9
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 17,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "  /** Announces the message via an aria-live region */",
+         "matchingRanges": {
+          "lineNumber": "37"
+         },
+         "lineNumber": "37",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 52
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  /** Emits the given event with the given detail. */",
+         "matchingRanges": {
+          "lineNumber": "40"
+         },
+         "lineNumber": "40",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 51
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  emitEvent\u003cD extends object\u003e(eventName: MDCChipSetEvents, eventDetail: D):",
+         "matchingRanges": {
+          "lineNumber": "41",
+          "columnRanges": [
+           {
+            "startIndex": 41,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "41",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 14,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 22,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 41,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "      void;",
+         "matchingRanges": {
+          "lineNumber": "42"
+         },
+         "lineNumber": "42",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 4
+    },
+    "resultToken": "CAISBAgBIAE4qM6oqaDFvamxAUAASAI"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "material-components-web",
+        "ossProject": "material-components"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "packages/mdc-chips/chip-set/constants.ts",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": " */",
+         "matchingRanges": {
+          "lineNumber": "27"
+         },
+         "lineNumber": "27",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "export enum MDCChipSetAttributes {",
+         "matchingRanges": {
+          "lineNumber": "28",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "28",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "  ARIA_MULTISELECTABLE = 'aria-multiselectable',",
+         "matchingRanges": {
+          "lineNumber": "29"
+         },
+         "lineNumber": "29",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 25,
+            "length": 22
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": " * MDCChipSetCssClasses provides the named constants for class names.",
+         "matchingRanges": {
+          "lineNumber": "33",
+          "columnRanges": [
+           {
+            "startIndex": 3,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "33",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 69
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 3,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": " */",
+         "matchingRanges": {
+          "lineNumber": "34"
+         },
+         "lineNumber": "34",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "export enum MDCChipSetCssClasses {",
+         "matchingRanges": {
+          "lineNumber": "35",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "35",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 10
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "export enum MDCChipSetEvents {",
+         "matchingRanges": {
+          "lineNumber": "42",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "42",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "  INTERACTION = 'MDCChipSet:interaction',",
+         "matchingRanges": {
+          "lineNumber": "43",
+          "columnRanges": [
+           {
+            "startIndex": 17,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "43",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 16,
+            "length": 24
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 17,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "  REMOVAL = 'MDCChipSet:removal',",
+         "matchingRanges": {
+          "lineNumber": "44",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "44",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 12,
+            "length": 20
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "  SELECTION = 'MDCChipSet:selection',",
+         "matchingRanges": {
+          "lineNumber": "45",
+          "columnRanges": [
+           {
+            "startIndex": 15,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "45",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 14,
+            "length": 22
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 15,
+           "length": 10
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 9
+    },
+    "resultToken": "CAMSBAgBIAE40IvLybPo3_ZkQABIAw"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "material-components-web",
+        "ossProject": "material-components"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "packages/mdc-chips/chip-set/types.ts",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": " * MDCChipSetInteractionEventDetail provides detail about the interaction event.",
+         "matchingRanges": {
+          "lineNumber": "27",
+          "columnRanges": [
+           {
+            "startIndex": 3,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "27",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 80
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 3,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": " */",
+         "matchingRanges": {
+          "lineNumber": "28"
+         },
+         "lineNumber": "28",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "export interface MDCChipSetInteractionEventDetail {",
+         "matchingRanges": {
+          "lineNumber": "29",
+          "columnRanges": [
+           {
+            "startIndex": 17,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "29",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 9
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 17,
+           "length": 10
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": " * MDCChipSetRemovalEventDetail provides detail about the removal event.",
+         "matchingRanges": {
+          "lineNumber": "35",
+          "columnRanges": [
+           {
+            "startIndex": 3,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "35",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 72
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 3,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": " */",
+         "matchingRanges": {
+          "lineNumber": "36"
+         },
+         "lineNumber": "36",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "export interface MDCChipSetRemovalEventDetail {",
+         "matchingRanges": {
+          "lineNumber": "37",
+          "columnRanges": [
+           {
+            "startIndex": 17,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "37",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 9
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 17,
+           "length": 10
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": " * MDCChipSetSelectionEventDetail provides detail about the selection event.",
+         "matchingRanges": {
+          "lineNumber": "44",
+          "columnRanges": [
+           {
+            "startIndex": 3,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "44",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 76
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 3,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": " */",
+         "matchingRanges": {
+          "lineNumber": "45"
+         },
+         "lineNumber": "45",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "export interface MDCChipSetSelectionEventDetail {",
+         "matchingRanges": {
+          "lineNumber": "46",
+          "columnRanges": [
+           {
+            "startIndex": 17,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "46",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 9
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 17,
+           "length": 10
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 6
+    },
+    "resultToken": "CAQSBAgBIAE49vrQ1brWrrulAUAASAQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "material-components-web",
+        "ossProject": "material-components"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "packages/mdc-chips/chip-set/foundation.ts",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import {MDCChipSetAdapter} from './adapter';",
+         "matchingRanges": {
+          "lineNumber": "30",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "30",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 27,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 32,
+            "length": 11
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "import {MDCChipSetAttributes, MDCChipSetEvents} from './constants';",
+         "matchingRanges": {
+          "lineNumber": "31",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 10
+           },
+           {
+            "startIndex": 30,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "31",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 48,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 53,
+            "length": 13
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 10
+          },
+          {
+           "startIndex": 30,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "import {ChipAnimationEvent, ChipInteractionEvent, ChipNavigationEvent, MDCChipSetInteractionEventDetail, MDCChipSetRemovalEventDetail, MDCChipSetSelectionEventDetail} from './types';",
+         "matchingRanges": {
+          "lineNumber": "32",
+          "columnRanges": [
+           {
+            "startIndex": 71,
+            "length": 10
+           },
+           {
+            "startIndex": 105,
+            "length": 10
+           },
+           {
+            "startIndex": 135,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "32",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 167,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 172,
+            "length": 9
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 71,
+           "length": 10
+          },
+          {
+           "startIndex": 105,
+           "length": 10
+          },
+          {
+           "startIndex": 135,
+           "length": 10
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "/**",
+         "matchingRanges": {
+          "lineNumber": "44"
+         },
+         "lineNumber": "44",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": " * MDCChipSetFoundation provides a foundation for all chips.",
+         "matchingRanges": {
+          "lineNumber": "45",
+          "columnRanges": [
+           {
+            "startIndex": 3,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "45",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 60
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 3,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": " */",
+         "matchingRanges": {
+          "lineNumber": "46"
+         },
+         "lineNumber": "46",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "export class MDCChipSetFoundation extends MDCFoundation\u003cMDCChipSetAdapter\u003e {",
+         "matchingRanges": {
+          "lineNumber": "47",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 10
+           },
+           {
+            "startIndex": 56,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "47",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 34,
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 10
+          },
+          {
+           "startIndex": 56,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "  static override get defaultAdapter(): MDCChipSetAdapter {",
+         "matchingRanges": {
+          "lineNumber": "48",
+          "columnRanges": [
+           {
+            "startIndex": 40,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "48",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 18,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 40,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "    return {",
+         "matchingRanges": {
+          "lineNumber": "49"
+         },
+         "lineNumber": "49",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 18
+    },
+    "resultToken": "CAUSBAgBIAE4-veK6rPiw7VAQABIBQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "material-components-web",
+        "ossProject": "material-components"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "packages/mdc-chips/deprecated/chip-set/adapter.ts",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": " */",
+         "matchingRanges": {
+          "lineNumber": "30"
+         },
+         "lineNumber": "30",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "export interface MDCChipSetAdapter {",
+         "matchingRanges": {
+          "lineNumber": "31",
+          "columnRanges": [
+           {
+            "startIndex": 17,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "31",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 9
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 17,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "  /**",
+         "matchingRanges": {
+          "lineNumber": "32"
+         },
+         "lineNumber": "32",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAYSBAgBIAE4moq-vb6M-IjwAUAASAY"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "material-components-web",
+        "ossProject": "material-components"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "packages/mdc-chips/deprecated/chip-set/foundation.ts",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import {MDCChipSetAdapter} from './adapter';",
+         "matchingRanges": {
+          "lineNumber": "29",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "29",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 27,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 32,
+            "length": 11
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "import {cssClasses, strings} from './constants';",
+         "matchingRanges": {
+          "lineNumber": "30"
+         },
+         "lineNumber": "30",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 29,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 34,
+            "length": 13
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "/** MDC Chip Set Foundation */",
+         "matchingRanges": {
+          "lineNumber": "32"
+         },
+         "lineNumber": "32",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 30
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "export class MDCChipSetFoundation extends MDCFoundation\u003cMDCChipSetAdapter\u003e {",
+         "matchingRanges": {
+          "lineNumber": "33",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 10
+           },
+           {
+            "startIndex": 56,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "33",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 34,
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 10
+          },
+          {
+           "startIndex": 56,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "  static override get strings() {",
+         "matchingRanges": {
+          "lineNumber": "34"
+         },
+         "lineNumber": "34",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 18,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  static override get defaultAdapter(): MDCChipSetAdapter {",
+         "matchingRanges": {
+          "lineNumber": "42",
+          "columnRanges": [
+           {
+            "startIndex": 40,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "42",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 18,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 40,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "    return {",
+         "matchingRanges": {
+          "lineNumber": "43"
+         },
+         "lineNumber": "43",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  constructor(adapter?: Partial\u003cMDCChipSetAdapter\u003e) {",
+         "matchingRanges": {
+          "lineNumber": "63",
+          "columnRanges": [
+           {
+            "startIndex": 32,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "63",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 11
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 32,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "    super({...MDCChipSetFoundation.defaultAdapter, ...adapter});",
+         "matchingRanges": {
+          "lineNumber": "64",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "64",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "  }",
+         "matchingRanges": {
+          "lineNumber": "65"
+         },
+         "lineNumber": "65"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 6
+    },
+    "resultToken": "CAcSBAgBIAE47on-3oOSqJnDAUAASAc"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "material-components-web",
+        "ossProject": "material-components"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "packages/mdc-chips/chip-set/README.md",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "### `MDCChipSet` methods",
+         "matchingRanges": {
+          "lineNumber": "81",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "81",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 24
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "82"
+         },
+         "lineNumber": "82",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {}
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "### `MDCChipSetEvents`",
+         "matchingRanges": {
+          "lineNumber": "92",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "92",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 22
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "93"
+         },
+         "lineNumber": "93",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {}
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "`MDCChipSet:interaction` | `MDCChipSetInteractionEventDetail` | Emitted when a chip is interacted with.",
+         "matchingRanges": {
+          "lineNumber": "96",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 10
+           },
+           {
+            "startIndex": 28,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "96",
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 10
+          },
+          {
+           "startIndex": 28,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "`MDCChipSet:removal` | `MDCChipSetRemovalEventDetail` | Emitted when a chip is removed. Check the detail to know when the removal animation is complete.",
+         "matchingRanges": {
+          "lineNumber": "97",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 10
+           },
+           {
+            "startIndex": 24,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "97",
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 10
+          },
+          {
+           "startIndex": 24,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "`MDCChipSet:selection` | `MDCChipSetSelectionEventDetail` | Emitted when a chip selected state changes.",
+         "matchingRanges": {
+          "lineNumber": "98",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 10
+           },
+           {
+            "startIndex": 26,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "98",
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 10
+          },
+          {
+           "startIndex": 26,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "99"
+         },
+         "lineNumber": "99"
+        },
+        {
+         "lineText": "### `MDCChipSetAdapter`",
+         "matchingRanges": {
+          "lineNumber": "100",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "100",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 23
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 10
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 9
+    },
+    "resultToken": "CAgSAggBOJbI8Z7w97CkDUAASAg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "material-components-web",
+        "ossProject": "material-components"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "packages/mdc-chips/chip/README.md",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "The `MDCChip` is exposed only to be called by the parent [`MDCChipSet`](../chip-set). Users should not interact with the `MDCC ...",
+         "matchingRanges": {
+          "lineNumber": "220",
+          "columnRanges": [
+           {
+            "startIndex": 59,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "220",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 57,
+            "length": 27
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 59,
+           "length": 10
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "These events are only emitted for consumption by the parent [`MDCChipSet`](../chip-set). Non-wrapping clients **should not** listen to these events.",
+         "matchingRanges": {
+          "lineNumber": "224",
+          "columnRanges": [
+           {
+            "startIndex": 62,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "224",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 60,
+            "length": 27
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 62,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "225"
+         },
+         "lineNumber": "225"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAkSAggBOPKRwNruiPvnf0AASAk"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "material-components-web",
+        "ossProject": "material-components"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "packages/mdc-chips/chip/component.ts",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "/**",
+         "matchingRanges": {
+          "lineNumber": "35"
+         },
+         "lineNumber": "35",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": " * MDCChipFactory is used by the parent MDCChipSet component to initialize",
+         "matchingRanges": {
+          "lineNumber": "36",
+          "columnRanges": [
+           {
+            "startIndex": 40,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "36",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 74
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 40,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": " * chips.",
+         "matchingRanges": {
+          "lineNumber": "37"
+         },
+         "lineNumber": "37",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 9
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAoSAggBOPyX3MiVgrrvO0AASAo"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "material-components-web",
+        "ossProject": "material-components"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "packages/mdc-chips/chip-set/test/component.test.ts",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import {MDCChipAnimationEventDetail} from '../../chip/types';",
+         "matchingRanges": {
+          "lineNumber": "31"
+         },
+         "lineNumber": "31",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 37,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 42,
+            "length": 18
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "import {MDCChipSet, MDCChipSetFoundation} from '../index';",
+         "matchingRanges": {
+          "lineNumber": "32",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 10
+           },
+           {
+            "startIndex": 20,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "32",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 42,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 47,
+            "length": 10
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 10
+          },
+          {
+           "startIndex": 20,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "33"
+         },
+         "lineNumber": "33"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  const root = getFixture(options);",
+         "matchingRanges": {
+          "lineNumber": "77"
+         },
+         "lineNumber": "77",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  const component = new MDCChipSet(root);",
+         "matchingRanges": {
+          "lineNumber": "78",
+          "columnRanges": [
+           {
+            "startIndex": 24,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "78",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 20,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 24,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "  return {root, component};",
+         "matchingRanges": {
+          "lineNumber": "79"
+         },
+         "lineNumber": "79",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  const root = getFixture(options);",
+         "matchingRanges": {
+          "lineNumber": "83"
+         },
+         "lineNumber": "83",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  const mockFoundation = createMockFoundation(MDCChipSetFoundation);",
+         "matchingRanges": {
+          "lineNumber": "84",
+          "columnRanges": [
+           {
+            "startIndex": 46,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "84",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 46,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "  const component = new MDCChipSet(root, mockFoundation);",
+         "matchingRanges": {
+          "lineNumber": "85",
+          "columnRanges": [
+           {
+            "startIndex": 24,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "85",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 20,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 24,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "  return {root, component, mockFoundation};",
+         "matchingRanges": {
+          "lineNumber": "86"
+         },
+         "lineNumber": "86",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 8
+    },
+    "resultToken": "CAsSAggBOMrapICZoeac8QFAAEgL"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "material-components-web",
+        "ossProject": "material-components"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "packages/mdc-chips/deprecated/chip-set/test/component.test.ts",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import {MDCChipFoundation} from '../../chip/index';",
+         "matchingRanges": {
+          "lineNumber": "27"
+         },
+         "lineNumber": "27",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 27,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 32,
+            "length": 18
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "import {MDCChipSet, MDCChipSetFoundation} from '../index';",
+         "matchingRanges": {
+          "lineNumber": "28",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 10
+           },
+           {
+            "startIndex": 20,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "28",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 42,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 47,
+            "length": 10
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 10
+          },
+          {
+           "startIndex": 20,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "29"
+         },
+         "lineNumber": "29"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "describe('MDCChipSet', () =\u003e {",
+         "matchingRanges": {
+          "lineNumber": "45",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "45",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 9,
+            "length": 12
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "  it('attachTo returns an MDCChipSet instance', () =\u003e {",
+         "matchingRanges": {
+          "lineNumber": "46",
+          "columnRanges": [
+           {
+            "startIndex": 26,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "46",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 5,
+            "length": 41
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 26,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "    expect(MDCChipSet.attachTo(getFixture()) instanceof MDCChipSet)",
+         "matchingRanges": {
+          "lineNumber": "47",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 10
+           },
+           {
+            "startIndex": 56,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "47",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 45,
+            "length": 10
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 10
+          },
+          {
+           "startIndex": 56,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "        .toBeTruthy();",
+         "matchingRanges": {
+          "lineNumber": "48"
+         },
+         "lineNumber": "48"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    const component =",
+         "matchingRanges": {
+          "lineNumber": "74"
+         },
+         "lineNumber": "74",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "        new MDCChipSet(root, undefined, (el: HTMLElement) =\u003e new FakeChip(el));",
+         "matchingRanges": {
+          "lineNumber": "75",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "75",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 29,
+            "length": 9
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 61,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "    return {root, component};",
+         "matchingRanges": {
+          "lineNumber": "76"
+         },
+         "lineNumber": "76",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 9
+    },
+    "resultToken": "CAwSAggBOLSOtsrlu5WKIUAASAw"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "material-components-web",
+        "ossProject": "material-components"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "packages/mdc-chips/chip-set/test/foundation.test.ts",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import {MDCChipAnimation} from '../../chip/constants';",
+         "matchingRanges": {
+          "lineNumber": "26"
+         },
+         "lineNumber": "26",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 26,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 31,
+            "length": 22
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "import {MDCChipSetAttributes, MDCChipSetEvents} from '../constants';",
+         "matchingRanges": {
+          "lineNumber": "27",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 10
+           },
+           {
+            "startIndex": 30,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "27",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 48,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 53,
+            "length": 14
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 10
+          },
+          {
+           "startIndex": 30,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "import {MDCChipSetFoundation} from '../foundation';",
+         "matchingRanges": {
+          "lineNumber": "28",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "28",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 30,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 35,
+            "length": 15
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "import {ChipAnimationEvent, ChipInteractionEvent, ChipNavigationEvent} from '../types';",
+         "matchingRanges": {
+          "lineNumber": "29"
+         },
+         "lineNumber": "29",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 71,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 76,
+            "length": 10
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "describe('MDCChipSetFoundation', () =\u003e {",
+         "matchingRanges": {
+          "lineNumber": "120",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "120",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 9,
+            "length": 22
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "  const setupTest = () =\u003e {",
+         "matchingRanges": {
+          "lineNumber": "121"
+         },
+         "lineNumber": "121",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    const {foundation, mockAdapter} = setUpFoundationTest(MDCChipSetFoundation);",
+         "matchingRanges": {
+          "lineNumber": "122",
+          "columnRanges": [
+           {
+            "startIndex": 58,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "122",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 58,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "    return {foundation, mockAdapter};",
+         "matchingRanges": {
+          "lineNumber": "123"
+         },
+         "lineNumber": "123",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 13
+    },
+    "resultToken": "CA0SAggBOILH4baW4urBnQFAAEgN"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "material-components-web",
+        "ossProject": "material-components"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "packages/mdc-chips/deprecated/chip-set/test/foundation.test.ts",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import {EventSource, strings} from '../../../deprecated/chip/constants';",
+         "matchingRanges": {
+          "lineNumber": "27"
+         },
+         "lineNumber": "27",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 30,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 35,
+            "length": 36
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "import {MDCChipSetFoundation} from '../../../deprecated/chip-set/foundation';",
+         "matchingRanges": {
+          "lineNumber": "28",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "28",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 30,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 35,
+            "length": 41
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "29"
+         },
+         "lineNumber": "29"
+        },
+        {
+         "lineText": "const {cssClasses} = MDCChipSetFoundation;",
+         "matchingRanges": {
+          "lineNumber": "30",
+          "columnRanges": [
+           {
+            "startIndex": 21,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "30",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 21,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "31"
+         },
+         "lineNumber": "31"
+        },
+        {
+         "lineText": "describe('MDCChipSetFoundation', () =\u003e {",
+         "matchingRanges": {
+          "lineNumber": "32",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "32",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 9,
+            "length": 22
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "  it('exports strings', () =\u003e {",
+         "matchingRanges": {
+          "lineNumber": "33"
+         },
+         "lineNumber": "33",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 5,
+            "length": 17
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    expect('strings' in MDCChipSetFoundation).toBeTruthy();",
+         "matchingRanges": {
+          "lineNumber": "34",
+          "columnRanges": [
+           {
+            "startIndex": 24,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "34",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 9
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 21,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 24,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "  });",
+         "matchingRanges": {
+          "lineNumber": "35"
+         },
+         "lineNumber": "35"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 7
+    },
+    "resultToken": "CA4SAggBOJrl9YXn57GVUkAASA4"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "material-components-web",
+        "ossProject": "material-components"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "packages/mdc-chips/README.md",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "```js",
+         "matchingRanges": {
+          "lineNumber": "40"
+         },
+         "lineNumber": "40"
+        },
+        {
+         "lineText": "import {MDCChipSet} from '@material/chips';",
+         "matchingRanges": {
+          "lineNumber": "41",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "41",
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "const chipset = new MDCChipSet(document.querySelector('.mdc-evolution-chip-set'));",
+         "matchingRanges": {
+          "lineNumber": "42",
+          "columnRanges": [
+           {
+            "startIndex": 20,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "42",
+         "ranges": [
+          {
+           "startIndex": 20,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "```",
+         "matchingRanges": {
+          "lineNumber": "43"
+         },
+         "lineNumber": "43"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CA8SAggBOKzLicnVjNL_twFAAEgP"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "material-components-web",
+        "ossProject": "material-components"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "packages/mdc-chips/deprecated/README.md",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "```js",
+         "matchingRanges": {
+          "lineNumber": "67"
+         },
+         "lineNumber": "67"
+        },
+        {
+         "lineText": "import {MDCChipSet} from '@material/chips/deprecated';",
+         "matchingRanges": {
+          "lineNumber": "68",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "68",
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "const chipSetEl = document.querySelector('.mdc-chip-set');",
+         "matchingRanges": {
+          "lineNumber": "69"
+         },
+         "lineNumber": "69"
+        },
+        {
+         "lineText": "const chipSet = new MDCChipSet(chipSetEl);",
+         "matchingRanges": {
+          "lineNumber": "70",
+          "columnRanges": [
+           {
+            "startIndex": 20,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "70",
+         "ranges": [
+          {
+           "startIndex": 20,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "```",
+         "matchingRanges": {
+          "lineNumber": "71"
+         },
+         "lineNumber": "71"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "... e does not handle the process of converting text into chips, in order to remain framework-agnostic. The `MDCChipSet` component exposes an `addChip` method, which accepts an ...",
+         "matchingRanges": {
+          "lineNumber": "192",
+          "columnRanges": [
+           {
+            "startIndex": 109,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "192",
+         "ranges": [
+          {
+           "startIndex": 109,
+           "length": 10
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "... ment which is expected to already be inserted within the Chip Set element after any existing chips. The `MDCChipSet` component will then handle creating and tracking a `MDC ...",
+         "matchingRanges": {
+          "lineNumber": "192",
+          "columnRanges": [
+           {
+            "startIndex": 109,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "192",
+         "ranges": [
+          {
+           "startIndex": 109,
+           "length": 10
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\u003e _NOTE_: `MDCChipSet` will generate a unique ID to apply to each added chip's element if it does not already have an ID",
+         "matchingRanges": {
+          "lineNumber": "207",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "207",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\u003e when it is passed to `addChip`. This is used to distinguish chips during user interactions.",
+         "matchingRanges": {
+          "lineNumber": "208"
+         },
+         "lineNumber": "208",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "Individual `MDCChip` instances will emit a `MDCChip:removal` event once the exit transition ends. `MDCChipSet` will handle destroying the `MDCChip` instance in respon ...",
+         "matchingRanges": {
+          "lineNumber": "214",
+          "columnRanges": [
+           {
+            "startIndex": 99,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "214",
+         "ranges": [
+          {
+           "startIndex": 99,
+           "length": 10
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "## `MDCChip` and `MDCChipSet` Properties and Methods",
+         "matchingRanges": {
+          "lineNumber": "339",
+          "columnRanges": [
+           {
+            "startIndex": 18,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "339",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 52
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 18,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "340"
+         },
+         "lineNumber": "340",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {}
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 17
+    },
+    "resultToken": "CBASAggBOO62_c-GrYbQjAFAAEgQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "material-components-web",
+        "ossProject": "material-components"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "CHANGELOG.md",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "... d:** Filled textfields will no longer show a floating label at certain densities. This can be overridden by setting `$mdc-text-field-minimum-height-for-filled-label: 40px`",
+         "matchingRanges": {
+          "lineNumber": "1321"
+         },
+         "lineNumber": "1321"
+        },
+        {
+         "lineText": "* **chips:** Both `MDCChipAdapter` and `MDCChipSetAdapter` have new methods. `MDCChipSetFoundation` event handlers now accept the corresponding c ...",
+         "matchingRanges": {
+          "lineNumber": "1322",
+          "columnRanges": [
+           {
+            "startIndex": 40,
+            "length": 10
+           },
+           {
+            "startIndex": 78,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "1322",
+         "ranges": [
+          {
+           "startIndex": 40,
+           "length": 10
+          },
+          {
+           "startIndex": 78,
+           "length": 10
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  ```",
+         "matchingRanges": {
+          "lineNumber": "1475"
+         },
+         "lineNumber": "1475"
+        },
+        {
+         "lineText": "* **chips:** MDCChipSetAdapter#removeChip has been replaced with MDCChipSetAdapter#removeChipAtIndex. MDCChipSetAdapter#setSelected has been replaced with MDCChipSetAdapter#selectChipAtIndex",
+         "matchingRanges": {
+          "lineNumber": "1476",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 10
+           },
+           {
+            "startIndex": 65,
+            "length": 10
+           },
+           {
+            "startIndex": 102,
+            "length": 10
+           },
+           {
+            "startIndex": 155,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "1476",
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 10
+          },
+          {
+           "startIndex": 65,
+           "length": 10
+          },
+          {
+           "startIndex": 102,
+           "length": 10
+          },
+          {
+           "startIndex": 155,
+           "length": 10
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CBESAggBOMKh3sHakYC9wAFAAEgR"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "material-components-web",
+        "ossProject": "material-components"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "CHANGELOG_ARCHIVE.md",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "... and has `selected` as a property. Custom event details require a `chipId` instead of `chipFoundation`. New methods added to `MDCChipSetAdapter` and `MDCChipSetFoundation`.",
+         "matchingRanges": {
+          "lineNumber": "765",
+          "columnRanges": [
+           {
+            "startIndex": 129,
+            "length": 10
+           },
+           {
+            "startIndex": 153,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "765",
+         "ranges": [
+          {
+           "startIndex": 129,
+           "length": 10
+          },
+          {
+           "startIndex": 153,
+           "length": 10
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "... onHandler, deregisterInteractionHandler) and shifted responsibility of event handling and programmatic select element updates out of the foundation and into the component.",
+         "matchingRanges": {
+          "lineNumber": "830"
+         },
+         "lineNumber": "830"
+        },
+        {
+         "lineText": "* **chips:** `MDCChip`/`MDCChipSet` registerEventHandler adapter methods were removed, and corresponding handlers were made public in `MDCChipFoundation`/`MDCChipSetFoundation`.",
+         "matchingRanges": {
+          "lineNumber": "831",
+          "columnRanges": [
+           {
+            "startIndex": 24,
+            "length": 10
+           },
+           {
+            "startIndex": 155,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "831",
+         "ranges": [
+          {
+           "startIndex": 24,
+           "length": 10
+          },
+          {
+           "startIndex": 155,
+           "length": 10
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "* **text-field:** registerValidationAttributeChangeHandler adapter API now expects the handler to accept an array of strings, not mutation objects",
+         "matchingRanges": {
+          "lineNumber": "929"
+         },
+         "lineNumber": "929"
+        },
+        {
+         "lineText": "* **chips:** MDCChipSet/MDCChip no longer manipulates DOM directly. Removed MDCChipSetAdapter.appendChip, MDCChipSetFoundation.addChip, and MDCChip.remove. Modified signature of MDCChipSet.addChip",
+         "matchingRanges": {
+          "lineNumber": "930",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 10
+           },
+           {
+            "startIndex": 76,
+            "length": 10
+           },
+           {
+            "startIndex": 106,
+            "length": 10
+           },
+           {
+            "startIndex": 178,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "930",
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 10
+          },
+          {
+           "startIndex": 76,
+           "length": 10
+          },
+          {
+           "startIndex": 106,
+           "length": 10
+          },
+          {
+           "startIndex": 178,
+           "length": 10
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "... PI for remove icon including mdc-chip__icon--remove, remove() method and adapter methods to MDCChip. Modify appendChip() and add removeChip() adapter method to MDCChipSet.",
+         "matchingRanges": {
+          "lineNumber": "1042",
+          "columnRanges": [
+           {
+            "startIndex": 164,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "1042",
+         "ranges": [
+          {
+           "startIndex": 164,
+           "length": 10
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "* **top-app-bar:** New adapter methods for setting the top app bar position and adding resize event handlers that must be implemented.",
+         "matchingRanges": {
+          "lineNumber": "1048"
+         },
+         "lineNumber": "1048"
+        },
+        {
+         "lineText": "* **chips:** Added a new chip variant (entry chips). Added new methods to MDCChipSet, MDCChipSetFoundation, and MDCChipSetAdapter.",
+         "matchingRanges": {
+          "lineNumber": "1049",
+          "columnRanges": [
+           {
+            "startIndex": 74,
+            "length": 10
+           },
+           {
+            "startIndex": 86,
+            "length": 10
+           },
+           {
+            "startIndex": 112,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "1049",
+         "ranges": [
+          {
+           "startIndex": 74,
+           "length": 10
+          },
+          {
+           "startIndex": 86,
+           "length": 10
+          },
+          {
+           "startIndex": 112,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "* **chips:** isSelected method added to MDCChip, and related methods added to MDCChipFoundation and MDCChipSetFoundation.",
+         "matchingRanges": {
+          "lineNumber": "1050",
+          "columnRanges": [
+           {
+            "startIndex": 100,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "1050",
+         "ranges": [
+          {
+           "startIndex": 100,
+           "length": 10
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "... ctivated` class, `mdc-chip-activated-ink-color` Sass mixin, and the `toggleActive` methods on `MDCChip`/`MDCChipSet` have been renamed to `mdc-chip--selected`, `mdc-chip-se ...",
+         "matchingRanges": {
+          "lineNumber": "1205",
+          "columnRanges": [
+           {
+            "startIndex": 109,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "1205",
+         "ranges": [
+          {
+           "startIndex": 109,
+           "length": 10
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 7
+    },
+    "resultToken": "CBISAggBONT5mIKTi-KCXUAASBI"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "material-components-web",
+        "ossProject": "material-components"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "packages/material-components-web/index.ts",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "autoInit.register('MDCChip', chips.MDCChip);",
+         "matchingRanges": {
+          "lineNumber": "61"
+         },
+         "lineNumber": "61",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 18,
+            "length": 9
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "autoInit.register('MDCChipSet', chips.MDCChipSet);",
+         "matchingRanges": {
+          "lineNumber": "62",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 10
+           },
+           {
+            "startIndex": 38,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "62",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 18,
+            "length": 12
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 10
+          },
+          {
+           "startIndex": 38,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "autoInit.register('MDCCircularProgress', circularProgress.MDCCircularProgress);",
+         "matchingRanges": {
+          "lineNumber": "63"
+         },
+         "lineNumber": "63",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 18,
+            "length": 21
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBMSAggBOKSavb_srJO-jQFAAEgT"
+   }
+  ],
+  "estimatedResultCount": "20",
+  "exhaustive": true,
+  "requestToken": "CgpNRENDaGlwU2V0EkooIGdpdDpnaXRodWIvbWF0ZXJpYWwtY29tcG9uZW50cy9tYXRlcmlhbC1jb21wb25lbnRzLXdlYkBtYXN0ZXIgY2FzZTp5ZXMgKRoMCM_QzNEGEKqHma0DIAwqADIASAE"
+ }
+}

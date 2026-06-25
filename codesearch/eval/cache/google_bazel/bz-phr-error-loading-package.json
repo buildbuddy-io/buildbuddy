@@ -1,0 +1,2459 @@
+{
+ "query": "\"error loading package\"",
+ "oss_project": "bazel",
+ "repo_name": "bazel",
+ "page_size": 50,
+ "fetched_at": "2026-06-11T22:28:33Z",
+ "response": {
+  "searchResults": [
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/packages/BuildFileContainsErrorsException.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  public String getMessage() {",
+         "matchingRanges": {
+          "lineNumber": "58"
+         },
+         "lineNumber": "58",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    return String.format(\"error loading package '%s': %s\", getPackageId(), getRawMessage());",
+         "matchingRanges": {
+          "lineNumber": "59",
+          "columnRanges": [
+           {
+            "startIndex": 26,
+            "length": 21
+           }
+          ]
+         },
+         "lineNumber": "59",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 25,
+            "length": 32
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 26,
+           "length": 21
+          }
+         ]
+        },
+        {
+         "lineText": "  }",
+         "matchingRanges": {
+          "lineNumber": "60"
+         },
+         "lineNumber": "60"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAASAggBOJLYk8Dij4amUEAASAA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/skyframe/RecursivePackageProviderBackedTargetPatternResolver.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "      throw new TargetParsingException(",
+         "matchingRanges": {
+          "lineNumber": "226"
+         },
+         "lineNumber": "226",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "          \"error loading package under directory '\" + directory + \"': \" + e.getMessage(),",
+         "matchingRanges": {
+          "lineNumber": "227",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 21
+           }
+          ]
+         },
+         "lineNumber": "227",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 10,
+            "length": 41
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 66,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 21
+          }
+         ]
+        },
+        {
+         "lineText": "          e,",
+         "matchingRanges": {
+          "lineNumber": "228"
+         },
+         "lineNumber": "228"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAESAggBOISH3-SHpLKUWUAASAE"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/skyframe/PackageErrorMessageFunctionTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    assertThat(packageErrorMessageValue.getNoSuchPackageExceptionMessage())",
+         "matchingRanges": {
+          "lineNumber": "59"
+         },
+         "lineNumber": "59"
+        },
+        {
+         "lineText": "        .isEqualTo(\"error loading package 'a': cannot load '//a:does_not_exist.bzl': no such file\");",
+         "matchingRanges": {
+          "lineNumber": "60",
+          "columnRanges": [
+           {
+            "startIndex": 20,
+            "length": 21
+           }
+          ]
+         },
+         "lineNumber": "60",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 19,
+            "length": 79
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 20,
+           "length": 21
+          }
+         ]
+        },
+        {
+         "lineText": "  }",
+         "matchingRanges": {
+          "lineNumber": "61"
+         },
+         "lineNumber": "61"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAISAggBOJKBn8TUsY3V9wFAAEgC"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/pkgcache/LoadingPhaseRunnerTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "        .hasMessageThat()",
+         "matchingRanges": {
+          "lineNumber": "587"
+         },
+         "lineNumber": "587"
+        },
+        {
+         "lineText": "        .isEqualTo(\"error loading package 'pkg': Package 'pkg' contains errors\");",
+         "matchingRanges": {
+          "lineNumber": "588",
+          "columnRanges": [
+           {
+            "startIndex": 20,
+            "length": 21
+           }
+          ]
+         },
+         "lineNumber": "588",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 19,
+            "length": 60
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 20,
+           "length": 21
+          }
+         ]
+        },
+        {
+         "lineText": "    tester.assertContainsError(\"test_suite rule has no 'name' attribute\");",
+         "matchingRanges": {
+          "lineNumber": "589"
+         },
+         "lineNumber": "589",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 31,
+            "length": 41
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "      tester.assertContainsWarning(\"Target pattern parsing failed\");",
+         "matchingRanges": {
+          "lineNumber": "1670"
+         },
+         "lineNumber": "1670",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 35,
+            "length": 31
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "      tester.assertContainsError(\"error loading package 'bad': nope\");",
+         "matchingRanges": {
+          "lineNumber": "1671",
+          "columnRanges": [
+           {
+            "startIndex": 34,
+            "length": 21
+           }
+          ]
+         },
+         "lineNumber": "1671",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 33,
+            "length": 35
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 34,
+           "length": 21
+          }
+         ]
+        },
+        {
+         "lineText": "    } else {",
+         "matchingRanges": {
+          "lineNumber": "1672"
+         },
+         "lineNumber": "1672",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "      assertThat(exn).hasCauseThat().isInstanceOf(BuildFileContainsErrorsException.class);",
+         "matchingRanges": {
+          "lineNumber": "1675"
+         },
+         "lineNumber": "1675",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 83,
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "      assertThat(exn).hasCauseThat().hasMessageThat().contains(\"error loading package 'bad': nope\");",
+         "matchingRanges": {
+          "lineNumber": "1676",
+          "columnRanges": [
+           {
+            "startIndex": 64,
+            "length": 21
+           }
+          ]
+         },
+         "lineNumber": "1676",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 63,
+            "length": 35
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 64,
+           "length": 21
+          }
+         ]
+        },
+        {
+         "lineText": "    }",
+         "matchingRanges": {
+          "lineNumber": "1677"
+         },
+         "lineNumber": "1677"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CAMSAggBOPaYwtDmyvXNLEAASAM"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/skyframe/PackageFunctionTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "        .isEqualTo(",
+         "matchingRanges": {
+          "lineNumber": "949"
+         },
+         "lineNumber": "949"
+        },
+        {
+         "lineText": "            \"error loading package 'test/starlark': \"",
+         "matchingRanges": {
+          "lineNumber": "950",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 21
+           }
+          ]
+         },
+         "lineNumber": "950",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 12,
+            "length": 41
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 21
+          }
+         ]
+        },
+        {
+         "lineText": "                + \"cannot load '//test/starlark:bad_extension.bzl': no such file\");",
+         "matchingRanges": {
+          "lineNumber": "951"
+         },
+         "lineNumber": "951",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 18,
+            "length": 63
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "        .isEqualTo(",
+         "matchingRanges": {
+          "lineNumber": "973"
+         },
+         "lineNumber": "973"
+        },
+        {
+         "lineText": "            \"error loading package 'test/starlark': \"",
+         "matchingRanges": {
+          "lineNumber": "974",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 21
+           }
+          ]
+         },
+         "lineNumber": "974",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 12,
+            "length": 41
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 21
+          }
+         ]
+        },
+        {
+         "lineText": "                + \"at /workspace/test/starlark/extension.bzl:1:6: \"",
+         "matchingRanges": {
+          "lineNumber": "975"
+         },
+         "lineNumber": "975",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 18,
+            "length": 49
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "        .isEqualTo(",
+         "matchingRanges": {
+          "lineNumber": "1000"
+         },
+         "lineNumber": "1000"
+        },
+        {
+         "lineText": "            \"error loading package 'pkg': Internal error while loading Starlark builtins: Failed\"",
+         "matchingRanges": {
+          "lineNumber": "1001",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 21
+           }
+          ]
+         },
+         "lineNumber": "1001",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 12,
+            "length": 85
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 21
+          }
+         ]
+        },
+        {
+         "lineText": "                + \" to load builtins sources: initialization of module 'exports.bzl' (internal)\"",
+         "matchingRanges": {
+          "lineNumber": "1002"
+         },
+         "lineNumber": "1002",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 18,
+            "length": 78
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 5
+    },
+    "resultToken": "CAQSAggBOPakwaSJl57x2QFAAEgE"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/query2/testutil/AbstractQueryKeepGoingTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    String expectedError =",
+         "matchingRanges": {
+          "lineNumber": "364"
+         },
+         "lineNumber": "364"
+        },
+        {
+         "lineText": "        \"error loading package 'foo/foo': Every .bzl file must have a corresponding package\";",
+         "matchingRanges": {
+          "lineNumber": "365",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 21
+           }
+          ]
+         },
+         "lineNumber": "365",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 84
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 21
+          }
+         ]
+        },
+        {
+         "lineText": "    assertContainsEvent(expectedError);",
+         "matchingRanges": {
+          "lineNumber": "366"
+         },
+         "lineNumber": "366"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    String expectedError =",
+         "matchingRanges": {
+          "lineNumber": "412"
+         },
+         "lineNumber": "412"
+        },
+        {
+         "lineText": "        \"error loading package 'foo/foo': Every .bzl file must have a corresponding package, \"",
+         "matchingRanges": {
+          "lineNumber": "413",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 21
+           }
+          ]
+         },
+         "lineNumber": "413",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 86
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 21
+          }
+         ]
+        },
+        {
+         "lineText": "            + \"but '//bar:lib.bzl' does not have one\";",
+         "matchingRanges": {
+          "lineNumber": "414"
+         },
+         "lineNumber": "414",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 14,
+            "length": 39
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    String expectedError2 =",
+         "matchingRanges": {
+          "lineNumber": "419"
+         },
+         "lineNumber": "419"
+        },
+        {
+         "lineText": "        \"error loading package 'foo/foo2': Every .bzl file must have a corresponding package, \"",
+         "matchingRanges": {
+          "lineNumber": "420",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 21
+           }
+          ]
+         },
+         "lineNumber": "420",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 87
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 21
+          }
+         ]
+        },
+        {
+         "lineText": "            + \"but '//bar:lib.bzl' does not have one\";",
+         "matchingRanges": {
+          "lineNumber": "421"
+         },
+         "lineNumber": "421",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 14,
+            "length": 39
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 6
+    },
+    "resultToken": "CAUSAggBOJTvt8i2ldTYQEAASAU"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/pkgcache/TargetPatternEvaluatorTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "                    .setMessage(",
+         "matchingRanges": {
+          "lineNumber": "451"
+         },
+         "lineNumber": "451"
+        },
+        {
+         "lineText": "                        \"Error evaluating 'foo/...': error loading package 'foo/bar/bad': Package\"",
+         "matchingRanges": {
+          "lineNumber": "452",
+          "columnRanges": [
+           {
+            "startIndex": 53,
+            "length": 21
+           }
+          ]
+         },
+         "lineNumber": "452",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 24,
+            "length": 74
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 53,
+           "length": 21
+          }
+         ]
+        },
+        {
+         "lineText": "                            + \" 'foo/bar/bad' contains errors\")",
+         "matchingRanges": {
+          "lineNumber": "453"
+         },
+         "lineNumber": "453",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 30,
+            "length": 32
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "                                    String.format(",
+         "matchingRanges": {
+          "lineNumber": "481"
+         },
+         "lineNumber": "481"
+        },
+        {
+         "lineText": "                                        \"Error evaluating 'foo/...': error loading package\"",
+         "matchingRanges": {
+          "lineNumber": "482",
+          "columnRanges": [
+           {
+            "startIndex": 69,
+            "length": 21
+           }
+          ]
+         },
+         "lineNumber": "482",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 40,
+            "length": 51
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 69,
+           "length": 21
+          }
+         ]
+        },
+        {
+         "lineText": "                                            + \" 'foo/bar/bad%d': Package 'foo/bar/bad%d' contains\"",
+         "matchingRanges": {
+          "lineNumber": "483"
+         },
+         "lineNumber": "483",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 46,
+            "length": 52
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAYSAggBOLb1jbL5v5nXdkAASAY"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/query2/cquery/ConfiguredTargetQuerySemanticsTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "        .isEqualTo(",
+         "matchingRanges": {
+          "lineNumber": "578"
+         },
+         "lineNumber": "578"
+        },
+        {
+         "lineText": "            \"error loading package under directory 'parent': no such package 'parent/child':\"",
+         "matchingRanges": {
+          "lineNumber": "579",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 21
+           }
+          ]
+         },
+         "lineNumber": "579",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 12,
+            "length": 81
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 21
+          }
+         ]
+        },
+        {
+         "lineText": "                + \" Symlink cycle detected while trying to find BUILD file\"",
+         "matchingRanges": {
+          "lineNumber": "580"
+         },
+         "lineNumber": "580",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 18,
+            "length": 57
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAcSAggBOLKo3MOdiOj9eUAASAc"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "site/en/configure/attributes.md",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "type 'select' has no method upper().",
+         "matchingRanges": {
+          "lineNumber": "779"
+         },
+         "lineNumber": "779"
+        },
+        {
+         "lineText": "ERROR: error loading package 'myapp': Package 'myapp' contains errors.",
+         "matchingRanges": {
+          "lineNumber": "780",
+          "columnRanges": [
+           {
+            "startIndex": 7,
+            "length": 21
+           }
+          ]
+         },
+         "lineNumber": "780",
+         "ranges": [
+          {
+           "startIndex": 7,
+           "length": 21
+          }
+         ]
+        },
+        {
+         "lineText": "```",
+         "matchingRanges": {
+          "lineNumber": "781"
+         },
+         "lineNumber": "781"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAgSAggBOPbNkbfSu9SDswFAAEgI"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "site/en/docs/configurable-attributes.md",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "type 'select' has no method upper().",
+         "matchingRanges": {
+          "lineNumber": "780"
+         },
+         "lineNumber": "780"
+        },
+        {
+         "lineText": "ERROR: error loading package 'myapp': Package 'myapp' contains errors.",
+         "matchingRanges": {
+          "lineNumber": "781",
+          "columnRanges": [
+           {
+            "startIndex": 7,
+            "length": 21
+           }
+          ]
+         },
+         "lineNumber": "781",
+         "ranges": [
+          {
+           "startIndex": 7,
+           "length": 21
+          }
+         ]
+        },
+        {
+         "lineText": "```",
+         "matchingRanges": {
+          "lineNumber": "782"
+         },
+         "lineNumber": "782"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAkSAggBOOqlsvi976a8gwFAAEgJ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/configure/attributes.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "type 'select' has no method upper().",
+         "matchingRanges": {
+          "lineNumber": "776"
+         },
+         "lineNumber": "776"
+        },
+        {
+         "lineText": "ERROR: error loading package 'myapp': Package 'myapp' contains errors.",
+         "matchingRanges": {
+          "lineNumber": "777",
+          "columnRanges": [
+           {
+            "startIndex": 7,
+            "length": 21
+           }
+          ]
+         },
+         "lineNumber": "777",
+         "ranges": [
+          {
+           "startIndex": 7,
+           "length": 21
+          }
+         ]
+        },
+        {
+         "lineText": "```",
+         "matchingRanges": {
+          "lineNumber": "778"
+         },
+         "lineNumber": "778"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAoSAggBONj_0efFmOKu_QFAAEgK"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/8.4.2/configure/attributes.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "type 'select' has no method upper().",
+         "matchingRanges": {
+          "lineNumber": "772"
+         },
+         "lineNumber": "772"
+        },
+        {
+         "lineText": "ERROR: error loading package 'myapp': Package 'myapp' contains errors.",
+         "matchingRanges": {
+          "lineNumber": "773",
+          "columnRanges": [
+           {
+            "startIndex": 7,
+            "length": 21
+           }
+          ]
+         },
+         "lineNumber": "773",
+         "ranges": [
+          {
+           "startIndex": 7,
+           "length": 21
+          }
+         ]
+        },
+        {
+         "lineText": "```",
+         "matchingRanges": {
+          "lineNumber": "774"
+         },
+         "lineNumber": "774"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAsSAggBOPTJg4X7q8ayLUAASAs"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/8.2.1/configure/attributes.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "type 'select' has no method upper().",
+         "matchingRanges": {
+          "lineNumber": "772"
+         },
+         "lineNumber": "772"
+        },
+        {
+         "lineText": "ERROR: error loading package 'myapp': Package 'myapp' contains errors.",
+         "matchingRanges": {
+          "lineNumber": "773",
+          "columnRanges": [
+           {
+            "startIndex": 7,
+            "length": 21
+           }
+          ]
+         },
+         "lineNumber": "773",
+         "ranges": [
+          {
+           "startIndex": 7,
+           "length": 21
+          }
+         ]
+        },
+        {
+         "lineText": "```",
+         "matchingRanges": {
+          "lineNumber": "774"
+         },
+         "lineNumber": "774"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAwSAggBOMap8LW-4vOoSkAASAw"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/7.7.1/configure/attributes.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "type 'select' has no method upper().",
+         "matchingRanges": {
+          "lineNumber": "772"
+         },
+         "lineNumber": "772"
+        },
+        {
+         "lineText": "ERROR: error loading package 'myapp': Package 'myapp' contains errors.",
+         "matchingRanges": {
+          "lineNumber": "773",
+          "columnRanges": [
+           {
+            "startIndex": 7,
+            "length": 21
+           }
+          ]
+         },
+         "lineNumber": "773",
+         "ranges": [
+          {
+           "startIndex": 7,
+           "length": 21
+          }
+         ]
+        },
+        {
+         "lineText": "```",
+         "matchingRanges": {
+          "lineNumber": "774"
+         },
+         "lineNumber": "774"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CA0SAggBOLzthoqIlJzuWUAASA0"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/9.0.0/configure/attributes.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "type 'select' has no method upper().",
+         "matchingRanges": {
+          "lineNumber": "772"
+         },
+         "lineNumber": "772"
+        },
+        {
+         "lineText": "ERROR: error loading package 'myapp': Package 'myapp' contains errors.",
+         "matchingRanges": {
+          "lineNumber": "773",
+          "columnRanges": [
+           {
+            "startIndex": 7,
+            "length": 21
+           }
+          ]
+         },
+         "lineNumber": "773",
+         "ranges": [
+          {
+           "startIndex": 7,
+           "length": 21
+          }
+         ]
+        },
+        {
+         "lineText": "```",
+         "matchingRanges": {
+          "lineNumber": "774"
+         },
+         "lineNumber": "774"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CA4SAggBOIyh8sWwz7LpbUAASA4"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/9.1.0/configure/attributes.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "type 'select' has no method upper().",
+         "matchingRanges": {
+          "lineNumber": "773"
+         },
+         "lineNumber": "773"
+        },
+        {
+         "lineText": "ERROR: error loading package 'myapp': Package 'myapp' contains errors.",
+         "matchingRanges": {
+          "lineNumber": "774",
+          "columnRanges": [
+           {
+            "startIndex": 7,
+            "length": 21
+           }
+          ]
+         },
+         "lineNumber": "774",
+         "ranges": [
+          {
+           "startIndex": 7,
+           "length": 21
+          }
+         ]
+        },
+        {
+         "lineText": "```",
+         "matchingRanges": {
+          "lineNumber": "775"
+         },
+         "lineNumber": "775"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CA8SAggBOPqCvdLg6qWHqgFAAEgP"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/7.6.1/configure/attributes.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "type 'select' has no method upper().",
+         "matchingRanges": {
+          "lineNumber": "772"
+         },
+         "lineNumber": "772"
+        },
+        {
+         "lineText": "ERROR: error loading package 'myapp': Package 'myapp' contains errors.",
+         "matchingRanges": {
+          "lineNumber": "773",
+          "columnRanges": [
+           {
+            "startIndex": 7,
+            "length": 21
+           }
+          ]
+         },
+         "lineNumber": "773",
+         "ranges": [
+          {
+           "startIndex": 7,
+           "length": 21
+          }
+         ]
+        },
+        {
+         "lineText": "```",
+         "matchingRanges": {
+          "lineNumber": "774"
+         },
+         "lineNumber": "774"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBASAggBOPz_q_Sp-KyPuwFAAEgQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/8.0.1/configure/attributes.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "type 'select' has no method upper().",
+         "matchingRanges": {
+          "lineNumber": "772"
+         },
+         "lineNumber": "772"
+        },
+        {
+         "lineText": "ERROR: error loading package 'myapp': Package 'myapp' contains errors.",
+         "matchingRanges": {
+          "lineNumber": "773",
+          "columnRanges": [
+           {
+            "startIndex": 7,
+            "length": 21
+           }
+          ]
+         },
+         "lineNumber": "773",
+         "ranges": [
+          {
+           "startIndex": 7,
+           "length": 21
+          }
+         ]
+        },
+        {
+         "lineText": "```",
+         "matchingRanges": {
+          "lineNumber": "774"
+         },
+         "lineNumber": "774"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBESAggBOI6s9vDYgvO93QFAAEgR"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/8.6.0/configure/attributes.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "type 'select' has no method upper().",
+         "matchingRanges": {
+          "lineNumber": "772"
+         },
+         "lineNumber": "772"
+        },
+        {
+         "lineText": "ERROR: error loading package 'myapp': Package 'myapp' contains errors.",
+         "matchingRanges": {
+          "lineNumber": "773",
+          "columnRanges": [
+           {
+            "startIndex": 7,
+            "length": 21
+           }
+          ]
+         },
+         "lineNumber": "773",
+         "ranges": [
+          {
+           "startIndex": 7,
+           "length": 21
+          }
+         ]
+        },
+        {
+         "lineText": "```",
+         "matchingRanges": {
+          "lineNumber": "774"
+         },
+         "lineNumber": "774"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBISAggBOKr77YKX0ruU6QFAAEgS"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/8.1.1/configure/attributes.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "type 'select' has no method upper().",
+         "matchingRanges": {
+          "lineNumber": "772"
+         },
+         "lineNumber": "772"
+        },
+        {
+         "lineText": "ERROR: error loading package 'myapp': Package 'myapp' contains errors.",
+         "matchingRanges": {
+          "lineNumber": "773",
+          "columnRanges": [
+           {
+            "startIndex": 7,
+            "length": 21
+           }
+          ]
+         },
+         "lineNumber": "773",
+         "ranges": [
+          {
+           "startIndex": 7,
+           "length": 21
+          }
+         ]
+        },
+        {
+         "lineText": "```",
+         "matchingRanges": {
+          "lineNumber": "774"
+         },
+         "lineNumber": "774"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBMSAggBONSk7-7UpZXQ-QFAAEgT"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/8.5.1/configure/attributes.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "type 'select' has no method upper().",
+         "matchingRanges": {
+          "lineNumber": "772"
+         },
+         "lineNumber": "772"
+        },
+        {
+         "lineText": "ERROR: error loading package 'myapp': Package 'myapp' contains errors.",
+         "matchingRanges": {
+          "lineNumber": "773",
+          "columnRanges": [
+           {
+            "startIndex": 7,
+            "length": 21
+           }
+          ]
+         },
+         "lineNumber": "773",
+         "ranges": [
+          {
+           "startIndex": 7,
+           "length": 21
+          }
+         ]
+        },
+        {
+         "lineText": "```",
+         "matchingRanges": {
+          "lineNumber": "774"
+         },
+         "lineNumber": "774"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBQSAggBOITIgIqG18PJ_QFAAEgU"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/8.3.1/configure/attributes.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "type 'select' has no method upper().",
+         "matchingRanges": {
+          "lineNumber": "772"
+         },
+         "lineNumber": "772"
+        },
+        {
+         "lineText": "ERROR: error loading package 'myapp': Package 'myapp' contains errors.",
+         "matchingRanges": {
+          "lineNumber": "773",
+          "columnRanges": [
+           {
+            "startIndex": 7,
+            "length": 21
+           }
+          ]
+         },
+         "lineNumber": "773",
+         "ranges": [
+          {
+           "startIndex": 7,
+           "length": 21
+          }
+         ]
+        },
+        {
+         "lineText": "```",
+         "matchingRanges": {
+          "lineNumber": "774"
+         },
+         "lineNumber": "774"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBUSAggBOKTq6J7M6ZzX_QFAAEgV"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/docs/configurable-attributes.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "type 'select' has no method upper().",
+         "matchingRanges": {
+          "lineNumber": "777"
+         },
+         "lineNumber": "777"
+        },
+        {
+         "lineText": "ERROR: error loading package 'myapp': Package 'myapp' contains errors.",
+         "matchingRanges": {
+          "lineNumber": "778",
+          "columnRanges": [
+           {
+            "startIndex": 7,
+            "length": 21
+           }
+          ]
+         },
+         "lineNumber": "778",
+         "ranges": [
+          {
+           "startIndex": 7,
+           "length": 21
+          }
+         ]
+        },
+        {
+         "lineText": "```",
+         "matchingRanges": {
+          "lineNumber": "779"
+         },
+         "lineNumber": "779"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBYSAggBOPi7qaW7wpulQ0AASBY"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/7.7.1/docs/configurable-attributes.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "type 'select' has no method upper().",
+         "matchingRanges": {
+          "lineNumber": "772"
+         },
+         "lineNumber": "772"
+        },
+        {
+         "lineText": "ERROR: error loading package 'myapp': Package 'myapp' contains errors.",
+         "matchingRanges": {
+          "lineNumber": "773",
+          "columnRanges": [
+           {
+            "startIndex": 7,
+            "length": 21
+           }
+          ]
+         },
+         "lineNumber": "773",
+         "ranges": [
+          {
+           "startIndex": 7,
+           "length": 21
+          }
+         ]
+        },
+        {
+         "lineText": "```",
+         "matchingRanges": {
+          "lineNumber": "774"
+         },
+         "lineNumber": "774"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBcSAggBOLK2sr_olvWVF0AASBc"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/8.5.1/docs/configurable-attributes.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "type 'select' has no method upper().",
+         "matchingRanges": {
+          "lineNumber": "772"
+         },
+         "lineNumber": "772"
+        },
+        {
+         "lineText": "ERROR: error loading package 'myapp': Package 'myapp' contains errors.",
+         "matchingRanges": {
+          "lineNumber": "773",
+          "columnRanges": [
+           {
+            "startIndex": 7,
+            "length": 21
+           }
+          ]
+         },
+         "lineNumber": "773",
+         "ranges": [
+          {
+           "startIndex": 7,
+           "length": 21
+          }
+         ]
+        },
+        {
+         "lineText": "```",
+         "matchingRanges": {
+          "lineNumber": "774"
+         },
+         "lineNumber": "774"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBgSAggBOLr9kIGLpbbTIkAASBg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/8.2.1/docs/configurable-attributes.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "type 'select' has no method upper().",
+         "matchingRanges": {
+          "lineNumber": "772"
+         },
+         "lineNumber": "772"
+        },
+        {
+         "lineText": "ERROR: error loading package 'myapp': Package 'myapp' contains errors.",
+         "matchingRanges": {
+          "lineNumber": "773",
+          "columnRanges": [
+           {
+            "startIndex": 7,
+            "length": 21
+           }
+          ]
+         },
+         "lineNumber": "773",
+         "ranges": [
+          {
+           "startIndex": 7,
+           "length": 21
+          }
+         ]
+        },
+        {
+         "lineText": "```",
+         "matchingRanges": {
+          "lineNumber": "774"
+         },
+         "lineNumber": "774"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBkSAggBOKL1-s-X-JnNLEAASBk"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/8.3.1/docs/configurable-attributes.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "type 'select' has no method upper().",
+         "matchingRanges": {
+          "lineNumber": "772"
+         },
+         "lineNumber": "772"
+        },
+        {
+         "lineText": "ERROR: error loading package 'myapp': Package 'myapp' contains errors.",
+         "matchingRanges": {
+          "lineNumber": "773",
+          "columnRanges": [
+           {
+            "startIndex": 7,
+            "length": 21
+           }
+          ]
+         },
+         "lineNumber": "773",
+         "ranges": [
+          {
+           "startIndex": 7,
+           "length": 21
+          }
+         ]
+        },
+        {
+         "lineText": "```",
+         "matchingRanges": {
+          "lineNumber": "774"
+         },
+         "lineNumber": "774"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBoSAggBOMbGp_DixNOwaUAASBo"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/8.0.1/docs/configurable-attributes.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "type 'select' has no method upper().",
+         "matchingRanges": {
+          "lineNumber": "772"
+         },
+         "lineNumber": "772"
+        },
+        {
+         "lineText": "ERROR: error loading package 'myapp': Package 'myapp' contains errors.",
+         "matchingRanges": {
+          "lineNumber": "773",
+          "columnRanges": [
+           {
+            "startIndex": 7,
+            "length": 21
+           }
+          ]
+         },
+         "lineNumber": "773",
+         "ranges": [
+          {
+           "startIndex": 7,
+           "length": 21
+          }
+         ]
+        },
+        {
+         "lineText": "```",
+         "matchingRanges": {
+          "lineNumber": "774"
+         },
+         "lineNumber": "774"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBsSAggBOJj7svOCqZrirgFAAEgb"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/9.1.0/docs/configurable-attributes.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "type 'select' has no method upper().",
+         "matchingRanges": {
+          "lineNumber": "774"
+         },
+         "lineNumber": "774"
+        },
+        {
+         "lineText": "ERROR: error loading package 'myapp': Package 'myapp' contains errors.",
+         "matchingRanges": {
+          "lineNumber": "775",
+          "columnRanges": [
+           {
+            "startIndex": 7,
+            "length": 21
+           }
+          ]
+         },
+         "lineNumber": "775",
+         "ranges": [
+          {
+           "startIndex": 7,
+           "length": 21
+          }
+         ]
+        },
+        {
+         "lineText": "```",
+         "matchingRanges": {
+          "lineNumber": "776"
+         },
+         "lineNumber": "776"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBwSAggBOKiQz6qUh7TVwAFAAEgc"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/8.6.0/docs/configurable-attributes.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "type 'select' has no method upper().",
+         "matchingRanges": {
+          "lineNumber": "772"
+         },
+         "lineNumber": "772"
+        },
+        {
+         "lineText": "ERROR: error loading package 'myapp': Package 'myapp' contains errors.",
+         "matchingRanges": {
+          "lineNumber": "773",
+          "columnRanges": [
+           {
+            "startIndex": 7,
+            "length": 21
+           }
+          ]
+         },
+         "lineNumber": "773",
+         "ranges": [
+          {
+           "startIndex": 7,
+           "length": 21
+          }
+         ]
+        },
+        {
+         "lineText": "```",
+         "matchingRanges": {
+          "lineNumber": "774"
+         },
+         "lineNumber": "774"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CB0SAggBOIKopamJ77f9wgFAAEgd"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/8.1.1/docs/configurable-attributes.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "type 'select' has no method upper().",
+         "matchingRanges": {
+          "lineNumber": "772"
+         },
+         "lineNumber": "772"
+        },
+        {
+         "lineText": "ERROR: error loading package 'myapp': Package 'myapp' contains errors.",
+         "matchingRanges": {
+          "lineNumber": "773",
+          "columnRanges": [
+           {
+            "startIndex": 7,
+            "length": 21
+           }
+          ]
+         },
+         "lineNumber": "773",
+         "ranges": [
+          {
+           "startIndex": 7,
+           "length": 21
+          }
+         ]
+        },
+        {
+         "lineText": "```",
+         "matchingRanges": {
+          "lineNumber": "774"
+         },
+         "lineNumber": "774"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CB4SAggBOOySt4Swz__wxQFAAEge"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/7.6.1/docs/configurable-attributes.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "type 'select' has no method upper().",
+         "matchingRanges": {
+          "lineNumber": "772"
+         },
+         "lineNumber": "772"
+        },
+        {
+         "lineText": "ERROR: error loading package 'myapp': Package 'myapp' contains errors.",
+         "matchingRanges": {
+          "lineNumber": "773",
+          "columnRanges": [
+           {
+            "startIndex": 7,
+            "length": 21
+           }
+          ]
+         },
+         "lineNumber": "773",
+         "ranges": [
+          {
+           "startIndex": 7,
+           "length": 21
+          }
+         ]
+        },
+        {
+         "lineText": "```",
+         "matchingRanges": {
+          "lineNumber": "774"
+         },
+         "lineNumber": "774"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CB8SAggBOJ6Nqava2YPa5wFAAEgf"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/9.0.0/docs/configurable-attributes.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "type 'select' has no method upper().",
+         "matchingRanges": {
+          "lineNumber": "773"
+         },
+         "lineNumber": "773"
+        },
+        {
+         "lineText": "ERROR: error loading package 'myapp': Package 'myapp' contains errors.",
+         "matchingRanges": {
+          "lineNumber": "774",
+          "columnRanges": [
+           {
+            "startIndex": 7,
+            "length": 21
+           }
+          ]
+         },
+         "lineNumber": "774",
+         "ranges": [
+          {
+           "startIndex": 7,
+           "length": 21
+          }
+         ]
+        },
+        {
+         "lineText": "```",
+         "matchingRanges": {
+          "lineNumber": "775"
+         },
+         "lineNumber": "775"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CCASAggBOPyOpf6syNjG-gFAAEgg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/8.4.2/docs/configurable-attributes.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "type 'select' has no method upper().",
+         "matchingRanges": {
+          "lineNumber": "772"
+         },
+         "lineNumber": "772"
+        },
+        {
+         "lineText": "ERROR: error loading package 'myapp': Package 'myapp' contains errors.",
+         "matchingRanges": {
+          "lineNumber": "773",
+          "columnRanges": [
+           {
+            "startIndex": 7,
+            "length": 21
+           }
+          ]
+         },
+         "lineNumber": "773",
+         "ranges": [
+          {
+           "startIndex": 7,
+           "length": 21
+          }
+         ]
+        },
+        {
+         "lineText": "```",
+         "matchingRanges": {
+          "lineNumber": "774"
+         },
+         "lineNumber": "774"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CCESAggBOPCSw-Sag9_8_QFAAEgh"
+   }
+  ],
+  "estimatedResultCount": "34",
+  "exhaustive": true,
+  "requestToken": "ChciZXJyb3IgbG9hZGluZyBwYWNrYWdlIhIjKCBnaXQ6YmF6ZWwvYmF6ZWxAbWFzdGVyIGNhc2U6eWVzICkaDAiR7azRBhCe3p7rASAMKgAyAEgB"
+ }
+}

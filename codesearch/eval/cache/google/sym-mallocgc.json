@@ -1,0 +1,6303 @@
+{
+ "query": "mallocgc",
+ "oss_project": "go",
+ "repo_name": "go",
+ "page_size": 50,
+ "fetched_at": "2026-06-11T02:27:20Z",
+ "response": {
+  "searchResults": [
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/malloc.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "//go:linkname mallocgc",
+         "matchingRanges": {
+          "lineNumber": "1066",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "1066",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 22
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "func mallocgc(size uintptr, typ *_type, needzero bool) unsafe.Pointer {",
+         "matchingRanges": {
+          "lineNumber": "1067",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "1067",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\tif doubleCheckMalloc {",
+         "matchingRanges": {
+          "lineNumber": "1068"
+         },
+         "lineNumber": "1068",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func mallocgcTiny(size uintptr, typ *_type) (unsafe.Pointer, uintptr) {",
+         "matchingRanges": {
+          "lineNumber": "1208",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "1208",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t// Set mp.mallocing to keep from being preempted by GC.",
+         "matchingRanges": {
+          "lineNumber": "1209"
+         },
+         "lineNumber": "1209",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 55
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func mallocgcSmallNoscan(size uintptr, typ *_type, needzero bool) (unsafe.Pointer, uintptr) {",
+         "matchingRanges": {
+          "lineNumber": "1364",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "1364",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t// Set mp.mallocing to keep from being preempted by GC.",
+         "matchingRanges": {
+          "lineNumber": "1365"
+         },
+         "lineNumber": "1365",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 55
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func mallocgcLarge(size uintptr, typ *_type, needzero bool) (unsafe.Pointer, uintptr) {",
+         "matchingRanges": {
+          "lineNumber": "1693",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "1693",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t// Set mp.mallocing to keep from being preempted by GC.",
+         "matchingRanges": {
+          "lineNumber": "1694"
+         },
+         "lineNumber": "1694",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 55
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 40
+    },
+    "resultToken": "CAASBAgBIAE4lsTsyeCY1_KQAUAASAA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/_mkmalloc/mkmalloc.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t\t\t\t{inlineFunc, \"inlinedMalloc\", \"smallStub\"},",
+         "matchingRanges": {
+          "lineNumber": "171"
+         },
+         "lineNumber": "171",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 18,
+            "length": 15
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 35,
+            "length": 11
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t\t\t{inlineFunc, \"postMallocgc\", \"postMallocgc\"},",
+         "matchingRanges": {
+          "lineNumber": "172",
+          "columnRanges": [
+           {
+            "startIndex": 23,
+            "length": 8
+           },
+           {
+            "startIndex": 39,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "172",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 18,
+            "length": 14
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 34,
+            "length": 14
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 23,
+           "length": 8
+          },
+          {
+           "startIndex": 39,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t\t\t{foldCondition, \"isNoScan_\", str(false)},",
+         "matchingRanges": {
+          "lineNumber": "173"
+         },
+         "lineNumber": "173",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 21,
+            "length": 11
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t\t\t\t{inlineFunc, \"nextFreeFastTiny\", \"nextFreeFastTiny\"},",
+         "matchingRanges": {
+          "lineNumber": "202"
+         },
+         "lineNumber": "202",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 18,
+            "length": 18
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 38,
+            "length": 18
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t\t\t{inlineFunc, \"postMallocgc\", \"postMallocgc\"},",
+         "matchingRanges": {
+          "lineNumber": "203",
+          "columnRanges": [
+           {
+            "startIndex": 23,
+            "length": 8
+           },
+           {
+            "startIndex": 39,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "203",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 18,
+            "length": 14
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 34,
+            "length": 14
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 23,
+           "length": 8
+          },
+          {
+           "startIndex": 39,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t\t\t{inlineFunc, \"nextFreeFastStub\", \"nextFreeFastStub\"},",
+         "matchingRanges": {
+          "lineNumber": "204"
+         },
+         "lineNumber": "204",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 18,
+            "length": 18
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 38,
+            "length": 18
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t\t\t\t{inlineFunc, \"inlinedMalloc\", \"smallStub\"},",
+         "matchingRanges": {
+          "lineNumber": "222"
+         },
+         "lineNumber": "222",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 18,
+            "length": 15
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 35,
+            "length": 11
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t\t\t{inlineFunc, \"postMallocgc\", \"postMallocgc\"},",
+         "matchingRanges": {
+          "lineNumber": "223",
+          "columnRanges": [
+           {
+            "startIndex": 23,
+            "length": 8
+           },
+           {
+            "startIndex": 39,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "223",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 18,
+            "length": 14
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 34,
+            "length": 14
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 23,
+           "length": 8
+          },
+          {
+           "startIndex": 39,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t\t\t{foldCondition, \"isNoScan_\", str(true)},",
+         "matchingRanges": {
+          "lineNumber": "224"
+         },
+         "lineNumber": "224",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 21,
+            "length": 11
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 25
+    },
+    "resultToken": "CAESAggBOPKMwePK-Z6XcEAASAE"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/malloc_stubs.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "func mallocgcSlowPathStub(size uintptr, typ *_type, needzero bool, spc spanClass, elemsize uintptr) unsafe.Pointer {",
+         "matchingRanges": {
+          "lineNumber": "59",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "59",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\treturn mallocStub(size, typ, needzero)",
+         "matchingRanges": {
+          "lineNumber": "60"
+         },
+         "lineNumber": "60",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func postMallocgc(x unsafe.Pointer, typ *_type, size uintptr, elemsize uintptr) {",
+         "matchingRanges": {
+          "lineNumber": "120",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "120",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\tif isSlowPath_ \u0026\u0026 !isTiny_ {",
+         "matchingRanges": {
+          "lineNumber": "121"
+         },
+         "lineNumber": "121",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t\tif isSlowPath_ {",
+         "matchingRanges": {
+          "lineNumber": "215"
+         },
+         "lineNumber": "215",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 3,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t\t// postMallocgc only does anything in the slow path.",
+         "matchingRanges": {
+          "lineNumber": "216",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "216",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 52
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t\tgoto post",
+         "matchingRanges": {
+          "lineNumber": "217"
+         },
+         "lineNumber": "217",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tif isSlowPath_ {",
+         "matchingRanges": {
+          "lineNumber": "303"
+         },
+         "lineNumber": "303",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tpostMallocgc(x, typ, size, elemsize)",
+         "matchingRanges": {
+          "lineNumber": "304",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "304",
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t}",
+         "matchingRanges": {
+          "lineNumber": "305"
+         },
+         "lineNumber": "305"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 17
+    },
+    "resultToken": "CAISBAgBIAE4gu_K-vLfhcBrQABIAg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/compile/internal/typecheck/_builtin/runtime.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "func newobject(typ *byte) *any",
+         "matchingRanges": {
+          "lineNumber": "18"
+         },
+         "lineNumber": "18",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "func mallocgc(size uintptr, typ *byte, needszero bool) unsafe.Pointer",
+         "matchingRanges": {
+          "lineNumber": "19",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "19",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "func panicdivide()",
+         "matchingRanges": {
+          "lineNumber": "20"
+         },
+         "lineNumber": "20",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAMSBAgBIAE4usyf097cqsZaQABIAw"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/malloc_generated.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "func mallocgcTinySC2(size uintptr, typ *_type, needzero bool) unsafe.Pointer {",
+         "matchingRanges": {
+          "lineNumber": "1063",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "1063",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "1064"
+         },
+         "lineNumber": "1064"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func mallocgcSmallNoScanSC2(size uintptr, typ *_type, needzero bool) unsafe.Pointer {",
+         "matchingRanges": {
+          "lineNumber": "1167",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "1167",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "1168"
+         },
+         "lineNumber": "1168"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func mallocgcSmallNoScanSC3(size uintptr, typ *_type, needzero bool) unsafe.Pointer {",
+         "matchingRanges": {
+          "lineNumber": "1263",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "1263",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "1264"
+         },
+         "lineNumber": "1264"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func mallocgcSmallNoScanSC4(size uintptr, typ *_type, needzero bool) unsafe.Pointer {",
+         "matchingRanges": {
+          "lineNumber": "1359",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "1359",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "1360"
+         },
+         "lineNumber": "1360"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func mallocgcTinySlowPath(size uintptr, typ *_type, needzero bool) unsafe.Pointer {",
+         "matchingRanges": {
+          "lineNumber": "1743",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "1743",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "1744"
+         },
+         "lineNumber": "1744"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 45
+    },
+    "resultToken": "CAQSBAgBIAE49q3-6OLrytg9QABIBA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/malloc_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t\t// This helps double-check our manipulation of the assist credit",
+         "matchingRanges": {
+          "lineNumber": "514"
+         },
+         "lineNumber": "514",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 3,
+            "length": 64
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t// during mallocgc/freegc, including in cases when there is",
+         "matchingRanges": {
+          "lineNumber": "515",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "515",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 3,
+            "length": 59
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t// internal fragmentation when the requested mallocgc size is",
+         "matchingRanges": {
+          "lineNumber": "516",
+          "columnRanges": [
+           {
+            "startIndex": 48,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "516",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 3,
+            "length": 61
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 48,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t// smaller than the size class.",
+         "matchingRanges": {
+          "lineNumber": "517"
+         },
+         "lineNumber": "517",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 3,
+            "length": 31
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAUSAggBOOaUloaIl_SWXUAASAU"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/malloc_stubs_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\ttyp := abi.TypeOf(s{})",
+         "matchingRanges": {
+          "lineNumber": "25"
+         },
+         "lineNumber": "25"
+        },
+        {
+         "lineText": "\tb.Run(\"kind=mallocgc\", func(b *testing.B) {",
+         "matchingRanges": {
+          "lineNumber": "26",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "26",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 7,
+            "length": 15
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 24,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tfor b.Loop() {",
+         "matchingRanges": {
+          "lineNumber": "27"
+         },
+         "lineNumber": "27",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\truntime.Escape(runtime.MallocGC(size, typ, false))",
+         "matchingRanges": {
+          "lineNumber": "28",
+          "columnRanges": [
+           {
+            "startIndex": 26,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "28",
+         "ranges": [
+          {
+           "startIndex": 26,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t}",
+         "matchingRanges": {
+          "lineNumber": "29"
+         },
+         "lineNumber": "29"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t}",
+         "matchingRanges": {
+          "lineNumber": "53"
+         },
+         "lineNumber": "53"
+        },
+        {
+         "lineText": "\tb.Run(\"kind=mallocgc\", func(b *testing.B) {",
+         "matchingRanges": {
+          "lineNumber": "54",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "54",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 7,
+            "length": 15
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 24,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tfor b.Loop() {",
+         "matchingRanges": {
+          "lineNumber": "55"
+         },
+         "lineNumber": "55",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\truntime.Escape(runtime.MallocGC(size, typ, true))",
+         "matchingRanges": {
+          "lineNumber": "56",
+          "columnRanges": [
+           {
+            "startIndex": 26,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "56",
+         "ranges": [
+          {
+           "startIndex": 26,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t}",
+         "matchingRanges": {
+          "lineNumber": "57"
+         },
+         "lineNumber": "57"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 4
+    },
+    "resultToken": "CAYSAggBOK743Z_XjauKfUAASAY"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/export_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// Note we do a non-atomic load here.",
+         "matchingRanges": {
+          "lineNumber": "665"
+         },
+         "lineNumber": "665",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 37
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t// Some checks against gcBlackenEnabled (e.g., in mallocgc)",
+         "matchingRanges": {
+          "lineNumber": "666",
+          "columnRanges": [
+           {
+            "startIndex": 51,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "666",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 59
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 51,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t// are currently done via non-atomic load for performance reasons,",
+         "matchingRanges": {
+          "lineNumber": "667"
+         },
+         "lineNumber": "667",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 66
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func MallocGC(size uintptr, typ *abi.Type, needzero bool) unsafe.Pointer {",
+         "matchingRanges": {
+          "lineNumber": "2118",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "2118",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\treturn mallocgc(size, typ, needzero)",
+         "matchingRanges": {
+          "lineNumber": "2119",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "2119",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "}",
+         "matchingRanges": {
+          "lineNumber": "2120"
+         },
+         "lineNumber": "2120"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CAcSBAgBIAE4tv70rYPrtantAUAASAc"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/malloc_bench_generated_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "func benchmarkMallocgcScan8(b *testing.B) {",
+         "matchingRanges": {
+          "lineNumber": "32",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "32",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\tconst size = 8",
+         "matchingRanges": {
+          "lineNumber": "33"
+         },
+         "lineNumber": "33",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 14,
+            "length": 1
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func benchmarkMallocgcScan16(b *testing.B) {",
+         "matchingRanges": {
+          "lineNumber": "79",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "79",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\tconst size = 16",
+         "matchingRanges": {
+          "lineNumber": "80"
+         },
+         "lineNumber": "80",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 14,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func benchmarkMallocgcScan24(b *testing.B) {",
+         "matchingRanges": {
+          "lineNumber": "126",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "126",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\tconst size = 24",
+         "matchingRanges": {
+          "lineNumber": "127"
+         },
+         "lineNumber": "127",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 14,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func benchmarkMallocgcScan32(b *testing.B) {",
+         "matchingRanges": {
+          "lineNumber": "173",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "173",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\tconst size = 32",
+         "matchingRanges": {
+          "lineNumber": "174"
+         },
+         "lineNumber": "174",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 14,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func benchmarkMallocgcScan48(b *testing.B) {",
+         "matchingRanges": {
+          "lineNumber": "220",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "220",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\tconst size = 48",
+         "matchingRanges": {
+          "lineNumber": "221"
+         },
+         "lineNumber": "221",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 14,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 63
+    },
+    "resultToken": "CAgSBAgBIAE41PXf5t6BteLpAUAASAg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/compile/internal/ir/symtab.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tInterfaceSwitch           *obj.LSym",
+         "matchingRanges": {
+          "lineNumber": "39"
+         },
+         "lineNumber": "39"
+        },
+        {
+         "lineText": "\tMallocGC                  *obj.LSym",
+         "matchingRanges": {
+          "lineNumber": "40",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "40",
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\tMallocGCTiny              *obj.LSym",
+         "matchingRanges": {
+          "lineNumber": "41",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "41",
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\tMallocGCSmallNoScan       [8]*obj.LSym",
+         "matchingRanges": {
+          "lineNumber": "42",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "42",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 28,
+            "length": 1
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\tMallocGCSmallScanNoHeader [8]*obj.LSym",
+         "matchingRanges": {
+          "lineNumber": "43",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "43",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 28,
+            "length": 1
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\tMemmove                   *obj.LSym",
+         "matchingRanges": {
+          "lineNumber": "44"
+         },
+         "lineNumber": "44"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 4
+    },
+    "resultToken": "CAkSBAgBIAE43r7YwKvpzPUCQABICQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/malloc_tables_generated.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tmallocgcSmallScanNoHeaderSC1,",
+         "matchingRanges": {
+          "lineNumber": "9",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "9",
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\tmallocgcSmallScanNoHeaderSC1,",
+         "matchingRanges": {
+          "lineNumber": "10",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "10",
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\tmallocgcSmallScanNoHeaderSC1,",
+         "matchingRanges": {
+          "lineNumber": "11",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "11",
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\tmallocgcSmallScanNoHeaderSC1,",
+         "matchingRanges": {
+          "lineNumber": "12",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "12",
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\tmallocgcSmallScanNoHeaderSC1,",
+         "matchingRanges": {
+          "lineNumber": "13",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "13",
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\tmallocgcSmallScanNoHeaderSC1,",
+         "matchingRanges": {
+          "lineNumber": "14",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "14",
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\tmallocgcSmallScanNoHeaderSC1,",
+         "matchingRanges": {
+          "lineNumber": "15",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "15",
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\tmallocgcSmallScanNoHeaderSC1,",
+         "matchingRanges": {
+          "lineNumber": "16",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "16",
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\tmallocgcSmallScanNoHeaderSC2,",
+         "matchingRanges": {
+          "lineNumber": "17",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "17",
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\tmallocgcSmallScanNoHeaderSC2,",
+         "matchingRanges": {
+          "lineNumber": "18",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "18",
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 8
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 40
+    },
+    "resultToken": "CAoSAggBOISh_KqY3qTM-wFAAEgK"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/mgcmark.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t// Check this here instead of on the hot path.",
+         "matchingRanges": {
+          "lineNumber": "1758"
+         },
+         "lineNumber": "1758",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 46
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tthrow(\"mallocgc called with gcphase == _GCmarktermination\")",
+         "matchingRanges": {
+          "lineNumber": "1759",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "1759",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 52
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t}",
+         "matchingRanges": {
+          "lineNumber": "1760"
+         },
+         "lineNumber": "1760"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAsSAggBONj6yPui4uXxqwFAAEgL"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/lock_spinbit.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// are allocated on the heap, and have a known alignment and base offset. (The",
+         "matchingRanges": {
+          "lineNumber": "48"
+         },
+         "lineNumber": "48",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 78
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "// offset is due to mallocgc's allocation headers.) The main program thread uses",
+         "matchingRanges": {
+          "lineNumber": "49",
+          "columnRanges": [
+           {
+            "startIndex": 20,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "49",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 80
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 20,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "// a static M value, m0. We check for m0 specifically and add a known offset",
+         "matchingRanges": {
+          "lineNumber": "50"
+         },
+         "lineNumber": "50",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 76
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAwSAggBOJapyNq1-9KmCkAASAw"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/mfinal.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t\t\t\t// the last finalized object is not collected.",
+         "matchingRanges": {
+          "lineNumber": "237"
+         },
+         "lineNumber": "237",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 5,
+            "length": 46
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t\t\tframe = mallocgc(framesz, nil, true)",
+         "matchingRanges": {
+          "lineNumber": "238",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "238",
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t\t\tframecap = framesz",
+         "matchingRanges": {
+          "lineNumber": "239"
+         },
+         "lineNumber": "239"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t// As an implementation detail we allow to set finalizers for an inner byte",
+         "matchingRanges": {
+          "lineNumber": "471"
+         },
+         "lineNumber": "471",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 75
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t// of an object if it could come from tiny alloc (see mallocgc for details).",
+         "matchingRanges": {
+          "lineNumber": "472",
+          "columnRanges": [
+           {
+            "startIndex": 56,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "472",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 76
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 56,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tif ot.Elem == nil || ot.Elem.Pointers() || ot.Elem.Size_ \u003e= maxTinySize {",
+         "matchingRanges": {
+          "lineNumber": "473"
+         },
+         "lineNumber": "473",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CA0SAggBOIyEkfGg9IHc6AFAAEgN"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/mbitmap.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\tif typ == nil {",
+         "matchingRanges": {
+          "lineNumber": "161"
+         },
+         "lineNumber": "161",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t// Allow a nil type here for delayed zeroing. See mallocgc.",
+         "matchingRanges": {
+          "lineNumber": "162",
+          "columnRanges": [
+           {
+            "startIndex": 53,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "162",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 3,
+            "length": 59
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 53,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\treturn typePointers{}",
+         "matchingRanges": {
+          "lineNumber": "163"
+         },
+         "lineNumber": "163",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 3,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t//   1. It stops this goroutine and scans its stack, or",
+         "matchingRanges": {
+          "lineNumber": "762"
+         },
+         "lineNumber": "762",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 55
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t//   2. We return from mallocgc and publish the pointer somewhere.",
+         "matchingRanges": {
+          "lineNumber": "763",
+          "columnRanges": [
+           {
+            "startIndex": 24,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "763",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 66
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 24,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t// Either case requires a write on our side, followed by some synchronization",
+         "matchingRanges": {
+          "lineNumber": "764"
+         },
+         "lineNumber": "764",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 77
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CA4SAggBOISYh6q0iuLaxwFAAEgO"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/compile/internal/walk/builtin.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t\t// than what is guaranteed by the element type, because that's",
+         "matchingRanges": {
+          "lineNumber": "504"
+         },
+         "lineNumber": "504",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 3,
+            "length": 62
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t// the behavior they observed of mallocgc, and then relied upon.",
+         "matchingRanges": {
+          "lineNumber": "505",
+          "columnRanges": [
+           {
+            "startIndex": 36,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "505",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 3,
+            "length": 64
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 36,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t// See issue 73199.",
+         "matchingRanges": {
+          "lineNumber": "506"
+         },
+         "lineNumber": "506",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 3,
+            "length": 19
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t// When len(to)==len(from) and elements have no pointers:",
+         "matchingRanges": {
+          "lineNumber": "567"
+         },
+         "lineNumber": "567",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 57
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t// replace make+copy with runtime.mallocgc+runtime.memmove.",
+         "matchingRanges": {
+          "lineNumber": "568",
+          "columnRanges": [
+           {
+            "startIndex": 36,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "568",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 59
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 36,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "569"
+         },
+         "lineNumber": "569"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t// instantiate mallocgc(size uintptr, typ *byte, needszero bool) unsafe.Pointer",
+         "matchingRanges": {
+          "lineNumber": "575",
+          "columnRanges": [
+           {
+            "startIndex": 17,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "575",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 79
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 17,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tfn := typecheck.LookupRuntime(\"mallocgc\")",
+         "matchingRanges": {
+          "lineNumber": "576",
+          "columnRanges": [
+           {
+            "startIndex": 33,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "576",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 32,
+            "length": 10
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 33,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tptr := mkcall1(fn, types.Types[types.TUNSAFEPTR], init, size, typecheck.NodNil(), ir.NewBool(base.Pos, false))",
+         "matchingRanges": {
+          "lineNumber": "577"
+         },
+         "lineNumber": "577"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 4
+    },
+    "resultToken": "CA8SAggBOJKJt6mvtJm9igFAAEgP"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/compile/internal/ssagen/ssa.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tfor i := 1; i \u003c len(ir.Syms.MallocGCSmallNoScan); i++ {",
+         "matchingRanges": {
+          "lineNumber": "136",
+          "columnRanges": [
+           {
+            "startIndex": 29,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "136",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 10,
+            "length": 1
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 29,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tir.Syms.MallocGCSmallNoScan[i] = typecheck.LookupRuntimeFunc(fmt.Sprintf(\"mallocgcSmallNoScanSC%d\", i))",
+         "matchingRanges": {
+          "lineNumber": "137",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 8
+           },
+           {
+            "startIndex": 76,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "137",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 75,
+            "length": 25
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 8
+          },
+          {
+           "startIndex": 76,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t}",
+         "matchingRanges": {
+          "lineNumber": "138"
+         },
+         "lineNumber": "138"
+        },
+        {
+         "lineText": "\tfor i := 1; i \u003c len(ir.Syms.MallocGCSmallScanNoHeader); i++ {",
+         "matchingRanges": {
+          "lineNumber": "139",
+          "columnRanges": [
+           {
+            "startIndex": 29,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "139",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 10,
+            "length": 1
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 29,
+           "length": 8
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tir.Syms.MallocGCTiny = typecheck.LookupRuntimeFunc(\"mallocgcTinySC2\")",
+         "matchingRanges": {
+          "lineNumber": "142",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 8
+           },
+           {
+            "startIndex": 53,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "142",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 52,
+            "length": 17
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 8
+          },
+          {
+           "startIndex": 53,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\tir.Syms.MallocGC = typecheck.LookupRuntimeFunc(\"mallocgc\")",
+         "matchingRanges": {
+          "lineNumber": "143",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 8
+           },
+           {
+            "startIndex": 49,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "143",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 48,
+            "length": 10
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 8
+          },
+          {
+           "startIndex": 49,
+           "length": 8
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t}",
+         "matchingRanges": {
+          "lineNumber": "788"
+         },
+         "lineNumber": "788"
+        },
+        {
+         "lineText": "\tmallocSym := ir.Syms.MallocGC",
+         "matchingRanges": {
+          "lineNumber": "789",
+          "columnRanges": [
+           {
+            "startIndex": 22,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "789",
+         "ranges": [
+          {
+           "startIndex": 22,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\tif specialMallocSym := s.specializedMallocSym(size, false); specialMallocSym != nil {",
+         "matchingRanges": {
+          "lineNumber": "790"
+         },
+         "lineNumber": "790",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 11
+    },
+    "resultToken": "CBASAggBOJydpebWmM6YmQFAAEgQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "test/live.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tif b {",
+         "matchingRanges": {
+          "lineNumber": "469"
+         },
+         "lineNumber": "469",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tgo call27(func() { x++ }) // ERROR \"live at call to (newobject|mallocgcSmallScanNoHeaderSC[0-9]+): \u0026x$\" \"live at call to (newobject|mallocgcSmallScanNoHeaderSC[0-9]+): \u0026x .autotmp_[0-9]+$\" \"live at ...",
+         "matchingRanges": {
+          "lineNumber": "470",
+          "columnRanges": [
+           {
+            "startIndex": 65,
+            "length": 8
+           },
+           {
+            "startIndex": 134,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "470",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 28,
+            "length": 171
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 65,
+           "length": 8
+          },
+          {
+           "startIndex": 134,
+           "length": 8
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t}",
+         "matchingRanges": {
+          "lineNumber": "471"
+         },
+         "lineNumber": "471"
+        },
+        {
+         "lineText": "\tgo call27(func() { x++ }) // ERROR \"live at call to (newobject|mallocgcSmallScanNoHeaderSC[0-9]+): \u0026x$\" \"live at call to (newobject|mallocgcSmallScanNoHeaderSC[0-9]+): .autotmp_[0-9]+$\" // allocate ...",
+         "matchingRanges": {
+          "lineNumber": "472",
+          "columnRanges": [
+           {
+            "startIndex": 64,
+            "length": 8
+           },
+           {
+            "startIndex": 133,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "472",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 11,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 27,
+            "length": 171
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 64,
+           "length": 8
+          },
+          {
+           "startIndex": 133,
+           "length": 8
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tif b2 {",
+         "matchingRanges": {
+          "lineNumber": "540"
+         },
+         "lineNumber": "540",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\th31(g18()) // ERROR \"live at call to convT: .autotmp_[0-9]+$\" \"live at call to (newobject|mallocgcSmallScanNoHeaderSC[0-9]+): .autotmp_[0-9]+$\"",
+         "matchingRanges": {
+          "lineNumber": "541",
+          "columnRanges": [
+           {
+            "startIndex": 92,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "541",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 13,
+            "length": 132
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 92,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t}",
+         "matchingRanges": {
+          "lineNumber": "542"
+         },
+         "lineNumber": "542"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tx = [10]*int{}",
+         "matchingRanges": {
+          "lineNumber": "667"
+         },
+         "lineNumber": "667",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 6,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tx[0] = new(int) // ERROR \"live at call to (newobject|mallocgcTinySC2): x$\"",
+         "matchingRanges": {
+          "lineNumber": "668",
+          "columnRanges": [
+           {
+            "startIndex": 54,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "668",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 3,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 17,
+            "length": 58
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 54,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\tprintnl()       // ERROR \"live at call to printnl: x$\"",
+         "matchingRanges": {
+          "lineNumber": "669"
+         },
+         "lineNumber": "669",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 17,
+            "length": 38
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 5
+    },
+    "resultToken": "CBESAggBOOaHiN_L0beCpgFAAEgR"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/chan.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t// Queue or element size is zero.",
+         "matchingRanges": {
+          "lineNumber": "98"
+         },
+         "lineNumber": "98",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 33
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tc = (*hchan)(mallocgc(hchanSize, nil, true))",
+         "matchingRanges": {
+          "lineNumber": "99",
+          "columnRanges": [
+           {
+            "startIndex": 15,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "99",
+         "ranges": [
+          {
+           "startIndex": 15,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t// Race detector uses this location for synchronization.",
+         "matchingRanges": {
+          "lineNumber": "100"
+         },
+         "lineNumber": "100",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 56
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t// Allocate hchan and buf in one call.",
+         "matchingRanges": {
+          "lineNumber": "104"
+         },
+         "lineNumber": "104",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 38
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tc = (*hchan)(mallocgc(hchanSize+mem, nil, true))",
+         "matchingRanges": {
+          "lineNumber": "105",
+          "columnRanges": [
+           {
+            "startIndex": 15,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "105",
+         "ranges": [
+          {
+           "startIndex": 15,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tc.buf = add(unsafe.Pointer(c), hchanSize)",
+         "matchingRanges": {
+          "lineNumber": "106"
+         },
+         "lineNumber": "106"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\tc = new(hchan)",
+         "matchingRanges": {
+          "lineNumber": "109"
+         },
+         "lineNumber": "109"
+        },
+        {
+         "lineText": "\t\tc.buf = mallocgc(mem, elem, true)",
+         "matchingRanges": {
+          "lineNumber": "110",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "110",
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t}",
+         "matchingRanges": {
+          "lineNumber": "111"
+         },
+         "lineNumber": "111"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CBISAggBOMi3xbbD0Z_KQUAASBI"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/iface.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// Note: change the formula in the mallocgc call in itabAdd if you change these fields.",
+         "matchingRanges": {
+          "lineNumber": "23",
+          "columnRanges": [
+           {
+            "startIndex": 35,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "23",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 87
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 35,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "type itabTableType struct {",
+         "matchingRanges": {
+          "lineNumber": "24"
+         },
+         "lineNumber": "24",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 19,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t// all the pointed-to values are not in the heap.",
+         "matchingRanges": {
+          "lineNumber": "146"
+         },
+         "lineNumber": "146",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 49
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tt2 := (*itabTableType)(mallocgc((2+2*t.size)*goarch.PtrSize, nil, true))",
+         "matchingRanges": {
+          "lineNumber": "147",
+          "columnRanges": [
+           {
+            "startIndex": 25,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "147",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 35,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 37,
+            "length": 1
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 25,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tt2.size = t.size * 2",
+         "matchingRanges": {
+          "lineNumber": "148"
+         },
+         "lineNumber": "148",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 21,
+            "length": 1
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// The specialized convTx routines need a type descriptor to use when calling mallocgc.",
+         "matchingRanges": {
+          "lineNumber": "307",
+          "columnRanges": [
+           {
+            "startIndex": 78,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "307",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 87
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 78,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "// We don't need the type to be exact, just to have the correct size, alignment, and pointer-ness.",
+         "matchingRanges": {
+          "lineNumber": "308"
+         },
+         "lineNumber": "308",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 98
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "// However, when debugging, it'd be nice to have some indication in mallocgc where the types came from,",
+         "matchingRanges": {
+          "lineNumber": "309",
+          "columnRanges": [
+           {
+            "startIndex": 68,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "309",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 103
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 68,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "// so we use named types here.",
+         "matchingRanges": {
+          "lineNumber": "310"
+         },
+         "lineNumber": "310",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 30
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 13
+    },
+    "resultToken": "CBMSAggBOJa79M-3sYD7D0AASBM"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/slice.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tif !et.Pointers() {",
+         "matchingRanges": {
+          "lineNumber": "57"
+         },
+         "lineNumber": "57",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tto = mallocgc(tomem, nil, false)",
+         "matchingRanges": {
+          "lineNumber": "58",
+          "columnRanges": [
+           {
+            "startIndex": 7,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "58",
+         "ranges": [
+          {
+           "startIndex": 7,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tif copymem \u003c tomem {",
+         "matchingRanges": {
+          "lineNumber": "59"
+         },
+         "lineNumber": "59",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t// Note: can't use rawmem (which avoids zeroing of memory), because then GC can scan uninitialized memory.",
+         "matchingRanges": {
+          "lineNumber": "63"
+         },
+         "lineNumber": "63",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 106
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tto = mallocgc(tomem, et, true)",
+         "matchingRanges": {
+          "lineNumber": "64",
+          "columnRanges": [
+           {
+            "startIndex": 7,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "64",
+         "ranges": [
+          {
+           "startIndex": 7,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tif copymem \u003e 0 \u0026\u0026 writeBarrier.enabled {",
+         "matchingRanges": {
+          "lineNumber": "65"
+         },
+         "lineNumber": "65",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 15,
+            "length": 1
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\treturn mallocgc(mem, et, true)",
+         "matchingRanges": {
+          "lineNumber": "117",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "117",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "}",
+         "matchingRanges": {
+          "lineNumber": "118"
+         },
+         "lineNumber": "118"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 11
+    },
+    "resultToken": "CBQSAggBOPKo0JXTm7y4JUAASBQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/mheap.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// initialized (see also the assignment of freeIndexForScan in",
+         "matchingRanges": {
+          "lineNumber": "456"
+         },
+         "lineNumber": "456",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 62
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t// mallocgc, and issue 54596).",
+         "matchingRanges": {
+          "lineNumber": "457",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "457",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 30
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\tfreeIndexForScan uint16",
+         "matchingRanges": {
+          "lineNumber": "458"
+         },
+         "lineNumber": "458"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// Disallow malloc or panic while holding the heap lock. We do",
+         "matchingRanges": {
+          "lineNumber": "1787"
+         },
+         "lineNumber": "1787",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 62
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t// this here because this is a non-mallocgc entry-point to",
+         "matchingRanges": {
+          "lineNumber": "1788",
+          "columnRanges": [
+           {
+            "startIndex": 36,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "1788",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 58
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 36,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t// the mheap API.",
+         "matchingRanges": {
+          "lineNumber": "1789"
+         },
+         "lineNumber": "1789",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 17
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t// is via the allocation path. This isn't universal for",
+         "matchingRanges": {
+          "lineNumber": "2840"
+         },
+         "lineNumber": "2840",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 55
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t// tiny allocs, but we avoid them in mallocgc anyway.",
+         "matchingRanges": {
+          "lineNumber": "2841",
+          "columnRanges": [
+           {
+            "startIndex": 39,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "2841",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 53
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 39,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tmemclrNoHeapPointers(p, ss.size)",
+         "matchingRanges": {
+          "lineNumber": "2842"
+         },
+         "lineNumber": "2842"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CBUSAggBOOCTxs6Mg_TSBEAASBU"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/msize.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// Returns size of the memory block that mallocgc will allocate if you ask for the size,",
+         "matchingRanges": {
+          "lineNumber": "14",
+          "columnRanges": [
+           {
+            "startIndex": 41,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "14",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 88
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 41,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "// minus any inline space for metadata.",
+         "matchingRanges": {
+          "lineNumber": "15"
+         },
+         "lineNumber": "15",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 39
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t// (reqSize - size) is either mallocHeaderSize or 0. We need to subtract mallocHeaderSize",
+         "matchingRanges": {
+          "lineNumber": "23"
+         },
+         "lineNumber": "23",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 89
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t// from the result if we have one, since mallocgc will add it back in.",
+         "matchingRanges": {
+          "lineNumber": "24",
+          "columnRanges": [
+           {
+            "startIndex": 43,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "24",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 70
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 43,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tif reqSize \u003c= gc.SmallSizeMax-8 {",
+         "matchingRanges": {
+          "lineNumber": "25"
+         },
+         "lineNumber": "25",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 32,
+            "length": 1
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CBYSAggBOPL3gfO7x6i5vgFAAEgW"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/arena.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\tif c == nil {",
+         "matchingRanges": {
+          "lineNumber": "512"
+         },
+         "lineNumber": "512",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\tthrow(\"mallocgc called without a P or outside bootstrapping\")",
+         "matchingRanges": {
+          "lineNumber": "513",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "513",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 9,
+            "length": 54
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t}",
+         "matchingRanges": {
+          "lineNumber": "514"
+         },
+         "lineNumber": "514"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// entries are all for a single page. Also, visibility of these",
+         "matchingRanges": {
+          "lineNumber": "641"
+         },
+         "lineNumber": "641",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 63
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t// writes is guaranteed by the publication barrier in mallocgc.",
+         "matchingRanges": {
+          "lineNumber": "642",
+          "columnRanges": [
+           {
+            "startIndex": 55,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "642",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 63
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 55,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "643"
+         },
+         "lineNumber": "643"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CBcSAggBOLTS7vHXgKLpvgFAAEgX"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/string.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t} else {",
+         "matchingRanges": {
+          "lineNumber": "170"
+         },
+         "lineNumber": "170",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 3,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tp = mallocgc(uintptr(n), nil, false)",
+         "matchingRanges": {
+          "lineNumber": "171",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "171",
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t}",
+         "matchingRanges": {
+          "lineNumber": "172"
+         },
+         "lineNumber": "172"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func rawstring(size int) (s string, b []byte) {",
+         "matchingRanges": {
+          "lineNumber": "325"
+         },
+         "lineNumber": "325",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tp := mallocgc(uintptr(size), nil, false)",
+         "matchingRanges": {
+          "lineNumber": "326",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "326",
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\treturn unsafe.String((*byte)(p), size), unsafe.Slice((*byte)(p), size)",
+         "matchingRanges": {
+          "lineNumber": "327"
+         },
+         "lineNumber": "327",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tcap := roundupsize(uintptr(size), true)",
+         "matchingRanges": {
+          "lineNumber": "332"
+         },
+         "lineNumber": "332"
+        },
+        {
+         "lineText": "\tp := mallocgc(cap, nil, false)",
+         "matchingRanges": {
+          "lineNumber": "333",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "333",
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\tif cap != uintptr(size) {",
+         "matchingRanges": {
+          "lineNumber": "334"
+         },
+         "lineNumber": "334",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 5
+    },
+    "resultToken": "CBgSAggBONTUkdzE3Y3e7QFAAEgY"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/os_aix.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// Call libc's malloc rather than malloc. This will",
+         "matchingRanges": {
+          "lineNumber": "41"
+         },
+         "lineNumber": "41",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 51
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t// allocate space on the C heap. We can't call mallocgc",
+         "matchingRanges": {
+          "lineNumber": "42",
+          "columnRanges": [
+           {
+            "startIndex": 48,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "42",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 55
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 48,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t// here because it could cause a deadlock.",
+         "matchingRanges": {
+          "lineNumber": "43"
+         },
+         "lineNumber": "43",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 42
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBkSAggBOOC6pqfV1MuS4AFAAEgZ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/internal/goobj/builtinlist.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t{\"runtime.newobject\", 1},",
+         "matchingRanges": {
+          "lineNumber": "9"
+         },
+         "lineNumber": "9",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 19
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 23,
+            "length": 1
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t{\"runtime.mallocgc\", 1},",
+         "matchingRanges": {
+          "lineNumber": "10",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "10",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 18
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 22,
+            "length": 1
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t{\"runtime.panicdivide\", 1},",
+         "matchingRanges": {
+          "lineNumber": "11"
+         },
+         "lineNumber": "11",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 21
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 25,
+            "length": 1
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBoSAggBOPq95vSLnP28B0AASBo"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "test/codegen/slices.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "func SliceMakeCopyLen(s []int) []int {",
+         "matchingRanges": {
+          "lineNumber": "151"
+         },
+         "lineNumber": "151",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t// amd64:`.*runtime\\.mallocgc`",
+         "matchingRanges": {
+          "lineNumber": "152",
+          "columnRanges": [
+           {
+            "startIndex": 22,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "152",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 30
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 22,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t// amd64:`.*runtime\\.memmove`",
+         "matchingRanges": {
+          "lineNumber": "153"
+         },
+         "lineNumber": "153",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 29
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t// amd64:-`.*runtime\\.makeslice`",
+         "matchingRanges": {
+          "lineNumber": "154"
+         },
+         "lineNumber": "154",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 32
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t// ppc64x:`.*runtime\\.mallocgc`",
+         "matchingRanges": {
+          "lineNumber": "155",
+          "columnRanges": [
+           {
+            "startIndex": 23,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "155",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 31
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 23,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t// ppc64x:`.*runtime\\.memmove`",
+         "matchingRanges": {
+          "lineNumber": "156"
+         },
+         "lineNumber": "156",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 30
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CBsSAggBONzwxqvm3u_pqwFAAEgb"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/HACKING.md",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "will cause an immediate fatal error, such as when called on the system",
+         "matchingRanges": {
+          "lineNumber": "119"
+         },
+         "lineNumber": "119"
+        },
+        {
+         "lineText": "stack or when called during `mallocgc`.",
+         "matchingRanges": {
+          "lineNumber": "120",
+          "columnRanges": [
+           {
+            "startIndex": 29,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "120",
+         "ranges": [
+          {
+           "startIndex": 29,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "121"
+         },
+         "lineNumber": "121"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBwSAggBOMDunqKxz6b8H0AASBw"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/os_plan9.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tmp.gsignal.m = mp",
+         "matchingRanges": {
+          "lineNumber": "186"
+         },
+         "lineNumber": "186"
+        },
+        {
+         "lineText": "\tmp.notesig = (*int8)(mallocgc(_ERRMAX, nil, true))",
+         "matchingRanges": {
+          "lineNumber": "187",
+          "columnRanges": [
+           {
+            "startIndex": 22,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "187",
+         "ranges": [
+          {
+           "startIndex": 22,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t// Initialize stack for handling strings from the",
+         "matchingRanges": {
+          "lineNumber": "188"
+         },
+         "lineNumber": "188",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 49
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t// errstr system call, as used in package syscall.",
+         "matchingRanges": {
+          "lineNumber": "189"
+         },
+         "lineNumber": "189",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 50
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tmp.errstr = (*byte)(mallocgc(_ERRMAX, nil, true))",
+         "matchingRanges": {
+          "lineNumber": "190",
+          "columnRanges": [
+           {
+            "startIndex": 21,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "190",
+         "ranges": [
+          {
+           "startIndex": 21,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "}",
+         "matchingRanges": {
+          "lineNumber": "191"
+         },
+         "lineNumber": "191"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CB0SAggBOILm7ZrW-rnQsQFAAEgd"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/mcleanup.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\tif pp == nil {",
+         "matchingRanges": {
+          "lineNumber": "543"
+         },
+         "lineNumber": "543",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t// This function is reachable via mallocgc in the",
+         "matchingRanges": {
+          "lineNumber": "544",
+          "columnRanges": [
+           {
+            "startIndex": 37,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "544",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 3,
+            "length": 49
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 37,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t// middle of procresize, when allp has been resized,",
+         "matchingRanges": {
+          "lineNumber": "545"
+         },
+         "lineNumber": "545",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 3,
+            "length": 52
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CB4SAggBOPjIyZn_57msnwFAAEge"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/compile/internal/liveness/plive.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t\t\t// This variable will be overwritten early in the function",
+         "matchingRanges": {
+          "lineNumber": "777"
+         },
+         "lineNumber": "777",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 58
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t\t// prologue (from the result of a mallocgc) but we need to",
+         "matchingRanges": {
+          "lineNumber": "778",
+          "columnRanges": [
+           {
+            "startIndex": 38,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "778",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 58
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 38,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t\t// zero it in case that malloc causes a stack scan.",
+         "matchingRanges": {
+          "lineNumber": "779"
+         },
+         "lineNumber": "779",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 51
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CB8SAggBONqisa-YmqffUEAASB8"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/compile/internal/typecheck/builtin.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t{\"newobject\", funcTag, 4},",
+         "matchingRanges": {
+          "lineNumber": "30"
+         },
+         "lineNumber": "30",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 11
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 24,
+            "length": 1
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t{\"mallocgc\", funcTag, 8},",
+         "matchingRanges": {
+          "lineNumber": "31",
+          "columnRanges": [
+           {
+            "startIndex": 3,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "31",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 10
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 23,
+            "length": 1
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 3,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t{\"panicdivide\", funcTag, 9},",
+         "matchingRanges": {
+          "lineNumber": "32"
+         },
+         "lineNumber": "32",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 13
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 26,
+            "length": 1
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CCASAggBONqYpPbJ2cvTowFAAEgg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "test/live_regabi.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tif b {",
+         "matchingRanges": {
+          "lineNumber": "467"
+         },
+         "lineNumber": "467",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tgo call27(func() { x++ }) // ERROR \"live at call to (newobject|mallocgcSmallScanNoHeaderSC[0-9]+): \u0026x$\" \"live at call to (newobject|mallocgcSmallScanNoHeaderSC[0-9]+): \u0026x .autotmp_[0-9]+$\" \"live at ...",
+         "matchingRanges": {
+          "lineNumber": "468",
+          "columnRanges": [
+           {
+            "startIndex": 65,
+            "length": 8
+           },
+           {
+            "startIndex": 134,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "468",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 28,
+            "length": 171
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 65,
+           "length": 8
+          },
+          {
+           "startIndex": 134,
+           "length": 8
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t}",
+         "matchingRanges": {
+          "lineNumber": "469"
+         },
+         "lineNumber": "469"
+        },
+        {
+         "lineText": "\tgo call27(func() { x++ }) // ERROR \"live at call to (newobject|mallocgcSmallScanNoHeaderSC[0-9]+): \u0026x$\" \"live at call to (newobject|mallocgcSmallScanNoHeaderSC[0-9]+): .autotmp_[0-9]+$\" // allocate ...",
+         "matchingRanges": {
+          "lineNumber": "470",
+          "columnRanges": [
+           {
+            "startIndex": 64,
+            "length": 8
+           },
+           {
+            "startIndex": 133,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "470",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 11,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 27,
+            "length": 171
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 64,
+           "length": 8
+          },
+          {
+           "startIndex": 133,
+           "length": 8
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tif b2 {",
+         "matchingRanges": {
+          "lineNumber": "538"
+         },
+         "lineNumber": "538",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\th31(g18()) // ERROR \"live at call to convT: .autotmp_[0-9]+$\" \"live at call to (newobject|mallocgcSmallScanNoHeaderSC[0-9]+): .autotmp_[0-9]+$\"",
+         "matchingRanges": {
+          "lineNumber": "539",
+          "columnRanges": [
+           {
+            "startIndex": 92,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "539",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 13,
+            "length": 132
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 92,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t}",
+         "matchingRanges": {
+          "lineNumber": "540"
+         },
+         "lineNumber": "540"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tx = [10]*int{}",
+         "matchingRanges": {
+          "lineNumber": "665"
+         },
+         "lineNumber": "665",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 6,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tx[0] = new(int) // ERROR \"live at call to (newobject|mallocgcTinySC2): x$\"",
+         "matchingRanges": {
+          "lineNumber": "666",
+          "columnRanges": [
+           {
+            "startIndex": 54,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "666",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 3,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 17,
+            "length": 58
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 54,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\tprintnl()       // ERROR \"live at call to printnl: x$\"",
+         "matchingRanges": {
+          "lineNumber": "667"
+         },
+         "lineNumber": "667",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 17,
+            "length": 38
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 5
+    },
+    "resultToken": "CCESAggBOMTFmcXe6dPUrQFAAEgh"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/mcache.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// TODO(thepudds): we might be able to allow mallocgcTiny to reuse 16 byte objects from spc==5,",
+         "matchingRanges": {
+          "lineNumber": "168",
+          "columnRanges": [
+           {
+            "startIndex": 46,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "168",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 95
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 46,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t// but for now, just clear our reusable objects for tinySpanClass.",
+         "matchingRanges": {
+          "lineNumber": "169"
+         },
+         "lineNumber": "169",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 66
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CCISAggBOLb284z_kKzQggFAAEgi"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "test/uintptrescapes2.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tvar v int                                // ERROR \"moved to heap\"",
+         "matchingRanges": {
+          "lineNumber": "52"
+         },
+         "lineNumber": "52",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 42,
+            "length": 24
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tF2(0, 1, uintptr(unsafe.Pointer(\u0026v)), 2) // ERROR \"live at call to (newobject|mallocgcSmallNoScanSC[0-9]+): .?autotmp\" \"live at call to F2: .?a ...",
+         "matchingRanges": {
+          "lineNumber": "53",
+          "columnRanges": [
+           {
+            "startIndex": 79,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "53",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 4,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 7,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 39,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 42,
+            "length": 102
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 79,
+           "length": 8
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tvar v2 int                                // ERROR \"moved to heap\"",
+         "matchingRanges": {
+          "lineNumber": "57"
+         },
+         "lineNumber": "57",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 43,
+            "length": 24
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tF4(0, 1, uintptr(unsafe.Pointer(\u0026v2)), 2) // ERROR \"live at call to (newobject|mallocgcSmallNoScanSC[0-9]+): .?autotmp\" \"live at call to F4: .?a ...",
+         "matchingRanges": {
+          "lineNumber": "58",
+          "columnRanges": [
+           {
+            "startIndex": 80,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "58",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 4,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 7,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 40,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 43,
+            "length": 102
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 80,
+           "length": 8
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tvar v int                                  // ERROR \"moved to heap\"",
+         "matchingRanges": {
+          "lineNumber": "63"
+         },
+         "lineNumber": "63",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 44,
+            "length": 24
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tt.M2(0, 1, uintptr(unsafe.Pointer(\u0026v)), 2) // ERROR \"live at call to (newobject|mallocgcSmallNoScanSC[0-9]+): .?autotmp\" \"live at call to T.M2: . ...",
+         "matchingRanges": {
+          "lineNumber": "64",
+          "columnRanges": [
+           {
+            "startIndex": 81,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "64",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 6,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 9,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 41,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 44,
+            "length": 102
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 81,
+           "length": 8
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CCMSAggBOJCHp_3i3eTCqAFAAEgj"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "test/codegen/strings.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// amd64:`LEAQ type:\\[3\\]uint8`",
+         "matchingRanges": {
+          "lineNumber": "25"
+         },
+         "lineNumber": "25",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 31
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t// amd64:`CALL runtime\\.(newobject|mallocgcTinySC2)`",
+         "matchingRanges": {
+          "lineNumber": "26",
+          "columnRanges": [
+           {
+            "startIndex": 36,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "26",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 52
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 36,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t// amd64:-`.*runtime.stringtoslicebyte`",
+         "matchingRanges": {
+          "lineNumber": "27"
+         },
+         "lineNumber": "27",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 39
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CCQSAggBOJbhvZiAgI7NekAASCQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/compile/internal/ssa/rewrite.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tname := fn.String()",
+         "matchingRanges": {
+          "lineNumber": "480"
+         },
+         "lineNumber": "480"
+        },
+        {
+         "lineText": "\treturn strings.HasPrefix(name, \"runtime.mallocgcSmallNoScanSC\") ||",
+         "matchingRanges": {
+          "lineNumber": "481",
+          "columnRanges": [
+           {
+            "startIndex": 41,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "481",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 32,
+            "length": 31
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 41,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tstrings.HasPrefix(name, \"runtime.mallocgcSmallScanNoHeaderSC\") ||",
+         "matchingRanges": {
+          "lineNumber": "482",
+          "columnRanges": [
+           {
+            "startIndex": 35,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "482",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 26,
+            "length": 37
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 35,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tstrings.HasPrefix(name, \"runtime.mallocgcTinySC\")",
+         "matchingRanges": {
+          "lineNumber": "483",
+          "columnRanges": [
+           {
+            "startIndex": 35,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "483",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 26,
+            "length": 24
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 35,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "}",
+         "matchingRanges": {
+          "lineNumber": "484"
+         },
+         "lineNumber": "484"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CCUSAggBOKCm9_2395OyWUAASCU"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/internal/trace/testdata/tests/go122-gc-stress.test",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "String id=29",
+         "matchingRanges": {
+          "lineNumber": "4106"
+         },
+         "lineNumber": "4106"
+        },
+        {
+         "lineText": "\tdata=\"runtime.mallocgc\"",
+         "matchingRanges": {
+          "lineNumber": "4107",
+          "columnRanges": [
+           {
+            "startIndex": 15,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "4107",
+         "ranges": [
+          {
+           "startIndex": 15,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "String id=30",
+         "matchingRanges": {
+          "lineNumber": "4108"
+         },
+         "lineNumber": "4108"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CCYSAggBOM6mv9L7ivipsQFAAEgm"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "test/fixedbugs/issue15747.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "func f1(q *Q, xx []byte) interface{} { // ERROR \"live at call to (newobject|mallocgcSmallScanNoHeaderSC[0-9]+): xx$\" \"live at entry to f1: xx$\"",
+         "matchingRanges": {
+          "lineNumber": "22",
+          "columnRanges": [
+           {
+            "startIndex": 76,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "22",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 25,
+            "length": 9
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 39,
+            "length": 104
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 76,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t// xx was copied from the stack to the heap on the previous line:",
+         "matchingRanges": {
+          "lineNumber": "23"
+         },
+         "lineNumber": "23",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 65
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tif n \u003e len(d) {",
+         "matchingRanges": {
+          "lineNumber": "38"
+         },
+         "lineNumber": "38",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\treturn d, nil, \u0026T{M: \"hello\"} // ERROR \"live at call to (newobject|mallocgcSmallScanNoHeaderSC[0-9]+)+: d\"",
+         "matchingRanges": {
+          "lineNumber": "39",
+          "columnRanges": [
+           {
+            "startIndex": 69,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "39",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 23,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 32,
+            "length": 76
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 69,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t}",
+         "matchingRanges": {
+          "lineNumber": "40"
+         },
+         "lineNumber": "40"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CCcSAggBOLDliYyXt_Ct6AFAAEgn"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/trace/testdata/go122.test",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "String id=78",
+         "matchingRanges": {
+          "lineNumber": "4374"
+         },
+         "lineNumber": "4374"
+        },
+        {
+         "lineText": "\tdata=\"runtime.mallocgc\"",
+         "matchingRanges": {
+          "lineNumber": "4375",
+          "columnRanges": [
+           {
+            "startIndex": 15,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "4375",
+         "ranges": [
+          {
+           "startIndex": 15,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "String id=79",
+         "matchingRanges": {
+          "lineNumber": "4376"
+         },
+         "lineNumber": "4376"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CCgSAggBOL7Fpcyq9NP-3gFAAEgo"
+   }
+  ],
+  "estimatedResultCount": "41",
+  "exhaustive": true,
+  "requestToken": "CghtYWxsb2NnYxIdKCBnaXQ6Z28vZ29AbWFzdGVyIGNhc2U6eWVzICkaCwiIuqjRBhD6rZxUIAwqADIASAE"
+ }
+}

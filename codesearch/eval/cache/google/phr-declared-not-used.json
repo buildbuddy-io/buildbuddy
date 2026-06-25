@@ -1,0 +1,3276 @@
+{
+ "query": "\"declared and not used\"",
+ "oss_project": "go",
+ "repo_name": "go",
+ "page_size": 50,
+ "fetched_at": "2026-06-11T02:30:08Z",
+ "response": {
+  "searchResults": [
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/internal/types/testdata/check/vardecl.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "func (r T) _(a, b, c int) (u, v, w int) {",
+         "matchingRanges": {
+          "lineNumber": "66"
+         },
+         "lineNumber": "66",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tvar x1 /* ERROR \"declared and not used\" */ int",
+         "matchingRanges": {
+          "lineNumber": "67",
+          "columnRanges": [
+           {
+            "startIndex": 18,
+            "length": 21
+           }
+          ]
+         },
+         "lineNumber": "67",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 8,
+            "length": 35
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 18,
+           "length": 21
+          }
+         ]
+        },
+        {
+         "lineText": "\tvar x2 /* ERROR \"declared and not used\" */ int",
+         "matchingRanges": {
+          "lineNumber": "68",
+          "columnRanges": [
+           {
+            "startIndex": 18,
+            "length": 21
+           }
+          ]
+         },
+         "lineNumber": "68",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 8,
+            "length": 35
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 18,
+           "length": 21
+          }
+         ]
+        },
+        {
+         "lineText": "\tx1 = 1",
+         "matchingRanges": {
+          "lineNumber": "69"
+         },
+         "lineNumber": "69",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 6,
+            "length": 1
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\ty1 /* ERROR \"declared and not used\" */ := 1",
+         "matchingRanges": {
+          "lineNumber": "72",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 21
+           }
+          ]
+         },
+         "lineNumber": "72",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 35
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 43,
+            "length": 1
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 21
+          }
+         ]
+        },
+        {
+         "lineText": "\ty2 /* ERROR \"declared and not used\" */ := 2",
+         "matchingRanges": {
+          "lineNumber": "73",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 21
+           }
+          ]
+         },
+         "lineNumber": "73",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 35
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 43,
+            "length": 1
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 21
+          }
+         ]
+        },
+        {
+         "lineText": "\ty1 = 1",
+         "matchingRanges": {
+          "lineNumber": "74"
+         },
+         "lineNumber": "74",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 6,
+            "length": 1
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\tvar x1 /* ERROR \"declared and not used\" */ int",
+         "matchingRanges": {
+          "lineNumber": "78",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 21
+           }
+          ]
+         },
+         "lineNumber": "78",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 9,
+            "length": 35
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 21
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tvar x2 /* ERROR \"declared and not used\" */ int",
+         "matchingRanges": {
+          "lineNumber": "79",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 21
+           }
+          ]
+         },
+         "lineNumber": "79",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 9,
+            "length": 35
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 21
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 23
+    },
+    "resultToken": "CAASAggBOPTzjYzg3s-ioAFAAEgA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/go/types/labels.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\tif lbl := obj.(*Label); !lbl.used {",
+         "matchingRanges": {
+          "lineNumber": "43"
+         },
+         "lineNumber": "43",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\tcheck.softErrorf(lbl, UnusedLabel, \"label %s declared and not used\", lbl.name)",
+         "matchingRanges": {
+          "lineNumber": "44",
+          "columnRanges": [
+           {
+            "startIndex": 48,
+            "length": 21
+           }
+          ]
+         },
+         "lineNumber": "44",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 38,
+            "length": 32
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 48,
+           "length": 21
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t}",
+         "matchingRanges": {
+          "lineNumber": "45"
+         },
+         "lineNumber": "45"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAESAggBOJCvpbf_2ub3T0AASAE"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/go/types/resolver.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t\tcheck.errorf(n, code, \"extra init expr %s\", n)",
+         "matchingRanges": {
+          "lineNumber": "73"
+         },
+         "lineNumber": "73",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 25,
+            "length": 20
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t// TODO(gri) avoid declared and not used error here",
+         "matchingRanges": {
+          "lineNumber": "74",
+          "columnRanges": [
+           {
+            "startIndex": 22,
+            "length": 21
+           }
+          ]
+         },
+         "lineNumber": "74",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 3,
+            "length": 51
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 22,
+           "length": 21
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t} else {",
+         "matchingRanges": {
+          "lineNumber": "75"
+         },
+         "lineNumber": "75",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t\tcheck.errorf(s, code, \"extra init expr at %s\", check.fset.Position(init.Pos()))",
+         "matchingRanges": {
+          "lineNumber": "77"
+         },
+         "lineNumber": "77",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 25,
+            "length": 23
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t// TODO(gri) avoid declared and not used error here",
+         "matchingRanges": {
+          "lineNumber": "78",
+          "columnRanges": [
+           {
+            "startIndex": 22,
+            "length": 21
+           }
+          ]
+         },
+         "lineNumber": "78",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 3,
+            "length": 51
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 22,
+           "length": 21
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t}",
+         "matchingRanges": {
+          "lineNumber": "79"
+         },
+         "lineNumber": "79"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAISAggBONr-0brsveKQCkAASAI"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "test/fixedbugs/bug373.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "func f(x interface{}) {",
+         "matchingRanges": {
+          "lineNumber": "11"
+         },
+         "lineNumber": "11",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 9
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tswitch t := x.(type) {  // ERROR \"declared and not used\"",
+         "matchingRanges": {
+          "lineNumber": "12",
+          "columnRanges": [
+           {
+            "startIndex": 35,
+            "length": 21
+           }
+          ]
+         },
+         "lineNumber": "12",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 16,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 25,
+            "length": 32
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 35,
+           "length": 21
+          }
+         ]
+        },
+        {
+         "lineText": "\tcase int:",
+         "matchingRanges": {
+          "lineNumber": "13"
+         },
+         "lineNumber": "13",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAMSAggBOI628Y6Gt6nzZEAASAM"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "test/fixedbugs/issue18915.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "func _() {",
+         "matchingRanges": {
+          "lineNumber": "12"
+         },
+         "lineNumber": "12",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tif a := 10 { // ERROR \"cannot use a := 10 as value|expected .*;|declared and not used\"",
+         "matchingRanges": {
+          "lineNumber": "13",
+          "columnRanges": [
+           {
+            "startIndex": 65,
+            "length": 21
+           }
+          ]
+         },
+         "lineNumber": "13",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 9,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 14,
+            "length": 73
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 65,
+           "length": 21
+          }
+         ]
+        },
+        {
+         "lineText": "\t}",
+         "matchingRanges": {
+          "lineNumber": "14"
+         },
+         "lineNumber": "14"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tfor b := 10 { // ERROR \"cannot use b := 10 as value|parse error|declared and not used\"",
+         "matchingRanges": {
+          "lineNumber": "16",
+          "columnRanges": [
+           {
+            "startIndex": 65,
+            "length": 21
+           }
+          ]
+         },
+         "lineNumber": "16",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 10,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 15,
+            "length": 72
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 65,
+           "length": 21
+          }
+         ]
+        },
+        {
+         "lineText": "\t}",
+         "matchingRanges": {
+          "lineNumber": "17"
+         },
+         "lineNumber": "17"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tswitch c := 10 { // ERROR \"cannot use c := 10 as value|expected .*;|declared and not used\"",
+         "matchingRanges": {
+          "lineNumber": "19",
+          "columnRanges": [
+           {
+            "startIndex": 69,
+            "length": 21
+           }
+          ]
+         },
+         "lineNumber": "19",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 13,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 18,
+            "length": 73
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 69,
+           "length": 21
+          }
+         ]
+        },
+        {
+         "lineText": "\t}",
+         "matchingRanges": {
+          "lineNumber": "20"
+         },
+         "lineNumber": "20"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CAQSAggBOIbLooj8v4bhswFAAEgE"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "test/fixedbugs/issue21317.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\twantErrs := []string{",
+         "matchingRanges": {
+          "lineNumber": "47"
+         },
+         "lineNumber": "47"
+        },
+        {
+         "lineText": "\t\t\"7:9: declared and not used: n\",",
+         "matchingRanges": {
+          "lineNumber": "48",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 21
+           }
+          ]
+         },
+         "lineNumber": "48",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 31
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 21
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\"7:12: declared and not used: err\",",
+         "matchingRanges": {
+          "lineNumber": "49",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 21
+           }
+          ]
+         },
+         "lineNumber": "49",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 34
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 21
+          }
+         ]
+        },
+        {
+         "lineText": "\t}",
+         "matchingRanges": {
+          "lineNumber": "50"
+         },
+         "lineNumber": "50"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAUSAggBOJL125el2u-0ggFAAEgF"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "test/fixedbugs/issue23116.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tswitch t := x.(type) { // ERROR \"declared and not used\"",
+         "matchingRanges": {
+          "lineNumber": "13",
+          "columnRanges": [
+           {
+            "startIndex": 34,
+            "length": 21
+           }
+          ]
+         },
+         "lineNumber": "13",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 16,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 24,
+            "length": 32
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 34,
+           "length": 21
+          }
+         ]
+        },
+        {
+         "lineText": "\t}",
+         "matchingRanges": {
+          "lineNumber": "14"
+         },
+         "lineNumber": "14"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAYSAggBOLzS_9y6pqStP0AASAY"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "test/fixedbugs/issue23586.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// we don't want to see errors such as import or variable",
+         "matchingRanges": {
+          "lineNumber": "9"
+         },
+         "lineNumber": "9",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 57
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "// declared and not used.",
+         "matchingRanges": {
+          "lineNumber": "10",
+          "columnRanges": [
+           {
+            "startIndex": 3,
+            "length": 21
+           }
+          ]
+         },
+         "lineNumber": "10",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 25
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 3,
+           "length": 21
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "11"
+         },
+         "lineNumber": "11"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAcSAggBOMT74bb0xOqgREAASAc"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "test/fixedbugs/issue22794.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t}",
+         "matchingRanges": {
+          "lineNumber": "17"
+         },
+         "lineNumber": "17"
+        },
+        {
+         "lineText": "\ti2 := \u0026it{floats: false} // ERROR \"cannot refer to unexported field floats in struct literal|unknown field|declared and not used\"",
+         "matchingRanges": {
+          "lineNumber": "18",
+          "columnRanges": [
+           {
+            "startIndex": 108,
+            "length": 21
+           }
+          ]
+         },
+         "lineNumber": "18",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 26,
+            "length": 104
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 108,
+           "length": 21
+          }
+         ]
+        },
+        {
+         "lineText": "\t_ = \u0026it{InneR: \"foo\"}    // ERROR \"(but does have field inner)|unknown field\"",
+         "matchingRanges": {
+          "lineNumber": "19"
+         },
+         "lineNumber": "19",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 16,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 26,
+            "length": 52
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAgSAggBOLiyxIGD5vTipQFAAEgI"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "test/fixedbugs/issue13415.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    select {",
+         "matchingRanges": {
+          "lineNumber": "13"
+         },
+         "lineNumber": "13",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    case x, x := \u003c-func() chan int { // ERROR \"x repeated on left side of :=|redefinition|declared and not used\"",
+         "matchingRanges": {
+          "lineNumber": "14",
+          "columnRanges": [
+           {
+            "startIndex": 90,
+            "length": 21
+           }
+          ]
+         },
+         "lineNumber": "14",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 19,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 26,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 37,
+            "length": 75
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 90,
+           "length": 21
+          }
+         ]
+        },
+        {
+         "lineText": "            c := make(chan int)",
+         "matchingRanges": {
+          "lineNumber": "15"
+         },
+         "lineNumber": "15",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 22,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAkSAggBONbTvpjfy5nxwgFAAEgJ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "test/fixedbugs/issue20185.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "func G() {",
+         "matchingRanges": {
+          "lineNumber": "21"
+         },
+         "lineNumber": "21",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tswitch t := x.(type) { // ERROR \"cannot type switch on non-interface value|declared and not used|not an interface\"",
+         "matchingRanges": {
+          "lineNumber": "22",
+          "columnRanges": [
+           {
+            "startIndex": 76,
+            "length": 21
+           }
+          ]
+         },
+         "lineNumber": "22",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 16,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 24,
+            "length": 91
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 76,
+           "length": 21
+          }
+         ]
+        },
+        {
+         "lineText": "\tdefault:",
+         "matchingRanges": {
+          "lineNumber": "23"
+         },
+         "lineNumber": "23",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 7
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAoSAggBOJKg-J-lprKk0gFAAEgK"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/internal/types/testdata/check/labels.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "L1 /* ERROR \"label L1 declared and not used\" */ :",
+         "matchingRanges": {
+          "lineNumber": "13",
+          "columnRanges": [
+           {
+            "startIndex": 22,
+            "length": 21
+           }
+          ]
+         },
+         "lineNumber": "13",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 3,
+            "length": 44
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 22,
+           "length": 21
+          }
+         ]
+        },
+        {
+         "lineText": "\tfor {",
+         "matchingRanges": {
+          "lineNumber": "14"
+         },
+         "lineNumber": "14",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t}",
+         "matchingRanges": {
+          "lineNumber": "15"
+         },
+         "lineNumber": "15"
+        },
+        {
+         "lineText": "L2 /* ERROR \"label L2 declared and not used\" */ :",
+         "matchingRanges": {
+          "lineNumber": "16",
+          "columnRanges": [
+           {
+            "startIndex": 22,
+            "length": 21
+           }
+          ]
+         },
+         "lineNumber": "16",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 3,
+            "length": 44
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 22,
+           "length": 21
+          }
+         ]
+        },
+        {
+         "lineText": "\tselect {",
+         "matchingRanges": {
+          "lineNumber": "17"
+         },
+         "lineNumber": "17",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t}",
+         "matchingRanges": {
+          "lineNumber": "18"
+         },
+         "lineNumber": "18"
+        },
+        {
+         "lineText": "L3 /* ERROR \"label L3 declared and not used\" */ :",
+         "matchingRanges": {
+          "lineNumber": "19",
+          "columnRanges": [
+           {
+            "startIndex": 22,
+            "length": 21
+           }
+          ]
+         },
+         "lineNumber": "19",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 3,
+            "length": 44
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 22,
+           "length": 21
+          }
+         ]
+        },
+        {
+         "lineText": "\tswitch {",
+         "matchingRanges": {
+          "lineNumber": "20"
+         },
+         "lineNumber": "20",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t}",
+         "matchingRanges": {
+          "lineNumber": "21"
+         },
+         "lineNumber": "21"
+        },
+        {
+         "lineText": "L4 /* ERROR \"label L4 declared and not used\" */ :",
+         "matchingRanges": {
+          "lineNumber": "22",
+          "columnRanges": [
+           {
+            "startIndex": 22,
+            "length": 21
+           }
+          ]
+         },
+         "lineNumber": "22",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 3,
+            "length": 44
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 22,
+           "length": 21
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 8
+    },
+    "resultToken": "CAsSAggBOPCPwZ2GgLiVZUAASAs"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "test/fixedbugs/issue29870b.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "func _() {",
+         "matchingRanges": {
+          "lineNumber": "12"
+         },
+         "lineNumber": "12",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tx := 7 // ERROR \"declared and not used\"",
+         "matchingRanges": {
+          "lineNumber": "13",
+          "columnRanges": [
+           {
+            "startIndex": 18,
+            "length": 21
+           }
+          ]
+         },
+         "lineNumber": "13",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 6,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 8,
+            "length": 32
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 18,
+           "length": 21
+          }
+         ]
+        },
+        {
+         "lineText": "}",
+         "matchingRanges": {
+          "lineNumber": "14"
+         },
+         "lineNumber": "14"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAwSAggBOPas-qKF1Zb1_AFAAEgM"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/go/types/stmt.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tfor _, v := range unused {",
+         "matchingRanges": {
+          "lineNumber": "71"
+         },
+         "lineNumber": "71",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 13,
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tcheck.softErrorf(v, UnusedVar, \"declared and not used: %s\", v.name)",
+         "matchingRanges": {
+          "lineNumber": "72",
+          "columnRanges": [
+           {
+            "startIndex": 34,
+            "length": 21
+           }
+          ]
+         },
+         "lineNumber": "72",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 33,
+            "length": 27
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 34,
+           "length": 21
+          }
+         ]
+        },
+        {
+         "lineText": "\t}",
+         "matchingRanges": {
+          "lineNumber": "73"
+         },
+         "lineNumber": "73"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t\t\tcheck.softErrorf(lhs, NoNewVar, \"no new variable on left side of :=\")",
+         "matchingRanges": {
+          "lineNumber": "707"
+         },
+         "lineNumber": "707",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 36,
+            "length": 36
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t\tlhs = nil // avoid declared and not used error below",
+         "matchingRanges": {
+          "lineNumber": "708",
+          "columnRanges": [
+           {
+            "startIndex": 23,
+            "length": 21
+           }
+          ]
+         },
+         "lineNumber": "708",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 14,
+            "length": 42
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 23,
+           "length": 21
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t} else {",
+         "matchingRanges": {
+          "lineNumber": "709"
+         },
+         "lineNumber": "709",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 5,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t\t\tcheck.recordImplicit(clause, obj)",
+         "matchingRanges": {
+          "lineNumber": "759"
+         },
+         "lineNumber": "759"
+        },
+        {
+         "lineText": "\t\t\t\t// For the \"declared and not used\" error, all lhs variables act as",
+         "matchingRanges": {
+          "lineNumber": "760",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 21
+           }
+          ]
+         },
+         "lineNumber": "760",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 66
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 21
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t\t// one; i.e., if any one of them is 'used', all of them are 'used'.",
+         "matchingRanges": {
+          "lineNumber": "761"
+         },
+         "lineNumber": "761",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 67
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 5
+    },
+    "resultToken": "CA0SAggBOIjtl-bCuOmGakAASA0"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "test/typeswitch2b.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// The first t is in a different scope than the 2nd t; it cannot",
+         "matchingRanges": {
+          "lineNumber": "13"
+         },
+         "lineNumber": "13",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 64
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t// be accessed (=\u003e declared and not used error); but it is legal",
+         "matchingRanges": {
+          "lineNumber": "14",
+          "columnRanges": [
+           {
+            "startIndex": 20,
+            "length": 21
+           }
+          ]
+         },
+         "lineNumber": "14",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 64
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 20,
+           "length": 21
+          }
+         ]
+        },
+        {
+         "lineText": "\t// to declare it.",
+         "matchingRanges": {
+          "lineNumber": "15"
+         },
+         "lineNumber": "15",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 17
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tswitch t := 0; t := x.(type) { // ERROR \"declared and not used\"",
+         "matchingRanges": {
+          "lineNumber": "16",
+          "columnRanges": [
+           {
+            "startIndex": 42,
+            "length": 21
+           }
+          ]
+         },
+         "lineNumber": "16",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 13,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 24,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 32,
+            "length": 32
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 42,
+           "length": 21
+          }
+         ]
+        },
+        {
+         "lineText": "\tcase int:",
+         "matchingRanges": {
+          "lineNumber": "17"
+         },
+         "lineNumber": "17",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CA4SAggBOOjg0qTUsOS1qwFAAEgO"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/internal/types/errors/codes.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// UnusedLabel occurs when a label is declared and not used.",
+         "matchingRanges": {
+          "lineNumber": "1169",
+          "columnRanges": [
+           {
+            "startIndex": 39,
+            "length": 21
+           }
+          ]
+         },
+         "lineNumber": "1169",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 60
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 39,
+           "length": 21
+          }
+         ]
+        },
+        {
+         "lineText": "\t//",
+         "matchingRanges": {
+          "lineNumber": "1170"
+         },
+         "lineNumber": "1170",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CA8SAggBOPzF5pfr86m1zgFAAEgP"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/go/types/issues_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\twant := \"\\n\" +",
+         "matchingRanges": {
+          "lineNumber": "267"
+         },
+         "lineNumber": "267",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 9,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\"p:1:27: declared and not used: a\\n\" +",
+         "matchingRanges": {
+          "lineNumber": "268",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 21
+           }
+          ]
+         },
+         "lineNumber": "268",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 36
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 21
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\"p:1:30: declared and not used: b\\n\" +",
+         "matchingRanges": {
+          "lineNumber": "269",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 21
+           }
+          ]
+         },
+         "lineNumber": "269",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 36
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 21
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\"p:1:33: declared and not used: c\\n\" +",
+         "matchingRanges": {
+          "lineNumber": "270",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 21
+           }
+          ]
+         },
+         "lineNumber": "270",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 36
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 21
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\"p:1:36: declared and not used: d\\n\" +",
+         "matchingRanges": {
+          "lineNumber": "271",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 21
+           }
+          ]
+         },
+         "lineNumber": "271",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 36
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 21
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\"p:1:39: declared and not used: e\\n\"",
+         "matchingRanges": {
+          "lineNumber": "272",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 21
+           }
+          ]
+         },
+         "lineNumber": "272",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 36
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 21
+          }
+         ]
+        },
+        {
+         "lineText": "\tif got != want {",
+         "matchingRanges": {
+          "lineNumber": "273"
+         },
+         "lineNumber": "273",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 5
+    },
+    "resultToken": "CBASAggBOOqUieSOuc3iY0AASBA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/compile/internal/types2/labels.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\tif lbl := obj.(*Label); !lbl.used {",
+         "matchingRanges": {
+          "lineNumber": "42"
+         },
+         "lineNumber": "42",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\tcheck.softErrorf(lbl.pos, UnusedLabel, \"label %s declared and not used\", lbl.name)",
+         "matchingRanges": {
+          "lineNumber": "43",
+          "columnRanges": [
+           {
+            "startIndex": 52,
+            "length": 21
+           }
+          ]
+         },
+         "lineNumber": "43",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 42,
+            "length": 32
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 52,
+           "length": 21
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t}",
+         "matchingRanges": {
+          "lineNumber": "44"
+         },
+         "lineNumber": "44"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBESAggBOLCmjO6z7azLJEAASBE"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/internal/types/testdata/check/stmt0.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tcase \u003c-ch1:",
+         "matchingRanges": {
+          "lineNumber": "224"
+         },
+         "lineNumber": "224",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tvar ch2 /* ERROR \"declared and not used: ch2\" */ chan bool",
+         "matchingRanges": {
+          "lineNumber": "225",
+          "columnRanges": [
+           {
+            "startIndex": 20,
+            "length": 21
+           }
+          ]
+         },
+         "lineNumber": "225",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 10,
+            "length": 40
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 51,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 20,
+           "length": 21
+          }
+         ]
+        },
+        {
+         "lineText": "\tcase i := \u003c-ch2:",
+         "matchingRanges": {
+          "lineNumber": "226"
+         },
+         "lineNumber": "226",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tswitch x /* ERROR \"declared and not used\" */ := x.(type) {}",
+         "matchingRanges": {
+          "lineNumber": "691",
+          "columnRanges": [
+           {
+            "startIndex": 20,
+            "length": 21
+           }
+          ]
+         },
+         "lineNumber": "691",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 10,
+            "length": 35
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 52,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 20,
+           "length": 21
+          }
+         ]
+        },
+        {
+         "lineText": "\tswitch _ /* ERROR \"no new variable on left side of :=\" */ := x.(type) {}",
+         "matchingRanges": {
+          "lineNumber": "692"
+         },
+         "lineNumber": "692",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 10,
+            "length": 48
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 65,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tswitch x /* ERROR \"x declared and not used\" */ := i /* ERROR \"not an interface\" */ .(type) {}",
+         "matchingRanges": {
+          "lineNumber": "700",
+          "columnRanges": [
+           {
+            "startIndex": 22,
+            "length": 21
+           }
+          ]
+         },
+         "lineNumber": "700",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 10,
+            "length": 37
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 53,
+            "length": 30
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 86,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 22,
+           "length": 21
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "701"
+         },
+         "lineNumber": "701"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func issue10148() {",
+         "matchingRanges": {
+          "lineNumber": "952"
+         },
+         "lineNumber": "952",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tfor y /* ERROR \"declared and not used\" */ := range \"\" {",
+         "matchingRanges": {
+          "lineNumber": "953",
+          "columnRanges": [
+           {
+            "startIndex": 17,
+            "length": 21
+           }
+          ]
+         },
+         "lineNumber": "953",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 7,
+            "length": 35
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 46,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 52,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 17,
+           "length": 21
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t_ = \"\" /* ERROR \"mismatched types untyped string and untyped int\" */ + 1",
+         "matchingRanges": {
+          "lineNumber": "954"
+         },
+         "lineNumber": "954",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 6,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 9,
+            "length": 61
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 73,
+            "length": 1
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 4
+    },
+    "resultToken": "CBISAggBOP7p1uivstKlZ0AASBI"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/internal/types/testdata/check/issues0.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// Test that we don't get \"declared and not used\"",
+         "matchingRanges": {
+          "lineNumber": "207",
+          "columnRanges": [
+           {
+            "startIndex": 27,
+            "length": 21
+           }
+          ]
+         },
+         "lineNumber": "207",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 49
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 27,
+           "length": 21
+          }
+         ]
+        },
+        {
+         "lineText": "// errors in the context of invalid/C objects.",
+         "matchingRanges": {
+          "lineNumber": "208"
+         },
+         "lineNumber": "208",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 46
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBMSAggBOMK409PP3p3k4AFAAEgT"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/compile/internal/ir/name.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tnameAutoTemp                 // is the variable a temporary (implies no dwarf info. reset if escapes to heap)",
+         "matchingRanges": {
+          "lineNumber": "190"
+         },
+         "lineNumber": "190",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 30,
+            "length": 80
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tnameUsed                     // for variable declared and not used error",
+         "matchingRanges": {
+          "lineNumber": "191",
+          "columnRanges": [
+           {
+            "startIndex": 46,
+            "length": 21
+           }
+          ]
+         },
+         "lineNumber": "191",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 30,
+            "length": 43
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 46,
+           "length": 21
+          }
+         ]
+        },
+        {
+         "lineText": "\tnameIsClosureVar             // PAUTOHEAP closure pseudo-variable; original (if any) at n.Defn",
+         "matchingRanges": {
+          "lineNumber": "192"
+         },
+         "lineNumber": "192",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 30,
+            "length": 65
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBQSAggBOKTv6Z7-i4L9e0AASBQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/internal/types/testdata/fixedbugs/issue39634.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// crash 15",
+         "matchingRanges": {
+          "lineNumber": "48"
+         },
+         "lineNumber": "48",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 11
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "func y15() { var a /* ERROR \"declared and not used\" */ interface{ p() } = G15[string]{} }",
+         "matchingRanges": {
+          "lineNumber": "49",
+          "columnRanges": [
+           {
+            "startIndex": 29,
+            "length": 21
+           }
+          ]
+         },
+         "lineNumber": "49",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 13,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 19,
+            "length": 35
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 55,
+            "length": 9
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 29,
+           "length": 21
+          }
+         ]
+        },
+        {
+         "lineText": "type G15[X any] s /* ERROR \"undefined\" */",
+         "matchingRanges": {
+          "lineNumber": "50"
+         },
+         "lineNumber": "50",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 18,
+            "length": 23
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBUSAggBOKyq6-OL0LPWdkAASBU"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/compile/internal/types2/stmt.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tfor _, v := range unused {",
+         "matchingRanges": {
+          "lineNumber": "70"
+         },
+         "lineNumber": "70",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 13,
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tcheck.softErrorf(v.pos, UnusedVar, \"declared and not used: %s\", v.name)",
+         "matchingRanges": {
+          "lineNumber": "71",
+          "columnRanges": [
+           {
+            "startIndex": 38,
+            "length": 21
+           }
+          ]
+         },
+         "lineNumber": "71",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 37,
+            "length": 27
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 38,
+           "length": 21
+          }
+         ]
+        },
+        {
+         "lineText": "\t}",
+         "matchingRanges": {
+          "lineNumber": "72"
+         },
+         "lineNumber": "72"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t\tcheck.softErrorf(lhs, NoNewVar, \"no new variable on left side of :=\")",
+         "matchingRanges": {
+          "lineNumber": "776"
+         },
+         "lineNumber": "776",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 35,
+            "length": 36
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\tlhs = nil // avoid declared and not used error below",
+         "matchingRanges": {
+          "lineNumber": "777",
+          "columnRanges": [
+           {
+            "startIndex": 22,
+            "length": 21
+           }
+          ]
+         },
+         "lineNumber": "777",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 13,
+            "length": 42
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 22,
+           "length": 21
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t} else {",
+         "matchingRanges": {
+          "lineNumber": "778"
+         },
+         "lineNumber": "778",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t\tcheck.recordImplicit(clause, obj)",
+         "matchingRanges": {
+          "lineNumber": "816"
+         },
+         "lineNumber": "816"
+        },
+        {
+         "lineText": "\t\t\t// For the \"declared and not used\" error, all lhs variables act as",
+         "matchingRanges": {
+          "lineNumber": "817",
+          "columnRanges": [
+           {
+            "startIndex": 15,
+            "length": 21
+           }
+          ]
+         },
+         "lineNumber": "817",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 3,
+            "length": 66
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 15,
+           "length": 21
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t// one; i.e., if any one of them is 'used', all of them are 'used'.",
+         "matchingRanges": {
+          "lineNumber": "818"
+         },
+         "lineNumber": "818",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 3,
+            "length": 67
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 4
+    },
+    "resultToken": "CBYSAggBOJK_m7Gri4-14QFAAEgW"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/compile/internal/types2/issues_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\twant := \"\\n\" +",
+         "matchingRanges": {
+          "lineNumber": "260"
+         },
+         "lineNumber": "260",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 9,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\"p:1:27: declared and not used: a\\n\" +",
+         "matchingRanges": {
+          "lineNumber": "261",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 21
+           }
+          ]
+         },
+         "lineNumber": "261",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 36
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 21
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\"p:1:30: declared and not used: b\\n\" +",
+         "matchingRanges": {
+          "lineNumber": "262",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 21
+           }
+          ]
+         },
+         "lineNumber": "262",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 36
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 21
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\"p:1:33: declared and not used: c\\n\" +",
+         "matchingRanges": {
+          "lineNumber": "263",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 21
+           }
+          ]
+         },
+         "lineNumber": "263",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 36
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 21
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\"p:1:36: declared and not used: d\\n\" +",
+         "matchingRanges": {
+          "lineNumber": "264",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 21
+           }
+          ]
+         },
+         "lineNumber": "264",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 36
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 21
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\"p:1:39: declared and not used: e\\n\"",
+         "matchingRanges": {
+          "lineNumber": "265",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 21
+           }
+          ]
+         },
+         "lineNumber": "265",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 36
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 21
+          }
+         ]
+        },
+        {
+         "lineText": "\tif got != want {",
+         "matchingRanges": {
+          "lineNumber": "266"
+         },
+         "lineNumber": "266",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 5
+    },
+    "resultToken": "CBcSAggBOIT0g5yx-87RekAASBc"
+   }
+  ],
+  "estimatedResultCount": "24",
+  "exhaustive": true,
+  "requestToken": "ChciZGVjbGFyZWQgYW5kIG5vdCB1c2VkIhIdKCBnaXQ6Z28vZ29AbWFzdGVyIGNhc2U6eWVzICkaDAiwu6jRBhCD8pfJAiAMKgAyAEgB"
+ }
+}

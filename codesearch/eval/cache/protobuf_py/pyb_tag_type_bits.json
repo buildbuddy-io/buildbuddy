@@ -1,0 +1,632 @@
+{
+ "query": "tag_type_bits",
+ "oss_project": "protobuf",
+ "repo_name": "protobuf",
+ "page_size": 50,
+ "fetched_at": "2026-06-17T23:21:38Z",
+ "response": {
+  "searchResults": [
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "protobuf",
+        "ossProject": "protobuf"
+       },
+       "refSpec": "refs/heads/main"
+      },
+      "path": "python/google/protobuf/internal/wire_format.py",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "TAG_TYPE_BITS = 3  # Number of bits used to hold type info in a proto tag.",
+         "matchingRanges": {
+          "lineNumber": "15",
+          "columnRanges": [
+           {
+            "length": 13
+           }
+          ]
+         },
+         "lineNumber": "15",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 16,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 19,
+            "length": 55
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "length": 13
+          }
+         ]
+        },
+        {
+         "lineText": "TAG_TYPE_MASK = (1 \u003c\u003c TAG_TYPE_BITS) - 1  # 0x7",
+         "matchingRanges": {
+          "lineNumber": "16",
+          "columnRanges": [
+           {
+            "startIndex": 22,
+            "length": 13
+           }
+          ]
+         },
+         "lineNumber": "16",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 17,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 39,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 42,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 22,
+           "length": 13
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "17"
+         },
+         "lineNumber": "17"
+        },
+        {
+         "lineText": "# These numbers identify the wire type of a protocol buffer value.",
+         "matchingRanges": {
+          "lineNumber": "18"
+         },
+         "lineNumber": "18",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 66
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "# We use the least-significant TAG_TYPE_BITS bits of the varint-encoded",
+         "matchingRanges": {
+          "lineNumber": "19",
+          "columnRanges": [
+           {
+            "startIndex": 31,
+            "length": 13
+           }
+          ]
+         },
+         "lineNumber": "19",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 71
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 31,
+           "length": 13
+          }
+         ]
+        },
+        {
+         "lineText": "# tag-and-type to store one of these WIRETYPE_* constants.",
+         "matchingRanges": {
+          "lineNumber": "20"
+         },
+         "lineNumber": "20",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 58
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    raise message.EncodeError('Unknown wire type: %d' % wire_type)",
+         "matchingRanges": {
+          "lineNumber": "63"
+         },
+         "lineNumber": "63",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 30,
+            "length": 23
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  return (field_number \u003c\u003c TAG_TYPE_BITS) | wire_type",
+         "matchingRanges": {
+          "lineNumber": "64",
+          "columnRanges": [
+           {
+            "startIndex": 26,
+            "length": 13
+           }
+          ]
+         },
+         "lineNumber": "64",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 26,
+           "length": 13
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "65"
+         },
+         "lineNumber": "65"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  \"\"\"",
+         "matchingRanges": {
+          "lineNumber": "71"
+         },
+         "lineNumber": "71",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  return (tag \u003e\u003e TAG_TYPE_BITS), (tag \u0026 TAG_TYPE_MASK)",
+         "matchingRanges": {
+          "lineNumber": "72",
+          "columnRanges": [
+           {
+            "startIndex": 17,
+            "length": 13
+           }
+          ]
+         },
+         "lineNumber": "72",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 17,
+           "length": 13
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "73"
+         },
+         "lineNumber": "73"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 5
+    },
+    "resultToken": "CAASBAgBIAE4qrTfvM7TvPxxQABIAA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "protobuf",
+        "ossProject": "protobuf"
+       },
+       "refSpec": "refs/heads/main"
+      },
+      "path": "java/core/src/main/java/com/google/protobuf/WireFormat.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  static final int TAG_TYPE_BITS = 3;",
+         "matchingRanges": {
+          "lineNumber": "37",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 13
+           }
+          ]
+         },
+         "lineNumber": "37",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 35,
+            "length": 1
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 13
+          }
+         ]
+        },
+        {
+         "lineText": "  static final int TAG_TYPE_MASK = (1 \u003c\u003c TAG_TYPE_BITS) - 1;",
+         "matchingRanges": {
+          "lineNumber": "38",
+          "columnRanges": [
+           {
+            "startIndex": 41,
+            "length": 13
+           }
+          ]
+         },
+         "lineNumber": "38",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 36,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 58,
+            "length": 1
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 41,
+           "length": 13
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "39"
+         },
+         "lineNumber": "39"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  public static int getTagFieldNumber(final int tag) {",
+         "matchingRanges": {
+          "lineNumber": "46"
+         },
+         "lineNumber": "46",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 38,
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    return tag \u003e\u003e\u003e TAG_TYPE_BITS;",
+         "matchingRanges": {
+          "lineNumber": "47",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 13
+           }
+          ]
+         },
+         "lineNumber": "47",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 13
+          }
+         ]
+        },
+        {
+         "lineText": "  }",
+         "matchingRanges": {
+          "lineNumber": "48"
+         },
+         "lineNumber": "48"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  static int makeTag(final int fieldNumber, final int wireType) {",
+         "matchingRanges": {
+          "lineNumber": "51"
+         },
+         "lineNumber": "51",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 21,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 44,
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    return (fieldNumber \u003c\u003c TAG_TYPE_BITS) | wireType;",
+         "matchingRanges": {
+          "lineNumber": "52",
+          "columnRanges": [
+           {
+            "startIndex": 27,
+            "length": 13
+           }
+          ]
+         },
+         "lineNumber": "52",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 27,
+           "length": 13
+          }
+         ]
+        },
+        {
+         "lineText": "  }",
+         "matchingRanges": {
+          "lineNumber": "53"
+         },
+         "lineNumber": "53"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 4
+    },
+    "resultToken": "CAESBAgBIAE4-omKsoTFvYLuAUAASAE"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "protobuf",
+        "ossProject": "protobuf"
+       },
+       "refSpec": "refs/heads/main"
+      },
+      "path": "php/src/Google/Protobuf/Internal/GPBWire.php",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    const TAG_TYPE_BITS = 3;",
+         "matchingRanges": {
+          "lineNumber": "15",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 13
+           }
+          ]
+         },
+         "lineNumber": "15",
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 13
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "16"
+         },
+         "lineNumber": "16"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "        // We have to mask because PHP has no arithmetic shift.",
+         "matchingRanges": {
+          "lineNumber": "30"
+         },
+         "lineNumber": "30"
+        },
+        {
+         "lineText": "        return ($tag \u003e\u003e self::TAG_TYPE_BITS) \u0026 0x1fffffff;",
+         "matchingRanges": {
+          "lineNumber": "31",
+          "columnRanges": [
+           {
+            "startIndex": 30,
+            "length": 13
+           }
+          ]
+         },
+         "lineNumber": "31",
+         "ranges": [
+          {
+           "startIndex": 30,
+           "length": 13
+          }
+         ]
+        },
+        {
+         "lineText": "    }",
+         "matchingRanges": {
+          "lineNumber": "32"
+         },
+         "lineNumber": "32"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAISAggBONKJ4Zni_oyjoQFAAEgC"
+   }
+  ],
+  "estimatedResultCount": "3",
+  "exhaustive": true,
+  "requestToken": "Cg10YWdfdHlwZV9iaXRzEjUoIGdpdDpnaXRodWIvcHJvdG9jb2xidWZmZXJzL3Byb3RvYnVmQG1haW4gY2FzZTp5ZXMgKRoMCILYzNEGEOjj7uUCIAwqADIASAE"
+ }
+}

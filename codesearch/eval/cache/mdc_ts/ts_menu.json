@@ -1,0 +1,4845 @@
+{
+ "query": "MDCMenu",
+ "oss_project": "material-components",
+ "repo_name": "material-components-web",
+ "page_size": 50,
+ "fetched_at": "2026-06-17T23:05:58Z",
+ "response": {
+  "searchResults": [
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "material-components-web",
+        "ossProject": "material-components"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "packages/mdc-menu/component.ts",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "/** MDC Menu Factory */",
+         "matchingRanges": {
+          "lineNumber": "41"
+         },
+         "lineNumber": "41",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 23
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "export type MDCMenuFactory =",
+         "matchingRanges": {
+          "lineNumber": "42",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "42",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "    (el: HTMLElement, foundation?: MDCMenuFoundation) =\u003e MDCMenu;",
+         "matchingRanges": {
+          "lineNumber": "43",
+          "columnRanges": [
+           {
+            "startIndex": 35,
+            "length": 7
+           },
+           {
+            "startIndex": 57,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "43",
+         "ranges": [
+          {
+           "startIndex": 35,
+           "length": 7
+          },
+          {
+           "startIndex": 57,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "44"
+         },
+         "lineNumber": "44"
+        },
+        {
+         "lineText": "/** MDC Menu */",
+         "matchingRanges": {
+          "lineNumber": "45"
+         },
+         "lineNumber": "45",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 15
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "export class MDCMenu extends MDCComponent\u003cMDCMenuFoundation\u003e {",
+         "matchingRanges": {
+          "lineNumber": "46",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 7
+           },
+           {
+            "startIndex": 42,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "46",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 21,
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 7
+          },
+          {
+           "startIndex": 42,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "  static override attachTo(root: HTMLElement) {",
+         "matchingRanges": {
+          "lineNumber": "47"
+         },
+         "lineNumber": "47",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 8
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    return new MDCMenu(root);",
+         "matchingRanges": {
+          "lineNumber": "48",
+          "columnRanges": [
+           {
+            "startIndex": 15,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "48",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 11,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 15,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "  }",
+         "matchingRanges": {
+          "lineNumber": "49"
+         },
+         "lineNumber": "49"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 19
+    },
+    "resultToken": "CAASBAgBIAE43MqFiM3bps3bAUAASAA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "material-components-web",
+        "ossProject": "material-components"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "packages/mdc-menu-surface/component.ts",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import {MDCMenuSurfaceAdapter} from './adapter';",
+         "matchingRanges": {
+          "lineNumber": "28",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "28",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 31,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 36,
+            "length": 11
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "import {Corner, cssClasses, strings} from './constants';",
+         "matchingRanges": {
+          "lineNumber": "29"
+         },
+         "lineNumber": "29",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 37,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 42,
+            "length": 13
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "import {MDCMenuSurfaceFoundation} from './foundation';",
+         "matchingRanges": {
+          "lineNumber": "30",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "30",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 34,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 39,
+            "length": 14
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "import {MDCMenuDistance} from './types';",
+         "matchingRanges": {
+          "lineNumber": "31",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "31",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 25,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 30,
+            "length": 9
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 7
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "export type MDCMenuSurfaceFactory =",
+         "matchingRanges": {
+          "lineNumber": "36",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "36",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "    (el: HTMLElement, foundation?: MDCMenuSurfaceFoundation) =\u003e MDCMenuSurface;",
+         "matchingRanges": {
+          "lineNumber": "37",
+          "columnRanges": [
+           {
+            "startIndex": 35,
+            "length": 7
+           },
+           {
+            "startIndex": 64,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "37",
+         "ranges": [
+          {
+           "startIndex": 35,
+           "length": 7
+          },
+          {
+           "startIndex": 64,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "38"
+         },
+         "lineNumber": "38"
+        },
+        {
+         "lineText": "/** MDC Menu Surface */",
+         "matchingRanges": {
+          "lineNumber": "39"
+         },
+         "lineNumber": "39",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 23
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "export class MDCMenuSurface extends MDCComponent\u003cMDCMenuSurfaceFoundation\u003e {",
+         "matchingRanges": {
+          "lineNumber": "40",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 7
+           },
+           {
+            "startIndex": 49,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "40",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 28,
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 7
+          },
+          {
+           "startIndex": 49,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "  static override attachTo(root: HTMLElement): MDCMenuSurface {",
+         "matchingRanges": {
+          "lineNumber": "41",
+          "columnRanges": [
+           {
+            "startIndex": 47,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "41",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 8
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 47,
+           "length": 7
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 15
+    },
+    "resultToken": "CAESBAgBIAE42MGhzvuLz6XeAUAASAE"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "material-components-web",
+        "ossProject": "material-components"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "packages/mdc-menu/types.ts",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": " */",
+         "matchingRanges": {
+          "lineNumber": "26"
+         },
+         "lineNumber": "26",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "export interface MDCMenuItemEventDetail {",
+         "matchingRanges": {
+          "lineNumber": "27",
+          "columnRanges": [
+           {
+            "startIndex": 17,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "27",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 9
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 17,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "  index: number;",
+         "matchingRanges": {
+          "lineNumber": "28"
+         },
+         "lineNumber": "28",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "export interface MDCMenuItemComponentEventDetail extends",
+         "matchingRanges": {
+          "lineNumber": "34",
+          "columnRanges": [
+           {
+            "startIndex": 17,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "34",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 9
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 49,
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 17,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "    MDCMenuItemEventDetail {",
+         "matchingRanges": {
+          "lineNumber": "35",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "35",
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 7
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "export interface MDCMenuItemEvent extends Event {",
+         "matchingRanges": {
+          "lineNumber": "41",
+          "columnRanges": [
+           {
+            "startIndex": 17,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "41",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 9
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 34,
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 17,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "  readonly detail: MDCMenuItemEventDetail;",
+         "matchingRanges": {
+          "lineNumber": "42",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "42",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 8
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "}",
+         "matchingRanges": {
+          "lineNumber": "43"
+         },
+         "lineNumber": "43"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "export interface MDCMenuItemComponentEvent extends Event {",
+         "matchingRanges": {
+          "lineNumber": "45",
+          "columnRanges": [
+           {
+            "startIndex": 17,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "45",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 9
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 43,
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 17,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "  readonly detail: MDCMenuItemComponentEventDetail;",
+         "matchingRanges": {
+          "lineNumber": "46",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "46",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 8
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 7
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 7
+    },
+    "resultToken": "CAISBAgBIAE4oozigL66xa38AUAASAI"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "material-components-web",
+        "ossProject": "material-components"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "packages/mdc-menu/adapter.ts",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import {MDCMenuItemEventDetail} from './types';",
+         "matchingRanges": {
+          "lineNumber": "24",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "24",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 32,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 37,
+            "length": 9
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "25"
+         },
+         "lineNumber": "25"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": " */",
+         "matchingRanges": {
+          "lineNumber": "31"
+         },
+         "lineNumber": "31",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "export interface MDCMenuAdapter {",
+         "matchingRanges": {
+          "lineNumber": "32",
+          "columnRanges": [
+           {
+            "startIndex": 17,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "32",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 9
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 17,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "  /**",
+         "matchingRanges": {
+          "lineNumber": "33"
+         },
+         "lineNumber": "33",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "   */",
+         "matchingRanges": {
+          "lineNumber": "79"
+         },
+         "lineNumber": "79",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  notifySelected(eventData: MDCMenuItemEventDetail): void;",
+         "matchingRanges": {
+          "lineNumber": "80",
+          "columnRanges": [
+           {
+            "startIndex": 28,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "80",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 53,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 28,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "81"
+         },
+         "lineNumber": "81"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CAMSBAgBIAE44pL_vtKBvdLfAUAASAM"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "material-components-web",
+        "ossProject": "material-components"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "packages/mdc-menu-surface/types.ts",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "export interface MDCMenuDimensions {",
+         "matchingRanges": {
+          "lineNumber": "24",
+          "columnRanges": [
+           {
+            "startIndex": 17,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "24",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 9
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 17,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "  width: number;",
+         "matchingRanges": {
+          "lineNumber": "25"
+         },
+         "lineNumber": "25",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "export interface MDCMenuDistance {",
+         "matchingRanges": {
+          "lineNumber": "29",
+          "columnRanges": [
+           {
+            "startIndex": 17,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "29",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 9
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 17,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "  top: number;",
+         "matchingRanges": {
+          "lineNumber": "30"
+         },
+         "lineNumber": "30",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "export interface MDCMenuPoint {",
+         "matchingRanges": {
+          "lineNumber": "36",
+          "columnRanges": [
+           {
+            "startIndex": 17,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "36",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 9
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 17,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "  x: number;",
+         "matchingRanges": {
+          "lineNumber": "37"
+         },
+         "lineNumber": "37",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 5,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CAQSBAgBIAE48LrLtYyHodyqAUAASAQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "material-components-web",
+        "ossProject": "material-components"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "packages/mdc-menu/foundation.ts",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import {MDCMenuAdapter} from './adapter';",
+         "matchingRanges": {
+          "lineNumber": "27",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "27",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 24,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 29,
+            "length": 11
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "import {cssClasses, DefaultFocusState, numbers, strings} from './constants';",
+         "matchingRanges": {
+          "lineNumber": "28"
+         },
+         "lineNumber": "28",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 57,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 62,
+            "length": 13
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "/** MDC Menu Foundation */",
+         "matchingRanges": {
+          "lineNumber": "30"
+         },
+         "lineNumber": "30",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 26
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "export class MDCMenuFoundation extends MDCFoundation\u003cMDCMenuAdapter\u003e {",
+         "matchingRanges": {
+          "lineNumber": "31",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 7
+           },
+           {
+            "startIndex": 53,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "31",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 31,
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 7
+          },
+          {
+           "startIndex": 53,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "  static override get cssClasses() {",
+         "matchingRanges": {
+          "lineNumber": "32"
+         },
+         "lineNumber": "32",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 18,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  /**",
+         "matchingRanges": {
+          "lineNumber": "47"
+         },
+         "lineNumber": "47",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "   * @see {@link MDCMenuAdapter} for typing information on parameters and return types.",
+         "matchingRanges": {
+          "lineNumber": "48",
+          "columnRanges": [
+           {
+            "startIndex": 17,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "48",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 87
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 17,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "   */",
+         "matchingRanges": {
+          "lineNumber": "49"
+         },
+         "lineNumber": "49",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  static override get defaultAdapter(): MDCMenuAdapter {",
+         "matchingRanges": {
+          "lineNumber": "50",
+          "columnRanges": [
+           {
+            "startIndex": 40,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "50",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 18,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 40,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "    // tslint:disable:object-literal-sort-keys Methods should be in the same order as the adapter interface.",
+         "matchingRanges": {
+          "lineNumber": "51"
+         },
+         "lineNumber": "51",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 104
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 9
+    },
+    "resultToken": "CAUSBAgBIAE45LeVp4zp-sarAUAASAU"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "material-components-web",
+        "ossProject": "material-components"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "packages/mdc-menu-surface/adapter.ts",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import {MDCMenuDimensions, MDCMenuDistance, MDCMenuPoint} from './types';",
+         "matchingRanges": {
+          "lineNumber": "26",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 7
+           },
+           {
+            "startIndex": 27,
+            "length": 7
+           },
+           {
+            "startIndex": 44,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "26",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 58,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 63,
+            "length": 9
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 7
+          },
+          {
+           "startIndex": 27,
+           "length": 7
+          },
+          {
+           "startIndex": 44,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "27"
+         },
+         "lineNumber": "27"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": " */",
+         "matchingRanges": {
+          "lineNumber": "34"
+         },
+         "lineNumber": "34",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "export interface MDCMenuSurfaceAdapter {",
+         "matchingRanges": {
+          "lineNumber": "35",
+          "columnRanges": [
+           {
+            "startIndex": 17,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "35",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 9
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 17,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "  addClass(className: string): void;",
+         "matchingRanges": {
+          "lineNumber": "36"
+         },
+         "lineNumber": "36",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 22,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 31,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  getInnerDimensions(): MDCMenuDimensions;",
+         "matchingRanges": {
+          "lineNumber": "45",
+          "columnRanges": [
+           {
+            "startIndex": 24,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "45",
+         "ranges": [
+          {
+           "startIndex": 24,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "  getAnchorDimensions(): DOMRect|null;",
+         "matchingRanges": {
+          "lineNumber": "46"
+         },
+         "lineNumber": "46",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 33,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  getViewportDimensions(): MDCMenuDimensions;",
+         "matchingRanges": {
+          "lineNumber": "47",
+          "columnRanges": [
+           {
+            "startIndex": 27,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "47",
+         "ranges": [
+          {
+           "startIndex": 27,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "  getBodyDimensions(): MDCMenuDimensions;",
+         "matchingRanges": {
+          "lineNumber": "48",
+          "columnRanges": [
+           {
+            "startIndex": 23,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "48",
+         "ranges": [
+          {
+           "startIndex": 23,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "  getWindowScroll(): MDCMenuPoint;",
+         "matchingRanges": {
+          "lineNumber": "49",
+          "columnRanges": [
+           {
+            "startIndex": 21,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "49",
+         "ranges": [
+          {
+           "startIndex": 21,
+           "length": 7
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 7
+    },
+    "resultToken": "CAYSBAgBIAE4mtWw-M_BtbT3AUAASAY"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "material-components-web",
+        "ossProject": "material-components"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "packages/mdc-menu-surface/foundation.ts",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import {MDCMenuSurfaceAdapter} from './adapter';",
+         "matchingRanges": {
+          "lineNumber": "27",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "27",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 31,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 36,
+            "length": 11
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "import {Corner, CornerBit, cssClasses, numbers, strings} from './constants';",
+         "matchingRanges": {
+          "lineNumber": "28"
+         },
+         "lineNumber": "28",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 57,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 62,
+            "length": 13
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "import {MDCMenuDimensions, MDCMenuDistance, MDCMenuPoint} from './types';",
+         "matchingRanges": {
+          "lineNumber": "29",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 7
+           },
+           {
+            "startIndex": 27,
+            "length": 7
+           },
+           {
+            "startIndex": 44,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "29",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 58,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 63,
+            "length": 9
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 7
+          },
+          {
+           "startIndex": 27,
+           "length": 7
+          },
+          {
+           "startIndex": 44,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "30"
+         },
+         "lineNumber": "30"
+        },
+        {
+         "lineText": "interface AutoLayoutMeasurements {",
+         "matchingRanges": {
+          "lineNumber": "31"
+         },
+         "lineNumber": "31",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 9
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  anchorSize: MDCMenuDimensions;",
+         "matchingRanges": {
+          "lineNumber": "32",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "32",
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "  bodySize: MDCMenuDimensions;",
+         "matchingRanges": {
+          "lineNumber": "33",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "33",
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 7
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "/** MDC Menu Surface Foundation */",
+         "matchingRanges": {
+          "lineNumber": "40"
+         },
+         "lineNumber": "40",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 34
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "export class MDCMenuSurfaceFoundation extends",
+         "matchingRanges": {
+          "lineNumber": "41",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "41",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 38,
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "    MDCFoundation\u003cMDCMenuSurfaceAdapter\u003e {",
+         "matchingRanges": {
+          "lineNumber": "42",
+          "columnRanges": [
+           {
+            "startIndex": 18,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "42",
+         "ranges": [
+          {
+           "startIndex": 18,
+           "length": 7
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 36
+    },
+    "resultToken": "CAcSBAgBIAE4io2_1vjvvpX6AUAASAc"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "material-components-web",
+        "ossProject": "material-components"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "packages/mdc-menu/test/component.test.ts",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import {DefaultFocusState} from '../constants';",
+         "matchingRanges": {
+          "lineNumber": "30"
+         },
+         "lineNumber": "30",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 27,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 32,
+            "length": 14
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "import {MDCMenu, MDCMenuFoundation} from '../index';",
+         "matchingRanges": {
+          "lineNumber": "31",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 7
+           },
+           {
+            "startIndex": 17,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "31",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 36,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 41,
+            "length": 10
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 7
+          },
+          {
+           "startIndex": 17,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "32"
+         },
+         "lineNumber": "32"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  const component =",
+         "matchingRanges": {
+          "lineNumber": "148"
+         },
+         "lineNumber": "148",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "      new MDCMenu(root, mockFoundation, () =\u003e menuSurface, () =\u003e list);",
+         "matchingRanges": {
+          "lineNumber": "149",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "149",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "  return {root, component, menuSurface, list, mockFoundation};",
+         "matchingRanges": {
+          "lineNumber": "150"
+         },
+         "lineNumber": "150",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  const component = new MDCMenu(root);",
+         "matchingRanges": {
+          "lineNumber": "156",
+          "columnRanges": [
+           {
+            "startIndex": 24,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "156",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 20,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 24,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "  return {root, component};",
+         "matchingRanges": {
+          "lineNumber": "157"
+         },
+         "lineNumber": "157",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "describe('MDCMenu', () =\u003e {",
+         "matchingRanges": {
+          "lineNumber": "171",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "171",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 9,
+            "length": 9
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "  it('destroy causes the menu-surface and list to be destroyed', () =\u003e {",
+         "matchingRanges": {
+          "lineNumber": "172"
+         },
+         "lineNumber": "172",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 5,
+            "length": 58
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 16
+    },
+    "resultToken": "CAgSAggBOIDPu6SorYiDqAFAAEgI"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "material-components-web",
+        "ossProject": "material-components"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "packages/mdc-menu/README.md",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "```js",
+         "matchingRanges": {
+          "lineNumber": "69"
+         },
+         "lineNumber": "69"
+        },
+        {
+         "lineText": "import {MDCMenu} from '@material/menu';",
+         "matchingRanges": {
+          "lineNumber": "70",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "70",
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "71"
+         },
+         "lineNumber": "71"
+        },
+        {
+         "lineText": "const menu = new MDCMenu(document.querySelector('.mdc-menu'));",
+         "matchingRanges": {
+          "lineNumber": "72",
+          "columnRanges": [
+           {
+            "startIndex": 17,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "72",
+         "ranges": [
+          {
+           "startIndex": 17,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "menu.open = true;",
+         "matchingRanges": {
+          "lineNumber": "73"
+         },
+         "lineNumber": "73"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "## `MDCMenu` Properties and Methods",
+         "matchingRanges": {
+          "lineNumber": "218",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "218",
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "219"
+         },
+         "lineNumber": "219"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "`getElementIndex(element: Element) =\u003e number` | Returns the `index` value of the `element`.",
+         "matchingRanges": {
+          "lineNumber": "263"
+         },
+         "lineNumber": "263"
+        },
+        {
+         "lineText": "`notifySelected(index: number) =\u003e void` | Emits a `MDCMenu:selected` event for the element at the `index` specified.",
+         "matchingRanges": {
+          "lineNumber": "264",
+          "columnRanges": [
+           {
+            "startIndex": 51,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "264",
+         "ranges": [
+          {
+           "startIndex": 51,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "`getMenuItemCount() =\u003e number` | Returns the menu item count.",
+         "matchingRanges": {
+          "lineNumber": "265"
+         },
+         "lineNumber": "265"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 9
+    },
+    "resultToken": "CAkSAggBOKqZhPOo5LfMgAFAAEgJ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "material-components-web",
+        "ossProject": "material-components"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "packages/mdc-menu/constants.ts",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  LIST_SELECTOR: '.mdc-list,.mdc-deprecated-list',",
+         "matchingRanges": {
+          "lineNumber": "34"
+         },
+         "lineNumber": "34",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 17,
+            "length": 32
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  SELECTED_EVENT: 'MDCMenu:selected',",
+         "matchingRanges": {
+          "lineNumber": "35",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "35",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 18,
+            "length": 18
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "  SKIP_RESTORE_FOCUS: 'data-menu-item-skip-restore-focus',",
+         "matchingRanges": {
+          "lineNumber": "36"
+         },
+         "lineNumber": "36",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 22,
+            "length": 35
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAoSAggBOLSJ8PXmjOPozgFAAEgK"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "material-components-web",
+        "ossProject": "material-components"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "packages/mdc-menu-surface/test/component.test.ts",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import {Corner, cssClasses, strings} from '../constants';",
+         "matchingRanges": {
+          "lineNumber": "29"
+         },
+         "lineNumber": "29",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 37,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 42,
+            "length": 14
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "import {MDCMenuSurface, MDCMenuSurfaceFoundation} from '../index';",
+         "matchingRanges": {
+          "lineNumber": "30",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 7
+           },
+           {
+            "startIndex": 24,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "30",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 50,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 55,
+            "length": 10
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 7
+          },
+          {
+           "startIndex": 24,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "31"
+         },
+         "lineNumber": "31"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  const root = getFixture(open, fixedPosition);",
+         "matchingRanges": {
+          "lineNumber": "60"
+         },
+         "lineNumber": "60",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  const mockFoundation = createMockFoundation(MDCMenuSurfaceFoundation);",
+         "matchingRanges": {
+          "lineNumber": "61",
+          "columnRanges": [
+           {
+            "startIndex": 46,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "61",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 46,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "  const anchor = withAnchor ? getAnchorFixture(root) : undefined;",
+         "matchingRanges": {
+          "lineNumber": "62"
+         },
+         "lineNumber": "62",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 55,
+            "length": 9
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  const component = new MDCMenuSurface(root, mockFoundation);",
+         "matchingRanges": {
+          "lineNumber": "63",
+          "columnRanges": [
+           {
+            "startIndex": 24,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "63",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 20,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 24,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "  return {root, mockFoundation, anchor, component};",
+         "matchingRanges": {
+          "lineNumber": "64"
+         },
+         "lineNumber": "64",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "describe('MDCMenuSurface', () =\u003e {",
+         "matchingRanges": {
+          "lineNumber": "67",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "67",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 9,
+            "length": 16
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "  it('attachTo initializes and returns a MDCMenuSurface instance', () =\u003e {",
+         "matchingRanges": {
+          "lineNumber": "68",
+          "columnRanges": [
+           {
+            "startIndex": 41,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "68",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 5,
+            "length": 60
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 41,
+           "length": 7
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 14
+    },
+    "resultToken": "CAsSAggBOJb-zKu71rieekAASAs"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "material-components-web",
+        "ossProject": "material-components"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "packages/mdc-menu-surface/README.md",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "```js",
+         "matchingRanges": {
+          "lineNumber": "51"
+         },
+         "lineNumber": "51"
+        },
+        {
+         "lineText": "import {MDCMenuSurface} from '@material/menu-surface';",
+         "matchingRanges": {
+          "lineNumber": "52",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "52",
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "53"
+         },
+         "lineNumber": "53"
+        },
+        {
+         "lineText": "const menuSurface = new MDCMenuSurface(document.querySelector('.mdc-menu-surface'));",
+         "matchingRanges": {
+          "lineNumber": "54",
+          "columnRanges": [
+           {
+            "startIndex": 24,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "54",
+         "ranges": [
+          {
+           "startIndex": 24,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "```",
+         "matchingRanges": {
+          "lineNumber": "55"
+         },
+         "lineNumber": "55"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "`MDCMenuDimensions` | Width/height of an element. See [types.ts](./types.ts).",
+         "matchingRanges": {
+          "lineNumber": "152",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "152",
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "`MDCMenuDistance` | Margin values representing the distance from anchor point that the menu surface should be shown. See [types.ts](./types.ts).",
+         "matchingRanges": {
+          "lineNumber": "153",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "153",
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "`MDCMenuPoint` | X/Y coordinates. See [types.ts](./types.ts).",
+         "matchingRanges": {
+          "lineNumber": "154",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "154",
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "155"
+         },
+         "lineNumber": "155"
+        },
+        {
+         "lineText": "## `MDCMenuSurface` Properties and Methods",
+         "matchingRanges": {
+          "lineNumber": "156",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "156",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 42
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 7
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 19
+    },
+    "resultToken": "CAwSAggBOOa40szA_OKEf0AASAw"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "material-components-web",
+        "ossProject": "material-components"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "CHANGELOG.md",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "... astSelectedIndex when toggling a checkbox range ([dcba26f](https://github.com/material-components/material-components-web/commit/dcba26fe1028cf151ebf34c5947082a49cc85f10))",
+         "matchingRanges": {
+          "lineNumber": "28"
+         },
+         "lineNumber": "28"
+        },
+        {
+         "lineText": "* **menusurface:** Add a getOwnerDocument() method to MDCMenuSurfaceAdapter to provide a reference to the document tha ...",
+         "matchingRanges": {
+          "lineNumber": "29",
+          "columnRanges": [
+           {
+            "startIndex": 54,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "29",
+         "ranges": [
+          {
+           "startIndex": 54,
+           "length": 7
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "* **chips:** Chips markup, adapters, foundations, and events have changed.",
+         "matchingRanges": {
+          "lineNumber": "1429"
+         },
+         "lineNumber": "1429"
+        },
+        {
+         "lineText": "* **select:** In MDCMenu and MDCMenuSurface, `hoistMenuToBody` adapter method removed.  In MD ...",
+         "matchingRanges": {
+          "lineNumber": "1430",
+          "columnRanges": [
+           {
+            "startIndex": 17,
+            "length": 7
+           },
+           {
+            "startIndex": 29,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "1430",
+         "ranges": [
+          {
+           "startIndex": 17,
+           "length": 7
+          },
+          {
+           "startIndex": 29,
+           "length": 7
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CA0SAggBOMKh3sHakYC9wAFAAEgN"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "material-components-web",
+        "ossProject": "material-components"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "packages/mdc-menu-surface/constants.ts",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "const strings = {",
+         "matchingRanges": {
+          "lineNumber": "35"
+         },
+         "lineNumber": "35",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  CLOSED_EVENT: 'MDCMenuSurface:closed',",
+         "matchingRanges": {
+          "lineNumber": "36",
+          "columnRanges": [
+           {
+            "startIndex": 17,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "36",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 16,
+            "length": 23
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 17,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "  CLOSING_EVENT: 'MDCMenuSurface:closing',",
+         "matchingRanges": {
+          "lineNumber": "37",
+          "columnRanges": [
+           {
+            "startIndex": 18,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "37",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 17,
+            "length": 24
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 18,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "  OPENED_EVENT: 'MDCMenuSurface:opened',",
+         "matchingRanges": {
+          "lineNumber": "38",
+          "columnRanges": [
+           {
+            "startIndex": 17,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "38",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 16,
+            "length": 23
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 17,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "  OPENING_EVENT: 'MDCMenuSurface:opening',",
+         "matchingRanges": {
+          "lineNumber": "39",
+          "columnRanges": [
+           {
+            "startIndex": 18,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "39",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 17,
+            "length": 24
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 18,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "  FOCUSABLE_ELEMENTS: [",
+         "matchingRanges": {
+          "lineNumber": "40"
+         },
+         "lineNumber": "40"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 4
+    },
+    "resultToken": "CA4SAggBOKDfib_AhczaX0AASA4"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "material-components-web",
+        "ossProject": "material-components"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "packages/mdc-menu/test/foundation.test.ts",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import {cssClasses, DefaultFocusState, numbers as menuNumbers, strings} from '../constants';",
+         "matchingRanges": {
+          "lineNumber": "29"
+         },
+         "lineNumber": "29",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 47,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 72,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 77,
+            "length": 14
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "import {MDCMenuFoundation} from '../foundation';",
+         "matchingRanges": {
+          "lineNumber": "30",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "30",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 27,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 32,
+            "length": 15
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "31"
+         },
+         "lineNumber": "31"
+        },
+        {
+         "lineText": "function setupTest() {",
+         "matchingRanges": {
+          "lineNumber": "32"
+         },
+         "lineNumber": "32",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 8
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  const {foundation, mockAdapter} = setUpFoundationTest(MDCMenuFoundation);",
+         "matchingRanges": {
+          "lineNumber": "33",
+          "columnRanges": [
+           {
+            "startIndex": 56,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "33",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 56,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "  return {foundation, mockAdapter};",
+         "matchingRanges": {
+          "lineNumber": "34"
+         },
+         "lineNumber": "34",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "describe('MDCMenuFoundation', () =\u003e {",
+         "matchingRanges": {
+          "lineNumber": "39",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "39",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 9,
+            "length": 19
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "  setUpMdcTestEnvironment();",
+         "matchingRanges": {
+          "lineNumber": "40"
+         },
+         "lineNumber": "40"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 8
+    },
+    "resultToken": "CA8SAggBOLzSs7vnoobFX0AASA8"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "material-components-web",
+        "ossProject": "material-components"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "packages/mdc-select/component.ts",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import * as menuSurfaceConstants from '@material/menu-surface/constants';",
+         "matchingRanges": {
+          "lineNumber": "28"
+         },
+         "lineNumber": "28",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 33,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 38,
+            "length": 34
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "import {MDCMenu, MDCMenuFactory} from '@material/menu/component';",
+         "matchingRanges": {
+          "lineNumber": "29",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 7
+           },
+           {
+            "startIndex": 17,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "29",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 33,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 38,
+            "length": 26
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 7
+          },
+          {
+           "startIndex": 17,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "import * as menuConstants from '@material/menu/constants';",
+         "matchingRanges": {
+          "lineNumber": "30"
+         },
+         "lineNumber": "30",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 26,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 31,
+            "length": 26
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "import {MDCMenuItemEvent} from '@material/menu/types';",
+         "matchingRanges": {
+          "lineNumber": "31",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "31",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 26,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 31,
+            "length": 22
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "import {MDCNotchedOutline, MDCNotchedOutlineFactory} from '@material/notched-outline/component';",
+         "matchingRanges": {
+          "lineNumber": "32"
+         },
+         "lineNumber": "32",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 53,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 58,
+            "length": 37
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  private menu!: MDCMenu;  // assigned in menuSetup()",
+         "matchingRanges": {
+          "lineNumber": "52",
+          "columnRanges": [
+           {
+            "startIndex": 17,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "52",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 27,
+            "length": 26
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 17,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "53"
+         },
+         "lineNumber": "53"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "          MDCNotchedOutlineFactory = (el) =\u003e new MDCNotchedOutline(el),",
+         "matchingRanges": {
+          "lineNumber": "80"
+         },
+         "lineNumber": "80",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 45,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "      menuFactory: MDCMenuFactory = (el) =\u003e new MDCMenu(el),",
+         "matchingRanges": {
+          "lineNumber": "81",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 7
+           },
+           {
+            "startIndex": 48,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "81",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 44,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 7
+          },
+          {
+           "startIndex": 48,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "      iconFactory: MDCSelectIconFactory = (el) =\u003e new MDCSelectIcon(el),",
+         "matchingRanges": {
+          "lineNumber": "82"
+         },
+         "lineNumber": "82",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 50,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 6
+    },
+    "resultToken": "CBASAggBOMrHlqSC14n6VEAASBA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "material-components-web",
+        "ossProject": "material-components"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "packages/mdc-menu-surface/test/foundation.test.ts",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import {Corner, cssClasses, numbers, strings} from '../constants';",
+         "matchingRanges": {
+          "lineNumber": "26"
+         },
+         "lineNumber": "26",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 46,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 51,
+            "length": 14
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "import {MDCMenuSurfaceFoundation} from '../foundation';",
+         "matchingRanges": {
+          "lineNumber": "27",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "27",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 34,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 39,
+            "length": 15
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "28"
+         },
+         "lineNumber": "28"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  const {foundation, mockAdapter} =",
+         "matchingRanges": {
+          "lineNumber": "30"
+         },
+         "lineNumber": "30",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "      setUpFoundationTest(MDCMenuSurfaceFoundation);",
+         "matchingRanges": {
+          "lineNumber": "31",
+          "columnRanges": [
+           {
+            "startIndex": 26,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "31",
+         "ranges": [
+          {
+           "startIndex": 26,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "  const size = {width: 500, height: 200};",
+         "matchingRanges": {
+          "lineNumber": "32"
+         },
+         "lineNumber": "32",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 23,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 36,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "                                        mockAdapter: any,",
+         "matchingRanges": {
+          "lineNumber": "163"
+         },
+         "lineNumber": "163",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 53,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "                                        foundation: MDCMenuSurfaceFoundation,",
+         "matchingRanges": {
+          "lineNumber": "164",
+          "columnRanges": [
+           {
+            "startIndex": 52,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "164",
+         "ranges": [
+          {
+           "startIndex": 52,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "                                      }) =\u003e void) {",
+         "matchingRanges": {
+          "lineNumber": "165"
+         },
+         "lineNumber": "165",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 44,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 11
+    },
+    "resultToken": "CBESAggBOIL2yfSRv8XKf0AASBE"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "material-components-web",
+        "ossProject": "material-components"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "CHANGELOG_ARCHIVE.md",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "* **list:** The default `MDCListAdapter#notifyAction` implementation now emits an object of type `{index: number}` rather than a primitive `number` directly.",
+         "matchingRanges": {
+          "lineNumber": "364"
+         },
+         "lineNumber": "364"
+        },
+        {
+         "lineText": "* **menu-surface:** `MDCMenuSurfaceAdapter#setPosition` now expects an object with pr ...",
+         "matchingRanges": {
+          "lineNumber": "365",
+          "columnRanges": [
+           {
+            "startIndex": 21,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "365",
+         "ranges": [
+          {
+           "startIndex": 21,
+           "length": 7
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "* **checkbox:** All checkboxes need to update the SVG path's class from `mdc-checkbox__checkmark__path` to `mdc-checkbox__checkmark-path`.",
+         "matchingRanges": {
+          "lineNumber": "1322"
+         },
+         "lineNumber": "1322"
+        },
+        {
+         "lineText": "* **menu:** Renames MDCSimpleMenu to MDCMenu. Renames all mdc-simple-menu classes to mdc-menu. JS and SASS file paths for the menu have changed.",
+         "matchingRanges": {
+          "lineNumber": "1323",
+          "columnRanges": [
+           {
+            "startIndex": 37,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "1323",
+         "ranges": [
+          {
+           "startIndex": 37,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "* **list:** Renamed divider sass vars `$mdc-list-divider-color-light` to `$mdc-list-divider-color-on-light-bg`, `$mdc-list-divider-color-dark` to `$mdc-list-divider-color-o ...",
+         "matchingRanges": {
+          "lineNumber": "1324"
+         },
+         "lineNumber": "1324"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CBISAggBONT5mIKTi-KCXUAASBI"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "material-components-web",
+        "ossProject": "material-components"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "packages/material-components-web/index.ts",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "autoInit.register('MDCList', list.MDCList);",
+         "matchingRanges": {
+          "lineNumber": "72"
+         },
+         "lineNumber": "72",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 18,
+            "length": 9
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "autoInit.register('MDCMenu', menu.MDCMenu);",
+         "matchingRanges": {
+          "lineNumber": "73",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 7
+           },
+           {
+            "startIndex": 34,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "73",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 18,
+            "length": 9
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 7
+          },
+          {
+           "startIndex": 34,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "autoInit.register('MDCMenuSurface', menuSurface.MDCMenuSurface);",
+         "matchingRanges": {
+          "lineNumber": "74",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 7
+           },
+           {
+            "startIndex": 48,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "74",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 18,
+            "length": 16
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 7
+          },
+          {
+           "startIndex": 48,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "autoInit.register('MDCNotchedOutline', notchedOutline.MDCNotchedOutline);",
+         "matchingRanges": {
+          "lineNumber": "75"
+         },
+         "lineNumber": "75",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 18,
+            "length": 19
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CBMSAggBOKSavb_srJO-jQFAAEgT"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "material-components-web",
+        "ossProject": "material-components"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "packages/mdc-select/test/component.test.ts",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import {MDCMenu, MDCMenuFoundation} from '../../mdc-menu/index';",
+         "matchingRanges": {
+          "lineNumber": "24",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 7
+           },
+           {
+            "startIndex": 17,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "24",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 36,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 41,
+            "length": 22
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 7
+          },
+          {
+           "startIndex": 17,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "import {Corner} from '../../mdc-menu-surface/constants';",
+         "matchingRanges": {
+          "lineNumber": "25"
+         },
+         "lineNumber": "25",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 16,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 21,
+            "length": 34
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "import {MDCMenuSurfaceFoundation} from '../../mdc-menu-surface/index';",
+         "matchingRanges": {
+          "lineNumber": "26",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "26",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 34,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 39,
+            "length": 30
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "import {MDCNotchedOutline} from '../../mdc-notched-outline/index';",
+         "matchingRanges": {
+          "lineNumber": "27"
+         },
+         "lineNumber": "27",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 27,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 32,
+            "length": 33
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "      () =\u003e bottomLine, () =\u003e outline,",
+         "matchingRanges": {
+          "lineNumber": "233"
+         },
+         "lineNumber": "233"
+        },
+        {
+         "lineText": "      hasMockMenu ? () =\u003e mockMenu : (el: HTMLElement) =\u003e new MDCMenu(el),",
+         "matchingRanges": {
+          "lineNumber": "234",
+          "columnRanges": [
+           {
+            "startIndex": 62,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "234",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 58,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 62,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "      () =\u003e icon, () =\u003e helperText);",
+         "matchingRanges": {
+          "lineNumber": "235"
+         },
+         "lineNumber": "235"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  it(`#destroy removes the listener for ${",
+         "matchingRanges": {
+          "lineNumber": "1315"
+         },
+         "lineNumber": "1315",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 5,
+            "length": 37
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "         MDCMenuFoundation.strings.SELECTED_EVENT} event`,",
+         "matchingRanges": {
+          "lineNumber": "1316",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "1316",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 49,
+            "length": 8
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "     () =\u003e {",
+         "matchingRanges": {
+          "lineNumber": "1317"
+         },
+         "lineNumber": "1317"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 11
+    },
+    "resultToken": "CBQSAggBOPTCq7PJ8re3HkAASBQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "material-components-web",
+        "ossProject": "material-components"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "packages/mdc-select/README.md",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "The select uses an [`MDCMenu`](../mdc-menu) component instance to contain the list of options, but uses the",
+         "matchingRanges": {
+          "lineNumber": "41",
+          "columnRanges": [
+           {
+            "startIndex": 21,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "41",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 19,
+            "length": 24
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 21,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "`data-value` attribute instead of `value` to represent the options' values.",
+         "matchingRanges": {
+          "lineNumber": "42"
+         },
+         "lineNumber": "42"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "| `mdc-select--no-label` | Styles the select as a select without a label. |",
+         "matchingRanges": {
+          "lineNumber": "532"
+         },
+         "lineNumber": "532"
+        },
+        {
+         "lineText": "\u003e _NOTE_: To further customize the [MDCMenu](./../mdc-menu) or the [MDCList](./../mdc-list) componen ...",
+         "matchingRanges": {
+          "lineNumber": "533",
+          "columnRanges": [
+           {
+            "startIndex": 36,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "533",
+         "ranges": [
+          {
+           "startIndex": 36,
+           "length": 7
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CBUSAggBOI643qmO1_S9FEAASBU"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "material-components-web",
+        "ossProject": "material-components"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/integrating-into-frameworks.md",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "`MDCComponentFoundation`, where `MDCComponent` is the name of a component. For example, we have an",
+         "matchingRanges": {
+          "lineNumber": "65"
+         },
+         "lineNumber": "65"
+        },
+        {
+         "lineText": "[MDCMenuFoundation](../packages/mdc-menu/foundation.ts) that is used by our",
+         "matchingRanges": {
+          "lineNumber": "66",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "66",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "length": 55
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "[MDCMenu](../packages/mdc-menu/index.ts) component, and which are both exported",
+         "matchingRanges": {
+          "lineNumber": "67",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "67",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "length": 40
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "publicly.",
+         "matchingRanges": {
+          "lineNumber": "68"
+         },
+         "lineNumber": "68"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CBYSAggBOM779_zaitLJfkAASBY"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "material-components-web",
+        "ossProject": "material-components"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "packages/mdc-select/foundation.ts",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  // isMenuOpen is used to track the state of the menu by listening to the",
+         "matchingRanges": {
+          "lineNumber": "101"
+         },
+         "lineNumber": "101",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 72
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  // MDCMenuSurface:closed event For reference, menu.open will return false if",
+         "matchingRanges": {
+          "lineNumber": "102",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "102",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 76
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "  // the menu is still closing, but isMenuOpen returns false only after the menu",
+         "matchingRanges": {
+          "lineNumber": "103"
+         },
+         "lineNumber": "103",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 78
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBcSAggBOJjbn6evwsqMK0AASBc"
+   }
+  ],
+  "estimatedResultCount": "24",
+  "exhaustive": true,
+  "requestToken": "CgdNRENNZW51EkooIGdpdDpnaXRodWIvbWF0ZXJpYWwtY29tcG9uZW50cy9tYXRlcmlhbC1jb21wb25lbnRzLXdlYkBtYXN0ZXIgY2FzZTp5ZXMgKRoMCNbQzNEGEN3enN4BIAwqADIASAE"
+ }
+}

@@ -1,0 +1,79 @@
+{
+ "query": "\"push the Python interpreter\"",
+ "oss_project": "protobuf",
+ "repo_name": "protobuf",
+ "page_size": 50,
+ "fetched_at": "2026-06-17T23:21:52Z",
+ "response": {
+  "searchResults": [
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "protobuf",
+        "ossProject": "protobuf"
+       },
+       "refSpec": "refs/heads/main"
+      },
+      "path": "python/google/protobuf/internal/encoder.py",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "This code is designed to push the Python interpreter's performance to the",
+         "matchingRanges": {
+          "lineNumber": "12",
+          "columnRanges": [
+           {
+            "startIndex": 25,
+            "length": 27
+           }
+          ]
+         },
+         "lineNumber": "12",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "length": 73
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 25,
+           "length": 27
+          }
+         ]
+        },
+        {
+         "lineText": "limits.",
+         "matchingRanges": {
+          "lineNumber": "13"
+         },
+         "lineNumber": "13",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "length": 7
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAASAggBOOr55onc3NXOsgFAAEgA"
+   }
+  ],
+  "estimatedResultCount": "1",
+  "exhaustive": true,
+  "requestToken": "Ch0icHVzaCB0aGUgUHl0aG9uIGludGVycHJldGVyIhI1KCBnaXQ6Z2l0aHViL3Byb3RvY29sYnVmZmVycy9wcm90b2J1ZkBtYWluIGNhc2U6eWVzICkaDAiQ2MzRBhC-1YzyAiAMIA8qADIASAE"
+ }
+}

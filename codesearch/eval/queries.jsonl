@@ -1,0 +1,103 @@
+// Eval query set for the golang/go corpus. Categories follow the FSE'15 query
+// distribution (short, identifier-heavy, known-item) plus regex/filter/ranking cases.
+// "targets" = acceptable right-answer files (repo-relative, like Google's paths).
+{"id":"sym-fprintf","category":"symbol","query":"func Fprintf","targets":["src/fmt/print.go"]}
+{"id":"sym-waitgroup","category":"symbol","query":"WaitGroup","targets":["src/sync/waitgroup.go"]}
+{"id":"sym-listenandserve","category":"symbol","query":"func ListenAndServe","targets":["src/net/http/server.go"]}
+{"id":"sym-newscanner","category":"symbol","query":"NewScanner","targets":["src/bufio/scan.go"]}
+{"id":"sym-gopanic","category":"symbol","query":"gopanic","targets":["src/runtime/panic.go"]}
+{"id":"sym-mallocgc","category":"symbol","query":"mallocgc","targets":["src/runtime/malloc.go"]}
+{"id":"sym-growslice","category":"symbol","query":"growslice","targets":["src/runtime/slice.go"]}
+{"id":"sym-mapaccess1","category":"symbol","query":"mapaccess1","targets":["src/runtime/map.go"]}
+{"id":"sym-newtimer","category":"symbol","query":"NewTimer","targets":["src/time/sleep.go"]}
+{"id":"sym-withcancel","category":"symbol","query":"WithCancel","targets":["src/context/context.go"]}
+{"id":"sym-reverseproxy","category":"symbol","query":"ReverseProxy","targets":["src/net/http/httputil/reverseproxy.go"]}
+{"id":"sym-goexit","category":"symbol","query":"Goexit","targets":["src/runtime/panic.go"]}
+{"id":"sym-newreplacer","category":"symbol","query":"NewReplacer","targets":["src/strings/replace.go"]}
+{"id":"sym-hijacker","category":"symbol","query":"Hijacker","targets":["src/net/http/server.go"]}
+{"id":"sym-littleendian","category":"symbol","query":"LittleEndian","targets":["src/encoding/binary/binary.go"]}
+{"id":"sym-gomaxprocs","category":"symbol","query":"GOMAXPROCS","targets":["src/runtime/debug.go"]}
+{"id":"sym-copybuffer","category":"symbol","query":"CopyBuffer","targets":["src/io/io.go"]}
+{"id":"sym-stoptheworld","category":"symbol","query":"stopTheWorld","targets":["src/runtime/proc.go"]}
+{"id":"sym-newticker","category":"symbol","query":"NewTicker","targets":["src/time/tick.go"]}
+{"id":"sym-quotemeta","category":"symbol","query":"QuoteMeta","targets":["src/regexp/regexp.go"]}
+{"id":"sym-pipe","category":"symbol","query":"func Pipe","targets":["src/io/pipe.go","src/net/pipe.go","src/os/pipe.go"]}
+{"id":"sym-newrequest","category":"symbol","query":"func NewRequest","targets":["src/net/http/request.go"]}
+{"id":"sym-readall","category":"symbol","query":"func ReadAll","targets":["src/io/io.go"]}
+{"id":"sym-hmac","category":"symbol","query":"hmac New","targets":["src/crypto/hmac/hmac.go"]}
+{"id":"sym-fields","category":"symbol","query":"func Fields","targets":["src/strings/strings.go"]}
+{"id":"kw-bytes-buffer-grow","category":"keyword","query":"bytes buffer grow","targets":["src/bytes/buffer.go"]}
+{"id":"kw-context-cancel","category":"keyword","query":"context cancel","targets":["src/context/context.go"]}
+{"id":"kw-tls-handshake-client","category":"keyword","query":"tls handshake client","targets":["src/crypto/tls/handshake_client.go"]}
+{"id":"kw-gzip-reader","category":"keyword","query":"gzip reader","targets":["src/compress/gzip/gunzip.go"]}
+{"id":"kw-cookie-jar","category":"keyword","query":"cookie jar","targets":["src/net/http/cookiejar/jar.go"]}
+{"id":"kw-template-parse-tree","category":"keyword","query":"template parse tree","targets":["src/text/template/parse/parse.go","src/text/template/parse/node.go"]}
+{"id":"kw-utf8-decode-rune","category":"keyword","query":"utf8 decode rune","targets":["src/unicode/utf8/utf8.go"]}
+{"id":"kw-sha256-block","category":"keyword","query":"sha256 block","targets":["src/crypto/sha256/sha256.go","src/crypto/internal/fips140/sha256/sha256.go"]}
+{"id":"kw-goroutine-stack-grow","category":"keyword","query":"goroutine stack grow","targets":["src/runtime/stack.go"]}
+{"id":"kw-mutex-starvation","category":"keyword","query":"mutex starvation","targets":["src/sync/mutex.go","src/internal/sync/mutex.go"]}
+{"id":"kw-http-client-redirect","category":"keyword","query":"http client redirect","targets":["src/net/http/client.go"]}
+{"id":"kw-work-stealing","category":"keyword","query":"work stealing","targets":["src/runtime/proc.go"]}
+{"id":"kw-dns-lookup","category":"keyword","query":"dns resolver lookup","targets":["src/net/lookup.go","src/net/dnsclient_unix.go"]}
+{"id":"kw-zip-central-directory","category":"keyword","query":"zip central directory","targets":["src/archive/zip/reader.go","src/archive/zip/struct.go"]}
+{"id":"kw-karatsuba","category":"keyword","query":"karatsuba","targets":["src/math/big/natmul.go","src/math/big/nat.go"]}
+{"id":"kw-gc-mark-termination","category":"keyword","query":"mark termination","targets":["src/runtime/mgc.go"]}
+{"id":"kw-regexp-backtrack","category":"keyword","query":"regexp backtrack","targets":["src/regexp/backtrack.go"]}
+{"id":"kw-channel-send-receive","category":"keyword","query":"channel send receive","targets":["src/runtime/chan.go"]}
+{"id":"kw-sendfile","category":"keyword","query":"sendfile","targets":["src/net/sendfile_unix_alt.go","src/net/sendfile.go","src/internal/poll/sendfile_unix.go","src/internal/poll/sendfile.go"]}
+{"id":"kw-base64-padding","category":"keyword","query":"base64 padding","targets":["src/encoding/base64/base64.go"]}
+{"id":"phr-closed-network","category":"phrase","query":"\"use of closed network connection\"","targets":["src/internal/poll/fd.go"]}
+{"id":"phr-deadlock","category":"phrase","query":"\"all goroutines are asleep\"","targets":["src/runtime/proc.go"]}
+{"id":"phr-concurrent-map","category":"phrase","query":"\"concurrent map read and map write\"","targets":["src/runtime/map_noswiss.go","src/runtime/map_swiss.go","src/internal/runtime/maps/map.go"]}
+{"id":"phr-slice-bounds","category":"phrase","query":"\"slice bounds out of range\"","targets":["src/runtime/error.go"]}
+{"id":"phr-nil-deref","category":"phrase","query":"\"invalid memory address or nil pointer dereference\"","targets":["src/runtime/signal_unix.go","src/runtime/panic.go"]}
+{"id":"phr-no-cookie","category":"phrase","query":"\"named cookie not present\"","targets":["src/net/http/request.go"]}
+{"id":"phr-json-eof","category":"phrase","query":"\"unexpected end of JSON input\"","targets":["src/encoding/json/scanner.go","src/encoding/json/v2_scanner.go"]}
+{"id":"phr-bufio-full","category":"phrase","query":"\"bufio: buffer full\"","targets":["src/bufio/bufio.go"]}
+{"id":"phr-negative-waitgroup","category":"phrase","query":"\"negative WaitGroup counter\"","targets":["src/sync/waitgroup.go","src/internal/sync/waitgroup.go"]}
+{"id":"phr-invalid-syntax","category":"phrase","query":"\"invalid syntax\"","targets":["src/strconv/atoi.go"]}
+{"id":"phr-deadline-exceeded","category":"phrase","query":"\"context deadline exceeded\"","targets":["src/context/context.go"]}
+{"id":"phr-bad-certificate","category":"phrase","query":"\"bad certificate\"","targets":["src/crypto/tls/alert.go"]}
+{"id":"phr-gzip-header","category":"phrase","query":"\"gzip: invalid header\"","targets":["src/compress/gzip/gunzip.go"]}
+{"id":"phr-out-of-memory","category":"phrase","query":"\"runtime: out of memory\"","targets":["src/runtime/malloc.go","src/runtime/mem_linux.go"]}
+{"id":"phr-declared-not-used","category":"phrase","query":"\"declared and not used\"","targets":["src/cmd/compile/internal/types2/stmt.go","src/go/types/stmt.go"]}
+{"id":"re-fprintf-sprintf","category":"regex","query":"func (Fpr|Spr)intf","targets":["src/fmt/print.go"]}
+{"id":"re-buffer-methods","category":"regex","query":"func \\(b \\*Buffer\\)","targets":["src/bytes/buffer.go"]}
+{"id":"re-errors-is-as","category":"regex","query":"errors\\.(Is|As)\\("}
+{"id":"re-test-serve","category":"regex","query":"^func TestServe"}
+{"id":"re-listenandserve-tls","category":"regex","query":"ListenAndServe(TLS)?","targets":["src/net/http/server.go"]}
+{"id":"re-parse-int","category":"regex","query":"func Parse(U?int|Float)","targets":["src/strconv/atoi.go","src/strconv/atof.go"]}
+{"id":"re-read-write-byte","category":"regex","query":"func .*(Read|Write)Byte"}
+{"id":"re-ctx-arg","category":"regex","query":"ctx context\\.Context, fn"}
+{"id":"re-make-map-string","category":"regex","query":"make\\(map\\[string\\]\\[\\]string"}
+{"id":"re-sync-mutex","category":"regex","query":"sync\\.(Mutex|RWMutex)$"}
+{"id":"re-noinline","category":"regex","query":"//go:noinline"}
+{"id":"re-atomic-int64","category":"regex","query":"atomic\\.(Load|Store)Int64"}
+{"id":"re-time-sleep","category":"regex","query":"time\\.Sleep\\([0-9]"}
+{"id":"re-eof-error","category":"regex","query":"EOF = errors\\.New","targets":["src/io/io.go"]}
+{"id":"re-conn-read","category":"regex","query":"func \\(c \\*Conn\\) Read","targets":["src/crypto/tls/conn.go","src/net/net.go"]}
+{"id":"flt-waitgroup-add","category":"filter","query":"file:waitgroup.go Add","targets":["src/sync/waitgroup.go","src/internal/sync/waitgroup.go"]}
+{"id":"flt-print-fprintf","category":"filter","query":"lang:go file:print.go Fprintf","targets":["src/fmt/print.go"]}
+{"id":"flt-test-cookie","category":"filter","query":"file:_test.go TestCookie"}
+{"id":"flt-case-printf","category":"filter","query":"case:yes Printf","targets":["src/fmt/print.go"]}
+{"id":"flt-case-sigsegv","category":"filter","query":"case:yes SIGSEGV"}
+{"id":"flt-runtime-map-delete","category":"filter","query":"file:runtime/map delete"}
+{"id":"flt-asm-sha256","category":"filter","query":"file:\\.s$ sha256"}
+{"id":"flt-json-decode","category":"filter","query":"file:json decode","targets":["src/encoding/json/decode.go"]}
+{"id":"flt-markdown-gc","category":"filter","query":"lang:markdown garbage collector"}
+{"id":"flt-chan-select","category":"filter","query":"file:runtime/select.go scase","targets":["src/runtime/select.go"]}
+{"id":"rank-thread","category":"ranking","query":"thread"}
+{"id":"rank-buffer","category":"ranking","query":"buffer"}
+{"id":"rank-mutex","category":"ranking","query":"mutex"}
+{"id":"rank-scheduler","category":"ranking","query":"scheduler"}
+{"id":"rank-timeout","category":"ranking","query":"timeout"}
+{"id":"rank-hash","category":"ranking","query":"hash"}
+{"id":"rank-copy","category":"ranking","query":"copy"}
+{"id":"rank-walk","category":"ranking","query":"walk"}
+{"id":"rank-dial","category":"ranking","query":"dial"}
+{"id":"rank-token","category":"ranking","query":"token"}
+{"id":"rank-parse","category":"ranking","query":"parse"}
+{"id":"rank-pool","category":"ranking","query":"pool"}
+{"id":"rank-flush","category":"ranking","query":"flush"}
+{"id":"rank-signal","category":"ranking","query":"signal"}
+{"id":"rank-utf8","category":"ranking","query":"utf8"}

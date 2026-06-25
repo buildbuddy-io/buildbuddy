@@ -1,0 +1,2408 @@
+{
+ "query": "\"invalid syntax\"",
+ "oss_project": "go",
+ "repo_name": "go",
+ "page_size": 50,
+ "fetched_at": "2026-06-11T02:29:54Z",
+ "response": {
+  "searchResults": [
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/internal/strconv/atoi.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tcase ErrSyntax:",
+         "matchingRanges": {
+          "lineNumber": "29"
+         },
+         "lineNumber": "29",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\treturn \"invalid syntax\"",
+         "matchingRanges": {
+          "lineNumber": "30",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "30",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 9,
+            "length": 16
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "\tcase ErrBase:",
+         "matchingRanges": {
+          "lineNumber": "31"
+         },
+         "lineNumber": "31",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAASAggBOMjg092069fG5AFAAEgA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/vendor/golang.org/x/tools/internal/typesinternal/errorcode.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "const (",
+         "matchingRanges": {
+          "lineNumber": "33"
+         },
+         "lineNumber": "33",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t// InvalidSyntaxTree occurs if an invalid syntax tree is provided",
+         "matchingRanges": {
+          "lineNumber": "34",
+          "columnRanges": [
+           {
+            "startIndex": 35,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "34",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 65
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 35,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "\t// to the type checker. It should never happen.",
+         "matchingRanges": {
+          "lineNumber": "35"
+         },
+         "lineNumber": "35",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 47
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// BadDecl occurs when a declaration has invalid syntax.",
+         "matchingRanges": {
+          "lineNumber": "1379",
+          "columnRanges": [
+           {
+            "startIndex": 42,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "1379",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 56
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 42,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "\tBadDecl",
+         "matchingRanges": {
+          "lineNumber": "1380"
+         },
+         "lineNumber": "1380"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAESAggBOLKZpZjk14-zhAFAAEgB"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/internal/types/errors/codes.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "const (",
+         "matchingRanges": {
+          "lineNumber": "35"
+         },
+         "lineNumber": "35",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t// InvalidSyntaxTree occurs if an invalid syntax tree is provided",
+         "matchingRanges": {
+          "lineNumber": "36",
+          "columnRanges": [
+           {
+            "startIndex": 35,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "36",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 65
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 35,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "\t// to the type checker. It should never happen.",
+         "matchingRanges": {
+          "lineNumber": "37"
+         },
+         "lineNumber": "37",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 47
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// BadDecl occurs when a declaration has invalid syntax.",
+         "matchingRanges": {
+          "lineNumber": "1262",
+          "columnRanges": [
+           {
+            "startIndex": 42,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "1262",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 56
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 42,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "\tBadDecl",
+         "matchingRanges": {
+          "lineNumber": "1263"
+         },
+         "lineNumber": "1263"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAISAggBOPzF5pfr86m1zgFAAEgC"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/os/env.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t\tif name == \"\" \u0026\u0026 w \u003e 0 {",
+         "matchingRanges": {
+          "lineNumber": "27"
+         },
+         "lineNumber": "27",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 3,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 14,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 24,
+            "length": 1
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t\t// Encountered invalid syntax; eat the",
+         "matchingRanges": {
+          "lineNumber": "28",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "28",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 38
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t\t// characters.",
+         "matchingRanges": {
+          "lineNumber": "29"
+         },
+         "lineNumber": "29",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 14
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAMSAggBOPTdg7Kw-IKMuAFAAEgD"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/compile/internal/types2/errors.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t// Report invalid syntax trees explicitly.",
+         "matchingRanges": {
+          "lineNumber": "170",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "170",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 42
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tif code == InvalidSyntaxTree {",
+         "matchingRanges": {
+          "lineNumber": "171"
+         },
+         "lineNumber": "171",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\tmsg = \"invalid syntax tree: \" + msg",
+         "matchingRanges": {
+          "lineNumber": "172",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "172",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 9,
+            "length": 23
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t}",
+         "matchingRanges": {
+          "lineNumber": "173"
+         },
+         "lineNumber": "173"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAQSAggBOJ6p9_ugoNOJI0AASAQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/os/env_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t{\"$}\", \"$}\"},",
+         "matchingRanges": {
+          "lineNumber": "55"
+         },
+         "lineNumber": "55",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t{\"${\", \"\"},  // invalid syntax; eat up the characters",
+         "matchingRanges": {
+          "lineNumber": "56",
+          "columnRanges": [
+           {
+            "startIndex": 17,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "56",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 14,
+            "length": 40
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 17,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "\t{\"${}\", \"\"}, // invalid syntax; eat up the characters",
+         "matchingRanges": {
+          "lineNumber": "57",
+          "columnRanges": [
+           {
+            "startIndex": 17,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "57",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 9,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 14,
+            "length": 40
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 17,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "}",
+         "matchingRanges": {
+          "lineNumber": "58"
+         },
+         "lineNumber": "58"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAUSAggBOIbWvr-DrdBNQABIBQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/go/build/constraint/expr.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\tif p.i+1 \u003e= len(p.s) || p.s[p.i+1] != p.s[p.i] {",
+         "matchingRanges": {
+          "lineNumber": "331"
+         },
+         "lineNumber": "331",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 9,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 34,
+            "length": 1
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\tpanic(\u0026SyntaxError{Offset: p.i, Err: \"invalid syntax at \" + string(rune(p.s[p.i]))})",
+         "matchingRanges": {
+          "lineNumber": "332",
+          "columnRanges": [
+           {
+            "startIndex": 41,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "332",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 40,
+            "length": 20
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 41,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t}",
+         "matchingRanges": {
+          "lineNumber": "333"
+         },
+         "lineNumber": "333"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\tc, _ := utf8.DecodeRuneInString(p.s[p.i:])",
+         "matchingRanges": {
+          "lineNumber": "348"
+         },
+         "lineNumber": "348"
+        },
+        {
+         "lineText": "\t\tpanic(\u0026SyntaxError{Offset: p.i, Err: \"invalid syntax at \" + string(c)})",
+         "matchingRanges": {
+          "lineNumber": "349",
+          "columnRanges": [
+           {
+            "startIndex": 40,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "349",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 39,
+            "length": 20
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 40,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "\t}",
+         "matchingRanges": {
+          "lineNumber": "350"
+         },
+         "lineNumber": "350"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAYSAggBOI7gkO-6i_CQ3wFAAEgG"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/database/sql/convert_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t{s: \"-1\", d: \u0026scanint, wantint: -1},",
+         "matchingRanges": {
+          "lineNumber": "129"
+         },
+         "lineNumber": "129",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 6,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 35,
+            "length": 1
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t{s: \"foo\", d: \u0026scanint, wanterr: \"converting driver.Value type string (\\\"foo\\\") to a int: invalid syntax\"},",
+         "matchingRanges": {
+          "lineNumber": "130",
+          "columnRanges": [
+           {
+            "startIndex": 92,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "130",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 6,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 35,
+            "length": 72
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 92,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "131"
+         },
+         "lineNumber": "131"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAcSAggBOIKK6KrL2efiAkAASAc"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/strconv/number.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// ErrSyntax indicates that a value does not have the right syntax for the target type.",
+         "matchingRanges": {
+          "lineNumber": "248"
+         },
+         "lineNumber": "248",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 87
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "var ErrSyntax = errors.New(\"invalid syntax\")",
+         "matchingRanges": {
+          "lineNumber": "249",
+          "columnRanges": [
+           {
+            "startIndex": 28,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "249",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 27,
+            "length": 16
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 28,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "250"
+         },
+         "lineNumber": "250"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAgSAggBOLLDpIq48JinZ0AASAg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/go/build/constraint/expr_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t{\"αx\", \"αx\"},",
+         "matchingRanges": {
+          "lineNumber": "61"
+         },
+         "lineNumber": "61",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t{\"αx²\", \"αx err: invalid syntax at ²\"},",
+         "matchingRanges": {
+          "lineNumber": "62",
+          "columnRanges": [
+           {
+            "startIndex": 18,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "62",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 9,
+            "length": 29
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 18,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "\t{\"go1.2\", \"go1.2\"},",
+         "matchingRanges": {
+          "lineNumber": "63"
+         },
+         "lineNumber": "63",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 7
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t{\"\u0026\u0026||!()xy yx \", \"\u0026\u0026 || ! ( ) xy yx\"},",
+         "matchingRanges": {
+          "lineNumber": "66"
+         },
+         "lineNumber": "66",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 15
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 19,
+            "length": 19
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t{\"x~\", \"x err: invalid syntax at ~\"},",
+         "matchingRanges": {
+          "lineNumber": "67",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "67",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 28
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "\t{\"x ~\", \"x err: invalid syntax at ~\"},",
+         "matchingRanges": {
+          "lineNumber": "68",
+          "columnRanges": [
+           {
+            "startIndex": 17,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "68",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 9,
+            "length": 28
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 17,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "\t{\"x \u0026\", \"x err: invalid syntax at \u0026\"},",
+         "matchingRanges": {
+          "lineNumber": "69",
+          "columnRanges": [
+           {
+            "startIndex": 17,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "69",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 9,
+            "length": 28
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 17,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "\t{\"x \u0026y\", \"x err: invalid syntax at \u0026\"},",
+         "matchingRanges": {
+          "lineNumber": "70",
+          "columnRanges": [
+           {
+            "startIndex": 18,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "70",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 10,
+            "length": 28
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 18,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "}",
+         "matchingRanges": {
+          "lineNumber": "71"
+         },
+         "lineNumber": "71"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 5
+    },
+    "resultToken": "CAkSAggBOObT_vCIx-CVsQFAAEgJ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/math/big/ratconv.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tif _, ok := z.SetString(string(tok)); !ok {",
+         "matchingRanges": {
+          "lineNumber": "34"
+         },
+         "lineNumber": "34",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\treturn errors.New(\"Rat.Scan: invalid syntax\")",
+         "matchingRanges": {
+          "lineNumber": "35",
+          "columnRanges": [
+           {
+            "startIndex": 31,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "35",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 26
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 31,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "\t}",
+         "matchingRanges": {
+          "lineNumber": "36"
+         },
+         "lineNumber": "36"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAoSAggBOJart4WDsufEdEAASAo"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/strconv/example_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// Output:",
+         "matchingRanges": {
+          "lineNumber": "382"
+         },
+         "lineNumber": "382",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 10
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t// \"\", invalid syntax",
+         "matchingRanges": {
+          "lineNumber": "383",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "383",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 21
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "\t// \"\\\"double-quoted string\\\"\", \u003cnil\u003e",
+         "matchingRanges": {
+          "lineNumber": "384"
+         },
+         "lineNumber": "384",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 36
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// Output:",
+         "matchingRanges": {
+          "lineNumber": "401"
+         },
+         "lineNumber": "401",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 10
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t// \"\", invalid syntax",
+         "matchingRanges": {
+          "lineNumber": "402",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "402",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 21
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "\t// \"The string must be either double-quoted\", \u003cnil\u003e",
+         "matchingRanges": {
+          "lineNumber": "403"
+         },
+         "lineNumber": "403",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 51
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// \"☺\", \u003cnil\u003e",
+         "matchingRanges": {
+          "lineNumber": "405"
+         },
+         "lineNumber": "405",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 13
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t// \"\", invalid syntax",
+         "matchingRanges": {
+          "lineNumber": "406",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "406",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 21
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "}",
+         "matchingRanges": {
+          "lineNumber": "407"
+         },
+         "lineNumber": "407"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 5
+    },
+    "resultToken": "CAsSAggBOLjx6JfyxcGmJUAASAs"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/encoding/json/decode_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t}{",
+         "matchingRanges": {
+          "lineNumber": "1541"
+         },
+         "lineNumber": "1541"
+        },
+        {
+         "lineText": "\t\t{CaseName: Name(\"\"), in: \"-1.23e1\", intErr: \"strconv.ParseInt: parsing \\\"-1.23e1\\\": invalid syntax\", f: -1.23e1},",
+         "matchingRanges": {
+          "lineNumber": "1542",
+          "columnRanges": [
+           {
+            "startIndex": 86,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "1542",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 18,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 27,
+            "length": 9
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 46,
+            "length": 55
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 107,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 86,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t{CaseName: Name(\"\"), in: \"-12\", i: -12, f: -12.0},",
+         "matchingRanges": {
+          "lineNumber": "1543"
+         },
+         "lineNumber": "1543",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 18,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 27,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 38,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 46,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t{CaseName: Name(\"\"), in: \"1e1000\", intErr: \"strconv.ParseInt: parsing \\\"1e1000\\\": invalid syntax\", floatErr: \"strconv.ParseFloat: parsing \\\"1e1000\\\": val ...",
+         "matchingRanges": {
+          "lineNumber": "1544",
+          "columnRanges": [
+           {
+            "startIndex": 84,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "1544",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 18,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 27,
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 45,
+            "length": 54
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 111,
+            "length": 44
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 84,
+           "length": 14
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAwSAggBOLiGh__gpryOM0AASAw"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/go/types/errors.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t// Report invalid syntax trees explicitly.",
+         "matchingRanges": {
+          "lineNumber": "171",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "171",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 42
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tif code == InvalidSyntaxTree {",
+         "matchingRanges": {
+          "lineNumber": "172"
+         },
+         "lineNumber": "172",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\tmsg = \"invalid syntax tree: \" + msg",
+         "matchingRanges": {
+          "lineNumber": "173",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "173",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 9,
+            "length": 23
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t}",
+         "matchingRanges": {
+          "lineNumber": "174"
+         },
+         "lineNumber": "174"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CA0SAggBONDnh9-UwprOMEAASA0"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/encoding/json/v2_decode_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t}{",
+         "matchingRanges": {
+          "lineNumber": "1542"
+         },
+         "lineNumber": "1542"
+        },
+        {
+         "lineText": "\t\t{CaseName: Name(\"\"), in: \"-1.23e1\", intErr: \"strconv.ParseInt: parsing \\\"-1.23e1\\\": invalid syntax\", f: -1.23e1},",
+         "matchingRanges": {
+          "lineNumber": "1543",
+          "columnRanges": [
+           {
+            "startIndex": 86,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "1543",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 18,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 27,
+            "length": 9
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 46,
+            "length": 55
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 107,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 86,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t{CaseName: Name(\"\"), in: \"-12\", i: -12, f: -12.0},",
+         "matchingRanges": {
+          "lineNumber": "1544"
+         },
+         "lineNumber": "1544",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 18,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 27,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 38,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 46,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t{CaseName: Name(\"\"), in: \"1e1000\", intErr: \"strconv.ParseInt: parsing \\\"1e1000\\\": invalid syntax\", floatErr: \"strconv.ParseFloat: parsing \\\"1e1000\\\": val ...",
+         "matchingRanges": {
+          "lineNumber": "1545",
+          "columnRanges": [
+           {
+            "startIndex": 84,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "1545",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 18,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 27,
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 45,
+            "length": 54
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 111,
+            "length": 44
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 84,
+           "length": 14
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CA4SAggBONSur8LdwPahI0AASA4"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/encoding/json/v2/example_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// \t{",
+         "matchingRanges": {
+          "lineNumber": "454"
+         },
+         "lineNumber": "454",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t// \t\t\"Error\": \"strconv.ParseUint: parsing \\\"-1234\\\": invalid syntax\"",
+         "matchingRanges": {
+          "lineNumber": "455",
+          "columnRanges": [
+           {
+            "startIndex": 54,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "455",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 68
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 54,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "\t// \t},",
+         "matchingRanges": {
+          "lineNumber": "456"
+         },
+         "lineNumber": "456",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CA8SAggBOPrVhKzQosn2FkAASA8"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/log/slog/level_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t{\"dbg\", \"unknown name\"},",
+         "matchingRanges": {
+          "lineNumber": "136"
+         },
+         "lineNumber": "136",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 3,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 10,
+            "length": 14
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t{\"INFO+\", \"invalid syntax\"},",
+         "matchingRanges": {
+          "lineNumber": "137",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "137",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 3,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 12,
+            "length": 16
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t{\"INFO-\", \"invalid syntax\"},",
+         "matchingRanges": {
+          "lineNumber": "138",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "138",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 3,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 12,
+            "length": 16
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t{\"ERROR+23x\", \"invalid syntax\"},",
+         "matchingRanges": {
+          "lineNumber": "139",
+          "columnRanges": [
+           {
+            "startIndex": 17,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "139",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 3,
+            "length": 11
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 16,
+            "length": 16
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 17,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "\t} {",
+         "matchingRanges": {
+          "lineNumber": "140"
+         },
+         "lineNumber": "140"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CBASAggBOJz2qL3mhaQCQABIEA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/go/parser/testdata/issue44504.src",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// Test case for go.dev/issue/44504: panic due to duplicate resolution of slice/index",
+         "matchingRanges": {
+          "lineNumber": "5"
+         },
+         "lineNumber": "5"
+        },
+        {
+         "lineText": "// operands. We should not try to resolve a LHS expression with invalid syntax.",
+         "matchingRanges": {
+          "lineNumber": "6",
+          "columnRanges": [
+           {
+            "startIndex": 64,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "6",
+         "ranges": [
+          {
+           "startIndex": 64,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "7"
+         },
+         "lineNumber": "7"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBESAggBOLSC0ff3mNnUbkAASBE"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/go/testdata/script/test_shuffle.txt",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "stderr 'invalid value \"-count=2\" for flag -shuffle: -shuffle argument must be \"on\", \"off\", or an int64: strconv.ParseInt: parsing \"-count=2\": invalid syntax'",
+         "matchingRanges": {
+          "lineNumber": "102",
+          "columnRanges": [
+           {
+            "startIndex": 142,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "102",
+         "ranges": [
+          {
+           "startIndex": 142,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "103"
+         },
+         "lineNumber": "103"
+        },
+        {
+         "lineText": "! go test -shuffle=",
+         "matchingRanges": {
+          "lineNumber": "104"
+         },
+         "lineNumber": "104"
+        },
+        {
+         "lineText": "stderr '(?s)invalid value \"\" for flag -shuffle: -shuffle argument must be \"on\", \"off\", or an int64: strconv.ParseInt: parsing \"\": invalid syntax'",
+         "matchingRanges": {
+          "lineNumber": "105",
+          "columnRanges": [
+           {
+            "startIndex": 130,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "105",
+         "ranges": [
+          {
+           "startIndex": 130,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "106"
+         },
+         "lineNumber": "106"
+        },
+        {
+         "lineText": "! go test -shuffle=' '",
+         "matchingRanges": {
+          "lineNumber": "107"
+         },
+         "lineNumber": "107"
+        },
+        {
+         "lineText": "stderr '(?s)invalid value \" \" for flag -shuffle: -shuffle argument must be \"on\", \"off\", or an int64: strconv.ParseInt: parsing \" \": invalid syntax'",
+         "matchingRanges": {
+          "lineNumber": "108",
+          "columnRanges": [
+           {
+            "startIndex": 132,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "108",
+         "ranges": [
+          {
+           "startIndex": 132,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "109"
+         },
+         "lineNumber": "109"
+        },
+        {
+         "lineText": "! go test -shuffle=true",
+         "matchingRanges": {
+          "lineNumber": "110"
+         },
+         "lineNumber": "110"
+        },
+        {
+         "lineText": "stderr 'invalid value \"true\" for flag -shuffle: -shuffle argument must be \"on\", \"off\", or an int64: strconv.ParseInt: parsing \"true\": invalid syntax'",
+         "matchingRanges": {
+          "lineNumber": "111",
+          "columnRanges": [
+           {
+            "startIndex": 134,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "111",
+         "ranges": [
+          {
+           "startIndex": 134,
+           "length": 14
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 5
+    },
+    "resultToken": "CBISAggBOIK2wJ2ZodfghAFAAEgS"
+   }
+  ],
+  "estimatedResultCount": "19",
+  "exhaustive": true,
+  "requestToken": "ChAiaW52YWxpZCBzeW50YXgiEh0oIGdpdDpnby9nb0BtYXN0ZXIgY2FzZTp5ZXMgKRoLCKK7qNEGEJ_0-UYgDCoAMgBIAQ"
+ }
+}

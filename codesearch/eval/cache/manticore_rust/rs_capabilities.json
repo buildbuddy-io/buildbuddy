@@ -1,0 +1,2904 @@
+{
+ "query": "Capabilities",
+ "oss_project": "opentitan",
+ "repo_name": "manticore",
+ "page_size": 50,
+ "fetched_at": "2026-06-17T22:58:31Z",
+ "response": {
+  "searchResults": [
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "manticore",
+        "ossProject": "opentitan"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/protocol/cerberus/capabilities.rs",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "        /// The advertised capabilities of the client.",
+         "matchingRanges": {
+          "lineNumber": "37",
+          "columnRanges": [
+           {
+            "startIndex": 27,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "37",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 8,
+            "length": 46
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 27,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "        pub capabilities: Capabilities,",
+         "matchingRanges": {
+          "lineNumber": "38",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 12
+           },
+           {
+            "startIndex": 26,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "38",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 12
+          },
+          {
+           "startIndex": 26,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    }",
+         "matchingRanges": {
+          "lineNumber": "39"
+         },
+         "lineNumber": "39"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    fn Request::from_wire(r, a) {",
+         "matchingRanges": {
+          "lineNumber": "41"
+         },
+         "lineNumber": "41",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "        let capabilities = Capabilities::from_wire(r, a)?;",
+         "matchingRanges": {
+          "lineNumber": "42",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 12
+           },
+           {
+            "startIndex": 27,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "42",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 12
+          },
+          {
+           "startIndex": 27,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "        Ok(Self { capabilities })",
+         "matchingRanges": {
+          "lineNumber": "43",
+          "columnRanges": [
+           {
+            "startIndex": 18,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "43",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 11,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 18,
+           "length": 12
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    struct Response {",
+         "matchingRanges": {
+          "lineNumber": "50"
+         },
+         "lineNumber": "50",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "        /// Capabilities negotiated based on the request.",
+         "matchingRanges": {
+          "lineNumber": "51",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "51",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 8,
+            "length": 49
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "        pub capabilities: Capabilities,",
+         "matchingRanges": {
+          "lineNumber": "52",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 12
+           },
+           {
+            "startIndex": 26,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "52",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 12
+          },
+          {
+           "startIndex": 26,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "        /// Timeouts that this device expects the client to observe.",
+         "matchingRanges": {
+          "lineNumber": "53"
+         },
+         "lineNumber": "53",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 8,
+            "length": 60
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 36
+    },
+    "resultToken": "CAASAggBOMz61oCjit_UEUAASAA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "manticore",
+        "ossProject": "opentitan"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "fuzz/gen/manticore_protocol_cerberus_DeviceCapabilities__resp_to_wire.rs",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "use manticore::protocol::cerberus::DeviceCapabilities as C;",
+         "matchingRanges": {
+          "lineNumber": "18",
+          "columnRanges": [
+           {
+            "startIndex": 41,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "18",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 54,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 41,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "type Resp\u003c'a\u003e = \u003cC as Command\u003c'a\u003e\u003e::Resp;",
+         "matchingRanges": {
+          "lineNumber": "19"
+         },
+         "lineNumber": "19",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 19,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAESAggBOPKr3uT52sDcFEAASAE"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "manticore",
+        "ossProject": "opentitan"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "fuzz/gen/manticore_protocol_cerberus_DeviceCapabilities__resp_from_wire.rs",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "use manticore::protocol::cerberus::DeviceCapabilities as C;",
+         "matchingRanges": {
+          "lineNumber": "17",
+          "columnRanges": [
+           {
+            "startIndex": 41,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "17",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 54,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 41,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "18"
+         },
+         "lineNumber": "18"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAISAggBONLM4MXMmLfKGkAASAI"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "manticore",
+        "ossProject": "opentitan"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "fuzz/gen/manticore_protocol_cerberus_DeviceCapabilities__req_to_wire.rs",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "use manticore::protocol::cerberus::DeviceCapabilities as C;",
+         "matchingRanges": {
+          "lineNumber": "18",
+          "columnRanges": [
+           {
+            "startIndex": 41,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "18",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 54,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 41,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "type Req\u003c'a\u003e = \u003cC as Command\u003c'a\u003e\u003e::Req;",
+         "matchingRanges": {
+          "lineNumber": "19"
+         },
+         "lineNumber": "19",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 18,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAMSAggBOJqBh83m3IXKbEAASAM"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "manticore",
+        "ossProject": "opentitan"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "fuzz/gen/manticore_protocol_cerberus_DeviceCapabilities__req_from_wire.rs",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "use manticore::protocol::cerberus::DeviceCapabilities as C;",
+         "matchingRanges": {
+          "lineNumber": "17",
+          "columnRanges": [
+           {
+            "startIndex": 41,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "17",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 54,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 41,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "18"
+         },
+         "lineNumber": "18"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAQSAggBOJC_wuHvj-Kn5AFAAEgE"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "manticore",
+        "ossProject": "opentitan"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "tool/src/message.rs",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "            cerberus::DeviceUptime,",
+         "matchingRanges": {
+          "lineNumber": "31"
+         },
+         "lineNumber": "31"
+        },
+        {
+         "lineText": "            cerberus::DeviceCapabilities,",
+         "matchingRanges": {
+          "lineNumber": "32",
+          "columnRanges": [
+           {
+            "startIndex": 28,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "32",
+         "ranges": [
+          {
+           "startIndex": 28,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "            cerberus::FirmwareVersion,",
+         "matchingRanges": {
+          "lineNumber": "33"
+         },
+         "lineNumber": "33"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAUSAggBOOi35IzLqPzg0gFAAEgF"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "manticore",
+        "ossProject": "opentitan"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/server/pa_rot.rs",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "            })",
+         "matchingRanges": {
+          "lineNumber": "114"
+         },
+         "lineNumber": "114"
+        },
+        {
+         "lineText": "            .handle::\u003ccerberus::DeviceCapabilities, _\u003e(|ctx| {",
+         "matchingRanges": {
+          "lineNumber": "115",
+          "columnRanges": [
+           {
+            "startIndex": 38,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "115",
+         "ranges": [
+          {
+           "startIndex": 38,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "                ctx.server.handle_capabilities(\u0026ctx.req)",
+         "matchingRanges": {
+          "lineNumber": "116",
+          "columnRanges": [
+           {
+            "startIndex": 34,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "116",
+         "ranges": [
+          {
+           "startIndex": 34,
+           "length": 12
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "        req: \u0026Req\u003ccerberus::DeviceCapabilities\u003e,",
+         "matchingRanges": {
+          "lineNumber": "198",
+          "columnRanges": [
+           {
+            "startIndex": 34,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "198",
+         "ranges": [
+          {
+           "startIndex": 34,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    ) -\u003e Result\u003cResp\u003ccerberus::DeviceCapabilities\u003e, cerberus::Error\u003e {",
+         "matchingRanges": {
+          "lineNumber": "199",
+          "columnRanges": [
+           {
+            "startIndex": 37,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "199",
+         "ranges": [
+          {
+           "startIndex": 37,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "        use cerberus::capabilities::*;",
+         "matchingRanges": {
+          "lineNumber": "200",
+          "columnRanges": [
+           {
+            "startIndex": 22,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "200",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 22,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "        use enumflags2::BitFlags;",
+         "matchingRanges": {
+          "lineNumber": "201"
+         },
+         "lineNumber": "201",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "        let mut crypto = req.capabilities.crypto;",
+         "matchingRanges": {
+          "lineNumber": "202",
+          "columnRanges": [
+           {
+            "startIndex": 29,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "202",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 29,
+           "length": 12
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "        let capabilities = Capabilities {",
+         "matchingRanges": {
+          "lineNumber": "208",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 12
+           },
+           {
+            "startIndex": 27,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "208",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 12
+          },
+          {
+           "startIndex": 27,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "            networking: self.opts.networking,",
+         "matchingRanges": {
+          "lineNumber": "209"
+         },
+         "lineNumber": "209"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 13
+    },
+    "resultToken": "CAYSAggBOLjgtOfol76zW0AASAY"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "manticore",
+        "ossProject": "opentitan"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "fuzz/Cargo.toml",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "name = \"manticore_protocol_cerberus_DeviceCapabilities__req_to_wire\"",
+         "matchingRanges": {
+          "lineNumber": "57",
+          "columnRanges": [
+           {
+            "startIndex": 42,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "57",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 7,
+            "length": 61
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 42,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "path = \"gen/manticore_protocol_cerberus_DeviceCapabilities__req_to_wire.rs\"",
+         "matchingRanges": {
+          "lineNumber": "58",
+          "columnRanges": [
+           {
+            "startIndex": 46,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "58",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 7,
+            "length": 68
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 46,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "59"
+         },
+         "lineNumber": "59"
+        },
+        {
+         "lineText": "[[bin]]",
+         "matchingRanges": {
+          "lineNumber": "60"
+         },
+         "lineNumber": "60"
+        },
+        {
+         "lineText": "name = \"manticore_protocol_cerberus_DeviceCapabilities__resp_to_wire\"",
+         "matchingRanges": {
+          "lineNumber": "61",
+          "columnRanges": [
+           {
+            "startIndex": 42,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "61",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 7,
+            "length": 62
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 42,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "path = \"gen/manticore_protocol_cerberus_DeviceCapabilities__resp_to_wire.rs\"",
+         "matchingRanges": {
+          "lineNumber": "62",
+          "columnRanges": [
+           {
+            "startIndex": 46,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "62",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 7,
+            "length": 69
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 46,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "63"
+         },
+         "lineNumber": "63"
+        },
+        {
+         "lineText": "[[bin]]",
+         "matchingRanges": {
+          "lineNumber": "64"
+         },
+         "lineNumber": "64"
+        },
+        {
+         "lineText": "name = \"manticore_protocol_cerberus_DeviceCapabilities__resp_from_wire\"",
+         "matchingRanges": {
+          "lineNumber": "65",
+          "columnRanges": [
+           {
+            "startIndex": 42,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "65",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 7,
+            "length": 64
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 42,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "path = \"gen/manticore_protocol_cerberus_DeviceCapabilities__resp_from_wire.rs\"",
+         "matchingRanges": {
+          "lineNumber": "66",
+          "columnRanges": [
+           {
+            "startIndex": 46,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "66",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 7,
+            "length": 71
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 46,
+           "length": 12
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 8
+    },
+    "resultToken": "CAcSAggBOJT0oeX2hpitDEAASAc"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "manticore",
+        "ossProject": "opentitan"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/protocol/cerberus/get_digests.rs",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    fn Response::from_wire(r, arena) {",
+         "matchingRanges": {
+          "lineNumber": "57"
+         },
+         "lineNumber": "57",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "        let capabilities = r.read_le::\u003cu8\u003e()?;",
+         "matchingRanges": {
+          "lineNumber": "58",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "58",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "        check!(capabilities == 1, wire::Error::OutOfRange);",
+         "matchingRanges": {
+          "lineNumber": "59",
+          "columnRanges": [
+           {
+            "startIndex": 15,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "59",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 31,
+            "length": 1
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 15,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "60"
+         },
+         "lineNumber": "60"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    fn Response::to_wire(\u0026self, w) {",
+         "matchingRanges": {
+          "lineNumber": "66"
+         },
+         "lineNumber": "66",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "        w.write_le(1u8)?; // \"Capabilities\" byte; must be one.",
+         "matchingRanges": {
+          "lineNumber": "67",
+          "columnRanges": [
+           {
+            "startIndex": 30,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "67",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 19,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 26,
+            "length": 36
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 30,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "68"
+         },
+         "lineNumber": "68"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "            bytes: \u0026[",
+         "matchingRanges": {
+          "lineNumber": "123"
+         },
+         "lineNumber": "123"
+        },
+        {
+         "lineText": "                0x01, 0x02, // Capabilities, digest #",
+         "matchingRanges": {
+          "lineNumber": "124",
+          "columnRanges": [
+           {
+            "startIndex": 31,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "124",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 16,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 22,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 28,
+            "length": 25
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 31,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "125"
+         },
+         "lineNumber": "125"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 4
+    },
+    "resultToken": "CAgSAggBOPK2l9bqpoDkogFAAEgI"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "manticore",
+        "ossProject": "opentitan"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": ".github/workflows/fuzz.yml",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  'manticore_protocol_cerberus_DeviceCapabilities__req_to_wire':",
+         "matchingRanges": {
+          "lineNumber": "109",
+          "columnRanges": [
+           {
+            "startIndex": 37,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "109",
+         "ranges": [
+          {
+           "startIndex": 37,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    runs-on: ubuntu-latest",
+         "matchingRanges": {
+          "lineNumber": "110"
+         },
+         "lineNumber": "110"
+        },
+        {
+         "lineText": "    name: 'Fuzz `manticore::protocol::cerberus::DeviceCapabilities` with `req_to_wire.rs`'",
+         "matchingRanges": {
+          "lineNumber": "111",
+          "columnRanges": [
+           {
+            "startIndex": 54,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "111",
+         "ranges": [
+          {
+           "startIndex": 54,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    steps:",
+         "matchingRanges": {
+          "lineNumber": "112"
+         },
+         "lineNumber": "112"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  'manticore_protocol_cerberus_DeviceCapabilities__resp_to_wire':",
+         "matchingRanges": {
+          "lineNumber": "124",
+          "columnRanges": [
+           {
+            "startIndex": 37,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "124",
+         "ranges": [
+          {
+           "startIndex": 37,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    runs-on: ubuntu-latest",
+         "matchingRanges": {
+          "lineNumber": "125"
+         },
+         "lineNumber": "125"
+        },
+        {
+         "lineText": "    name: 'Fuzz `manticore::protocol::cerberus::DeviceCapabilities` with `resp_to_wire.rs`'",
+         "matchingRanges": {
+          "lineNumber": "126",
+          "columnRanges": [
+           {
+            "startIndex": 54,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "126",
+         "ranges": [
+          {
+           "startIndex": 54,
+           "length": 12
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  'manticore_protocol_cerberus_DeviceCapabilities__resp_from_wire':",
+         "matchingRanges": {
+          "lineNumber": "139",
+          "columnRanges": [
+           {
+            "startIndex": 37,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "139",
+         "ranges": [
+          {
+           "startIndex": 37,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    runs-on: ubuntu-latest",
+         "matchingRanges": {
+          "lineNumber": "140"
+         },
+         "lineNumber": "140"
+        },
+        {
+         "lineText": "    name: 'Fuzz `manticore::protocol::cerberus::DeviceCapabilities` with `resp_from_wire.rs`'",
+         "matchingRanges": {
+          "lineNumber": "141",
+          "columnRanges": [
+           {
+            "startIndex": 54,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "141",
+         "ranges": [
+          {
+           "startIndex": 54,
+           "length": 12
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 12
+    },
+    "resultToken": "CAkSAggBOKjAnrjaucCNYUAASAk"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "manticore",
+        "ossProject": "opentitan"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/protocol/cerberus/mod.rs",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "pub mod capabilities;",
+         "matchingRanges": {
+          "lineNumber": "16",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "16",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "pub use capabilities::DeviceCapabilities;",
+         "matchingRanges": {
+          "lineNumber": "17",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 12
+           },
+           {
+            "startIndex": 28,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "17",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 12
+          },
+          {
+           "startIndex": 28,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "18"
+         },
+         "lineNumber": "18"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "        /// A request to negotiate device capabilities.",
+         "matchingRanges": {
+          "lineNumber": "64",
+          "columnRanges": [
+           {
+            "startIndex": 42,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "64",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 8,
+            "length": 47
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 42,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "        ///",
+         "matchingRanges": {
+          "lineNumber": "65"
+         },
+         "lineNumber": "65",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 8,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "        /// See [`DeviceCapabilities`].",
+         "matchingRanges": {
+          "lineNumber": "66",
+          "columnRanges": [
+           {
+            "startIndex": 24,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "66",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 8,
+            "length": 31
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 24,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "        DeviceCapabilities = 0x02,",
+         "matchingRanges": {
+          "lineNumber": "67",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "67",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 29,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 12
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "            0x01 =\u003e CommandType::FirmwareVersion,",
+         "matchingRanges": {
+          "lineNumber": "132"
+         },
+         "lineNumber": "132",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 12,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "            0x02 =\u003e CommandType::DeviceCapabilities,",
+         "matchingRanges": {
+          "lineNumber": "133",
+          "columnRanges": [
+           {
+            "startIndex": 39,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "133",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 12,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 39,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "            0x03 =\u003e CommandType::DeviceId,",
+         "matchingRanges": {
+          "lineNumber": "134"
+         },
+         "lineNumber": "134",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 12,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 6
+    },
+    "resultToken": "CAoSAggBOPTa-ID_vqyYOEAASAo"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "manticore",
+        "ossProject": "opentitan"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "fuzz/proto_types.txt",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "manticore::protocol::cerberus::Challenge",
+         "matchingRanges": {
+          "lineNumber": "6"
+         },
+         "lineNumber": "6"
+        },
+        {
+         "lineText": "manticore::protocol::cerberus::DeviceCapabilities",
+         "matchingRanges": {
+          "lineNumber": "7",
+          "columnRanges": [
+           {
+            "startIndex": 37,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "7",
+         "ranges": [
+          {
+           "startIndex": 37,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "manticore::protocol::cerberus::DeviceId",
+         "matchingRanges": {
+          "lineNumber": "8"
+         },
+         "lineNumber": "8"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAsSAggBONCO1fK-jrinUUAASAs"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "manticore",
+        "ossProject": "opentitan"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/crypto/sig.rs",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "use crate::protocol::cerberus::capabilities;",
+         "matchingRanges": {
+          "lineNumber": "7",
+          "columnRanges": [
+           {
+            "startIndex": 31,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "7",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 31,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "use crate::Result;",
+         "matchingRanges": {
+          "lineNumber": "8"
+         },
+         "lineNumber": "8",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "pub trait Ciphers {",
+         "matchingRanges": {
+          "lineNumber": "133"
+         },
+         "lineNumber": "133",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    /// Performs cryptographic capabilities negotiation.",
+         "matchingRanges": {
+          "lineNumber": "134",
+          "columnRanges": [
+           {
+            "startIndex": 31,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "134",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 52
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 31,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    ///",
+         "matchingRanges": {
+          "lineNumber": "135"
+         },
+         "lineNumber": "135",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    /// it supports.",
+         "matchingRanges": {
+          "lineNumber": "137"
+         },
+         "lineNumber": "137",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 16
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    fn negotiate(\u0026self, caps: \u0026mut capabilities::Crypto);",
+         "matchingRanges": {
+          "lineNumber": "138",
+          "columnRanges": [
+           {
+            "startIndex": 35,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "138",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 31,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 35,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "139"
+         },
+         "lineNumber": "139"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 4
+    },
+    "resultToken": "CAwSAggBOLya89OFpefSX0AASAw"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "manticore",
+        "ossProject": "opentitan"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/protocol/spdm/get_caps.rs",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "//!",
+         "matchingRanges": {
+          "lineNumber": "6"
+         },
+         "lineNumber": "6",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "//! This module provides a SPDM command for negotiating protocol capabilities.",
+         "matchingRanges": {
+          "lineNumber": "7",
+          "columnRanges": [
+           {
+            "startIndex": 65,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "7",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 78
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 65,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "8"
+         },
+         "lineNumber": "8"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "protocol_struct! {",
+         "matchingRanges": {
+          "lineNumber": "19"
+         },
+         "lineNumber": "19"
+        },
+        {
+         "lineText": "    /// A command for negotiating protocol capabilities.",
+         "matchingRanges": {
+          "lineNumber": "20",
+          "columnRanges": [
+           {
+            "startIndex": 43,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "20",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 52
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 43,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    type GetCaps;",
+         "matchingRanges": {
+          "lineNumber": "21"
+         },
+         "lineNumber": "21",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "        pub crypto_timeout: Duration,",
+         "matchingRanges": {
+          "lineNumber": "30"
+         },
+         "lineNumber": "30",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "        /// The advertised capabilities.",
+         "matchingRanges": {
+          "lineNumber": "31",
+          "columnRanges": [
+           {
+            "startIndex": 27,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "31",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 8,
+            "length": 32
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 27,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "        #[cfg_attr(feature = \"serde\", serde(with = \"crate::serde::bitflags\"))]",
+         "matchingRanges": {
+          "lineNumber": "32"
+         },
+         "lineNumber": "32",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 29,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 51,
+            "length": 24
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 5
+    },
+    "resultToken": "CA0SAggBOPLKuJyXrqCe7QFAAEgN"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "manticore",
+        "ossProject": "opentitan"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/hardware/mod.rs",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "//! This module provides traits for plugging in OS calls to specialized",
+         "matchingRanges": {
+          "lineNumber": "7"
+         },
+         "lineNumber": "7",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 71
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "//! hardware functions, such as power-on and reset-related capabilities.",
+         "matchingRanges": {
+          "lineNumber": "8",
+          "columnRanges": [
+           {
+            "startIndex": 59,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "8",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 72
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 59,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "//! `manticore` uses this functionality to respond to certain protocol",
+         "matchingRanges": {
+          "lineNumber": "9"
+         },
+         "lineNumber": "9",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 70
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CA4SAggBOJi-zcuaj9nJqQFAAEgO"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "manticore",
+        "ossProject": "opentitan"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "e2e/src/support/rot.rs",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "use manticore::protocol::cerberus;",
+         "matchingRanges": {
+          "lineNumber": "25"
+         },
+         "lineNumber": "25",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "use manticore::protocol::cerberus::capabilities;",
+         "matchingRanges": {
+          "lineNumber": "26",
+          "columnRanges": [
+           {
+            "startIndex": 35,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "26",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 35,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "use manticore::protocol::cerberus::device_id::DeviceIdentifier;",
+         "matchingRanges": {
+          "lineNumber": "27"
+         },
+         "lineNumber": "27",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    /// The timeout to report for a non-cryptographic operation",
+         "matchingRanges": {
+          "lineNumber": "63"
+         },
+         "lineNumber": "63",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 59
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    /// (unused other than for capabilities requests).",
+         "matchingRanges": {
+          "lineNumber": "64",
+          "columnRanges": [
+           {
+            "startIndex": 31,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "64",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 50
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 31,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    pub regular_timeout: Duration,",
+         "matchingRanges": {
+          "lineNumber": "65"
+         },
+         "lineNumber": "65",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    /// The timeout to report for a cryptographic operation.",
+         "matchingRanges": {
+          "lineNumber": "66"
+         },
+         "lineNumber": "66",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 56
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    /// (unused other than for capabilities requests)",
+         "matchingRanges": {
+          "lineNumber": "67",
+          "columnRanges": [
+           {
+            "startIndex": 31,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "67",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 49
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 31,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    pub crypto_timeout: Duration,",
+         "matchingRanges": {
+          "lineNumber": "68"
+         },
+         "lineNumber": "68",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 7
+    },
+    "resultToken": "CA8SAggBOKje_YH32puU7QFAAEgP"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "manticore",
+        "ossProject": "opentitan"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/crypto/ring/sig.rs",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "use crate::crypto::sig::PublicKeyParams;",
+         "matchingRanges": {
+          "lineNumber": "18"
+         },
+         "lineNumber": "18",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "use crate::protocol::cerberus::capabilities;",
+         "matchingRanges": {
+          "lineNumber": "19",
+          "columnRanges": [
+           {
+            "startIndex": 31,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "19",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 31,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "20"
+         },
+         "lineNumber": "20"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "impl sig::Ciphers for Ciphers {",
+         "matchingRanges": {
+          "lineNumber": "37"
+         },
+         "lineNumber": "37",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 18,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    fn negotiate(\u0026self, caps: \u0026mut capabilities::Crypto) {",
+         "matchingRanges": {
+          "lineNumber": "38",
+          "columnRanges": [
+           {
+            "startIndex": 35,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "38",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 31,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 35,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "        use capabilities::*;",
+         "matchingRanges": {
+          "lineNumber": "39",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "39",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "        *caps = Crypto {",
+         "matchingRanges": {
+          "lineNumber": "40"
+         },
+         "lineNumber": "40"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CBASAggBOJD-jZ_xkM3Q7AFAAEgQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "manticore",
+        "ossProject": "opentitan"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/protocol/spdm/error.rs",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    /// Indicates that the device wishes to re-negotiate capabilities",
+         "matchingRanges": {
+          "lineNumber": "113",
+          "columnRanges": [
+           {
+            "startIndex": 57,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "113",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 65
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 57,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    /// (such as after reset or an update).",
+         "matchingRanges": {
+          "lineNumber": "114"
+         },
+         "lineNumber": "114",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 39
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBESAggBOLrY7s6SwpnnsQFAAEgR"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "manticore",
+        "ossProject": "opentitan"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "fuzz/targets/x509_unsigned.rs",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "use manticore::crypto::sig;",
+         "matchingRanges": {
+          "lineNumber": "14"
+         },
+         "lineNumber": "14",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "use manticore::protocol::cerberus::capabilities;",
+         "matchingRanges": {
+          "lineNumber": "15",
+          "columnRanges": [
+           {
+            "startIndex": 35,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "15",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 35,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "use manticore::Result;",
+         "matchingRanges": {
+          "lineNumber": "16"
+         },
+         "lineNumber": "16",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "impl sig::Ciphers for NoVerify {",
+         "matchingRanges": {
+          "lineNumber": "27"
+         },
+         "lineNumber": "27",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 18,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    fn negotiate(\u0026self, _: \u0026mut capabilities::Crypto) {}",
+         "matchingRanges": {
+          "lineNumber": "28",
+          "columnRanges": [
+           {
+            "startIndex": 32,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "28",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 28,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 32,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    fn verifier\u003c'a\u003e(",
+         "matchingRanges": {
+          "lineNumber": "29"
+         },
+         "lineNumber": "29",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CBISAggBOK7FjJOz64Os5wFAAEgS"
+   }
+  ],
+  "estimatedResultCount": "19",
+  "exhaustive": true,
+  "requestToken": "CgxDYXBhYmlsaXRpZXMSMCggZ2l0OmdpdGh1Yi9sb3dSSVNDL21hbnRpY29yZUBtYXN0ZXIgY2FzZTp5ZXMgKRoMCJfNzNEGEODnmfICIAwqADIASAE"
+ }
+}

@@ -1,0 +1,349 @@
+{
+ "query": "AesKeyStrength",
+ "oss_project": "opentitan",
+ "repo_name": "manticore",
+ "page_size": 50,
+ "fetched_at": "2026-06-17T22:58:22Z",
+ "response": {
+  "searchResults": [
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "manticore",
+        "ossProject": "opentitan"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/server/pa_rot.rs",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "        crypto.has_aes = false;",
+         "matchingRanges": {
+          "lineNumber": "205"
+         },
+         "lineNumber": "205"
+        },
+        {
+         "lineText": "        crypto.aes_strength = BitFlags::\u003cAesKeyStrength\u003e::empty();",
+         "matchingRanges": {
+          "lineNumber": "206",
+          "columnRanges": [
+           {
+            "startIndex": 41,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "206",
+         "ranges": [
+          {
+           "startIndex": 41,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "207"
+         },
+         "lineNumber": "207"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAASAggBOLjgtOfol76zW0AASAA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "manticore",
+        "ossProject": "opentitan"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/protocol/cerberus/capabilities.rs",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "#[cfg_attr(feature = \"serde\", derive(Serialize, Deserialize))]",
+         "matchingRanges": {
+          "lineNumber": "167"
+         },
+         "lineNumber": "167",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 21,
+            "length": 7
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "pub enum AesKeyStrength {",
+         "matchingRanges": {
+          "lineNumber": "168",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "168",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "    /// A key strength of 128 bits.",
+         "matchingRanges": {
+          "lineNumber": "169"
+         },
+         "lineNumber": "169",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 31
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    #[cfg_attr(feature = \"serde\", serde(with = \"crate::serde::bitflags\"))]",
+         "matchingRanges": {
+          "lineNumber": "226"
+         },
+         "lineNumber": "226",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 25,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 47,
+            "length": 24
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    pub aes_strength: BitFlags\u003cAesKeyStrength\u003e,",
+         "matchingRanges": {
+          "lineNumber": "227",
+          "columnRanges": [
+           {
+            "startIndex": 31,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "227",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 31,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "}",
+         "matchingRanges": {
+          "lineNumber": "228"
+         },
+         "lineNumber": "228"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "        let aes_strength = BitFlags::\u003cAesKeyStrength\u003e::from_bits(aes_bits)",
+         "matchingRanges": {
+          "lineNumber": "334",
+          "columnRanges": [
+           {
+            "startIndex": 38,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "334",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 38,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "            .map_err(|_| wire::Error::OutOfRange)?;",
+         "matchingRanges": {
+          "lineNumber": "335"
+         },
+         "lineNumber": "335"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "                        rsa_strength: RsaKeyStrength::Bits2048.into(),",
+         "matchingRanges": {
+          "lineNumber": "509"
+         },
+         "lineNumber": "509"
+        },
+        {
+         "lineText": "                        aes_strength: AesKeyStrength::Bits128 | AesKeyStrength::Bits256,",
+         "matchingRanges": {
+          "lineNumber": "510",
+          "columnRanges": [
+           {
+            "startIndex": 38,
+            "length": 14
+           },
+           {
+            "startIndex": 64,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "510",
+         "ranges": [
+          {
+           "startIndex": 38,
+           "length": 14
+          },
+          {
+           "startIndex": 64,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "                    },",
+         "matchingRanges": {
+          "lineNumber": "511"
+         },
+         "lineNumber": "511"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "                        rsa_strength: RsaKeyStrength::Bits2048.into(),",
+         "matchingRanges": {
+          "lineNumber": "571"
+         },
+         "lineNumber": "571"
+        },
+        {
+         "lineText": "                        aes_strength: AesKeyStrength::Bits128 | AesKeyStrength::Bits256,",
+         "matchingRanges": {
+          "lineNumber": "572",
+          "columnRanges": [
+           {
+            "startIndex": 38,
+            "length": 14
+           },
+           {
+            "startIndex": 64,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "572",
+         "ranges": [
+          {
+           "startIndex": 38,
+           "length": 14
+          },
+          {
+           "startIndex": 64,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "                    },",
+         "matchingRanges": {
+          "lineNumber": "573"
+         },
+         "lineNumber": "573"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 5
+    },
+    "resultToken": "CAESAggBOMz61oCjit_UEUAASAE"
+   }
+  ],
+  "estimatedResultCount": "2",
+  "exhaustive": true,
+  "requestToken": "Cg5BZXNLZXlTdHJlbmd0aBIwKCBnaXQ6Z2l0aHViL2xvd1JJU0MvbWFudGljb3JlQG1hc3RlciBjYXNlOnllcyApGgsIjs3M0QYQ7dvWECAMKgAyAEgB"
+ }
+}

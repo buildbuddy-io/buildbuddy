@@ -1,0 +1,6652 @@
+{
+ "query": "WithCancel",
+ "oss_project": "go",
+ "repo_name": "go",
+ "page_size": 50,
+ "fetched_at": "2026-06-11T02:27:33Z",
+ "response": {
+  "searchResults": [
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/context/context.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// WithCancel returns a derived context that points to the parent context",
+         "matchingRanges": {
+          "lineNumber": "234",
+          "columnRanges": [
+           {
+            "startIndex": 3,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "234",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 73
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 3,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "// but has a new Done channel. The returned context's Done channel is closed",
+         "matchingRanges": {
+          "lineNumber": "235"
+         },
+         "lineNumber": "235",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 76
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// call cancel as soon as the operations running in this [Context] complete.",
+         "matchingRanges": {
+          "lineNumber": "240"
+         },
+         "lineNumber": "240",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 76
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "func WithCancel(parent Context) (ctx Context, cancel CancelFunc) {",
+         "matchingRanges": {
+          "lineNumber": "241",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "241",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\tc := withCancel(parent)",
+         "matchingRanges": {
+          "lineNumber": "242",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "242",
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 10
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "//\tcontext.Cause(ctx) // returns myError",
+         "matchingRanges": {
+          "lineNumber": "268"
+         },
+         "lineNumber": "268",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 40
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "func WithCancelCause(parent Context) (ctx Context, cancel CancelCauseFunc) {",
+         "matchingRanges": {
+          "lineNumber": "269",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "269",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\tc := withCancel(parent)",
+         "matchingRanges": {
+          "lineNumber": "270",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "270",
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 10
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func withCancel(parent Context) *cancelCtx {",
+         "matchingRanges": {
+          "lineNumber": "274",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "274",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\tif parent == nil {",
+         "matchingRanges": {
+          "lineNumber": "275"
+         },
+         "lineNumber": "275",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 14
+    },
+    "resultToken": "CAASBAgBIAE4-rmln4H28N0JQABIAA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/vendor/golang.org/x/tools/go/analysis/passes/lostcancel/lostcancel.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// checkLostCancel reports a failure to the call the cancel function",
+         "matchingRanges": {
+          "lineNumber": "40"
+         },
+         "lineNumber": "40",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 68
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "// returned by context.WithCancel, either because the variable was",
+         "matchingRanges": {
+          "lineNumber": "41",
+          "columnRanges": [
+           {
+            "startIndex": 23,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "41",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 66
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 23,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "// assigned to the blank identifier, or because there exists a",
+         "matchingRanges": {
+          "lineNumber": "42"
+         },
+         "lineNumber": "42",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 62
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func run(pass *analysis.Pass) (any, error) {",
+         "matchingRanges": {
+          "lineNumber": "50"
+         },
+         "lineNumber": "50",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t// Fast path: bypass check if file doesn't use context.WithCancel.",
+         "matchingRanges": {
+          "lineNumber": "51",
+          "columnRanges": [
+           {
+            "startIndex": 56,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "51",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 66
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 56,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\tif !typesinternal.Imports(pass.Pkg, contextPackage) {",
+         "matchingRanges": {
+          "lineNumber": "52"
+         },
+         "lineNumber": "52",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// isContextWithCancel reports whether n is one of the qualified identifiers",
+         "matchingRanges": {
+          "lineNumber": "186",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "186",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 76
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "// context.With{Cancel,Timeout,Deadline}.",
+         "matchingRanges": {
+          "lineNumber": "187"
+         },
+         "lineNumber": "187",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 41
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "func isContextWithCancel(info *types.Info, n ast.Node) bool {",
+         "matchingRanges": {
+          "lineNumber": "188",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "188",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\tsel, ok := n.(*ast.SelectorExpr)",
+         "matchingRanges": {
+          "lineNumber": "189"
+         },
+         "lineNumber": "189"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 9
+    },
+    "resultToken": "CAESBAgBIAE4_rvrpr3M6bo2QABIAQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/vet/testdata/lostcancel/lostcancel.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "func _() {",
+         "matchingRanges": {
+          "lineNumber": "9"
+         },
+         "lineNumber": "9",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tvar _, cancel = context.WithCancel(context.Background()) // ERROR \"the cancel function is not used on all paths \\(possible context leak\\)\"",
+         "matchingRanges": {
+          "lineNumber": "10",
+          "columnRanges": [
+           {
+            "startIndex": 25,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "10",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 58,
+            "length": 81
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 25,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\tif false {",
+         "matchingRanges": {
+          "lineNumber": "11"
+         },
+         "lineNumber": "11",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAISAggBOPqyk6GctMGljwFAAEgC"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/vendor/golang.org/x/tools/go/analysis/passes/lostcancel/doc.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "//",
+         "matchingRanges": {
+          "lineNumber": "9"
+         },
+         "lineNumber": "9",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "// lostcancel: check cancel func returned by context.WithCancel is called",
+         "matchingRanges": {
+          "lineNumber": "10",
+          "columnRanges": [
+           {
+            "startIndex": 53,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "10",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 73
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 53,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "//",
+         "matchingRanges": {
+          "lineNumber": "11"
+         },
+         "lineNumber": "11",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "// The cancellation function returned by context.WithCancel, WithTimeout,",
+         "matchingRanges": {
+          "lineNumber": "12",
+          "columnRanges": [
+           {
+            "startIndex": 49,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "12",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 73
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 49,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "// WithDeadline and variants such as WithCancelCause must be called,",
+         "matchingRanges": {
+          "lineNumber": "13",
+          "columnRanges": [
+           {
+            "startIndex": 37,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "13",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 68
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 37,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "// or the new context will remain live until its parent context is cancelled.",
+         "matchingRanges": {
+          "lineNumber": "14"
+         },
+         "lineNumber": "14",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 77
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CAMSAggBOPj62LGui776qAFAAEgD"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/context/x_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "func TestWithCancel(t *testing.T) {",
+         "matchingRanges": {
+          "lineNumber": "89",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "89",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\tc1, cancel := WithCancel(Background())",
+         "matchingRanges": {
+          "lineNumber": "90",
+          "columnRanges": [
+           {
+            "startIndex": 15,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "90",
+         "ranges": [
+          {
+           "startIndex": 15,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "91"
+         },
+         "lineNumber": "91"
+        },
+        {
+         "lineText": "\tif got, want := fmt.Sprint(c1), \"context.Background.WithCancel\"; got != want {",
+         "matchingRanges": {
+          "lineNumber": "92",
+          "columnRanges": [
+           {
+            "startIndex": 53,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "92",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 33,
+            "length": 31
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 53,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tt.Errorf(\"c1.String() = %q want %q\", got, want)",
+         "matchingRanges": {
+          "lineNumber": "93"
+         },
+         "lineNumber": "93",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 26
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func TestWithCancelCanceledParent(t *testing.T) {",
+         "matchingRanges": {
+          "lineNumber": "501",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "501",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\tparent, pcancel := WithCancelCause(Background())",
+         "matchingRanges": {
+          "lineNumber": "502",
+          "columnRanges": [
+           {
+            "startIndex": 20,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "502",
+         "ranges": [
+          {
+           "startIndex": 20,
+           "length": 10
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func TestWithCancelSimultaneouslyCanceledParent(t *testing.T) {",
+         "matchingRanges": {
+          "lineNumber": "520",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "520",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t// Cancel the parent goroutine concurrently with creating a child.",
+         "matchingRanges": {
+          "lineNumber": "521"
+         },
+         "lineNumber": "521",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 66
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 40
+    },
+    "resultToken": "CAQSBAgBIAE46r_ml4Dn_MXvAUAASAQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/context/example_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// by gen will return without leaking.",
+         "matchingRanges": {
+          "lineNumber": "20"
+         },
+         "lineNumber": "20",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 38
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "func ExampleWithCancel() {",
+         "matchingRanges": {
+          "lineNumber": "21",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "21",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t// gen generates integers in a separate goroutine and",
+         "matchingRanges": {
+          "lineNumber": "22"
+         },
+         "lineNumber": "22",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 53
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tctx, cancel := context.WithCancel(context.Background())",
+         "matchingRanges": {
+          "lineNumber": "43",
+          "columnRanges": [
+           {
+            "startIndex": 24,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "43",
+         "ranges": [
+          {
+           "startIndex": 24,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\tdefer cancel() // cancel when we are finished consuming integers",
+         "matchingRanges": {
+          "lineNumber": "44"
+         },
+         "lineNumber": "44",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 16,
+            "length": 49
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tmergeCancel := func(ctx, cancelCtx context.Context) (context.Context, context.CancelFunc) {",
+         "matchingRanges": {
+          "lineNumber": "235"
+         },
+         "lineNumber": "235",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 16,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tctx, cancel := context.WithCancelCause(ctx)",
+         "matchingRanges": {
+          "lineNumber": "236",
+          "columnRanges": [
+           {
+            "startIndex": 25,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "236",
+         "ranges": [
+          {
+           "startIndex": 25,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tstop := context.AfterFunc(cancelCtx, func() {",
+         "matchingRanges": {
+          "lineNumber": "237"
+         },
+         "lineNumber": "237",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 39,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tctx1, cancel1 := context.WithCancelCause(context.Background())",
+         "matchingRanges": {
+          "lineNumber": "246",
+          "columnRanges": [
+           {
+            "startIndex": 26,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "246",
+         "ranges": [
+          {
+           "startIndex": 26,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\tdefer cancel1(errors.New(\"ctx1 canceled\"))",
+         "matchingRanges": {
+          "lineNumber": "247"
+         },
+         "lineNumber": "247",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 26,
+            "length": 15
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 5
+    },
+    "resultToken": "CAUSBAgBIAE46qzjrqGx7emIAUAASAU"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/cgo_unix_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "func TestCgoLookupIPWithCancel(t *testing.T) {",
+         "matchingRanges": {
+          "lineNumber": "24",
+          "columnRanges": [
+           {
+            "startIndex": 20,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "24",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 20,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\tdefer dnsWaitGroup.Wait()",
+         "matchingRanges": {
+          "lineNumber": "25"
+         },
+         "lineNumber": "25",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tctx, cancel := context.WithCancel(context.Background())",
+         "matchingRanges": {
+          "lineNumber": "26",
+          "columnRanges": [
+           {
+            "startIndex": 24,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "26",
+         "ranges": [
+          {
+           "startIndex": 24,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\tdefer cancel()",
+         "matchingRanges": {
+          "lineNumber": "27"
+         },
+         "lineNumber": "27",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func TestCgoLookupPortWithCancel(t *testing.T) {",
+         "matchingRanges": {
+          "lineNumber": "43",
+          "columnRanges": [
+           {
+            "startIndex": 22,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "43",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 22,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\tdefer dnsWaitGroup.Wait()",
+         "matchingRanges": {
+          "lineNumber": "44"
+         },
+         "lineNumber": "44",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tctx, cancel := context.WithCancel(context.Background())",
+         "matchingRanges": {
+          "lineNumber": "45",
+          "columnRanges": [
+           {
+            "startIndex": 24,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "45",
+         "ranges": [
+          {
+           "startIndex": 24,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\tdefer cancel()",
+         "matchingRanges": {
+          "lineNumber": "46"
+         },
+         "lineNumber": "46",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func TestCgoLookupPTRWithCancel(t *testing.T) {",
+         "matchingRanges": {
+          "lineNumber": "62",
+          "columnRanges": [
+           {
+            "startIndex": 21,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "62",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 21,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\tdefer dnsWaitGroup.Wait()",
+         "matchingRanges": {
+          "lineNumber": "63"
+         },
+         "lineNumber": "63",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 6
+    },
+    "resultToken": "CAYSBAgBIAE4npSxhbjKp-LCAUAASAY"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/testing/synctest/synctest.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "//\t\t\t// Create a context.Context which can be canceled.",
+         "matchingRanges": {
+          "lineNumber": "129"
+         },
+         "lineNumber": "129",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 55
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "//\t\t\tctx, cancel := context.WithCancel(t.Context())",
+         "matchingRanges": {
+          "lineNumber": "130",
+          "columnRanges": [
+           {
+            "startIndex": 28,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "130",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 51
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 28,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "//",
+         "matchingRanges": {
+          "lineNumber": "131"
+         },
+         "lineNumber": "131",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAcSAggBONytpMfnzOzmMEAASAc"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/tcpsock_unix_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// Test that a canceled Dial does not cause a subsequent Dial to succeed.",
+         "matchingRanges": {
+          "lineNumber": "81"
+         },
+         "lineNumber": "81",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 73
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "func TestTCPSpuriousConnSetupCompletionWithCancel(t *testing.T) {",
+         "matchingRanges": {
+          "lineNumber": "82",
+          "columnRanges": [
+           {
+            "startIndex": 39,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "82",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 39,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\tmustHaveExternalNetwork(t)",
+         "matchingRanges": {
+          "lineNumber": "83"
+         },
+         "lineNumber": "83"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\tsem \u003c- true",
+         "matchingRanges": {
+          "lineNumber": "92"
+         },
+         "lineNumber": "92"
+        },
+        {
+         "lineText": "\t\tctx, cancel := context.WithCancel(context.Background())",
+         "matchingRanges": {
+          "lineNumber": "93",
+          "columnRanges": [
+           {
+            "startIndex": 25,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "93",
+         "ranges": [
+          {
+           "startIndex": 25,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tgo func() {",
+         "matchingRanges": {
+          "lineNumber": "94"
+         },
+         "lineNumber": "94",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 5,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAgSBAgBIAE4uNSr7sXiwr8yQABICA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/internal/synctest/synctest_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\ttimer := time.NewTimer(0)",
+         "matchingRanges": {
+          "lineNumber": "337"
+         },
+         "lineNumber": "337",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 25,
+            "length": 1
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tctx, cancel := context.WithCancel(context.Background())",
+         "matchingRanges": {
+          "lineNumber": "338",
+          "columnRanges": [
+           {
+            "startIndex": 25,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "338",
+         "ranges": [
+          {
+           "startIndex": 25,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "339"
+         },
+         "lineNumber": "339"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAkSAggBOIi128yn-syH0AFAAEgJ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/testing/benchmark.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tdefer benchmarkLock.Unlock()",
+         "matchingRanges": {
+          "lineNumber": "199"
+         },
+         "lineNumber": "199",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tctx, cancelCtx := context.WithCancel(context.Background())",
+         "matchingRanges": {
+          "lineNumber": "200",
+          "columnRanges": [
+           {
+            "startIndex": 27,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "200",
+         "ranges": [
+          {
+           "startIndex": 27,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\tdefer func() {",
+         "matchingRanges": {
+          "lineNumber": "201"
+         },
+         "lineNumber": "201",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAoSAggBOMC-jtaD5bv7pQFAAEgK"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/http/transport.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t//     RoundTripper returns.",
+         "matchingRanges": {
+          "lineNumber": "674"
+         },
+         "lineNumber": "674",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 28
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tctx, cancel := context.WithCancelCause(req.Context())",
+         "matchingRanges": {
+          "lineNumber": "675",
+          "columnRanges": [
+           {
+            "startIndex": 24,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "675",
+         "ranges": [
+          {
+           "startIndex": 24,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "676"
+         },
+         "lineNumber": "676"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// We retain the request context's values.",
+         "matchingRanges": {
+          "lineNumber": "1595"
+         },
+         "lineNumber": "1595",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 42
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tdialCtx, dialCancel := context.WithCancel(context.WithoutCancel(ctx))",
+         "matchingRanges": {
+          "lineNumber": "1596",
+          "columnRanges": [
+           {
+            "startIndex": 32,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "1596",
+         "ranges": [
+          {
+           "startIndex": 32,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "1597"
+         },
+         "lineNumber": "1597"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAsSAggBONLVzLir4tGDlAFAAEgL"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/dial.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\tvar subCtx context.Context",
+         "matchingRanges": {
+          "lineNumber": "578"
+         },
+         "lineNumber": "578",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tsubCtx, cancel2 = context.WithCancel(ctx)",
+         "matchingRanges": {
+          "lineNumber": "579",
+          "columnRanges": [
+           {
+            "startIndex": 28,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "579",
+         "ranges": [
+          {
+           "startIndex": 28,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tgo func() {",
+         "matchingRanges": {
+          "lineNumber": "580"
+         },
+         "lineNumber": "580",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 5,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// Start the main racer.",
+         "matchingRanges": {
+          "lineNumber": "692"
+         },
+         "lineNumber": "692",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 24
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tprimaryCtx, primaryCancel := context.WithCancel(ctx)",
+         "matchingRanges": {
+          "lineNumber": "693",
+          "columnRanges": [
+           {
+            "startIndex": 38,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "693",
+         "ranges": [
+          {
+           "startIndex": 38,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\tdefer primaryCancel()",
+         "matchingRanges": {
+          "lineNumber": "694"
+         },
+         "lineNumber": "694",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\tcase \u003c-fallbackTimer.C:",
+         "matchingRanges": {
+          "lineNumber": "703"
+         },
+         "lineNumber": "703",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\tfallbackCtx, fallbackCancel := context.WithCancel(ctx)",
+         "matchingRanges": {
+          "lineNumber": "704",
+          "columnRanges": [
+           {
+            "startIndex": 42,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "704",
+         "ranges": [
+          {
+           "startIndex": 42,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\tdefer fallbackCancel()",
+         "matchingRanges": {
+          "lineNumber": "705"
+         },
+         "lineNumber": "705",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 3,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CAwSAggBOP72yLXl-PS2xAFAAEgM"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/lookup.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// only the values in context. See Issue 28600.",
+         "matchingRanges": {
+          "lineNumber": "329"
+         },
+         "lineNumber": "329",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 47
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tlookupGroupCtx, lookupGroupCancel := context.WithCancel(withUnexpiredValuesPreserved(ctx))",
+         "matchingRanges": {
+          "lineNumber": "330",
+          "columnRanges": [
+           {
+            "startIndex": 46,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "330",
+         "ranges": [
+          {
+           "startIndex": 46,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "331"
+         },
+         "lineNumber": "331"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CA0SAggBOICorujh1IzloAFAAEgN"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/internal/trace/testdata/testprog/annotations.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "func main() {",
+         "matchingRanges": {
+          "lineNumber": "19"
+         },
+         "lineNumber": "19",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tbgctx, cancel := context.WithCancel(context.Background())",
+         "matchingRanges": {
+          "lineNumber": "20",
+          "columnRanges": [
+           {
+            "startIndex": 26,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "20",
+         "ranges": [
+          {
+           "startIndex": 26,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\tdefer cancel()",
+         "matchingRanges": {
+          "lineNumber": "21"
+         },
+         "lineNumber": "21",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CA4SAggBOIy0_JWbzubuoAFAAEgO"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/context/benchmark_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\troot := WithValue(Background(), \"key\", \"value\")",
+         "matchingRanges": {
+          "lineNumber": "17"
+         },
+         "lineNumber": "17",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 33,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 40,
+            "length": 7
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tshared, sharedcancel := WithCancel(root)",
+         "matchingRanges": {
+          "lineNumber": "18",
+          "columnRanges": [
+           {
+            "startIndex": 25,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "18",
+         "ranges": [
+          {
+           "startIndex": 25,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\tdefer sharedcancel()",
+         "matchingRanges": {
+          "lineNumber": "19"
+         },
+         "lineNumber": "19",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\tfor pb.Next() {",
+         "matchingRanges": {
+          "lineNumber": "24"
+         },
+         "lineNumber": "24",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\tctx, cancel := WithCancel(shared)",
+         "matchingRanges": {
+          "lineNumber": "25",
+          "columnRanges": [
+           {
+            "startIndex": 18,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "25",
+         "ranges": [
+          {
+           "startIndex": 18,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\tif ctx.Value(\"key\").(string) != \"value\" {",
+         "matchingRanges": {
+          "lineNumber": "26"
+         },
+         "lineNumber": "26",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 3,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 16,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 35,
+            "length": 7
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t\t\tfor i := 0; i \u003c b.N; i++ {",
+         "matchingRanges": {
+          "lineNumber": "101"
+         },
+         "lineNumber": "101",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 13,
+            "length": 1
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t\t\tctx, cancel := WithCancel(Background())",
+         "matchingRanges": {
+          "lineNumber": "102",
+          "columnRanges": [
+           {
+            "startIndex": 20,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "102",
+         "ranges": [
+          {
+           "startIndex": 20,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t\t\tbuildContextTree(ctx, d)",
+         "matchingRanges": {
+          "lineNumber": "103"
+         },
+         "lineNumber": "103"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 9
+    },
+    "resultToken": "CA8SAggBOIDXlp335-Ws_QFAAEgP"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/context/afterfunc_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tctx0 := \u0026afterFuncContext{}",
+         "matchingRanges": {
+          "lineNumber": "79"
+         },
+         "lineNumber": "79"
+        },
+        {
+         "lineText": "\tctx1, cancel := context.WithCancel(ctx0)",
+         "matchingRanges": {
+          "lineNumber": "80",
+          "columnRanges": [
+           {
+            "startIndex": 25,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "80",
+         "ranges": [
+          {
+           "startIndex": 25,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\tdefer cancel()",
+         "matchingRanges": {
+          "lineNumber": "81"
+         },
+         "lineNumber": "81",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tctx0 := \u0026afterFuncContext{}",
+         "matchingRanges": {
+          "lineNumber": "106"
+         },
+         "lineNumber": "106"
+        },
+        {
+         "lineText": "\t_, cancel1 := context.WithCancel(ctx0)",
+         "matchingRanges": {
+          "lineNumber": "107",
+          "columnRanges": [
+           {
+            "startIndex": 23,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "107",
+         "ranges": [
+          {
+           "startIndex": 23,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t_, cancel2 := context.WithCancel(ctx0)",
+         "matchingRanges": {
+          "lineNumber": "108",
+          "columnRanges": [
+           {
+            "startIndex": 23,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "108",
+         "ranges": [
+          {
+           "startIndex": 23,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\tif got, want := len(ctx0.afterFuncs), 2; got != want {",
+         "matchingRanges": {
+          "lineNumber": "109"
+         },
+         "lineNumber": "109",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 39,
+            "length": 1
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tt.Errorf(\"after WithCancel(ctx0): ctx0 has %v afterFuncs, want %v\", got, want)",
+         "matchingRanges": {
+          "lineNumber": "110",
+          "columnRanges": [
+           {
+            "startIndex": 18,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "110",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 57
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 18,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t}",
+         "matchingRanges": {
+          "lineNumber": "111"
+         },
+         "lineNumber": "111"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 5
+    },
+    "resultToken": "CBASAggBOLru9f3YssntIkAASBA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/vet/doc.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tloopclosure      check references to loop variables from within nested functions",
+         "matchingRanges": {
+          "lineNumber": "46"
+         },
+         "lineNumber": "46",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 81
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tlostcancel       check cancel func returned by context.WithCancel is called",
+         "matchingRanges": {
+          "lineNumber": "47",
+          "columnRanges": [
+           {
+            "startIndex": 56,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "47",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 76
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 56,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\tnilfunc          check for useless comparisons between functions and nil",
+         "matchingRanges": {
+          "lineNumber": "48"
+         },
+         "lineNumber": "48",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 73
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBESAggBOLLt7Kymlbb9lAFAAEgR"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/http/transport_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t\t\t\t}",
+         "matchingRanges": {
+          "lineNumber": "550"
+         },
+         "lineNumber": "550"
+        },
+        {
+         "lineText": "\t\t\t\t\tctx, cancel := context.WithCancel(context.Background())",
+         "matchingRanges": {
+          "lineNumber": "551",
+          "columnRanges": [
+           {
+            "startIndex": 28,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "551",
+         "ranges": [
+          {
+           "startIndex": 28,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t\t\treq, err := http.NewRequestWithContext(ctx, method, ts.URL, nil)",
+         "matchingRanges": {
+          "lineNumber": "552"
+         },
+         "lineNumber": "552"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// This request is canceled when dial is queued, which preempts dialing.",
+         "matchingRanges": {
+          "lineNumber": "867"
+         },
+         "lineNumber": "867",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 72
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tctx, cancel := context.WithCancel(context.Background())",
+         "matchingRanges": {
+          "lineNumber": "868",
+          "columnRanges": [
+           {
+            "startIndex": 24,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "868",
+         "ranges": [
+          {
+           "startIndex": 24,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\tdefer cancel()",
+         "matchingRanges": {
+          "lineNumber": "869"
+         },
+         "lineNumber": "869",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tSetTestHookProxyConnectTimeout(t, func(ctx context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {",
+         "matchingRanges": {
+          "lineNumber": "1851"
+         },
+         "lineNumber": "1851",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 35,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tctx, cancel := context.WithCancel(ctx)",
+         "matchingRanges": {
+          "lineNumber": "1852",
+          "columnRanges": [
+           {
+            "startIndex": 25,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "1852",
+         "ranges": [
+          {
+           "startIndex": 25,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tgo func() {",
+         "matchingRanges": {
+          "lineNumber": "1853"
+         },
+         "lineNumber": "1853",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 5,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 7
+    },
+    "resultToken": "CBISAggBOIK2tauQy4vGV0AASBI"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/testing/fuzz.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\tctx, cancelCtx := context.WithCancel(f.ctx)",
+         "matchingRanges": {
+          "lineNumber": "297",
+          "columnRanges": [
+           {
+            "startIndex": 28,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "297",
+         "ranges": [
+          {
+           "startIndex": 28,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "298"
+         },
+         "lineNumber": "298"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t\t\t}",
+         "matchingRanges": {
+          "lineNumber": "516"
+         },
+         "lineNumber": "516"
+        },
+        {
+         "lineText": "\t\t\t\tctx, cancelCtx := context.WithCancel(context.Background())",
+         "matchingRanges": {
+          "lineNumber": "517",
+          "columnRanges": [
+           {
+            "startIndex": 30,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "517",
+         "ranges": [
+          {
+           "startIndex": 30,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t\tf := \u0026F{",
+         "matchingRanges": {
+          "lineNumber": "518"
+         },
+         "lineNumber": "518"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tctx, cancelCtx := context.WithCancel(context.Background())",
+         "matchingRanges": {
+          "lineNumber": "603",
+          "columnRanges": [
+           {
+            "startIndex": 27,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "603",
+         "ranges": [
+          {
+           "startIndex": 27,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\tf := \u0026F{",
+         "matchingRanges": {
+          "lineNumber": "604"
+         },
+         "lineNumber": "604"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CBMSAggBOKLZxM3Vj9yNf0AASBM"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/dial_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t\t// Repeat each case, ensuring that it can be canceled.",
+         "matchingRanges": {
+          "lineNumber": "284"
+         },
+         "lineNumber": "284",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 3,
+            "length": 54
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\tctx, cancel := context.WithCancel(context.Background())",
+         "matchingRanges": {
+          "lineNumber": "285",
+          "columnRanges": [
+           {
+            "startIndex": 26,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "285",
+         "ranges": [
+          {
+           "startIndex": 26,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\tvar wg sync.WaitGroup",
+         "matchingRanges": {
+          "lineNumber": "286"
+         },
+         "lineNumber": "286",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 3,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBQSAggBOPbupZuhidjlowFAAEgU"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/lookup_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tlookupCtx, cancelLookup := context.WithCancel(context.Background())",
+         "matchingRanges": {
+          "lineNumber": "887",
+          "columnRanges": [
+           {
+            "startIndex": 36,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "887",
+         "ranges": [
+          {
+           "startIndex": 36,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\tunblockLookup := make(chan struct{})",
+         "matchingRanges": {
+          "lineNumber": "888"
+         },
+         "lineNumber": "888",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 23,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 28,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tctx, cancel := context.WithCancel(context.Background())",
+         "matchingRanges": {
+          "lineNumber": "979",
+          "columnRanges": [
+           {
+            "startIndex": 24,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "979",
+         "ranges": [
+          {
+           "startIndex": 24,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\tcancel()",
+         "matchingRanges": {
+          "lineNumber": "980"
+         },
+         "lineNumber": "980"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func TestWithUnexpiredValuesPreserved(t *testing.T) {",
+         "matchingRanges": {
+          "lineNumber": "1215"
+         },
+         "lineNumber": "1215",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tctx, cancel := context.WithCancel(context.Background())",
+         "matchingRanges": {
+          "lineNumber": "1216",
+          "columnRanges": [
+           {
+            "startIndex": 24,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "1216",
+         "ranges": [
+          {
+           "startIndex": 24,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "1217"
+         },
+         "lineNumber": "1217"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tctx, cancel := context.WithCancel(context.Background())",
+         "matchingRanges": {
+          "lineNumber": "1646",
+          "columnRanges": [
+           {
+            "startIndex": 24,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "1646",
+         "ranges": [
+          {
+           "startIndex": 24,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\tcancel()",
+         "matchingRanges": {
+          "lineNumber": "1647"
+         },
+         "lineNumber": "1647"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 4
+    },
+    "resultToken": "CBUSAggBOJL2nvqskpz6DkAASBU"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/testing/testing.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// the difference between the background context and the one from the parent test.",
+         "matchingRanges": {
+          "lineNumber": "2224"
+         },
+         "lineNumber": "2224",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 82
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tctx, cancelCtx := context.WithCancel(context.Background())",
+         "matchingRanges": {
+          "lineNumber": "2225",
+          "columnRanges": [
+           {
+            "startIndex": 27,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "2225",
+         "ranges": [
+          {
+           "startIndex": 27,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\tt = \u0026T{",
+         "matchingRanges": {
+          "lineNumber": "2226"
+         },
+         "lineNumber": "2226"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tctx, cancelCtx := context.WithCancel(context.Background())",
+         "matchingRanges": {
+          "lineNumber": "2287",
+          "columnRanges": [
+           {
+            "startIndex": 27,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "2287",
+         "ranges": [
+          {
+           "startIndex": 27,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\tt2 := \u0026T{",
+         "matchingRanges": {
+          "lineNumber": "2288"
+         },
+         "lineNumber": "2288"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t\t}",
+         "matchingRanges": {
+          "lineNumber": "2718"
+         },
+         "lineNumber": "2718"
+        },
+        {
+         "lineText": "\t\t\tctx, cancelCtx := context.WithCancel(context.Background())",
+         "matchingRanges": {
+          "lineNumber": "2719",
+          "columnRanges": [
+           {
+            "startIndex": 29,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "2719",
+         "ranges": [
+          {
+           "startIndex": 29,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\ttstate := newTestState(*parallel, newMatcher(matchString, *match, \"-test.run\", *skip))",
+         "matchingRanges": {
+          "lineNumber": "2720"
+         },
+         "lineNumber": "2720",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 69,
+            "length": 11
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CBYSAggBOIKP1-eb9POkuQFAAEgW"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/http/server.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tctx, cancelCtx := context.WithCancel(ctx)",
+         "matchingRanges": {
+          "lineNumber": "1065",
+          "columnRanges": [
+           {
+            "startIndex": 27,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "1065",
+         "ranges": [
+          {
+           "startIndex": 27,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\treq.ctx = ctx",
+         "matchingRanges": {
+          "lineNumber": "1066"
+         },
+         "lineNumber": "1066"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tctx, cancelCtx := context.WithCancel(ctx)",
+         "matchingRanges": {
+          "lineNumber": "2020",
+          "columnRanges": [
+           {
+            "startIndex": 27,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "2020",
+         "ranges": [
+          {
+           "startIndex": 27,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\tc.cancelCtx = cancelCtx",
+         "matchingRanges": {
+          "lineNumber": "2021"
+         },
+         "lineNumber": "2021"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CBcSAggBOKqw0MDfgYL9SEAASBc"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/http/transport_dial_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t}",
+         "matchingRanges": {
+          "lineNumber": "486"
+         },
+         "lineNumber": "486"
+        },
+        {
+         "lineText": "\tctx, cancel := context.WithCancel(context.Background())",
+         "matchingRanges": {
+          "lineNumber": "487",
+          "columnRanges": [
+           {
+            "startIndex": 24,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "487",
+         "ranges": [
+          {
+           "startIndex": 24,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\tpr, pw := io.Pipe()",
+         "matchingRanges": {
+          "lineNumber": "488"
+         },
+         "lineNumber": "488"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBgSAggBOLqb2Mrhzs_0cEAASBg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/crypto/tls/conn.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\thandshakeCtx, cancel := context.WithCancel(ctx)",
+         "matchingRanges": {
+          "lineNumber": "1526",
+          "columnRanges": [
+           {
+            "startIndex": 33,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "1526",
+         "ranges": [
+          {
+           "startIndex": 33,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t// Note: defer this before calling context.AfterFunc",
+         "matchingRanges": {
+          "lineNumber": "1527"
+         },
+         "lineNumber": "1527",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 52
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBkSAggBOJL6jbiv2-rd4wFAAEgZ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/vendor/golang.org/x/tools/internal/stdlib/manifest.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t{\"TODO\", Func, 7, \"func() Context\"},",
+         "matchingRanges": {
+          "lineNumber": "501"
+         },
+         "lineNumber": "501",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 3,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 17,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 16
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t{\"WithCancel\", Func, 7, \"func(parent Context) (ctx Context, cancel CancelFunc)\"},",
+         "matchingRanges": {
+          "lineNumber": "502",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "502",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 3,
+            "length": 12
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 23,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 26,
+            "length": 55
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t{\"WithCancelCause\", Func, 20, \"func(parent Context) (ctx Context, cancel CancelCauseFunc)\"},",
+         "matchingRanges": {
+          "lineNumber": "503",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "503",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 3,
+            "length": 17
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 28,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 32,
+            "length": 60
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t{\"WithDeadline\", Func, 7, \"func(parent Context, d time.Time) (Context, CancelFunc)\"},",
+         "matchingRanges": {
+          "lineNumber": "504"
+         },
+         "lineNumber": "504",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 3,
+            "length": 14
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 25,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 28,
+            "length": 57
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CBoSAggBOJrA-rfNvvHiBUAASBo"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/testing/synctest/example_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t// Create a context.Context which can be canceled.",
+         "matchingRanges": {
+          "lineNumber": "48"
+         },
+         "lineNumber": "48",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 50
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tctx, cancel := context.WithCancel(t.Context())",
+         "matchingRanges": {
+          "lineNumber": "49",
+          "columnRanges": [
+           {
+            "startIndex": 25,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "49",
+         "ranges": [
+          {
+           "startIndex": 25,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "50"
+         },
+         "lineNumber": "50"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBsSAggBOLjJmIHzo8u3_AFAAEgb"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/database/sql/sql.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "func OpenDB(c driver.Connector) *DB {",
+         "matchingRanges": {
+          "lineNumber": "837"
+         },
+         "lineNumber": "837",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tctx, cancel := context.WithCancel(context.Background())",
+         "matchingRanges": {
+          "lineNumber": "838",
+          "columnRanges": [
+           {
+            "startIndex": 24,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "838",
+         "ranges": [
+          {
+           "startIndex": 24,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\tdb := \u0026DB{",
+         "matchingRanges": {
+          "lineNumber": "839"
+         },
+         "lineNumber": "839"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// The cancel function in Tx will be called after done is set to true.",
+         "matchingRanges": {
+          "lineNumber": "1919"
+         },
+         "lineNumber": "1919",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 70
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tctx, cancel := context.WithCancel(ctx)",
+         "matchingRanges": {
+          "lineNumber": "1920",
+          "columnRanges": [
+           {
+            "startIndex": 24,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "1920",
+         "ranges": [
+          {
+           "startIndex": 24,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\ttx = \u0026Tx{",
+         "matchingRanges": {
+          "lineNumber": "1921"
+         },
+         "lineNumber": "1921"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t}",
+         "matchingRanges": {
+          "lineNumber": "3004"
+         },
+         "lineNumber": "3004"
+        },
+        {
+         "lineText": "\tclosectx, cancel := context.WithCancel(ctx)",
+         "matchingRanges": {
+          "lineNumber": "3005",
+          "columnRanges": [
+           {
+            "startIndex": 29,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "3005",
+         "ranges": [
+          {
+           "startIndex": 29,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\trs.cancel = cancel",
+         "matchingRanges": {
+          "lineNumber": "3006"
+         },
+         "lineNumber": "3006"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CBwSAggBONaY4LORse6LQkAASBw"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/os/signal/signal.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "func NotifyContext(parent context.Context, signals ...os.Signal) (ctx context.Context, stop context.CancelFunc) {",
+         "matchingRanges": {
+          "lineNumber": "293"
+         },
+         "lineNumber": "293",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tctx, cancel := context.WithCancelCause(parent)",
+         "matchingRanges": {
+          "lineNumber": "294",
+          "columnRanges": [
+           {
+            "startIndex": 24,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "294",
+         "ranges": [
+          {
+           "startIndex": 24,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\tc := \u0026signalCtx{",
+         "matchingRanges": {
+          "lineNumber": "295"
+         },
+         "lineNumber": "295"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// We know that the type of c.Context is context.cancelCtx, and we know that the",
+         "matchingRanges": {
+          "lineNumber": "333"
+         },
+         "lineNumber": "333",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 80
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t// String method of cancelCtx returns a string that ends with \".WithCancel\".",
+         "matchingRanges": {
+          "lineNumber": "334",
+          "columnRanges": [
+           {
+            "startIndex": 65,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "334",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 76
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 65,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\tname := c.Context.(stringer).String()",
+         "matchingRanges": {
+          "lineNumber": "335"
+         },
+         "lineNumber": "335"
+        },
+        {
+         "lineText": "\tname = name[:len(name)-len(\".WithCancel\")]",
+         "matchingRanges": {
+          "lineNumber": "336",
+          "columnRanges": [
+           {
+            "startIndex": 30,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "336",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 28,
+            "length": 13
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 30,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\tbuf = append(buf, \"signal.NotifyContext(\"+name...)",
+         "matchingRanges": {
+          "lineNumber": "337"
+         },
+         "lineNumber": "337",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 19,
+            "length": 23
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CB0SAggBOIK2saCY4qrGxgFAAEgd"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/timeout_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t\t\t// out that way, though: the test should pass regardless.)",
+         "matchingRanges": {
+          "lineNumber": "195"
+         },
+         "lineNumber": "195",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 58
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t\tctx, cancel := context.WithCancel(context.Background())",
+         "matchingRanges": {
+          "lineNumber": "196",
+          "columnRanges": [
+           {
+            "startIndex": 27,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "196",
+         "ranges": [
+          {
+           "startIndex": 27,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t\tdialDone := make(chan struct{})",
+         "matchingRanges": {
+          "lineNumber": "197"
+         },
+         "lineNumber": "197",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 21,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 26,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CB4SAggBOLbO5dmR6KrzKkAASB4"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/tcpsock_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tvar wg sync.WaitGroup",
+         "matchingRanges": {
+          "lineNumber": "803"
+         },
+         "lineNumber": "803",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tctx, cancel := context.WithCancel(context.Background())",
+         "matchingRanges": {
+          "lineNumber": "804",
+          "columnRanges": [
+           {
+            "startIndex": 24,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "804",
+         "ranges": [
+          {
+           "startIndex": 24,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "805"
+         },
+         "lineNumber": "805"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CB8SAggBOIaLh5XxoLCN5wFAAEgf"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/os/exec/exec_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tctx, cancel := context.WithCancel(context.Background())",
+         "matchingRanges": {
+          "lineNumber": "925",
+          "columnRanges": [
+           {
+            "startIndex": 24,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "925",
+         "ranges": [
+          {
+           "startIndex": 24,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\tc := helperCommandContext(t, ctx, \"pipetest\")",
+         "matchingRanges": {
+          "lineNumber": "926"
+         },
+         "lineNumber": "926",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 35,
+            "length": 10
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tctx, cancel := context.WithCancel(context.Background())",
+         "matchingRanges": {
+          "lineNumber": "964",
+          "columnRanges": [
+           {
+            "startIndex": 24,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "964",
+         "ranges": [
+          {
+           "startIndex": 24,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\tdefer cancel()",
+         "matchingRanges": {
+          "lineNumber": "965"
+         },
+         "lineNumber": "965",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\tctx, cancel := context.WithCancel(context.Background())",
+         "matchingRanges": {
+          "lineNumber": "1331",
+          "columnRanges": [
+           {
+            "startIndex": 25,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "1331",
+         "ranges": [
+          {
+           "startIndex": 25,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tcmd := startHang(t, ctx, tooLong, nil, tooLong, \"-interrupt=true\")",
+         "matchingRanges": {
+          "lineNumber": "1332"
+         },
+         "lineNumber": "1332",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 50,
+            "length": 17
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\tctx, cancel := context.WithCancel(context.Background())",
+         "matchingRanges": {
+          "lineNumber": "1369",
+          "columnRanges": [
+           {
+            "startIndex": 25,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "1369",
+         "ranges": [
+          {
+           "startIndex": 25,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tcmd := startHang(t, ctx, tooLong, os.Kill, 10*time.Millisecond, \"-subsleep=10m\", \"-probe=1ms\")",
+         "matchingRanges": {
+          "lineNumber": "1370"
+         },
+         "lineNumber": "1370",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 45,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 66,
+            "length": 15
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 83,
+            "length": 12
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\tctx, cancel := context.WithCancel(context.Background())",
+         "matchingRanges": {
+          "lineNumber": "1417",
+          "columnRanges": [
+           {
+            "startIndex": 25,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "1417",
+         "ranges": [
+          {
+           "startIndex": 25,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tcmd := startHang(t, ctx, tooLong, os.Interrupt, 10*time.Millisecond, \"-interrupt=false\")",
+         "matchingRanges": {
+          "lineNumber": "1418"
+         },
+         "lineNumber": "1418",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 50,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 71,
+            "length": 18
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 13
+    },
+    "resultToken": "CCASAggBOJbo1aLA8rey6wFAAEgg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/sendfile_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\twg          sync.WaitGroup",
+         "matchingRanges": {
+          "lineNumber": "473"
+         },
+         "lineNumber": "473"
+        },
+        {
+         "lineText": "\t\tctx, cancel = context.WithCancel(context.Background())",
+         "matchingRanges": {
+          "lineNumber": "474",
+          "columnRanges": [
+           {
+            "startIndex": 24,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "474",
+         "ranges": [
+          {
+           "startIndex": 24,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t)",
+         "matchingRanges": {
+          "lineNumber": "475"
+         },
+         "lineNumber": "475"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CCESAggBOMiIxP_c7pbItwFAAEgh"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/crypto/tls/handshake_server_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tc, s := localPipe(t)",
+         "matchingRanges": {
+          "lineNumber": "2074"
+         },
+         "lineNumber": "2074"
+        },
+        {
+         "lineText": "\tctx, cancel := context.WithCancel(context.Background())",
+         "matchingRanges": {
+          "lineNumber": "2075",
+          "columnRanges": [
+           {
+            "startIndex": 24,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "2075",
+         "ranges": [
+          {
+           "startIndex": 24,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\tunblockClient := make(chan struct{})",
+         "matchingRanges": {
+          "lineNumber": "2076"
+         },
+         "lineNumber": "2076",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 23,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 28,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tserverConfig := testConfigServer.Clone()",
+         "matchingRanges": {
+          "lineNumber": "2111"
+         },
+         "lineNumber": "2111"
+        },
+        {
+         "lineText": "\tctx, cancel := context.WithCancel(context.Background())",
+         "matchingRanges": {
+          "lineNumber": "2112",
+          "columnRanges": [
+           {
+            "startIndex": 24,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "2112",
+         "ranges": [
+          {
+           "startIndex": 24,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\tdefer cancel()",
+         "matchingRanges": {
+          "lineNumber": "2113"
+         },
+         "lineNumber": "2113",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CCISAggBONDT29zboeXK7wFAAEgi"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/crypto/tls/handshake_client_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tc, s := localPipe(t)",
+         "matchingRanges": {
+          "lineNumber": "2636"
+         },
+         "lineNumber": "2636"
+        },
+        {
+         "lineText": "\tctx, cancel := context.WithCancel(context.Background())",
+         "matchingRanges": {
+          "lineNumber": "2637",
+          "columnRanges": [
+           {
+            "startIndex": 24,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "2637",
+         "ranges": [
+          {
+           "startIndex": 24,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\tunblockServer := make(chan struct{})",
+         "matchingRanges": {
+          "lineNumber": "2638"
+         },
+         "lineNumber": "2638",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 23,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 28,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CCMSAggBOLaXocParJPxrQFAAEgj"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/dial_unix_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tctx, cancelCtx := context.WithCancel(context.Background())",
+         "matchingRanges": {
+          "lineNumber": "51",
+          "columnRanges": [
+           {
+            "startIndex": 27,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "51",
+         "ranges": [
+          {
+           "startIndex": 27,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "52"
+         },
+         "lineNumber": "52"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CCQSAggBOPbd5c2y2pu8JEAASCQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/internal/fuzz/fuzz.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// fuzzCtx is used to stop workers, for example, after finding a crasher.",
+         "matchingRanges": {
+          "lineNumber": "111"
+         },
+         "lineNumber": "111",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 73
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tfuzzCtx, cancelWorkers := context.WithCancel(ctx)",
+         "matchingRanges": {
+          "lineNumber": "112",
+          "columnRanges": [
+           {
+            "startIndex": 35,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "112",
+         "ranges": [
+          {
+           "startIndex": 35,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\tdefer cancelWorkers()",
+         "matchingRanges": {
+          "lineNumber": "113"
+         },
+         "lineNumber": "113",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CCUSAggBOLDRzv7_pKeHbUAASCU"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/http/serve_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t})",
+         "matchingRanges": {
+          "lineNumber": "2647"
+         },
+         "lineNumber": "2647"
+        },
+        {
+         "lineText": "\tctx, cancel := context.WithCancel(context.Background())",
+         "matchingRanges": {
+          "lineNumber": "2648",
+          "columnRanges": [
+           {
+            "startIndex": 24,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "2648",
+         "ranges": [
+          {
+           "startIndex": 24,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\th := NewTestTimeoutHandler(sayHi, cancelableTimeoutContext{ctx})",
+         "matchingRanges": {
+          "lineNumber": "2649"
+         },
+         "lineNumber": "2649"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t})",
+         "matchingRanges": {
+          "lineNumber": "2784"
+         },
+         "lineNumber": "2784"
+        },
+        {
+         "lineText": "\tctx, cancel := context.WithCancel(context.Background())",
+         "matchingRanges": {
+          "lineNumber": "2785",
+          "columnRanges": [
+           {
+            "startIndex": 24,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "2785",
+         "ranges": [
+          {
+           "startIndex": 24,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\th := NewTestTimeoutHandler(sayHi, cancelableTimeoutContext{ctx})",
+         "matchingRanges": {
+          "lineNumber": "2786"
+         },
+         "lineNumber": "2786"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t})",
+         "matchingRanges": {
+          "lineNumber": "2877"
+         },
+         "lineNumber": "2877"
+        },
+        {
+         "lineText": "\tctx, cancel := context.WithCancel(context.Background())",
+         "matchingRanges": {
+          "lineNumber": "2878",
+          "columnRanges": [
+           {
+            "startIndex": 24,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "2878",
+         "ranges": [
+          {
+           "startIndex": 24,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\tcancel()",
+         "matchingRanges": {
+          "lineNumber": "2879"
+         },
+         "lineNumber": "2879"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 4
+    },
+    "resultToken": "CCYSAggBOL7d1bbArPSgzwFAAEgm"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/crypto/tls/tls_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tctx, cancel := context.WithCancel(context.Background())",
+         "matchingRanges": {
+          "lineNumber": "401",
+          "columnRanges": [
+           {
+            "startIndex": 24,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "401",
+         "ranges": [
+          {
+           "startIndex": 24,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\td := Dialer{Config: \u0026Config{",
+         "matchingRanges": {
+          "lineNumber": "402"
+         },
+         "lineNumber": "402"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CCcSAggBONC-q7q4isS-EEAASCc"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/context/context_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// parent -\u003e afterChild",
+         "matchingRanges": {
+          "lineNumber": "47"
+         },
+         "lineNumber": "47",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 23
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tparent, cancel := WithCancel(Background())",
+         "matchingRanges": {
+          "lineNumber": "48",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "48",
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\tcancelChild, stop := WithCancel(parent)",
+         "matchingRanges": {
+          "lineNumber": "49",
+          "columnRanges": [
+           {
+            "startIndex": 22,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "49",
+         "ranges": [
+          {
+           "startIndex": 22,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\tdefer stop()",
+         "matchingRanges": {
+          "lineNumber": "50"
+         },
+         "lineNumber": "50",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// WithCancel should return a canceled context on a canceled parent.",
+         "matchingRanges": {
+          "lineNumber": "121",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "121",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 68
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\tprecanceledChild := WithValue(parent, \"key\", \"value\")",
+         "matchingRanges": {
+          "lineNumber": "122"
+         },
+         "lineNumber": "122",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 39,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 46,
+            "length": 7
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tcancelable, stop := WithCancel(Background())",
+         "matchingRanges": {
+          "lineNumber": "134",
+          "columnRanges": [
+           {
+            "startIndex": 21,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "134",
+         "ranges": [
+          {
+           "startIndex": 21,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\tdefer stop()",
+         "matchingRanges": {
+          "lineNumber": "135"
+         },
+         "lineNumber": "135",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tfor _, parent := range []Context{Background(), cancelable} {",
+         "matchingRanges": {
+          "lineNumber": "136"
+         },
+         "lineNumber": "136",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 18,
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tchild, cancel := WithCancel(parent)",
+         "matchingRanges": {
+          "lineNumber": "137",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "137",
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 10
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 17
+    },
+    "resultToken": "CCgSAggBOJS6grjXzuKtIkAASCg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/http/client_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tctx, cancel := context.WithCancel(context.Background())",
+         "matchingRanges": {
+          "lineNumber": "294",
+          "columnRanges": [
+           {
+            "startIndex": 24,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "294",
+         "ranges": [
+          {
+           "startIndex": 24,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\tc := ts.Client()",
+         "matchingRanges": {
+          "lineNumber": "295"
+         },
+         "lineNumber": "295"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\ttestDone := make(chan struct{})",
+         "matchingRanges": {
+          "lineNumber": "1351"
+         },
+         "lineNumber": "1351",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 18,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 23,
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tctx, cancel := context.WithCancel(context.Background())",
+         "matchingRanges": {
+          "lineNumber": "1352",
+          "columnRanges": [
+           {
+            "startIndex": 24,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "1352",
+         "ranges": [
+          {
+           "startIndex": 24,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "1353"
+         },
+         "lineNumber": "1353"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t\t} else {",
+         "matchingRanges": {
+          "lineNumber": "2162"
+         },
+         "lineNumber": "2162",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 5,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t\tctx, cancel = context.WithCancel(context.Background())",
+         "matchingRanges": {
+          "lineNumber": "2163",
+          "columnRanges": [
+           {
+            "startIndex": 26,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "2163",
+         "ranges": [
+          {
+           "startIndex": 26,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t\tcancel()",
+         "matchingRanges": {
+          "lineNumber": "2164"
+         },
+         "lineNumber": "2164"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CCkSAggBOI700_W14fW9E0AASCk"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/crypto/tls/quic_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "func TestQUICContextCancelation(t *testing.T) {",
+         "matchingRanges": {
+          "lineNumber": "585"
+         },
+         "lineNumber": "585",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tctx, cancel := context.WithCancel(context.Background())",
+         "matchingRanges": {
+          "lineNumber": "586",
+          "columnRanges": [
+           {
+            "startIndex": 24,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "586",
+         "ranges": [
+          {
+           "startIndex": 24,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\tclientConfig := \u0026QUICConfig{TLSConfig: testConfigClient.Clone()}",
+         "matchingRanges": {
+          "lineNumber": "587"
+         },
+         "lineNumber": "587"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CCoSAggBOMrw8qv56uX9TEAASCo"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/vendor/golang.org/x/sync/errgroup/errgroup.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "func WithContext(ctx context.Context) (*Group, context.Context) {",
+         "matchingRanges": {
+          "lineNumber": "48"
+         },
+         "lineNumber": "48",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tctx, cancel := context.WithCancelCause(ctx)",
+         "matchingRanges": {
+          "lineNumber": "49",
+          "columnRanges": [
+           {
+            "startIndex": 24,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "49",
+         "ranges": [
+          {
+           "startIndex": 24,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\treturn \u0026Group{cancel: cancel}, ctx",
+         "matchingRanges": {
+          "lineNumber": "50"
+         },
+         "lineNumber": "50",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CCsSAggBOLrD6MeD957zYkAASCs"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/database/sql/sql_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tctx, cancel := context.WithCancel(context.Background())",
+         "matchingRanges": {
+          "lineNumber": "478",
+          "columnRanges": [
+           {
+            "startIndex": 24,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "478",
+         "ranges": [
+          {
+           "startIndex": 24,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\tdefer cancel()",
+         "matchingRanges": {
+          "lineNumber": "479"
+         },
+         "lineNumber": "479",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tctx, cancel := context.WithCancel(context.Background())",
+         "matchingRanges": {
+          "lineNumber": "563",
+          "columnRanges": [
+           {
+            "startIndex": 24,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "563",
+         "ranges": [
+          {
+           "startIndex": 24,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\tdefer cancel()",
+         "matchingRanges": {
+          "lineNumber": "564"
+         },
+         "lineNumber": "564",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tctx, cancel := context.WithCancel(context.Background())",
+         "matchingRanges": {
+          "lineNumber": "610",
+          "columnRanges": [
+           {
+            "startIndex": 24,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "610",
+         "ranges": [
+          {
+           "startIndex": 24,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "611"
+         },
+         "lineNumber": "611"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tfor i := 0; i \u003c max; i++ {",
+         "matchingRanges": {
+          "lineNumber": "839"
+         },
+         "lineNumber": "839",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 10,
+            "length": 1
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tctxReq, cancelReq := context.WithCancel(ctx)",
+         "matchingRanges": {
+          "lineNumber": "840",
+          "columnRanges": [
+           {
+            "startIndex": 31,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "840",
+         "ranges": [
+          {
+           "startIndex": 31,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tgo func() {",
+         "matchingRanges": {
+          "lineNumber": "841"
+         },
+         "lineNumber": "841",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 5,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 14
+    },
+    "resultToken": "CCwSAggBOLD4uvCsvP3uVEAASCw"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/os/signal/signal_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tparent, cancelParent := context.WithCancel(context.Background())",
+         "matchingRanges": {
+          "lineNumber": "785",
+          "columnRanges": [
+           {
+            "startIndex": 33,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "785",
+         "ranges": [
+          {
+           "startIndex": 33,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\tdefer cancelParent()",
+         "matchingRanges": {
+          "lineNumber": "786"
+         },
+         "lineNumber": "786",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tif want, got := \"signal.NotifyContext(context.Background.WithCancel, [hangup])\", fmt.Sprint(c); want != got {",
+         "matchingRanges": {
+          "lineNumber": "795",
+          "columnRanges": [
+           {
+            "startIndex": 58,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "795",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 17,
+            "length": 63
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 58,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tt.Errorf(\"c.String() = %q, wanted %q\", got, want)",
+         "matchingRanges": {
+          "lineNumber": "796"
+         },
+         "lineNumber": "796",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 28
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tif want, got := \"signal.NotifyContext(context.Background.WithCancel, [interrupt])\", fmt.Sprint(c); want != got {",
+         "matchingRanges": {
+          "lineNumber": "816",
+          "columnRanges": [
+           {
+            "startIndex": 58,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "816",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 17,
+            "length": 66
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 58,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tt.Errorf(\"c.String() = %q, want %q\", got, want)",
+         "matchingRanges": {
+          "lineNumber": "817"
+         },
+         "lineNumber": "817",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 26
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tif want, got := \"signal.NotifyContext(context.Background.WithCancel, [interrupt])\", fmt.Sprint(c); want != got {",
+         "matchingRanges": {
+          "lineNumber": "839",
+          "columnRanges": [
+           {
+            "startIndex": 58,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "839",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 17,
+            "length": 66
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 58,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tt.Errorf(\"c.String() = %q, want %q\", got, want)",
+         "matchingRanges": {
+          "lineNumber": "840"
+         },
+         "lineNumber": "840",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 26
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\twant := `signal.NotifyContext(context.Background.WithCancel, [hangup interrupt terminated])`",
+         "matchingRanges": {
+          "lineNumber": "882",
+          "columnRanges": [
+           {
+            "startIndex": 50,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "882",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 9,
+            "length": 84
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 50,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\tif got := fmt.Sprint(c); got != want {",
+         "matchingRanges": {
+          "lineNumber": "883"
+         },
+         "lineNumber": "883",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 8
+    },
+    "resultToken": "CC0SAggBOMTxprDKr6f5nwFAAEgt"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/http/internal/http2/transport_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "func init() {",
+         "matchingRanges": {
+          "lineNumber": "53"
+         },
+         "lineNumber": "53",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tctx, cancel := context.WithCancel(context.Background())",
+         "matchingRanges": {
+          "lineNumber": "54",
+          "columnRanges": [
+           {
+            "startIndex": 24,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "54",
+         "ranges": [
+          {
+           "startIndex": 24,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\tcancel()",
+         "matchingRanges": {
+          "lineNumber": "55"
+         },
+         "lineNumber": "55"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tctx, cancel := context.WithCancel(context.Background())",
+         "matchingRanges": {
+          "lineNumber": "2794",
+          "columnRanges": [
+           {
+            "startIndex": 24,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "2794",
+         "ranges": [
+          {
+           "startIndex": 24,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\treq, _ := http.NewRequestWithContext(ctx, \"GET\", \"https://dummy.tld/\", nil)",
+         "matchingRanges": {
+          "lineNumber": "2795"
+         },
+         "lineNumber": "2795",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 43,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 50,
+            "length": 20
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tctx, cancel := context.WithCancel(t.Context())",
+         "matchingRanges": {
+          "lineNumber": "3690",
+          "columnRanges": [
+           {
+            "startIndex": 24,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "3690",
+         "ranges": [
+          {
+           "startIndex": 24,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\tvar shutdownErr error",
+         "matchingRanges": {
+          "lineNumber": "3691"
+         },
+         "lineNumber": "3691",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tctx, cancel := context.WithCancel(context.Background())",
+         "matchingRanges": {
+          "lineNumber": "4455",
+          "columnRanges": [
+           {
+            "startIndex": 24,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "4455",
+         "ranges": [
+          {
+           "startIndex": 24,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\treq, _ := http.NewRequestWithContext(ctx, \"PUT\", \"https://dummy.tld/\", nil)",
+         "matchingRanges": {
+          "lineNumber": "4456"
+         },
+         "lineNumber": "4456",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 43,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 50,
+            "length": 20
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 8
+    },
+    "resultToken": "CC4SAggBOJz4jcOhs8C-SkAASC4"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/vendor/golang.org/x/tools/go/analysis/passes/modernize/testingcontext.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// The testingContext pass replaces calls to context.WithCancel from within",
+         "matchingRanges": {
+          "lineNumber": "39",
+          "columnRanges": [
+           {
+            "startIndex": 53,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "39",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 75
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 53,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "// tests to a use of testing.{T,B,F}.Context(), added in Go 1.24.",
+         "matchingRanges": {
+          "lineNumber": "40"
+         },
+         "lineNumber": "40",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 65
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "//",
+         "matchingRanges": {
+          "lineNumber": "43"
+         },
+         "lineNumber": "43",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "//\tctx, cancel := context.WithCancel(context.Background()) // or context.TODO",
+         "matchingRanges": {
+          "lineNumber": "44",
+          "columnRanges": [
+           {
+            "startIndex": 26,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "44",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 77
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 26,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "//\tdefer cancel()",
+         "matchingRanges": {
+          "lineNumber": "45"
+         },
+         "lineNumber": "45",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 17
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\tcontextWithCancel = index.Object(\"context\", \"WithCancel\")",
+         "matchingRanges": {
+          "lineNumber": "62",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 10
+           },
+           {
+            "startIndex": 47,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "62",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 35,
+            "length": 9
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 46,
+            "length": 12
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 10
+          },
+          {
+           "startIndex": 47,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t)",
+         "matchingRanges": {
+          "lineNumber": "63"
+         },
+         "lineNumber": "63"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\tcall := cur.Node().(*ast.CallExpr)",
+         "matchingRanges": {
+          "lineNumber": "67"
+         },
+         "lineNumber": "67"
+        },
+        {
+         "lineText": "\t\t// Have: context.WithCancel(...)",
+         "matchingRanges": {
+          "lineNumber": "68",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "68",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 32
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "69"
+         },
+         "lineNumber": "69"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 12
+    },
+    "resultToken": "CC8SAggBOP7KlN-Cn-CLgQFAAEgv"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/vendor/golang.org/x/tools/go/analysis/passes/unusedresult/unusedresult.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tfuncs = stringSetFlag{",
+         "matchingRanges": {
+          "lineNumber": "62"
+         },
+         "lineNumber": "62"
+        },
+        {
+         "lineText": "\t\t\"context.WithCancel\":      true,",
+         "matchingRanges": {
+          "lineNumber": "63",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "63",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 20
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\"context.WithDeadline\":    true,",
+         "matchingRanges": {
+          "lineNumber": "64"
+         },
+         "lineNumber": "64",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 22
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CDASAggBOPqKja_c-JGNJkAASDA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/dnsclient_unix_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tfor _, tt := range dnsTransportFallbackTests {",
+         "matchingRanges": {
+          "lineNumber": "81"
+         },
+         "lineNumber": "81",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 14,
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tctx, cancel := context.WithCancel(context.Background())",
+         "matchingRanges": {
+          "lineNumber": "82",
+          "columnRanges": [
+           {
+            "startIndex": 25,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "82",
+         "ranges": [
+          {
+           "startIndex": 25,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tdefer cancel()",
+         "matchingRanges": {
+          "lineNumber": "83"
+         },
+         "lineNumber": "83",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tfor _, tt := range dnsTransportFallbackTests {",
+         "matchingRanges": {
+          "lineNumber": "127"
+         },
+         "lineNumber": "127",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 14,
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tctx, cancel := context.WithCancel(context.Background())",
+         "matchingRanges": {
+          "lineNumber": "128",
+          "columnRanges": [
+           {
+            "startIndex": 25,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "128",
+         "ranges": [
+          {
+           "startIndex": 25,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tdefer cancel()",
+         "matchingRanges": {
+          "lineNumber": "129"
+         },
+         "lineNumber": "129",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tfor _, tt := range specialDomainNameTests {",
+         "matchingRanges": {
+          "lineNumber": "192"
+         },
+         "lineNumber": "192",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 14,
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tctx, cancel := context.WithCancel(context.Background())",
+         "matchingRanges": {
+          "lineNumber": "193",
+          "columnRanges": [
+           {
+            "startIndex": 25,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "193",
+         "ranges": [
+          {
+           "startIndex": 25,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tdefer cancel()",
+         "matchingRanges": {
+          "lineNumber": "194"
+         },
+         "lineNumber": "194",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 6
+    },
+    "resultToken": "CDESAggBOKT785mUxva6vQFAAEgx"
+   }
+  ],
+  "estimatedResultCount": "87",
+  "nextPageToken": "CJrA+rfNvvHiBQj6uaWfgfbw3QkIkvae+qySnPoOCNC+q7q4isS+EAiO9NP1teH1vRMIlLqCuNfO4q0iCLru9f3YssntIgj23eXNstqbvCQI+oqNr9z4kY0mCLbO5dmR6KrzKgjcraTH58zs5jAIuNSr7sXiwr8yCP6766a9zOm6NgjWmOCzkbHui0IIqrDQwN+Bgv1ICJz4jcOhs8C+SgjK8PKr+erl/UwIsPi68Ky8/e5UCIK2tauQy4vGVwi6w+jHg/ee82IIsNHO/v+kp4dtCLqb2Mrhzs/0cAii2cTN1Y/cjX8I/sqU34Kf4IuBAQjqrOOuobHt6YgBCPqyk6GctMGljwEI0tXMuKvi0YOUAQiy7eysppW2/ZQBCMTxprDKr6f5nwEIgKiu6OHUjOWgAQiMtPyVm87m7qABCPbupZuhidjlowEIwL6O1oPlu/ulAQj4+tixrou++qgBCLaXocParJPxrQEIyIjE/9zulsi3AQiCj9fnm/TzpLkBCKT785mUxva6vQEInpSxhbjKp+LCAQj+9si15fj0tsQBCIK2saCY4qrGxgEIvt3VtsCs9KDPAQiItdvMp/rMh9ABCJL6jbiv2+rd4wEIhouHlfGgsI3nAQiW6NWiwPK3susBCOq/5peA5/zF7wEI0NPb3Nuh5crvAQi4yZiB86PLt/wBCIDXlp335+Ws/QE=",
+  "exhaustive": true,
+  "requestToken": "CgpXaXRoQ2FuY2VsEh0oIGdpdDpnby9nb0BtYXN0ZXIgY2FzZTp5ZXMgKRoLCJW6qNEGELbDqUUgDCoAMgBIAQ"
+ }
+}

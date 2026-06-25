@@ -1,0 +1,8432 @@
+{
+ "query": "timeout",
+ "oss_project": "go",
+ "repo_name": "go",
+ "page_size": 50,
+ "fetched_at": "2026-06-11T02:31:39Z",
+ "response": {
+  "searchResults": [
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/os/timeout_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// There is a very similar copy of this in net/timeout_test.go.",
+         "matchingRanges": {
+          "lineNumber": "67",
+          "columnRanges": [
+           {
+            "startIndex": 47,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "67",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 63
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 47,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "func TestReadTimeout(t *testing.T) {",
+         "matchingRanges": {
+          "lineNumber": "68",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "68",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tt.Parallel()",
+         "matchingRanges": {
+          "lineNumber": "69"
+         },
+         "lineNumber": "69"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// There is a very similar copy of this in net/timeout_test.go.",
+         "matchingRanges": {
+          "lineNumber": "166",
+          "columnRanges": [
+           {
+            "startIndex": 47,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "166",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 63
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 47,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "func TestWriteTimeout(t *testing.T) {",
+         "matchingRanges": {
+          "lineNumber": "167",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "167",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tt.Parallel()",
+         "matchingRanges": {
+          "lineNumber": "168"
+         },
+         "lineNumber": "168"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// actual duration with a timeout shorter than that duration.",
+         "matchingRanges": {
+          "lineNumber": "293",
+          "columnRanges": [
+           {
+            "startIndex": 26,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "293",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 61
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 26,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "func nextTimeout(actual time.Duration) (next time.Duration, ok bool) {",
+         "matchingRanges": {
+          "lineNumber": "294",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "294",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tif actual \u003e= maxDynamicTimeout {",
+         "matchingRanges": {
+          "lineNumber": "295"
+         },
+         "lineNumber": "295",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 39
+    },
+    "resultToken": "CAASBAgBIAE4pLyxtsGdmv6OAUAASAA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/timeout_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "func TestDialTimeout(t *testing.T) {",
+         "matchingRanges": {
+          "lineNumber": "50",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "50",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tswitch runtime.GOOS {",
+         "matchingRanges": {
+          "lineNumber": "51"
+         },
+         "lineNumber": "51",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func TestAcceptTimeout(t *testing.T) {",
+         "matchingRanges": {
+          "lineNumber": "169",
+          "columnRanges": [
+           {
+            "startIndex": 15,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "169",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 15,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tt.Parallel()",
+         "matchingRanges": {
+          "lineNumber": "170"
+         },
+         "lineNumber": "170"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// There is a very similar copy of this in os/timeout_test.go.",
+         "matchingRanges": {
+          "lineNumber": "332"
+         },
+         "lineNumber": "332",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 62
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "func TestReadTimeout(t *testing.T) {",
+         "matchingRanges": {
+          "lineNumber": "333",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "333",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\thandler := func(ls *localServer, ln Listener) {",
+         "matchingRanges": {
+          "lineNumber": "334"
+         },
+         "lineNumber": "334",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// actual duration with a timeout shorter than that duration.",
+         "matchingRanges": {
+          "lineNumber": "723"
+         },
+         "lineNumber": "723",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 61
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "func nextTimeout(actual time.Duration) (next time.Duration, ok bool) {",
+         "matchingRanges": {
+          "lineNumber": "724",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "724",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tif actual \u003e= maxDynamicTimeout {",
+         "matchingRanges": {
+          "lineNumber": "725"
+         },
+         "lineNumber": "725",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 53
+    },
+    "resultToken": "CAESBAgBIAE4ts7l2ZHoqvMqQABIAQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/testdata/testgoroutineleakprofile/commonpatterns.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tregister(\"NCastLeak\", NCastLeak)",
+         "matchingRanges": {
+          "lineNumber": "30"
+         },
+         "lineNumber": "30",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 10,
+            "length": 11
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tregister(\"Timeout\", Timeout)",
+         "matchingRanges": {
+          "lineNumber": "31",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 7
+           },
+           {
+            "startIndex": 21,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "31",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 10,
+            "length": 9
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 7
+          },
+          {
+           "startIndex": 21,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "}",
+         "matchingRanges": {
+          "lineNumber": "32"
+         },
+         "lineNumber": "32"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// the sender goroutine to leak.",
+         "matchingRanges": {
+          "lineNumber": "248"
+         },
+         "lineNumber": "248",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 32
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "func timeout(ctx context.Context) {",
+         "matchingRanges": {
+          "lineNumber": "249",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "249",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tch := make(chan any)",
+         "matchingRanges": {
+          "lineNumber": "250"
+         },
+         "lineNumber": "250",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func Timeout() {",
+         "matchingRanges": {
+          "lineNumber": "264",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "264",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tprof := pprof.Lookup(\"goroutineleak\")",
+         "matchingRanges": {
+          "lineNumber": "265"
+         },
+         "lineNumber": "265",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 22,
+            "length": 15
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 4
+    },
+    "resultToken": "CAISBAgBIAE4mrLZw-ns4f_kAUAASAI"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/net.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\terror",
+         "matchingRanges": {
+          "lineNumber": "426"
+         },
+         "lineNumber": "426"
+        },
+        {
+         "lineText": "\tTimeout() bool // Is the error a timeout?",
+         "matchingRanges": {
+          "lineNumber": "427",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 7
+           },
+           {
+            "startIndex": 34,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "427",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 16,
+            "length": 26
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 7
+          },
+          {
+           "startIndex": 34,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "428"
+         },
+         "lineNumber": "428"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "type timeout interface {",
+         "matchingRanges": {
+          "lineNumber": "535",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "535",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 13,
+            "length": 9
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tTimeout() bool",
+         "matchingRanges": {
+          "lineNumber": "536",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "536",
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "}",
+         "matchingRanges": {
+          "lineNumber": "537"
+         },
+         "lineNumber": "537"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func (e *OpError) Timeout() bool {",
+         "matchingRanges": {
+          "lineNumber": "539",
+          "columnRanges": [
+           {
+            "startIndex": 18,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "539",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 18,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tif ne, ok := e.Err.(*os.SyscallError); ok {",
+         "matchingRanges": {
+          "lineNumber": "540"
+         },
+         "lineNumber": "540",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func (e *ParseError) Timeout() bool   { return false }",
+         "matchingRanges": {
+          "lineNumber": "579",
+          "columnRanges": [
+           {
+            "startIndex": 21,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "579",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 40,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 21,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "func (e *ParseError) Temporary() bool { return false }",
+         "matchingRanges": {
+          "lineNumber": "580"
+         },
+         "lineNumber": "580",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 40,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 35
+    },
+    "resultToken": "CAMSBAgBIAE42KDulaPc3bD7AUAASAM"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/os/error.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "type timeout interface {",
+         "matchingRanges": {
+          "lineNumber": "41",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "41",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 13,
+            "length": 9
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tTimeout() bool",
+         "matchingRanges": {
+          "lineNumber": "42",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "42",
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "}",
+         "matchingRanges": {
+          "lineNumber": "43"
+         },
+         "lineNumber": "43"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// Timeout reports whether this error represents a timeout.",
+         "matchingRanges": {
+          "lineNumber": "58",
+          "columnRanges": [
+           {
+            "startIndex": 3,
+            "length": 7
+           },
+           {
+            "startIndex": 51,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "58",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 59
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 3,
+           "length": 7
+          },
+          {
+           "startIndex": 51,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "func (e *SyscallError) Timeout() bool {",
+         "matchingRanges": {
+          "lineNumber": "59",
+          "columnRanges": [
+           {
+            "startIndex": 23,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "59",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 23,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tt, ok := e.Err.(timeout)",
+         "matchingRanges": {
+          "lineNumber": "60",
+          "columnRanges": [
+           {
+            "startIndex": 17,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "60",
+         "ranges": [
+          {
+           "startIndex": 17,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\treturn ok \u0026\u0026 t.Timeout()",
+         "matchingRanges": {
+          "lineNumber": "61",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "61",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 7
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func IsTimeout(err error) bool {",
+         "matchingRanges": {
+          "lineNumber": "112",
+          "columnRanges": [
+           {
+            "startIndex": 7,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "112",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 7,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tterr, ok := underlyingError(err).(timeout)",
+         "matchingRanges": {
+          "lineNumber": "113",
+          "columnRanges": [
+           {
+            "startIndex": 35,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "113",
+         "ranges": [
+          {
+           "startIndex": 35,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\treturn ok \u0026\u0026 terr.Timeout()",
+         "matchingRanges": {
+          "lineNumber": "114",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "114",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 7
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 14
+    },
+    "resultToken": "CAQSBAgBIAE45q3s8ZTY-LMaQABIBA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/internal/test2json/testdata/timeout.json",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "{\"Action\":\"start\"}",
+         "matchingRanges": {
+          "lineNumber": "1"
+         },
+         "lineNumber": "1",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 1,
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 10,
+            "length": 7
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "{\"Action\":\"run\",\"Test\":\"Test\"}",
+         "matchingRanges": {
+          "lineNumber": "2"
+         },
+         "lineNumber": "2",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 1,
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 10,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 16,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 23,
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "{\"Action\":\"output\",\"Test\":\"Test\",\"Output\":\"=== RUN   Test\\n\",\"OutputType\":\"frame\"}",
+         "matchingRanges": {
+          "lineNumber": "3"
+         },
+         "lineNumber": "3",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 1,
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 10,
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 19,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 26,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 33,
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 42,
+            "length": 18
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 61,
+            "length": 12
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 74,
+            "length": 7
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    },
+    "resultToken": "CAUSADio8_iJ8dTJn7wBQABIBQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/testdata/testgoroutineleakprofile/goker/grpc3017.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tmu            sync.Mutex // L1",
+         "matchingRanges": {
+          "lineNumber": "34"
+         },
+         "lineNumber": "34",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 26,
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\ttimeout       time.Duration",
+         "matchingRanges": {
+          "lineNumber": "35",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "35",
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tsubConnCache  map[Address_grpc3017]*subConnCacheEntry_grpc3017",
+         "matchingRanges": {
+          "lineNumber": "36"
+         },
+         "lineNumber": "36",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 15,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\ttimer := time.AfterFunc(ccc.timeout, func() { // G3",
+         "matchingRanges": {
+          "lineNumber": "77",
+          "columnRanges": [
+           {
+            "startIndex": 29,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "77",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 38,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 47,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 29,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\t\truntime.Gosched()",
+         "matchingRanges": {
+          "lineNumber": "78"
+         },
+         "lineNumber": "78"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t\tccc := \u0026lbCacheClientConn_grpc3017{",
+         "matchingRanges": {
+          "lineNumber": "106"
+         },
+         "lineNumber": "106"
+        },
+        {
+         "lineText": "\t\t\t\ttimeout:       time.Nanosecond,",
+         "matchingRanges": {
+          "lineNumber": "107",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "107",
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t\tsubConnCache:  make(map[Address_grpc3017]*subConnCacheEntry_grpc3017),",
+         "matchingRanges": {
+          "lineNumber": "108"
+         },
+         "lineNumber": "108",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 24,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CAYSBAgBIAE4ltTGjeClsqroAUAASAY"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/os/timeout_unix_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// Copyright 2025 The Go Authors. All rights reserved.",
+         "matchingRanges": {
+          "lineNumber": "1"
+         },
+         "lineNumber": "1",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 54
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "// Use of this source code is governed by a BSD-style",
+         "matchingRanges": {
+          "lineNumber": "2"
+         },
+         "lineNumber": "2",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 53
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "// license that can be found in the LICENSE file.",
+         "matchingRanges": {
+          "lineNumber": "3"
+         },
+         "lineNumber": "3",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 49
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    },
+    "resultToken": "CAcSADiyvayf7tHllZQBQABIBw"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/os_wasip1.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tid        clockid",
+         "matchingRanges": {
+          "lineNumber": "126"
+         },
+         "lineNumber": "126"
+        },
+        {
+         "lineText": "\ttimeout   timestamp",
+         "matchingRanges": {
+          "lineNumber": "127",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "127",
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tprecision timestamp",
+         "matchingRanges": {
+          "lineNumber": "128"
+         },
+         "lineNumber": "128"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tsubscription.id = clockMonotonic",
+         "matchingRanges": {
+          "lineNumber": "182"
+         },
+         "lineNumber": "182"
+        },
+        {
+         "lineText": "\tsubscription.timeout = timestamp(usec) * 1e3",
+         "matchingRanges": {
+          "lineNumber": "183",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "183",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 42,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tsubscription.precision = 1e3",
+         "matchingRanges": {
+          "lineNumber": "184"
+         },
+         "lineNumber": "184",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 26,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAgSBAgBIAE4-L3di-mMwvNVQABICA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/os/timeout_windows_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// Copyright 2025 The Go Authors. All rights reserved.",
+         "matchingRanges": {
+          "lineNumber": "1"
+         },
+         "lineNumber": "1",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 54
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "// Use of this source code is governed by a BSD-style",
+         "matchingRanges": {
+          "lineNumber": "2"
+         },
+         "lineNumber": "2",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 53
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "// license that can be found in the LICENSE file.",
+         "matchingRanges": {
+          "lineNumber": "3"
+         },
+         "lineNumber": "3",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 49
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    },
+    "resultToken": "CAkSADiIquWIsbCUy5kBQABICQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/internal/test2json/testdata/timeout.test",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "=== RUN   Test",
+         "matchingRanges": {
+          "lineNumber": "1"
+         },
+         "lineNumber": "1"
+        },
+        {
+         "lineText": "panic: test timed out after 1s",
+         "matchingRanges": {
+          "lineNumber": "2"
+         },
+         "lineNumber": "2"
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "3"
+         },
+         "lineNumber": "3"
+        }
+       ]
+      }
+     ]
+    },
+    "resultToken": "CAoSADjMtOGsla-yquABQABICg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/testing/testing.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\ttraceFile            *string",
+         "matchingRanges": {
+          "lineNumber": "508"
+         },
+         "lineNumber": "508"
+        },
+        {
+         "lineText": "\ttimeout              *time.Duration",
+         "matchingRanges": {
+          "lineNumber": "509",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "509",
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tcpuListStr           *string",
+         "matchingRanges": {
+          "lineNumber": "510"
+         },
+         "lineNumber": "510"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func removeAll(path string) error {",
+         "matchingRanges": {
+          "lineNumber": "1649"
+         },
+         "lineNumber": "1649",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tconst arbitraryTimeout = 2 * time.Second",
+         "matchingRanges": {
+          "lineNumber": "1650",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "1650",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 26,
+            "length": 1
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tvar (",
+         "matchingRanges": {
+          "lineNumber": "1651"
+         },
+         "lineNumber": "1651",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t\tstart = time.Now()",
+         "matchingRanges": {
+          "lineNumber": "1661"
+         },
+         "lineNumber": "1661"
+        },
+        {
+         "lineText": "\t\t} else if d := time.Since(start) + nextSleep; d \u003e= arbitraryTimeout {",
+         "matchingRanges": {
+          "lineNumber": "1662",
+          "columnRanges": [
+           {
+            "startIndex": 62,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "1662",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 62,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\treturn err",
+         "matchingRanges": {
+          "lineNumber": "1663"
+         },
+         "lineNumber": "1663",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 3,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 15
+    },
+    "resultToken": "CAsSBAgBIAE4go_X55v086S5AUAASAs"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/go/testdata/script/test_write_profiles_on_timeout.txt",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "! go test -cpuprofile cpu.pprof -memprofile mem.pprof -timeout 1ms",
+         "matchingRanges": {
+          "lineNumber": "5",
+          "columnRanges": [
+           {
+            "startIndex": 55,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "5",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 63,
+            "length": 1
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 55,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "stdout '^panic: test timed out'",
+         "matchingRanges": {
+          "lineNumber": "6"
+         },
+         "lineNumber": "6",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 7,
+            "length": 24
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "go 1.16",
+         "matchingRanges": {
+          "lineNumber": "13"
+         },
+         "lineNumber": "13",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 3,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "-- timeout_test.go --",
+         "matchingRanges": {
+          "lineNumber": "14",
+          "columnRanges": [
+           {
+            "startIndex": 3,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "14",
+         "ranges": [
+          {
+           "startIndex": 3,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "package timeouttest_test",
+         "matchingRanges": {
+          "lineNumber": "15",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "15",
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "16"
+         },
+         "lineNumber": "16"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CAwSAggBOPiw2vSQju3XDUAASAw"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/go/testdata/script/test_timeout.txt",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "# If no timeout is set explicitly, 'go test' should set",
+         "matchingRanges": {
+          "lineNumber": "5",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "5",
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "# -test.timeout to its internal deadline.",
+         "matchingRanges": {
+          "lineNumber": "6",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "6",
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "go test -v . --",
+         "matchingRanges": {
+          "lineNumber": "7"
+         },
+         "lineNumber": "7"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "# An explicit -timeout argument should be propagated to -test.timeout.",
+         "matchingRanges": {
+          "lineNumber": "10",
+          "columnRanges": [
+           {
+            "startIndex": 15,
+            "length": 7
+           },
+           {
+            "startIndex": 62,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "10",
+         "ranges": [
+          {
+           "startIndex": 15,
+           "length": 7
+          },
+          {
+           "startIndex": 62,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "go test -v -timeout 30m . --",
+         "matchingRanges": {
+          "lineNumber": "11",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "11",
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "stdout '30m0s'",
+         "matchingRanges": {
+          "lineNumber": "12"
+         },
+         "lineNumber": "12"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": ")",
+         "matchingRanges": {
+          "lineNumber": "20"
+         },
+         "lineNumber": "20"
+        },
+        {
+         "lineText": "func TestTimeout(t *testing.T) {",
+         "matchingRanges": {
+          "lineNumber": "21",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "21",
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tfmt.Println(flag.Lookup(\"test.timeout\").Value.String())",
+         "matchingRanges": {
+          "lineNumber": "22",
+          "columnRanges": [
+           {
+            "startIndex": 31,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "22",
+         "ranges": [
+          {
+           "startIndex": 31,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "}",
+         "matchingRanges": {
+          "lineNumber": "23"
+         },
+         "lineNumber": "23"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 7
+    },
+    "resultToken": "CA0SAggBOLDc1r-_teT7yAFAAEgN"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/go/testdata/script/test_json_timeout.txt",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "! go test -json -timeout=1ms",
+         "matchingRanges": {
+          "lineNumber": "1",
+          "columnRanges": [
+           {
+            "startIndex": 17,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "1",
+         "ranges": [
+          {
+           "startIndex": 17,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "2"
+         },
+         "lineNumber": "2"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CA4SAggBOLCjmcSX2t6BG0AASA4"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/lock_futex.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "func checkTimeouts() {}",
+         "matchingRanges": {
+          "lineNumber": "133",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "133",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "134"
+         },
+         "lineNumber": "134"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CA8SBAgBIAE46LuG1aLN2PRrQABIDw"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/go/doc/testdata/testing.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tcpuProfile     = flag.String(\"test.cpuprofile\", \"\", \"write a cpu profile to the named file during execution\")",
+         "matchingRanges": {
+          "lineNumber": "65"
+         },
+         "lineNumber": "65",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 30,
+            "length": 17
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 49,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 53,
+            "length": 56
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\ttimeout        = flag.Duration(\"test.timeout\", 0, \"if positive, sets an aggregate time limit for all tests\")",
+         "matchingRanges": {
+          "lineNumber": "66",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 7
+           },
+           {
+            "startIndex": 38,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "66",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 32,
+            "length": 14
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 48,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 51,
+            "length": 57
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 7
+          },
+          {
+           "startIndex": 38,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tcpuListStr     = flag.String(\"test.cpu\", \"\", \"comma-separated list of number of CPUs to use for each test\")",
+         "matchingRanges": {
+          "lineNumber": "67"
+         },
+         "lineNumber": "67",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 30,
+            "length": 10
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 42,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 46,
+            "length": 61
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func startAlarm() {",
+         "matchingRanges": {
+          "lineNumber": "373"
+         },
+         "lineNumber": "373",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tif *timeout \u003e 0 {",
+         "matchingRanges": {
+          "lineNumber": "374",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "374",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 15,
+            "length": 1
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\t\ttimer = time.AfterFunc(*timeout, alarm)",
+         "matchingRanges": {
+          "lineNumber": "375",
+          "columnRanges": [
+           {
+            "startIndex": 26,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "375",
+         "ranges": [
+          {
+           "startIndex": 26,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\t}",
+         "matchingRanges": {
+          "lineNumber": "376"
+         },
+         "lineNumber": "376"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func stopAlarm() {",
+         "matchingRanges": {
+          "lineNumber": "380"
+         },
+         "lineNumber": "380",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tif *timeout \u003e 0 {",
+         "matchingRanges": {
+          "lineNumber": "381",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "381",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 15,
+            "length": 1
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\t\ttimer.Stop()",
+         "matchingRanges": {
+          "lineNumber": "382"
+         },
+         "lineNumber": "382"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 5
+    },
+    "resultToken": "CBASBAgBIAE44qa0kYityvCgAUAASBA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/go/testdata/script/test_benchmark_timeout.txt",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "go test -bench . -timeout=750ms timeoutbench_test.go",
+         "matchingRanges": {
+          "lineNumber": "4",
+          "columnRanges": [
+           {
+            "startIndex": 18,
+            "length": 7
+           },
+           {
+            "startIndex": 32,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "4",
+         "ranges": [
+          {
+           "startIndex": 18,
+           "length": 7
+          },
+          {
+           "startIndex": 32,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "stdout ok",
+         "matchingRanges": {
+          "lineNumber": "5"
+         },
+         "lineNumber": "5"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "-- timeoutbench_test.go --",
+         "matchingRanges": {
+          "lineNumber": "8",
+          "columnRanges": [
+           {
+            "startIndex": 3,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "8",
+         "ranges": [
+          {
+           "startIndex": 3,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "package timeoutbench_test",
+         "matchingRanges": {
+          "lineNumber": "9",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "9",
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "10"
+         },
+         "lineNumber": "10"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CBESAggBOMrGz-esk_SrKkAASBE"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/io/fs/fs.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// Timeout reports whether this error represents a timeout.",
+         "matchingRanges": {
+          "lineNumber": "274",
+          "columnRanges": [
+           {
+            "startIndex": 3,
+            "length": 7
+           },
+           {
+            "startIndex": 51,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "274",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 59
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 3,
+           "length": 7
+          },
+          {
+           "startIndex": 51,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "func (e *PathError) Timeout() bool {",
+         "matchingRanges": {
+          "lineNumber": "275",
+          "columnRanges": [
+           {
+            "startIndex": 20,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "275",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 20,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tt, ok := e.Err.(interface{ Timeout() bool })",
+         "matchingRanges": {
+          "lineNumber": "276",
+          "columnRanges": [
+           {
+            "startIndex": 28,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "276",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 17,
+            "length": 9
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 28,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\treturn ok \u0026\u0026 t.Timeout()",
+         "matchingRanges": {
+          "lineNumber": "277",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "277",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "}",
+         "matchingRanges": {
+          "lineNumber": "278"
+         },
+         "lineNumber": "278"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 4
+    },
+    "resultToken": "CBISBAgBIAE4oMTAxOD-1JHlAUAASBI"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/runtime-lldb_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "TIMEOUT_SECS = 5",
+         "matchingRanges": {
+          "lineNumber": "76",
+          "columnRanges": [
+           {
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "76",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "length": 16
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "length": 16
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "length": 16
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "length": 7
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "77"
+         },
+         "lineNumber": "77",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {}
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {}
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {}
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "      else:",
+         "matchingRanges": {
+          "lineNumber": "99"
+         },
+         "lineNumber": "99",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "length": 11
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "length": 11
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "length": 11
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "        print \"Timeout launching\"",
+         "matchingRanges": {
+          "lineNumber": "100",
+          "columnRanges": [
+           {
+            "startIndex": 15,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "100",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "length": 33
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "length": 33
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "length": 33
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 15,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "      break",
+         "matchingRanges": {
+          "lineNumber": "101"
+         },
+         "lineNumber": "101",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "length": 11
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "length": 11
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "length": 11
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tif string(got) != expectedLldbOutput {",
+         "matchingRanges": {
+          "lineNumber": "176"
+         },
+         "lineNumber": "176",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tif strings.Contains(string(got), \"Timeout launching\") {",
+         "matchingRanges": {
+          "lineNumber": "177",
+          "columnRanges": [
+           {
+            "startIndex": 36,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "177",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 35,
+            "length": 19
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 36,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\tt.Skip(\"Timeout launching\")",
+         "matchingRanges": {
+          "lineNumber": "178",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "178",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 10,
+            "length": 19
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t}",
+         "matchingRanges": {
+          "lineNumber": "179"
+         },
+         "lineNumber": "179"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 5
+    },
+    "resultToken": "CBMSAggBOOaY4uqHzP_2_AFAAEgT"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/goroutineleakprofile_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t),",
+         "matchingRanges": {
+          "lineNumber": "235"
+         },
+         "lineNumber": "235"
+        },
+        {
+         "lineText": "\t\tmakeTest(\"Timeout\",",
+         "matchingRanges": {
+          "lineNumber": "236",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "236",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 9
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t// (vsaioc): Timeout is *theoretically* flaky, but the",
+         "matchingRanges": {
+          "lineNumber": "237",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "237",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 3,
+            "length": 54
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t// pseudo-random choice for select case branches makes it",
+         "matchingRanges": {
+          "lineNumber": "238"
+         },
+         "lineNumber": "238",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 3,
+            "length": 57
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t// practically impossible for it to fail.",
+         "matchingRanges": {
+          "lineNumber": "239"
+         },
+         "lineNumber": "239",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 3,
+            "length": 41
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t`timeout\\.func1\\(.* \\[chan send\\]`,",
+         "matchingRanges": {
+          "lineNumber": "240",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "240",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 3,
+            "length": 34
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t),",
+         "matchingRanges": {
+          "lineNumber": "241"
+         },
+         "lineNumber": "241"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CBQSAggBOJSPvaCSgfbotQFAAEgU"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/dist/test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\ttestNames    map[string]bool",
+         "matchingRanges": {
+          "lineNumber": "80"
+         },
+         "lineNumber": "80",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 14,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\ttimeoutScale int",
+         "matchingRanges": {
+          "lineNumber": "81",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "81",
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "82"
+         },
+         "lineNumber": "82"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "type goTest struct {",
+         "matchingRanges": {
+          "lineNumber": "316"
+         },
+         "lineNumber": "316",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\ttimeout  time.Duration // If non-zero, override timeout",
+         "matchingRanges": {
+          "lineNumber": "317",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 7
+           },
+           {
+            "startIndex": 49,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "317",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 24,
+            "length": 32
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 7
+          },
+          {
+           "startIndex": 49,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tshort    bool          // If true, force -short",
+         "matchingRanges": {
+          "lineNumber": "318"
+         },
+         "lineNumber": "318",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 24,
+            "length": 24
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\trun = append(run, \"-timeout=\"+d.String())",
+         "matchingRanges": {
+          "lineNumber": "431",
+          "columnRanges": [
+           {
+            "startIndex": 22,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "431",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 11
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 22,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\t} else if t.timeoutScale != 1 {",
+         "matchingRanges": {
+          "lineNumber": "432",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "432",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 3,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 29,
+            "length": 1
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tconst goTestDefaultTimeout = 10 * time.Minute // Default value of go test -timeout flag.",
+         "matchingRanges": {
+          "lineNumber": "433",
+          "columnRanges": [
+           {
+            "startIndex": 21,
+            "length": 7
+           },
+           {
+            "startIndex": 77,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "433",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 31,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 48,
+            "length": 42
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 21,
+           "length": 7
+          },
+          {
+           "startIndex": 77,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\t\trun = append(run, \"-timeout=\"+(goTestDefaultTimeout*time.Duration(t.timeoutScale)).String())",
+         "matchingRanges": {
+          "lineNumber": "434",
+          "columnRanges": [
+           {
+            "startIndex": 22,
+            "length": 7
+           },
+           {
+            "startIndex": 46,
+            "length": 7
+           },
+           {
+            "startIndex": 70,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "434",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 11
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 22,
+           "length": 7
+          },
+          {
+           "startIndex": 46,
+           "length": 7
+          },
+          {
+           "startIndex": 70,
+           "length": 7
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 30
+    },
+    "resultToken": "CBUSBAgBIAE4ruHtptrz24OOAUAASBU"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/dnsconfig.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tndots         int           // number of dots in name to trigger absolute lookup",
+         "matchingRanges": {
+          "lineNumber": "39"
+         },
+         "lineNumber": "39",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 29,
+            "length": 52
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\ttimeout       time.Duration // wait before giving up on a query, including retries",
+         "matchingRanges": {
+          "lineNumber": "40",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "40",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 29,
+            "length": 54
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tattempts      int           // lost packets before giving up on server",
+         "matchingRanges": {
+          "lineNumber": "41"
+         },
+         "lineNumber": "41",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 29,
+            "length": 42
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBYSBAgBIAE4lu37uq6Bi8tLQABIFg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/url/url.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "func (e *Error) Timeout() bool {",
+         "matchingRanges": {
+          "lineNumber": "41",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "41",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tt, ok := e.Err.(interface {",
+         "matchingRanges": {
+          "lineNumber": "42"
+         },
+         "lineNumber": "42",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 17,
+            "length": 9
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tTimeout() bool",
+         "matchingRanges": {
+          "lineNumber": "43",
+          "columnRanges": [
+           {
+            "startIndex": 2,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "43",
+         "ranges": [
+          {
+           "startIndex": 2,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\t})",
+         "matchingRanges": {
+          "lineNumber": "44"
+         },
+         "lineNumber": "44"
+        },
+        {
+         "lineText": "\treturn ok \u0026\u0026 t.Timeout()",
+         "matchingRanges": {
+          "lineNumber": "45",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "45",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "}",
+         "matchingRanges": {
+          "lineNumber": "46"
+         },
+         "lineNumber": "46"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CBcSBAgBIAE47PKUzrmxxcYNQABIFw"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/cgo_unix.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "func (eai addrinfoErrno) Temporary() bool { return eai == _C_EAI_AGAIN }",
+         "matchingRanges": {
+          "lineNumber": "36"
+         },
+         "lineNumber": "36",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 44,
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "func (eai addrinfoErrno) Timeout() bool   { return false }",
+         "matchingRanges": {
+          "lineNumber": "37",
+          "columnRanges": [
+           {
+            "startIndex": 25,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "37",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 44,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 25,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "38"
+         },
+         "lineNumber": "38"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBgSBAgBIAE4xv_s7ebs2MznAUAASBg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/lock_js.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "type timeoutEvent struct {",
+         "matchingRanges": {
+          "lineNumber": "178",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "178",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 18,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tid int32",
+         "matchingRanges": {
+          "lineNumber": "179"
+         },
+         "lineNumber": "179"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tdiff := x - idleTimeout.time",
+         "matchingRanges": {
+          "lineNumber": "190",
+          "columnRanges": [
+           {
+            "startIndex": 17,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "190",
+         "ranges": [
+          {
+           "startIndex": 17,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tif diff \u003c 0 {",
+         "matchingRanges": {
+          "lineNumber": "191"
+         },
+         "lineNumber": "191",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 1
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// The timeout event started by beforeIdle.",
+         "matchingRanges": {
+          "lineNumber": "206",
+          "columnRanges": [
+           {
+            "startIndex": 7,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "206",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 43
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 7,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "var idleTimeout *timeoutEvent",
+         "matchingRanges": {
+          "lineNumber": "207",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 7
+           },
+           {
+            "startIndex": 17,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "207",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 7
+          },
+          {
+           "startIndex": 17,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "208"
+         },
+         "lineNumber": "208"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// clearIdleTimeout clears our record of the timeout started by beforeIdle.",
+         "matchingRanges": {
+          "lineNumber": "259",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 7
+           },
+           {
+            "startIndex": 45,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "259",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 75
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 7
+          },
+          {
+           "startIndex": 45,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "func clearIdleTimeout() {",
+         "matchingRanges": {
+          "lineNumber": "260",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "260",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tidleTimeout.clear()",
+         "matchingRanges": {
+          "lineNumber": "261",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "261",
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 7
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 33
+    },
+    "resultToken": "CBkSBAgBIAE44LPIudWy2YsyQABIGQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/url/url_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "type timeoutError struct {",
+         "matchingRanges": {
+          "lineNumber": "1906",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "1906",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 18,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\ttimeout bool",
+         "matchingRanges": {
+          "lineNumber": "1907",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "1907",
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "}",
+         "matchingRanges": {
+          "lineNumber": "1908"
+         },
+         "lineNumber": "1908"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func (e *timeoutError) Error() string { return \"timeout error\" }",
+         "matchingRanges": {
+          "lineNumber": "1910",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 7
+           },
+           {
+            "startIndex": 48,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "1910",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 40,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 47,
+            "length": 15
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 7
+          },
+          {
+           "startIndex": 48,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "func (e *timeoutError) Timeout() bool { return e.timeout }",
+         "matchingRanges": {
+          "lineNumber": "1911",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 7
+           },
+           {
+            "startIndex": 23,
+            "length": 7
+           },
+           {
+            "startIndex": 49,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "1911",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 40,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 7
+          },
+          {
+           "startIndex": 23,
+           "length": 7
+          },
+          {
+           "startIndex": 49,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "1912"
+         },
+         "lineNumber": "1912"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "type timeoutTemporaryError struct {",
+         "matchingRanges": {
+          "lineNumber": "1920",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "1920",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 27,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\ttimeoutError",
+         "matchingRanges": {
+          "lineNumber": "1921",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "1921",
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\ttemporaryError",
+         "matchingRanges": {
+          "lineNumber": "1922"
+         },
+         "lineNumber": "1922"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 25
+    },
+    "resultToken": "CBoSBAgBIAE4tuyo5sCjrrGiAUAASBo"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/crypto/tls/tls.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "type timeoutError struct{}",
+         "matchingRanges": {
+          "lineNumber": "113",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "113",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 18,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "114"
+         },
+         "lineNumber": "114"
+        },
+        {
+         "lineText": "func (timeoutError) Error() string   { return \"tls: DialWithDialer timed out\" }",
+         "matchingRanges": {
+          "lineNumber": "115",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "115",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 39,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 46,
+            "length": 31
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "func (timeoutError) Timeout() bool   { return true }",
+         "matchingRanges": {
+          "lineNumber": "116",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 7
+           },
+           {
+            "startIndex": 20,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "116",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 39,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 7
+          },
+          {
+           "startIndex": 20,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "func (timeoutError) Temporary() bool { return true }",
+         "matchingRanges": {
+          "lineNumber": "117",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "117",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 39,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 7
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func dial(ctx context.Context, netDialer *net.Dialer, network, addr string, config *Config) (*Conn, error) {",
+         "matchingRanges": {
+          "lineNumber": "133"
+         },
+         "lineNumber": "133",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tif netDialer.Timeout != 0 {",
+         "matchingRanges": {
+          "lineNumber": "134",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "134",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 25,
+            "length": 1
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tvar cancel context.CancelFunc",
+         "matchingRanges": {
+          "lineNumber": "135"
+         },
+         "lineNumber": "135",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tctx, cancel = context.WithTimeout(ctx, netDialer.Timeout)",
+         "matchingRanges": {
+          "lineNumber": "136",
+          "columnRanges": [
+           {
+            "startIndex": 28,
+            "length": 7
+           },
+           {
+            "startIndex": 51,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "136",
+         "ranges": [
+          {
+           "startIndex": 28,
+           "length": 7
+          },
+          {
+           "startIndex": 51,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tdefer cancel()",
+         "matchingRanges": {
+          "lineNumber": "137"
+         },
+         "lineNumber": "137",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 7
+    },
+    "resultToken": "CBsSBAgBIAE41qqm9pq565aAAUAASBs"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/context/context.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "func (deadlineExceededError) Error() string   { return \"context deadline exceeded\" }",
+         "matchingRanges": {
+          "lineNumber": "176"
+         },
+         "lineNumber": "176",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 48,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 55,
+            "length": 27
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "func (deadlineExceededError) Timeout() bool   { return true }",
+         "matchingRanges": {
+          "lineNumber": "177",
+          "columnRanges": [
+           {
+            "startIndex": 29,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "177",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 48,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 29,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "func (deadlineExceededError) Temporary() bool { return true }",
+         "matchingRanges": {
+          "lineNumber": "178"
+         },
+         "lineNumber": "178",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 48,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "//\t}",
+         "matchingRanges": {
+          "lineNumber": "703"
+         },
+         "lineNumber": "703",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "func WithTimeout(parent Context, timeout time.Duration) (Context, CancelFunc) {",
+         "matchingRanges": {
+          "lineNumber": "704",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 7
+           },
+           {
+            "startIndex": 33,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "704",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 7
+          },
+          {
+           "startIndex": 33,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\treturn WithDeadline(parent, time.Now().Add(timeout))",
+         "matchingRanges": {
+          "lineNumber": "705",
+          "columnRanges": [
+           {
+            "startIndex": 44,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "705",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 44,
+           "length": 7
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// WithTimeoutCause behaves like [WithTimeout] but also sets the cause of the",
+         "matchingRanges": {
+          "lineNumber": "708",
+          "columnRanges": [
+           {
+            "startIndex": 7,
+            "length": 7
+           },
+           {
+            "startIndex": 38,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "708",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 77
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 7,
+           "length": 7
+          },
+          {
+           "startIndex": 38,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "// returned Context when the timeout expires. The returned [CancelFunc] does",
+         "matchingRanges": {
+          "lineNumber": "709",
+          "columnRanges": [
+           {
+            "startIndex": 29,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "709",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 76
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 29,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "// not set the cause.",
+         "matchingRanges": {
+          "lineNumber": "710"
+         },
+         "lineNumber": "710",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 21
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "func WithTimeoutCause(parent Context, timeout time.Duration, cause error) (Context, CancelFunc) {",
+         "matchingRanges": {
+          "lineNumber": "711",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 7
+           },
+           {
+            "startIndex": 38,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "711",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 7
+          },
+          {
+           "startIndex": 38,
+           "length": 7
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 15
+    },
+    "resultToken": "CBwSBAgBIAE4-rmln4H28N0JQABIHA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/crypto/tls/conn.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "func (e *permanentError) Unwrap() error   { return e.err }",
+         "matchingRanges": {
+          "lineNumber": "192"
+         },
+         "lineNumber": "192",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 44,
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "func (e *permanentError) Timeout() bool   { return e.err.Timeout() }",
+         "matchingRanges": {
+          "lineNumber": "193",
+          "columnRanges": [
+           {
+            "startIndex": 25,
+            "length": 7
+           },
+           {
+            "startIndex": 57,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "193",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 44,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 25,
+           "length": 7
+          },
+          {
+           "startIndex": 57,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "func (e *permanentError) Temporary() bool { return false }",
+         "matchingRanges": {
+          "lineNumber": "194"
+         },
+         "lineNumber": "194",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 44,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "//",
+         "matchingRanges": {
+          "lineNumber": "1490"
+         },
+         "lineNumber": "1490",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "// For control over canceling or setting a timeout on a handshake, use",
+         "matchingRanges": {
+          "lineNumber": "1491",
+          "columnRanges": [
+           {
+            "startIndex": 43,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "1491",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 70
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 43,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "// [Conn.HandshakeContext] or the [Dialer]'s DialContext method instead.",
+         "matchingRanges": {
+          "lineNumber": "1492"
+         },
+         "lineNumber": "1492",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 72
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CB0SBAgBIAE4kvqNuK_b6t3jAUAASB0"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/internal/fuzz/fuzz.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// Timeout is the amount of wall clock time to spend fuzzing after the corpus",
+         "matchingRanges": {
+          "lineNumber": "34",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "34",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 77
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\t// has loaded. If zero, there will be no time limit.",
+         "matchingRanges": {
+          "lineNumber": "35"
+         },
+         "lineNumber": "35",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 52
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tTimeout time.Duration",
+         "matchingRanges": {
+          "lineNumber": "36",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "36",
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "37"
+         },
+         "lineNumber": "37"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// not including starting or cleaning up.",
+         "matchingRanges": {
+          "lineNumber": "501"
+         },
+         "lineNumber": "501",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 41
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\ttimeout time.Duration",
+         "matchingRanges": {
+          "lineNumber": "502",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "502",
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "503"
+         },
+         "lineNumber": "503"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// A zero timeout means no limit.",
+         "matchingRanges": {
+          "lineNumber": "561",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "561",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 33
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\ttimeout time.Duration",
+         "matchingRanges": {
+          "lineNumber": "562",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "562",
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "563"
+         },
+         "lineNumber": "563"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 17
+    },
+    "resultToken": "CB4SBAgBIAE4sNHO_v-kp4dtQABIHg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/netpoll.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tpollErrClosing     = 1 // descriptor is closed",
+         "matchingRanges": {
+          "lineNumber": "46"
+         },
+         "lineNumber": "46",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 22,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 24,
+            "length": 23
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tpollErrTimeout     = 2 // I/O timeout",
+         "matchingRanges": {
+          "lineNumber": "47",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 7
+           },
+           {
+            "startIndex": 31,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "47",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 22,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 24,
+            "length": 14
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 7
+          },
+          {
+           "startIndex": 31,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tpollErrNotPollable = 3 // general error polling descriptor",
+         "matchingRanges": {
+          "lineNumber": "48"
+         },
+         "lineNumber": "48",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 22,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 24,
+            "length": 35
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "//\t         or, alternatively, concurrent timeout/close changes the state to pdNil.",
+         "matchingRanges": {
+          "lineNumber": "59",
+          "columnRanges": [
+           {
+            "startIndex": 42,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "59",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 83
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 42,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "//\tG pointer - the goroutine is blocked on the semaphore;",
+         "matchingRanges": {
+          "lineNumber": "60"
+         },
+         "lineNumber": "60",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 57
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "//\t            io notification or timeout/close changes the state to pdReady or pdNil respectively",
+         "matchingRanges": {
+          "lineNumber": "61",
+          "columnRanges": [
+           {
+            "startIndex": 34,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "61",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 98
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 34,
+           "length": 7
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tif (mode == 'r' \u0026\u0026 info.expiredReadDeadline()) || (mode == 'w' \u0026\u0026 info.expiredWriteDeadline()) {",
+         "matchingRanges": {
+          "lineNumber": "517"
+         },
+         "lineNumber": "517",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 13,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 60,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\treturn pollErrTimeout",
+         "matchingRanges": {
+          "lineNumber": "518",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "518",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\t}",
+         "matchingRanges": {
+          "lineNumber": "519"
+         },
+         "lineNumber": "519"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 8
+    },
+    "resultToken": "CB8SBAgBIAE4ur-j2rmU7OaVAUAASB8"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/internal/poll/fd.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "func (e errNetClosing) Timeout() bool   { return false }",
+         "matchingRanges": {
+          "lineNumber": "26",
+          "columnRanges": [
+           {
+            "startIndex": 23,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "26",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 42,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 23,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "func (e errNetClosing) Temporary() bool { return false }",
+         "matchingRanges": {
+          "lineNumber": "27"
+         },
+         "lineNumber": "27",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 42,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// Implement the net.Error interface.",
+         "matchingRanges": {
+          "lineNumber": "56"
+         },
+         "lineNumber": "56",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 37
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "// The string is \"i/o timeout\" because that is what was returned",
+         "matchingRanges": {
+          "lineNumber": "57",
+          "columnRanges": [
+           {
+            "startIndex": 22,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "57",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 64
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 22,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "// by earlier Go versions. Changing it may break programs that",
+         "matchingRanges": {
+          "lineNumber": "58"
+         },
+         "lineNumber": "58",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 62
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "// match on error strings.",
+         "matchingRanges": {
+          "lineNumber": "59"
+         },
+         "lineNumber": "59",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 26
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "func (e *DeadlineExceededError) Error() string   { return \"i/o timeout\" }",
+         "matchingRanges": {
+          "lineNumber": "60",
+          "columnRanges": [
+           {
+            "startIndex": 63,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "60",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 51,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 58,
+            "length": 13
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 63,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "func (e *DeadlineExceededError) Timeout() bool   { return true }",
+         "matchingRanges": {
+          "lineNumber": "61",
+          "columnRanges": [
+           {
+            "startIndex": 32,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "61",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 51,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 32,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "func (e *DeadlineExceededError) Temporary() bool { return true }",
+         "matchingRanges": {
+          "lineNumber": "62"
+         },
+         "lineNumber": "62",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 51,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 4
+    },
+    "resultToken": "CCASBAgBIAE4oJ3ercPrrr17QABIIA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/runtime-gdb_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t//",
+         "matchingRanges": {
+          "lineNumber": "518"
+         },
+         "lineNumber": "518",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t// If there is no deadline set on the test at all, relying on the timeout set",
+         "matchingRanges": {
+          "lineNumber": "519",
+          "columnRanges": [
+           {
+            "startIndex": 67,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "519",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 77
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 67,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\t// by testenv.Command will cause the test to hang indefinitely, but that's",
+         "matchingRanges": {
+          "lineNumber": "520"
+         },
+         "lineNumber": "520",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 74
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CCESAggBOPa5h82x45mniAFAAEgh"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/http/transport.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// It implements net.Error and wraps context.DeadlineExceeded.",
+         "matchingRanges": {
+          "lineNumber": "2925"
+         },
+         "lineNumber": "2925",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 62
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "type timeoutError struct {",
+         "matchingRanges": {
+          "lineNumber": "2926",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "2926",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 18,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\terr string",
+         "matchingRanges": {
+          "lineNumber": "2927"
+         },
+         "lineNumber": "2927"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func (e *timeoutError) Error() string     { return e.err }",
+         "matchingRanges": {
+          "lineNumber": "2930"
+         },
+         "lineNumber": "2930",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 44,
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "func (e *timeoutError) Timeout() bool     { return true }",
+         "matchingRanges": {
+          "lineNumber": "2931",
+          "columnRanges": [
+           {
+            "startIndex": 23,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "2931",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 44,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 23,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "func (e *timeoutError) Temporary() bool   { return true }",
+         "matchingRanges": {
+          "lineNumber": "2932"
+         },
+         "lineNumber": "2932",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 44,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "var errTimeout error = \u0026timeoutError{\"net/http: timeout awaiting response headers\"}",
+         "matchingRanges": {
+          "lineNumber": "2935",
+          "columnRanges": [
+           {
+            "startIndex": 7,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "2935",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 37,
+            "length": 45
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 7,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "2936"
+         },
+         "lineNumber": "2936"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func (tlsHandshakeTimeoutError) Timeout() bool   { return true }",
+         "matchingRanges": {
+          "lineNumber": "3387",
+          "columnRanges": [
+           {
+            "startIndex": 32,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "3387",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 51,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 32,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "func (tlsHandshakeTimeoutError) Temporary() bool { return true }",
+         "matchingRanges": {
+          "lineNumber": "3388"
+         },
+         "lineNumber": "3388",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 51,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 39
+    },
+    "resultToken": "CCISBAgBIAE40tXMuKvi0YOUAUAASCI"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/syscall/syscall_js.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "func (e Errno) Temporary() bool {",
+         "matchingRanges": {
+          "lineNumber": "82"
+         },
+         "lineNumber": "82",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\treturn e == EINTR || e == EMFILE || e.Timeout()",
+         "matchingRanges": {
+          "lineNumber": "83",
+          "columnRanges": [
+           {
+            "startIndex": 39,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "83",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 39,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "}",
+         "matchingRanges": {
+          "lineNumber": "84"
+         },
+         "lineNumber": "84"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func (e Errno) Timeout() bool {",
+         "matchingRanges": {
+          "lineNumber": "86",
+          "columnRanges": [
+           {
+            "startIndex": 15,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "86",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 15,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\treturn e == EAGAIN || e == EWOULDBLOCK || e == ETIMEDOUT",
+         "matchingRanges": {
+          "lineNumber": "87"
+         },
+         "lineNumber": "87",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CCMSBAgBIAE4zqHJotqTv6UtQABIIw"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/crypto/cipher/fuzz_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "var timeout *time.Timer",
+         "matchingRanges": {
+          "lineNumber": "36",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "36",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "37"
+         },
+         "lineNumber": "37"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\tif testing.Short() {",
+         "matchingRanges": {
+          "lineNumber": "48"
+         },
+         "lineNumber": "48",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\ttimeout = time.NewTimer(10 * time.Millisecond)",
+         "matchingRanges": {
+          "lineNumber": "49",
+          "columnRanges": [
+           {
+            "startIndex": 3,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "49",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 27,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 3,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t} else {",
+         "matchingRanges": {
+          "lineNumber": "50"
+         },
+         "lineNumber": "50",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\ttimeout = time.NewTimer(2 * time.Second)",
+         "matchingRanges": {
+          "lineNumber": "51",
+          "columnRanges": [
+           {
+            "startIndex": 3,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "51",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 27,
+            "length": 1
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 3,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t}",
+         "matchingRanges": {
+          "lineNumber": "52"
+         },
+         "lineNumber": "52"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t\tselect {",
+         "matchingRanges": {
+          "lineNumber": "60"
+         },
+         "lineNumber": "60",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 3,
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\tcase \u003c-timeout.C:",
+         "matchingRanges": {
+          "lineNumber": "61",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "61",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 3,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t\tbreak fuzzencrypt",
+         "matchingRanges": {
+          "lineNumber": "62"
+         },
+         "lineNumber": "62",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 7
+    },
+    "resultToken": "CCQSBAgBIAE4oICSx4ywt5_PAUAASCQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/syscall/syscall_unix.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "func (e Errno) Temporary() bool {",
+         "matchingRanges": {
+          "lineNumber": "134"
+         },
+         "lineNumber": "134",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\treturn e == EINTR || e == EMFILE || e == ENFILE || e.Timeout()",
+         "matchingRanges": {
+          "lineNumber": "135",
+          "columnRanges": [
+           {
+            "startIndex": 54,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "135",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 54,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "}",
+         "matchingRanges": {
+          "lineNumber": "136"
+         },
+         "lineNumber": "136"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func (e Errno) Timeout() bool {",
+         "matchingRanges": {
+          "lineNumber": "138",
+          "columnRanges": [
+           {
+            "startIndex": 15,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "138",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 15,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\treturn e == EAGAIN || e == EWOULDBLOCK || e == ETIMEDOUT",
+         "matchingRanges": {
+          "lineNumber": "139"
+         },
+         "lineNumber": "139",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CCUSBAgBIAE42vnbk6SRwJwwQABIJQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/syscall/syscall_plan9.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "func (e Errno) Temporary() bool { return false }",
+         "matchingRanges": {
+          "lineNumber": "35"
+         },
+         "lineNumber": "35",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 34,
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "func (e Errno) Timeout() bool   { return false }",
+         "matchingRanges": {
+          "lineNumber": "36",
+          "columnRanges": [
+           {
+            "startIndex": 15,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "36",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 34,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 15,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "37"
+         },
+         "lineNumber": "37"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func (e ErrorString) Temporary() bool {",
+         "matchingRanges": {
+          "lineNumber": "89"
+         },
+         "lineNumber": "89",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\treturn e == EINTR || e == EMFILE || e.Timeout()",
+         "matchingRanges": {
+          "lineNumber": "90",
+          "columnRanges": [
+           {
+            "startIndex": 39,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "90",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 39,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "}",
+         "matchingRanges": {
+          "lineNumber": "91"
+         },
+         "lineNumber": "91"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func (e ErrorString) Timeout() bool {",
+         "matchingRanges": {
+          "lineNumber": "93",
+          "columnRanges": [
+           {
+            "startIndex": 21,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "93",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 21,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\treturn e == EBUSY || e == ETIMEDOUT",
+         "matchingRanges": {
+          "lineNumber": "94"
+         },
+         "lineNumber": "94",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CCYSBAgBIAE4rvbqh4yu76N7QABIJg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/syscall/syscall_wasip1.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "func (e Errno) Temporary() bool {",
+         "matchingRanges": {
+          "lineNumber": "91"
+         },
+         "lineNumber": "91",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\treturn e == EINTR || e == EMFILE || e.Timeout()",
+         "matchingRanges": {
+          "lineNumber": "92",
+          "columnRanges": [
+           {
+            "startIndex": 39,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "92",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 39,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "}",
+         "matchingRanges": {
+          "lineNumber": "93"
+         },
+         "lineNumber": "93"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func (e Errno) Timeout() bool {",
+         "matchingRanges": {
+          "lineNumber": "95",
+          "columnRanges": [
+           {
+            "startIndex": 15,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "95",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 15,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\treturn e == EAGAIN || e == ETIMEDOUT",
+         "matchingRanges": {
+          "lineNumber": "96"
+         },
+         "lineNumber": "96",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CCcSBAgBIAE4mpqq08XE474mQABIJw"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/syscall/syscall_windows.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "func (e Errno) Temporary() bool {",
+         "matchingRanges": {
+          "lineNumber": "217"
+         },
+         "lineNumber": "217",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\treturn e == EINTR || e == EMFILE || e.Timeout()",
+         "matchingRanges": {
+          "lineNumber": "218",
+          "columnRanges": [
+           {
+            "startIndex": 39,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "218",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 39,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "}",
+         "matchingRanges": {
+          "lineNumber": "219"
+         },
+         "lineNumber": "219"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func (e Errno) Timeout() bool {",
+         "matchingRanges": {
+          "lineNumber": "221",
+          "columnRanges": [
+           {
+            "startIndex": 15,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "221",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 15,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\treturn e == EAGAIN || e == EWOULDBLOCK || e == ETIMEDOUT",
+         "matchingRanges": {
+          "lineNumber": "222"
+         },
+         "lineNumber": "222",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "//sys\tcreateIoCompletionPort(filehandle Handle, cphandle Handle, key uintptr, threadcnt uint32) (handle Handle, err error) = CreateIoCompletionPort",
+         "matchingRanges": {
+          "lineNumber": "277"
+         },
+         "lineNumber": "277",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 147
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "//sys\tgetQueuedCompletionStatus(cphandle Handle, qty *uint32, key *uintptr, overlapped **Overlapped, timeout uint32) (err error) = GetQueuedCompletionStatus",
+         "matchingRanges": {
+          "lineNumber": "278",
+          "columnRanges": [
+           {
+            "startIndex": 101,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "278",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 156
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 101,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "//sys\tpostQueuedCompletionStatus(cphandle Handle, qty uint32, key uintptr, overlapped *Overlapped) (err error) = PostQueuedCompletionStatus",
+         "matchingRanges": {
+          "lineNumber": "279"
+         },
+         "lineNumber": "279",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 139
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 5
+    },
+    "resultToken": "CCgSBAgBIAE4vKu_9Pj2p_hBQABIKA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/http/internal/http2/http2.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "type bufferedWriterTimeoutWriter bufferedWriter",
+         "matchingRanges": {
+          "lineNumber": "317",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "317",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "318"
+         },
+         "lineNumber": "318"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tmsg     string",
+         "matchingRanges": {
+          "lineNumber": "366"
+         },
+         "lineNumber": "366"
+        },
+        {
+         "lineText": "\ttimeout bool",
+         "matchingRanges": {
+          "lineNumber": "367",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "367",
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "}",
+         "matchingRanges": {
+          "lineNumber": "368"
+         },
+         "lineNumber": "368"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func (e *httpError) Error() string   { return e.msg }",
+         "matchingRanges": {
+          "lineNumber": "370"
+         },
+         "lineNumber": "370",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 39,
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "func (e *httpError) Timeout() bool   { return e.timeout }",
+         "matchingRanges": {
+          "lineNumber": "371",
+          "columnRanges": [
+           {
+            "startIndex": 20,
+            "length": 7
+           },
+           {
+            "startIndex": 48,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "371",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 39,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 20,
+           "length": 7
+          },
+          {
+           "startIndex": 48,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "func (e *httpError) Temporary() bool { return true }",
+         "matchingRanges": {
+          "lineNumber": "372"
+         },
+         "lineNumber": "372",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 39,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "var errTimeout error = \u0026httpError{msg: \"http2: timeout awaiting response headers\", timeout: true}",
+         "matchingRanges": {
+          "lineNumber": "374",
+          "columnRanges": [
+           {
+            "startIndex": 7,
+            "length": 7
+           },
+           {
+            "startIndex": 47,
+            "length": 7
+           },
+           {
+            "startIndex": 83,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "374",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 39,
+            "length": 42
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 7,
+           "length": 7
+          },
+          {
+           "startIndex": 47,
+           "length": 7
+          },
+          {
+           "startIndex": 83,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "375"
+         },
+         "lineNumber": "375"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 15
+    },
+    "resultToken": "CCkSBAgBIAE4ppOn_tL2gcS9AUAASCk"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/http/internal/http2/transport.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tidleTimeout time.Duration // or 0 for never",
+         "matchingRanges": {
+          "lineNumber": "144",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "144",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 27,
+            "length": 17
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tidleTimer   *time.Timer",
+         "matchingRanges": {
+          "lineNumber": "145"
+         },
+         "lineNumber": "145"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tconn    net.Conn",
+         "matchingRanges": {
+          "lineNumber": "335"
+         },
+         "lineNumber": "335"
+        },
+        {
+         "lineText": "\ttimeout time.Duration",
+         "matchingRanges": {
+          "lineNumber": "336",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "336",
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\terr     *error",
+         "matchingRanges": {
+          "lineNumber": "337"
+         },
+         "lineNumber": "337"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// clear.",
+         "matchingRanges": {
+          "lineNumber": "917"
+         },
+         "lineNumber": "917",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 9
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "func (cc *ClientConn) onIdleTimeout() {",
+         "matchingRanges": {
+          "lineNumber": "918",
+          "columnRanges": [
+           {
+            "startIndex": 28,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "918",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 28,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tcc.closeIfIdle()",
+         "matchingRanges": {
+          "lineNumber": "919"
+         },
+         "lineNumber": "919"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func (t *Transport) idleConnTimeout() time.Duration {",
+         "matchingRanges": {
+          "lineNumber": "3133",
+          "columnRanges": [
+           {
+            "startIndex": 28,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "3133",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 28,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tif t.t1 != nil {",
+         "matchingRanges": {
+          "lineNumber": "3134"
+         },
+         "lineNumber": "3134",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 32
+    },
+    "resultToken": "CCoSBAgBIAE4stKPp_eMgv9vQABIKg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/lock_sema.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "func checkTimeouts() {}",
+         "matchingRanges": {
+          "lineNumber": "185",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "185",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 7
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CCsSBAgBIAE4lNripIDQz81QQABIKw"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/dial.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "type Dialer struct {",
+         "matchingRanges": {
+          "lineNumber": "126"
+         },
+         "lineNumber": "126",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t// Timeout is the maximum amount of time a dial will wait for",
+         "matchingRanges": {
+          "lineNumber": "127",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "127",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 61
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\t// a connect to complete. If Deadline is also set, it may fail",
+         "matchingRanges": {
+          "lineNumber": "128"
+         },
+         "lineNumber": "128",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 62
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tTimeout time.Duration",
+         "matchingRanges": {
+          "lineNumber": "139",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "139",
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "140"
+         },
+         "lineNumber": "140"
+        },
+        {
+         "lineText": "\t// Deadline is the absolute point in time after which dials",
+         "matchingRanges": {
+          "lineNumber": "141"
+         },
+         "lineNumber": "141",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 59
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t// will fail. If Timeout is set, it may fail earlier.",
+         "matchingRanges": {
+          "lineNumber": "142",
+          "columnRanges": [
+           {
+            "startIndex": 18,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "142",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 53
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 18,
+           "length": 7
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func DialTimeout(network, address string, timeout time.Duration) (Conn, error) {",
+         "matchingRanges": {
+          "lineNumber": "488",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 7
+           },
+           {
+            "startIndex": 42,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "488",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 7
+          },
+          {
+           "startIndex": 42,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\td := Dialer{Timeout: timeout}",
+         "matchingRanges": {
+          "lineNumber": "489",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 7
+           },
+           {
+            "startIndex": 22,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "489",
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 7
+          },
+          {
+           "startIndex": 22,
+           "length": 7
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 25
+    },
+    "resultToken": "CCwSBAgBIAE4_vbIteX49LbEAUAASCw"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/lock_wasip1.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// See proposal: https://github.com/WebAssembly/threads",
+         "matchingRanges": {
+          "lineNumber": "10"
+         },
+         "lineNumber": "10",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 55
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "// Waiting for a mutex or timeout is implemented as a busy loop",
+         "matchingRanges": {
+          "lineNumber": "11",
+          "columnRanges": [
+           {
+            "startIndex": 26,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "11",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 63
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 26,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "// while allowing other goroutines to run.",
+         "matchingRanges": {
+          "lineNumber": "12"
+         },
+         "lineNumber": "12",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 42
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func checkTimeouts() {}",
+         "matchingRanges": {
+          "lineNumber": "114",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "114",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "115"
+         },
+         "lineNumber": "115"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CC0SBAgBIAE4jOT0xu7ltdUsQABILQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/defs_freebsd_386.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "type umtx_time struct {",
+         "matchingRanges": {
+          "lineNumber": "231"
+         },
+         "lineNumber": "231",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 15,
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t_timeout timespec",
+         "matchingRanges": {
+          "lineNumber": "232",
+          "columnRanges": [
+           {
+            "startIndex": 2,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "232",
+         "ranges": [
+          {
+           "startIndex": 2,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\t_flags   uint32",
+         "matchingRanges": {
+          "lineNumber": "233"
+         },
+         "lineNumber": "233"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CC4SBAgBIAE4wIfg98y3zOWjAUAASC4"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/defs_freebsd_arm.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "type umtx_time struct {",
+         "matchingRanges": {
+          "lineNumber": "204"
+         },
+         "lineNumber": "204",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 15,
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t_timeout timespec",
+         "matchingRanges": {
+          "lineNumber": "205",
+          "columnRanges": [
+           {
+            "startIndex": 2,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "205",
+         "ranges": [
+          {
+           "startIndex": 2,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\t_flags   uint32",
+         "matchingRanges": {
+          "lineNumber": "206"
+         },
+         "lineNumber": "206"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CC8SBAgBIAE4lNawwZPryfzvAUAASC8"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/http/client.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// Timeout specifies a time limit for requests made by this",
+         "matchingRanges": {
+          "lineNumber": "92",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "92",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 59
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\t// Client. The timeout includes connection time, any",
+         "matchingRanges": {
+          "lineNumber": "93",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "93",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 52
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 7
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// for cancellation instead of implementing CancelRequest.",
+         "matchingRanges": {
+          "lineNumber": "106"
+         },
+         "lineNumber": "106",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 58
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tTimeout time.Duration",
+         "matchingRanges": {
+          "lineNumber": "107",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "107",
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "}",
+         "matchingRanges": {
+          "lineNumber": "108"
+         },
+         "lineNumber": "108"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\trc            io.ReadCloser",
+         "matchingRanges": {
+          "lineNumber": "993"
+         },
+         "lineNumber": "993"
+        },
+        {
+         "lineText": "\treqDidTimeout func() bool",
+         "matchingRanges": {
+          "lineNumber": "994",
+          "columnRanges": [
+           {
+            "startIndex": 7,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "994",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 15,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 7,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "}",
+         "matchingRanges": {
+          "lineNumber": "995"
+         },
+         "lineNumber": "995"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 29
+    },
+    "resultToken": "CDASBAgBIAE4nqWbt76x6v-XAUAASDA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/defs_freebsd_arm64.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "type umtx_time struct {",
+         "matchingRanges": {
+          "lineNumber": "225"
+         },
+         "lineNumber": "225",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 15,
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t_timeout timespec",
+         "matchingRanges": {
+          "lineNumber": "226",
+          "columnRanges": [
+           {
+            "startIndex": 2,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "226",
+         "ranges": [
+          {
+           "startIndex": 2,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\t_flags   uint32",
+         "matchingRanges": {
+          "lineNumber": "227"
+         },
+         "lineNumber": "227"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CDESBAgBIAE4mNq-8-OXw8YBQABIMQ"
+   }
+  ],
+  "estimatedResultCount": "581",
+  "nextPageToken": "CJjavvPjl8PGAQj6uaWfgfbw3QkI7PKUzrmxxcYNCPiw2vSQju3XDQjmrezxlNj4sxoIsKOZxJfa3oEbCJqaqtPFxOO+JgjKxs/nrJP0qyoIts7l2ZHoqvMqCIzk9Mbu5bXVLAjOocmi2pO/pS0I2vnbk6SRwJwwCOCzyLnVstmLMgi8q7/0+Pan+EEIlu37uq6Bi8tLCJTa4qSA0M/NUAj4vd2L6YzC81UI6LuG1aLN2PRrCLDRzv7/pKeHbQiy0o+n94yC/28Irvbqh4yu76N7CKCd3q3D6669ewjWqqb2mrnrloABCPa5h82x45mniAEIruHtptrz24OOAQikvLG2wZ2a/o4BCNLVzLir4tGDlAEIsr2sn+7R5ZWUAQi6v6PauZTs5pUBCJ6lm7e+ser/lwEIiKrliLGwlMuZAQjiprSRiK3K8KABCLbsqObAo66xogEIwIfg98y3zOWjAQiUj72gkoH26LUBCIKP1+eb9POkuQEIqPP4ifHUyZ+8AQimk6f+0vaBxL0BCP72yLXl+PS2xAEIsNzWv7+15PvIAQiggJLHjLC3n88BCMy04ayVr7Kq4AEIkvqNuK/b6t3jAQiastnD6ezh/+QBCKDEwMTg/tSR5QEIxv/s7ebs2MznAQiW1MaN4KWyqugBCJTWsMGT68n87wEI2KDulaPc3bD7AQjmmOLqh8z/9vwB",
+  "requestToken": "Cgd0aW1lb3V0Eh0oIGdpdDpnby9nb0BtYXN0ZXIgY2FzZTp5ZXMgKRoMCIu8qNEGEL3vuOABIAwqADIASAE"
+ }
+}

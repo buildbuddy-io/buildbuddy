@@ -1,0 +1,142 @@
+{
+ "query": "#define ABSL_DIE_IF_NULL\\(val\\)",
+ "oss_project": "abseil",
+ "repo_name": "abseil-cpp",
+ "page_size": 50,
+ "fetched_at": "2026-06-17T23:23:20Z",
+ "response": {
+  "searchResults": [
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "abseil-cpp",
+        "ossProject": "abseil"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "absl/log/die_if_null.h",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "#ifndef ABSL_LOG_DIE_IF_NULL_H_",
+         "matchingRanges": {
+          "lineNumber": "21"
+         },
+         "lineNumber": "21",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "length": 7
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "#define ABSL_LOG_DIE_IF_NULL_H_",
+         "matchingRanges": {
+          "lineNumber": "22",
+          "columnRanges": [
+           {
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "22",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "length": 7
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "23"
+         },
+         "lineNumber": "23"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// unused.",
+         "matchingRanges": {
+          "lineNumber": "49"
+         },
+         "lineNumber": "49",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 10
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "#define ABSL_DIE_IF_NULL(val) \\",
+         "matchingRanges": {
+          "lineNumber": "50",
+          "columnRanges": [
+           {
+            "length": 7
+           },
+           {
+            "startIndex": 8,
+            "length": 21
+           }
+          ]
+         },
+         "lineNumber": "50",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "length": 7
+          },
+          {
+           "startIndex": 8,
+           "length": 21
+          }
+         ]
+        },
+        {
+         "lineText": "  ::absl::log_internal::DieIfNull(__FILE__, __LINE__, #val, (val))",
+         "matchingRanges": {
+          "lineNumber": "51"
+         },
+         "lineNumber": "51"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAASAggBONLqm4zt_-DKRUAASAA"
+   }
+  ],
+  "estimatedResultCount": "1",
+  "exhaustive": true,
+  "requestToken": "Ch8jZGVmaW5lIEFCU0xfRElFX0lGX05VTExcKHZhbFwpEjAoIGdpdDpnaXRodWIvYWJzZWlsL2Fic2VpbC1jcHBAbWFzdGVyIGNhc2U6eWVzICkaCwjo2MzRBhD-25I0IAwgDyoAMgBIAQ"
+ }
+}

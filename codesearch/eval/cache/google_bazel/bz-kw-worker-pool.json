@@ -1,0 +1,5973 @@
+{
+ "query": "worker pool borrow",
+ "oss_project": "bazel",
+ "repo_name": "bazel",
+ "page_size": 50,
+ "fetched_at": "2026-06-11T22:27:46Z",
+ "response": {
+  "searchResults": [
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/worker/WorkerPoolImpl.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  @Override",
+         "matchingRanges": {
+          "lineNumber": "118"
+         },
+         "lineNumber": "118"
+        },
+        {
+         "lineText": "  public Worker borrowWorker(WorkerKey key) throws IOException, InterruptedException {",
+         "matchingRanges": {
+          "lineNumber": "119",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "119",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 44,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    return getPool(key).borrowWorker(key);",
+         "matchingRanges": {
+          "lineNumber": "120",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 4
+           },
+           {
+            "startIndex": 24,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "120",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 4
+          },
+          {
+           "startIndex": 24,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  private WorkerKeyPool getPool(WorkerKey key) {",
+         "matchingRanges": {
+          "lineNumber": "147",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 4
+           },
+           {
+            "startIndex": 27,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "147",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 4
+          },
+          {
+           "startIndex": 27,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "    return pools.computeIfAbsent(key, this::createPool);",
+         "matchingRanges": {
+          "lineNumber": "148",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 4
+           },
+           {
+            "startIndex": 50,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "148",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 38,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 4
+          },
+          {
+           "startIndex": 50,
+           "length": 4
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  private WorkerKeyPool createPool(WorkerKey key) {",
+         "matchingRanges": {
+          "lineNumber": "151",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 4
+           },
+           {
+            "startIndex": 30,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "151",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 4
+          },
+          {
+           "startIndex": 30,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "    if (key.isMultiplex()) {",
+         "matchingRanges": {
+          "lineNumber": "152"
+         },
+         "lineNumber": "152",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    final CountDownLatch latch = new CountDownLatch(1);",
+         "matchingRanges": {
+          "lineNumber": "412"
+         },
+         "lineNumber": "412",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 33,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 52,
+            "length": 1
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    @Nullable volatile Worker worker = null;",
+         "matchingRanges": {
+          "lineNumber": "413",
+          "columnRanges": [
+           {
+            "startIndex": 30,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "413",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 14,
+            "length": 8
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 30,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "414"
+         },
+         "lineNumber": "414"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 71
+    },
+    "resultToken": "CAASBAgBIAE46OPF8IyR-6GqAUAASAA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/worker/WorkerPool.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "public interface WorkerPool {",
+         "matchingRanges": {
+          "lineNumber": "29",
+          "columnRanges": [
+           {
+            "startIndex": 17,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "29",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 9
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 17,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "30"
+         },
+         "lineNumber": "30"
+        },
+        {
+         "lineText": "  /**",
+         "matchingRanges": {
+          "lineNumber": "31"
+         },
+         "lineNumber": "31",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "   * Returns the current maximum number of workers allowed in the pool.",
+         "matchingRanges": {
+          "lineNumber": "32",
+          "columnRanges": [
+           {
+            "startIndex": 43,
+            "length": 6
+           },
+           {
+            "startIndex": 66,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "32",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 71
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 43,
+           "length": 6
+          },
+          {
+           "startIndex": 66,
+           "length": 4
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  /**",
+         "matchingRanges": {
+          "lineNumber": "70"
+         },
+         "lineNumber": "70",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "   * Borrows a persistent worker from the pool, creating if necessary and blocking if unavailable.",
+         "matchingRanges": {
+          "lineNumber": "71",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 6
+           },
+           {
+            "startIndex": 26,
+            "length": 6
+           },
+           {
+            "startIndex": 42,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "71",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 98
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 98
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 6
+          },
+          {
+           "startIndex": 26,
+           "length": 6
+          },
+          {
+           "startIndex": 42,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "   *",
+         "matchingRanges": {
+          "lineNumber": "72"
+         },
+         "lineNumber": "72",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "   */",
+         "matchingRanges": {
+          "lineNumber": "74"
+         },
+         "lineNumber": "74",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  Worker borrowWorker(WorkerKey key) throws IOException, InterruptedException;",
+         "matchingRanges": {
+          "lineNumber": "75",
+          "columnRanges": [
+           {
+            "startIndex": 2,
+            "length": 6
+           },
+           {
+            "startIndex": 9,
+            "length": 12
+           },
+           {
+            "startIndex": 22,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "75",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 37,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 2,
+           "length": 6
+          },
+          {
+           "startIndex": 9,
+           "length": 12
+          },
+          {
+           "startIndex": 22,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "76"
+         },
+         "lineNumber": "76"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 33
+    },
+    "resultToken": "CAESBAgBIAE4uujPgqXxlaKeAUAASAE"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/worker/WorkerSpawnRunner.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "      Path execRoot,",
+         "matchingRanges": {
+          "lineNumber": "108"
+         },
+         "lineNumber": "108"
+        },
+        {
+         "lineText": "      WorkerPool workers,",
+         "matchingRanges": {
+          "lineNumber": "109",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 10
+           },
+           {
+            "startIndex": 17,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "109",
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 10
+          },
+          {
+           "startIndex": 17,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "      ExtendedEventHandler reporter,",
+         "matchingRanges": {
+          "lineNumber": "110"
+         },
+         "lineNumber": "110"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "      String message = \"IOException during worker execution:\";",
+         "matchingRanges": {
+          "lineNumber": "468"
+         },
+         "lineNumber": "468",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 23,
+            "length": 38
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "      throw createUserExecException(e, message, Code.BORROW_FAILURE);",
+         "matchingRanges": {
+          "lineNumber": "469",
+          "columnRanges": [
+           {
+            "startIndex": 53,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "469",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 53,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "    } catch (UserExecException | InterruptedException e) {",
+         "matchingRanges": {
+          "lineNumber": "470"
+         },
+         "lineNumber": "470",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "   */",
+         "matchingRanges": {
+          "lineNumber": "678"
+         },
+         "lineNumber": "678",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  private static class WorkerOwner {",
+         "matchingRanges": {
+          "lineNumber": "679",
+          "columnRanges": [
+           {
+            "startIndex": 23,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "679",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 17,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 23,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "    Worker worker;",
+         "matchingRanges": {
+          "lineNumber": "680",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "680",
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "681"
+         },
+         "lineNumber": "681"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 38
+    },
+    "resultToken": "CAISBAgBIAE4woKFw6Wtv_eLAUAASAI"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/worker/WorkerPoolTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "@RunWith(JUnit4.class)",
+         "matchingRanges": {
+          "lineNumber": "43"
+         },
+         "lineNumber": "43",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 16,
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "public class WorkerPoolTest {",
+         "matchingRanges": {
+          "lineNumber": "44",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "44",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "45"
+         },
+         "lineNumber": "45"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  private WorkerPool workerPool;",
+         "matchingRanges": {
+          "lineNumber": "51",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 10
+           },
+           {
+            "startIndex": 21,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "51",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 10
+          },
+          {
+           "startIndex": 21,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "  private WorkerFactory factoryMock;",
+         "matchingRanges": {
+          "lineNumber": "52",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "52",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  private static class TestWorker extends SingleplexWorker {",
+         "matchingRanges": {
+          "lineNumber": "56",
+          "columnRanges": [
+           {
+            "startIndex": 27,
+            "length": 6
+           },
+           {
+            "startIndex": 52,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "56",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 17,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 34,
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 27,
+           "length": 6
+          },
+          {
+           "startIndex": 52,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "    TestWorker(",
+         "matchingRanges": {
+          "lineNumber": "57",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "57",
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  @Test",
+         "matchingRanges": {
+          "lineNumber": "134"
+         },
+         "lineNumber": "134"
+        },
+        {
+         "lineText": "  public void testBorrow_pooledByKey() throws Exception {",
+         "matchingRanges": {
+          "lineNumber": "135",
+          "columnRanges": [
+           {
+            "startIndex": 18,
+            "length": 6
+           },
+           {
+            "startIndex": 25,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "135",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 39,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 18,
+           "length": 6
+          },
+          {
+           "startIndex": 25,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "    WorkerKey workerKey1 = createWorkerKey(fileSystem, \"mnem\", false);",
+         "matchingRanges": {
+          "lineNumber": "136"
+         },
+         "lineNumber": "136",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 55,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 81
+    },
+    "resultToken": "CAMSBAgBIAE47oDalcGqqNjwAUAASAM"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/worker/WorkerTestUtils.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  /** A worker that uses a fake subprocess for I/O. */",
+         "matchingRanges": {
+          "lineNumber": "214"
+         },
+         "lineNumber": "214",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 52
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  static class TestWorker extends SingleplexWorker {",
+         "matchingRanges": {
+          "lineNumber": "215",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "215",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 26,
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "    private final FakeSubprocess fakeSubprocess;",
+         "matchingRanges": {
+          "lineNumber": "216"
+         },
+         "lineNumber": "216",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    TestWorker(",
+         "matchingRanges": {
+          "lineNumber": "218",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "218",
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "        WorkerKey workerKey,",
+         "matchingRanges": {
+          "lineNumber": "219"
+         },
+         "lineNumber": "219"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  public static WorkerPool createTestWorkerPool(Worker worker) {",
+         "matchingRanges": {
+          "lineNumber": "325",
+          "columnRanges": [
+           {
+            "startIndex": 22,
+            "length": 4
+           },
+           {
+            "startIndex": 37,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "325",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 22,
+           "length": 4
+          },
+          {
+           "startIndex": 37,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "    return new WorkerPool() {",
+         "matchingRanges": {
+          "lineNumber": "326",
+          "columnRanges": [
+           {
+            "startIndex": 21,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "326",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 11,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 21,
+           "length": 4
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "      @Override",
+         "matchingRanges": {
+          "lineNumber": "353"
+         },
+         "lineNumber": "353"
+        },
+        {
+         "lineText": "      public Worker borrowWorker(WorkerKey key) throws IOException, InterruptedException {",
+         "matchingRanges": {
+          "lineNumber": "354",
+          "columnRanges": [
+           {
+            "startIndex": 20,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "354",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 48,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 20,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "        return worker;",
+         "matchingRanges": {
+          "lineNumber": "355"
+         },
+         "lineNumber": "355",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 40
+    },
+    "resultToken": "CAQSBAgBIAE4qt7i6YPM1-ooQABIBA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/worker/WorkerModuleTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "@RunWith(JUnit4.class)",
+         "matchingRanges": {
+          "lineNumber": "59"
+         },
+         "lineNumber": "59",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 16,
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "public class WorkerModuleTest {",
+         "matchingRanges": {
+          "lineNumber": "60",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "60",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "  @Rule public final MockitoRule mockito = MockitoJUnit.rule();",
+         "matchingRanges": {
+          "lineNumber": "61"
+         },
+         "lineNumber": "61",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 15,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  @Test",
+         "matchingRanges": {
+          "lineNumber": "70"
+         },
+         "lineNumber": "70"
+        },
+        {
+         "lineText": "  public void buildStarting_createsPools()",
+         "matchingRanges": {
+          "lineNumber": "71",
+          "columnRanges": [
+           {
+            "startIndex": 35,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "71",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 35,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "      throws AbruptExitException, IOException, InterruptedException {",
+         "matchingRanges": {
+          "lineNumber": "72"
+         },
+         "lineNumber": "72",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    assertThat(module.workerPool).isNotNull();",
+         "matchingRanges": {
+          "lineNumber": "83",
+          "columnRanges": [
+           {
+            "startIndex": 22,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "83",
+         "ranges": [
+          {
+           "startIndex": 22,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "84"
+         },
+         "lineNumber": "84"
+        },
+        {
+         "lineText": "    WorkerKey workerKey = WorkerTestUtils.createWorkerKey(JSON, fs);",
+         "matchingRanges": {
+          "lineNumber": "85",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 6
+           },
+           {
+            "startIndex": 14,
+            "length": 6
+           },
+           {
+            "startIndex": 26,
+            "length": 6
+           },
+           {
+            "startIndex": 48,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "85",
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 6
+          },
+          {
+           "startIndex": 14,
+           "length": 6
+          },
+          {
+           "startIndex": 26,
+           "length": 6
+          },
+          {
+           "startIndex": 48,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "    Worker worker = module.workerPool.borrowWorker(workerKey);",
+         "matchingRanges": {
+          "lineNumber": "86",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 6
+           },
+           {
+            "startIndex": 11,
+            "length": 6
+           },
+           {
+            "startIndex": 27,
+            "length": 10
+           },
+           {
+            "startIndex": 38,
+            "length": 12
+           },
+           {
+            "startIndex": 51,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "86",
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 6
+          },
+          {
+           "startIndex": 11,
+           "length": 6
+          },
+          {
+           "startIndex": 27,
+           "length": 10
+          },
+          {
+           "startIndex": 38,
+           "length": 12
+          },
+          {
+           "startIndex": 51,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 42
+    },
+    "resultToken": "CAUSBAgBIAE42IGljY3ysIVJQABIBQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/worker/WorkerLifecycleManagerTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "@RunWith(JUnit4.class)",
+         "matchingRanges": {
+          "lineNumber": "42"
+         },
+         "lineNumber": "42",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 16,
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "public final class WorkerLifecycleManagerTest {",
+         "matchingRanges": {
+          "lineNumber": "43",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "43",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 13,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "44"
+         },
+         "lineNumber": "44"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  public void testEvictWorkers_doNothing_lowMemoryUsage() throws Exception {",
+         "matchingRanges": {
+          "lineNumber": "65",
+          "columnRanges": [
+           {
+            "startIndex": 23,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "65",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 58,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 23,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "    WorkerPoolImpl workerPool =",
+         "matchingRanges": {
+          "lineNumber": "66",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 10
+           },
+           {
+            "startIndex": 19,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "66",
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 10
+          },
+          {
+           "startIndex": 19,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "        new WorkerPoolImpl(",
+         "matchingRanges": {
+          "lineNumber": "67",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "67",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 10
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    WorkerKey key = createWorkerKey(DUMMY_MNEMONIC, fileSystem);",
+         "matchingRanges": {
+          "lineNumber": "69",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 6
+           },
+           {
+            "startIndex": 26,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "69",
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 6
+          },
+          {
+           "startIndex": 26,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "    Worker w1 = workerPool.borrowWorker(key);",
+         "matchingRanges": {
+          "lineNumber": "70",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 6
+           },
+           {
+            "startIndex": 16,
+            "length": 10
+           },
+           {
+            "startIndex": 27,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "70",
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 6
+          },
+          {
+           "startIndex": 16,
+           "length": 10
+          },
+          {
+           "startIndex": 27,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    workerPool.returnWorker(key, w1);",
+         "matchingRanges": {
+          "lineNumber": "71",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 10
+           },
+           {
+            "startIndex": 21,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "71",
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 10
+          },
+          {
+           "startIndex": 21,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "    ImmutableList\u003cWorkerProcessMetrics\u003e workerMetrics =",
+         "matchingRanges": {
+          "lineNumber": "72",
+          "columnRanges": [
+           {
+            "startIndex": 18,
+            "length": 6
+           },
+           {
+            "startIndex": 40,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "72",
+         "ranges": [
+          {
+           "startIndex": 18,
+           "length": 6
+          },
+          {
+           "startIndex": 40,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 96
+    },
+    "resultToken": "CAYSBAgBIAE40LjIjbKUq4PRAUAASAY"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/actions/ResourceManager.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    private final ResourceManager manager;",
+         "matchingRanges": {
+          "lineNumber": "91"
+         },
+         "lineNumber": "91",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    private Worker worker;",
+         "matchingRanges": {
+          "lineNumber": "92",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 6
+           },
+           {
+            "startIndex": 19,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "92",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 6
+          },
+          {
+           "startIndex": 19,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "    private final ResourceRequest request;",
+         "matchingRanges": {
+          "lineNumber": "93"
+         },
+         "lineNumber": "93",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  /** Sets worker pool for taking the workers. Must be called before requesting the workers. */",
+         "matchingRanges": {
+          "lineNumber": "346",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 6
+           },
+           {
+            "startIndex": 18,
+            "length": 4
+           },
+           {
+            "startIndex": 38,
+            "length": 6
+           },
+           {
+            "startIndex": 84,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "346",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 93
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 6
+          },
+          {
+           "startIndex": 18,
+           "length": 4
+          },
+          {
+           "startIndex": 38,
+           "length": 6
+          },
+          {
+           "startIndex": 84,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "  public void setWorkerPool(WorkerPool workerPool) {",
+         "matchingRanges": {
+          "lineNumber": "347",
+          "columnRanges": [
+           {
+            "startIndex": 17,
+            "length": 10
+           },
+           {
+            "startIndex": 34,
+            "length": 4
+           },
+           {
+            "startIndex": 45,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "347",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 17,
+           "length": 10
+          },
+          {
+           "startIndex": 34,
+           "length": 4
+          },
+          {
+           "startIndex": 45,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "    this.workerPool = workerPool;",
+         "matchingRanges": {
+          "lineNumber": "348",
+          "columnRanges": [
+           {
+            "startIndex": 15,
+            "length": 4
+           },
+           {
+            "startIndex": 28,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "348",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 15,
+           "length": 4
+          },
+          {
+           "startIndex": 28,
+           "length": 4
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    if (resources.getWorkerKey() != null) {",
+         "matchingRanges": {
+          "lineNumber": "440"
+         },
+         "lineNumber": "440",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "      return this.workerPool.borrowWorker(resources.getWorkerKey());",
+         "matchingRanges": {
+          "lineNumber": "441",
+          "columnRanges": [
+           {
+            "startIndex": 24,
+            "length": 4
+           },
+           {
+            "startIndex": 29,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "441",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 13,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 24,
+           "length": 4
+          },
+          {
+           "startIndex": 29,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "    }",
+         "matchingRanges": {
+          "lineNumber": "442"
+         },
+         "lineNumber": "442"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 36
+    },
+    "resultToken": "CAcSBAgBIAE46oPRmZbS0am2AUAASAc"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/7.7.1/reference/command-line-reference.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "`--[no]experimental_collect_worker_data_in_profiler` default: \"false\"",
+         "matchingRanges": {
+          "lineNumber": "927",
+          "columnRanges": [
+           {
+            "startIndex": 28,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "927",
+         "ranges": [
+          {
+           "startIndex": 28,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": ":   If enabled, the profiler collects worker's aggregated resource data.",
+         "matchingRanges": {
+          "lineNumber": "928",
+          "columnRanges": [
+           {
+            "startIndex": 38,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "928",
+         "ranges": [
+          {
+           "startIndex": 38,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "929"
+         },
+         "lineNumber": "929"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "... e_cache_check, remote_download, remote_network, filesystem_traversal, worker_execution, worker_setup, worker_borrow, worker_working, worker_copying_outputs, credential_help ...",
+         "matchingRanges": {
+          "lineNumber": "933",
+          "columnRanges": [
+           {
+            "startIndex": 74,
+            "length": 6
+           },
+           {
+            "startIndex": 92,
+            "length": 6
+           },
+           {
+            "startIndex": 106,
+            "length": 6
+           },
+           {
+            "startIndex": 113,
+            "length": 6
+           },
+           {
+            "startIndex": 121,
+            "length": 6
+           },
+           {
+            "startIndex": 137,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "933",
+         "ranges": [
+          {
+           "startIndex": 74,
+           "length": 6
+          },
+          {
+           "startIndex": 92,
+           "length": 6
+          },
+          {
+           "startIndex": 106,
+           "length": 6
+          },
+          {
+           "startIndex": 113,
+           "length": 6
+          },
+          {
+           "startIndex": 121,
+           "length": 6
+          },
+          {
+           "startIndex": 137,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "`--experimental_worker_for_repo_fetching=\u0026lt;off, platform, virtual or auto\u0026gt;` default: \"auto\"",
+         "matchingRanges": {
+          "lineNumber": "1513",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "1513",
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": ":   The threading mode to use for repo fetching. If set to 'off', no worker thread is used, and the repo fetching is subject to restarts. Otherwise, uses a virtual worker thread.",
+         "matchingRanges": {
+          "lineNumber": "1514",
+          "columnRanges": [
+           {
+            "startIndex": 69,
+            "length": 6
+           },
+           {
+            "startIndex": 164,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "1514",
+         "ranges": [
+          {
+           "startIndex": 69,
+           "length": 6
+          },
+          {
+           "startIndex": 164,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "`--experimental_worker_for_repo_fetching=\u0026lt;off, platform, virtual or auto\u0026gt;` default: \"auto\"",
+         "matchingRanges": {
+          "lineNumber": "1869",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "1869",
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": ":   The threading mode to use for repo fetching. If set to 'off', no worker thread is used, and the repo fetching is subject to restarts. Otherwise, uses a virtual worker thread.",
+         "matchingRanges": {
+          "lineNumber": "1870",
+          "columnRanges": [
+           {
+            "startIndex": 69,
+            "length": 6
+           },
+           {
+            "startIndex": 164,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "1870",
+         "ranges": [
+          {
+           "startIndex": 69,
+           "length": 6
+          },
+          {
+           "startIndex": 164,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "... l strategies, in order, to use for the given mnemonic - the first applicable strategy is used. For example, `worker,sandboxed` runs actions that support persistent workers  ...",
+         "matchingRanges": {
+          "lineNumber": "3648",
+          "columnRanges": [
+           {
+            "startIndex": 113,
+            "length": 6
+           },
+           {
+            "startIndex": 168,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "3648",
+         "ranges": [
+          {
+           "startIndex": 113,
+           "length": 6
+          },
+          {
+           "startIndex": 168,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "... the action to be delayed). If greater than zero, execute the deletion of such threes on an asynchronous thread pool that has size 1 when the build is running and grows to t ...",
+         "matchingRanges": {
+          "lineNumber": "3703",
+          "columnRanges": [
+           {
+            "startIndex": 115,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "3703",
+         "ranges": [
+          {
+           "startIndex": 115,
+           "length": 4
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "`--[no]experimental_shrink_worker_pool` default: \"false\"",
+         "matchingRanges": {
+          "lineNumber": "3714",
+          "columnRanges": [
+           {
+            "startIndex": 27,
+            "length": 6
+           },
+           {
+            "startIndex": 34,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "3714",
+         "ranges": [
+          {
+           "startIndex": 27,
+           "length": 6
+          },
+          {
+           "startIndex": 34,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": ":   If enabled, could shrink worker pool if worker memory pressure is high. This flag works only when flag experimental\\_total\\_worker\\_memory\\_limit\\_mb is enabled.",
+         "matchingRanges": {
+          "lineNumber": "3715",
+          "columnRanges": [
+           {
+            "startIndex": 29,
+            "length": 6
+           },
+           {
+            "startIndex": 36,
+            "length": 4
+           },
+           {
+            "startIndex": 44,
+            "length": 6
+           },
+           {
+            "startIndex": 128,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "3715",
+         "ranges": [
+          {
+           "startIndex": 29,
+           "length": 6
+          },
+          {
+           "startIndex": 36,
+           "length": 4
+          },
+          {
+           "startIndex": 44,
+           "length": 6
+          },
+          {
+           "startIndex": 128,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "3716"
+         },
+         "lineNumber": "3716"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 26
+    },
+    "resultToken": "CAgSAggBOIa52cubwcyeCkAASAg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/8.0.1/reference/command-line-reference.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "`--[no]experimental_collect_worker_data_in_profiler` default: \"false\"",
+         "matchingRanges": {
+          "lineNumber": "1055",
+          "columnRanges": [
+           {
+            "startIndex": 28,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "1055",
+         "ranges": [
+          {
+           "startIndex": 28,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": ":   If enabled, the profiler collects worker's aggregated resource data.",
+         "matchingRanges": {
+          "lineNumber": "1056",
+          "columnRanges": [
+           {
+            "startIndex": 38,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "1056",
+         "ranges": [
+          {
+           "startIndex": 38,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "1057"
+         },
+         "lineNumber": "1057"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "... e_cache_check, remote_download, remote_network, filesystem_traversal, worker_execution, worker_setup, worker_borrow, worker_working, worker_copying_outputs, credential_help ...",
+         "matchingRanges": {
+          "lineNumber": "1064",
+          "columnRanges": [
+           {
+            "startIndex": 74,
+            "length": 6
+           },
+           {
+            "startIndex": 92,
+            "length": 6
+           },
+           {
+            "startIndex": 106,
+            "length": 6
+           },
+           {
+            "startIndex": 113,
+            "length": 6
+           },
+           {
+            "startIndex": 121,
+            "length": 6
+           },
+           {
+            "startIndex": 137,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "1064",
+         "ranges": [
+          {
+           "startIndex": 74,
+           "length": 6
+          },
+          {
+           "startIndex": 92,
+           "length": 6
+          },
+          {
+           "startIndex": 106,
+           "length": 6
+          },
+          {
+           "startIndex": 113,
+           "length": 6
+          },
+          {
+           "startIndex": 121,
+           "length": 6
+          },
+          {
+           "startIndex": 137,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "`--experimental_worker_for_repo_fetching=\u003coff, platform, virtual or auto\u003e` default: \"auto\"",
+         "matchingRanges": {
+          "lineNumber": "1291",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "1291",
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": ":   The threading mode to use for repo fetching. If set to 'off', no worker thread is used, and the repo fetching is subject to restarts. Otherwise, uses a virtual worker thread.",
+         "matchingRanges": {
+          "lineNumber": "1292",
+          "columnRanges": [
+           {
+            "startIndex": 69,
+            "length": 6
+           },
+           {
+            "startIndex": 164,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "1292",
+         "ranges": [
+          {
+           "startIndex": 69,
+           "length": 6
+          },
+          {
+           "startIndex": 164,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "... l strategies, in order, to use for the given mnemonic - the first applicable strategy is used. For example, `worker,sandboxed` runs actions that support persistent workers using the worker strategy, and all others using the sandboxed strategy. I ...",
+         "matchingRanges": {
+          "lineNumber": "3187",
+          "columnRanges": [
+           {
+            "startIndex": 113,
+            "length": 6
+           },
+           {
+            "startIndex": 168,
+            "length": 6
+           },
+           {
+            "startIndex": 186,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "3187",
+         "ranges": [
+          {
+           "startIndex": 113,
+           "length": 6
+          },
+          {
+           "startIndex": 168,
+           "length": 6
+          },
+          {
+           "startIndex": 186,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "... ic is given, the list of strategies is used as the fallback for all mnemonics. The default fallback list is `worker,sandboxed`, or`worker,sandboxed,standalone` if `experime ...",
+         "matchingRanges": {
+          "lineNumber": "3187",
+          "columnRanges": [
+           {
+            "startIndex": 113,
+            "length": 6
+           },
+           {
+            "startIndex": 135,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "3187",
+         "ranges": [
+          {
+           "startIndex": 113,
+           "length": 6
+          },
+          {
+           "startIndex": 135,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "... the action to be delayed). If greater than zero, execute the deletion of such threes on an asynchronous thread pool that has size 1 when the build is running and grows to t ...",
+         "matchingRanges": {
+          "lineNumber": "3242",
+          "columnRanges": [
+           {
+            "startIndex": 115,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "3242",
+         "ranges": [
+          {
+           "startIndex": 115,
+           "length": 4
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "`--[no]experimental_shrink_worker_pool` default: \"false\"",
+         "matchingRanges": {
+          "lineNumber": "3265",
+          "columnRanges": [
+           {
+            "startIndex": 27,
+            "length": 6
+           },
+           {
+            "startIndex": 34,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "3265",
+         "ranges": [
+          {
+           "startIndex": 27,
+           "length": 6
+          },
+          {
+           "startIndex": 34,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": ":   If enabled, could shrink worker pool if worker memory pressure is high. This flag works only when flag experimental\\_total\\_worker\\_memory\\_limit\\_mb is enabled.",
+         "matchingRanges": {
+          "lineNumber": "3266",
+          "columnRanges": [
+           {
+            "startIndex": 29,
+            "length": 6
+           },
+           {
+            "startIndex": 36,
+            "length": 4
+           },
+           {
+            "startIndex": 44,
+            "length": 6
+           },
+           {
+            "startIndex": 128,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "3266",
+         "ranges": [
+          {
+           "startIndex": 29,
+           "length": 6
+          },
+          {
+           "startIndex": 36,
+           "length": 4
+          },
+          {
+           "startIndex": 44,
+           "length": 6
+          },
+          {
+           "startIndex": 128,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "3267"
+         },
+         "lineNumber": "3267"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 27
+    },
+    "resultToken": "CAkSAggBOJTD1L_b77e1IkAASAk"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/8.3.1/reference/command-line-reference.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "`--[no]experimental_collect_worker_data_in_profiler` default: \"false\"",
+         "matchingRanges": {
+          "lineNumber": "1098",
+          "columnRanges": [
+           {
+            "startIndex": 28,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "1098",
+         "ranges": [
+          {
+           "startIndex": 28,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": ":   If enabled, the profiler collects worker's aggregated resource data.",
+         "matchingRanges": {
+          "lineNumber": "1099",
+          "columnRanges": [
+           {
+            "startIndex": 38,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "1099",
+         "ranges": [
+          {
+           "startIndex": 38,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "1100"
+         },
+         "lineNumber": "1100"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "... e_cache_check, remote_download, remote_network, filesystem_traversal, worker_execution, worker_setup, worker_borrow, worker_working, worker_copying_outputs, credential_help ...",
+         "matchingRanges": {
+          "lineNumber": "1107",
+          "columnRanges": [
+           {
+            "startIndex": 74,
+            "length": 6
+           },
+           {
+            "startIndex": 92,
+            "length": 6
+           },
+           {
+            "startIndex": 106,
+            "length": 6
+           },
+           {
+            "startIndex": 113,
+            "length": 6
+           },
+           {
+            "startIndex": 121,
+            "length": 6
+           },
+           {
+            "startIndex": 137,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "1107",
+         "ranges": [
+          {
+           "startIndex": 74,
+           "length": 6
+          },
+          {
+           "startIndex": 92,
+           "length": 6
+          },
+          {
+           "startIndex": 106,
+           "length": 6
+          },
+          {
+           "startIndex": 113,
+           "length": 6
+          },
+          {
+           "startIndex": 121,
+           "length": 6
+          },
+          {
+           "startIndex": 137,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "`--experimental_worker_for_repo_fetching=\u003coff, platform, virtual or auto\u003e` default: \"auto\"",
+         "matchingRanges": {
+          "lineNumber": "1331",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "1331",
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": ":   The threading mode to use for repo fetching. If set to 'off', no worker thread is used, and the repo fetching is subject to restarts. Otherwise, uses a virtual worker thread.",
+         "matchingRanges": {
+          "lineNumber": "1332",
+          "columnRanges": [
+           {
+            "startIndex": 69,
+            "length": 6
+           },
+           {
+            "startIndex": 164,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "1332",
+         "ranges": [
+          {
+           "startIndex": 69,
+           "length": 6
+          },
+          {
+           "startIndex": 164,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "... l strategies, in order, to use for the given mnemonic - the first applicable strategy is used. For example, `worker,sandboxed` runs actions that support persistent workers using the worker strategy, and all others using the sandboxed strategy. I ...",
+         "matchingRanges": {
+          "lineNumber": "3254",
+          "columnRanges": [
+           {
+            "startIndex": 113,
+            "length": 6
+           },
+           {
+            "startIndex": 168,
+            "length": 6
+           },
+           {
+            "startIndex": 186,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "3254",
+         "ranges": [
+          {
+           "startIndex": 113,
+           "length": 6
+          },
+          {
+           "startIndex": 168,
+           "length": 6
+          },
+          {
+           "startIndex": 186,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "... ic is given, the list of strategies is used as the fallback for all mnemonics. The default fallback list is `worker,sandboxed`, or`worker,sandboxed,standalone` if `experime ...",
+         "matchingRanges": {
+          "lineNumber": "3254",
+          "columnRanges": [
+           {
+            "startIndex": 113,
+            "length": 6
+           },
+           {
+            "startIndex": 135,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "3254",
+         "ranges": [
+          {
+           "startIndex": 113,
+           "length": 6
+          },
+          {
+           "startIndex": 135,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "... the action to be delayed). If greater than zero, execute the deletion of such threes on an asynchronous thread pool that has size 1 when the build is running and grows to t ...",
+         "matchingRanges": {
+          "lineNumber": "3309",
+          "columnRanges": [
+           {
+            "startIndex": 115,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "3309",
+         "ranges": [
+          {
+           "startIndex": 115,
+           "length": 4
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "`--[no]experimental_shrink_worker_pool` default: \"false\"",
+         "matchingRanges": {
+          "lineNumber": "3332",
+          "columnRanges": [
+           {
+            "startIndex": 27,
+            "length": 6
+           },
+           {
+            "startIndex": 34,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "3332",
+         "ranges": [
+          {
+           "startIndex": 27,
+           "length": 6
+          },
+          {
+           "startIndex": 34,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": ":   If enabled, could shrink worker pool if worker memory pressure is high. This flag works only when flag experimental\\_total\\_worker\\_memory\\_limit\\_mb is enabled.",
+         "matchingRanges": {
+          "lineNumber": "3333",
+          "columnRanges": [
+           {
+            "startIndex": 29,
+            "length": 6
+           },
+           {
+            "startIndex": 36,
+            "length": 4
+           },
+           {
+            "startIndex": 44,
+            "length": 6
+           },
+           {
+            "startIndex": 128,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "3333",
+         "ranges": [
+          {
+           "startIndex": 29,
+           "length": 6
+          },
+          {
+           "startIndex": 36,
+           "length": 4
+          },
+          {
+           "startIndex": 44,
+           "length": 6
+          },
+          {
+           "startIndex": 128,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "3334"
+         },
+         "lineNumber": "3334"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 27
+    },
+    "resultToken": "CAoSAggBOISf7LXGv7uQNUAASAo"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/8.6.0/reference/command-line-reference.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "`--[no]experimental_collect_worker_data_in_profiler` default: \"false\"",
+         "matchingRanges": {
+          "lineNumber": "1129",
+          "columnRanges": [
+           {
+            "startIndex": 28,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "1129",
+         "ranges": [
+          {
+           "startIndex": 28,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": ":   If enabled, the profiler collects worker's aggregated resource data.",
+         "matchingRanges": {
+          "lineNumber": "1130",
+          "columnRanges": [
+           {
+            "startIndex": 38,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "1130",
+         "ranges": [
+          {
+           "startIndex": 38,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "1131"
+         },
+         "lineNumber": "1131"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "... e_cache_check, remote_download, remote_network, filesystem_traversal, worker_execution, worker_setup, worker_borrow, worker_working, worker_copying_outputs, credential_help ...",
+         "matchingRanges": {
+          "lineNumber": "1138",
+          "columnRanges": [
+           {
+            "startIndex": 74,
+            "length": 6
+           },
+           {
+            "startIndex": 92,
+            "length": 6
+           },
+           {
+            "startIndex": 106,
+            "length": 6
+           },
+           {
+            "startIndex": 113,
+            "length": 6
+           },
+           {
+            "startIndex": 121,
+            "length": 6
+           },
+           {
+            "startIndex": 137,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "1138",
+         "ranges": [
+          {
+           "startIndex": 74,
+           "length": 6
+          },
+          {
+           "startIndex": 92,
+           "length": 6
+          },
+          {
+           "startIndex": 106,
+           "length": 6
+          },
+          {
+           "startIndex": 113,
+           "length": 6
+          },
+          {
+           "startIndex": 121,
+           "length": 6
+          },
+          {
+           "startIndex": 137,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "`--experimental_worker_for_repo_fetching=\u0026lt;off, platform, virtual or auto\u0026gt;` default: \"auto\"",
+         "matchingRanges": {
+          "lineNumber": "1362",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "1362",
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": ":   The threading mode to use for repo fetching. If set to 'off', no worker thread is used, and the repo fetching is subject to restarts. Otherwise, uses a virtual worker thread.",
+         "matchingRanges": {
+          "lineNumber": "1363",
+          "columnRanges": [
+           {
+            "startIndex": 69,
+            "length": 6
+           },
+           {
+            "startIndex": 164,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "1363",
+         "ranges": [
+          {
+           "startIndex": 69,
+           "length": 6
+          },
+          {
+           "startIndex": 164,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "... l strategies, in order, to use for the given mnemonic - the first applicable strategy is used. For example, `worker,sandboxed` runs actions that support persistent workers using the worker strategy, and all others using the sandboxed strategy. I ...",
+         "matchingRanges": {
+          "lineNumber": "3306",
+          "columnRanges": [
+           {
+            "startIndex": 113,
+            "length": 6
+           },
+           {
+            "startIndex": 168,
+            "length": 6
+           },
+           {
+            "startIndex": 186,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "3306",
+         "ranges": [
+          {
+           "startIndex": 113,
+           "length": 6
+          },
+          {
+           "startIndex": 168,
+           "length": 6
+          },
+          {
+           "startIndex": 186,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "... ic is given, the list of strategies is used as the fallback for all mnemonics. The default fallback list is `worker,sandboxed`, or`worker,sandboxed,standalone` if `experime ...",
+         "matchingRanges": {
+          "lineNumber": "3306",
+          "columnRanges": [
+           {
+            "startIndex": 113,
+            "length": 6
+           },
+           {
+            "startIndex": 135,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "3306",
+         "ranges": [
+          {
+           "startIndex": 113,
+           "length": 6
+          },
+          {
+           "startIndex": 135,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "... the action to be delayed). If greater than zero, execute the deletion of such threes on an asynchronous thread pool that has size 1 when the build is running and grows to t ...",
+         "matchingRanges": {
+          "lineNumber": "3361",
+          "columnRanges": [
+           {
+            "startIndex": 115,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "3361",
+         "ranges": [
+          {
+           "startIndex": 115,
+           "length": 4
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "`--[no]experimental_shrink_worker_pool` default: \"false\"",
+         "matchingRanges": {
+          "lineNumber": "3384",
+          "columnRanges": [
+           {
+            "startIndex": 27,
+            "length": 6
+           },
+           {
+            "startIndex": 34,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "3384",
+         "ranges": [
+          {
+           "startIndex": 27,
+           "length": 6
+          },
+          {
+           "startIndex": 34,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": ":   If enabled, could shrink worker pool if worker memory pressure is high. This flag works only when flag experimental_total_worker_memory_limit_mb is enabled.",
+         "matchingRanges": {
+          "lineNumber": "3385",
+          "columnRanges": [
+           {
+            "startIndex": 29,
+            "length": 6
+           },
+           {
+            "startIndex": 36,
+            "length": 4
+           },
+           {
+            "startIndex": 44,
+            "length": 6
+           },
+           {
+            "startIndex": 126,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "3385",
+         "ranges": [
+          {
+           "startIndex": 29,
+           "length": 6
+          },
+          {
+           "startIndex": 36,
+           "length": 4
+          },
+          {
+           "startIndex": 44,
+           "length": 6
+          },
+          {
+           "startIndex": 126,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "3386"
+         },
+         "lineNumber": "3386"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 27
+    },
+    "resultToken": "CAsSAggBONqireGC0vW0OkAASAs"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/8.1.1/reference/command-line-reference.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "`--[no]experimental_collect_worker_data_in_profiler` default: \"false\"",
+         "matchingRanges": {
+          "lineNumber": "1061",
+          "columnRanges": [
+           {
+            "startIndex": 28,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "1061",
+         "ranges": [
+          {
+           "startIndex": 28,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": ":   If enabled, the profiler collects worker's aggregated resource data.",
+         "matchingRanges": {
+          "lineNumber": "1062",
+          "columnRanges": [
+           {
+            "startIndex": 38,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "1062",
+         "ranges": [
+          {
+           "startIndex": 38,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "1063"
+         },
+         "lineNumber": "1063"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "... e_cache_check, remote_download, remote_network, filesystem_traversal, worker_execution, worker_setup, worker_borrow, worker_working, worker_copying_outputs, credential_help ...",
+         "matchingRanges": {
+          "lineNumber": "1070",
+          "columnRanges": [
+           {
+            "startIndex": 74,
+            "length": 6
+           },
+           {
+            "startIndex": 92,
+            "length": 6
+           },
+           {
+            "startIndex": 106,
+            "length": 6
+           },
+           {
+            "startIndex": 113,
+            "length": 6
+           },
+           {
+            "startIndex": 121,
+            "length": 6
+           },
+           {
+            "startIndex": 137,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "1070",
+         "ranges": [
+          {
+           "startIndex": 74,
+           "length": 6
+          },
+          {
+           "startIndex": 92,
+           "length": 6
+          },
+          {
+           "startIndex": 106,
+           "length": 6
+          },
+          {
+           "startIndex": 113,
+           "length": 6
+          },
+          {
+           "startIndex": 121,
+           "length": 6
+          },
+          {
+           "startIndex": 137,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "`--experimental_worker_for_repo_fetching=\u0026lt;off, platform, virtual or auto\u0026gt;` default: \"auto\"",
+         "matchingRanges": {
+          "lineNumber": "1297",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "1297",
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": ":   The threading mode to use for repo fetching. If set to 'off', no worker thread is used, and the repo fetching is subject to restarts. Otherwise, uses a virtual worker thread.",
+         "matchingRanges": {
+          "lineNumber": "1298",
+          "columnRanges": [
+           {
+            "startIndex": 69,
+            "length": 6
+           },
+           {
+            "startIndex": 164,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "1298",
+         "ranges": [
+          {
+           "startIndex": 69,
+           "length": 6
+          },
+          {
+           "startIndex": 164,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "... l strategies, in order, to use for the given mnemonic - the first applicable strategy is used. For example, `worker,sandboxed` runs actions that support persistent workers using the worker strategy, and all others using the sandboxed strategy. I ...",
+         "matchingRanges": {
+          "lineNumber": "3199",
+          "columnRanges": [
+           {
+            "startIndex": 113,
+            "length": 6
+           },
+           {
+            "startIndex": 168,
+            "length": 6
+           },
+           {
+            "startIndex": 186,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "3199",
+         "ranges": [
+          {
+           "startIndex": 113,
+           "length": 6
+          },
+          {
+           "startIndex": 168,
+           "length": 6
+          },
+          {
+           "startIndex": 186,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "... ic is given, the list of strategies is used as the fallback for all mnemonics. The default fallback list is `worker,sandboxed`, or`worker,sandboxed,standalone` if `experime ...",
+         "matchingRanges": {
+          "lineNumber": "3199",
+          "columnRanges": [
+           {
+            "startIndex": 113,
+            "length": 6
+           },
+           {
+            "startIndex": 135,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "3199",
+         "ranges": [
+          {
+           "startIndex": 113,
+           "length": 6
+          },
+          {
+           "startIndex": 135,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "... the action to be delayed). If greater than zero, execute the deletion of such threes on an asynchronous thread pool that has size 1 when the build is running and grows to t ...",
+         "matchingRanges": {
+          "lineNumber": "3254",
+          "columnRanges": [
+           {
+            "startIndex": 115,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "3254",
+         "ranges": [
+          {
+           "startIndex": 115,
+           "length": 4
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "`--[no]experimental_shrink_worker_pool` default: \"false\"",
+         "matchingRanges": {
+          "lineNumber": "3277",
+          "columnRanges": [
+           {
+            "startIndex": 27,
+            "length": 6
+           },
+           {
+            "startIndex": 34,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "3277",
+         "ranges": [
+          {
+           "startIndex": 27,
+           "length": 6
+          },
+          {
+           "startIndex": 34,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": ":   If enabled, could shrink worker pool if worker memory pressure is high. This flag works only when flag experimental\\_total\\_worker\\_memory\\_limit\\_mb is enabled.",
+         "matchingRanges": {
+          "lineNumber": "3278",
+          "columnRanges": [
+           {
+            "startIndex": 29,
+            "length": 6
+           },
+           {
+            "startIndex": 36,
+            "length": 4
+           },
+           {
+            "startIndex": 44,
+            "length": 6
+           },
+           {
+            "startIndex": 128,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "3278",
+         "ranges": [
+          {
+           "startIndex": 29,
+           "length": 6
+          },
+          {
+           "startIndex": 36,
+           "length": 4
+          },
+          {
+           "startIndex": 44,
+           "length": 6
+          },
+          {
+           "startIndex": 128,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "3279"
+         },
+         "lineNumber": "3279"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 27
+    },
+    "resultToken": "CAwSAggBONyaovXb5KbxaUAASAw"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/8.2.1/reference/command-line-reference.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "`--[no]experimental_collect_worker_data_in_profiler` default: \"false\"",
+         "matchingRanges": {
+          "lineNumber": "1073",
+          "columnRanges": [
+           {
+            "startIndex": 28,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "1073",
+         "ranges": [
+          {
+           "startIndex": 28,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": ":   If enabled, the profiler collects worker's aggregated resource data.",
+         "matchingRanges": {
+          "lineNumber": "1074",
+          "columnRanges": [
+           {
+            "startIndex": 38,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "1074",
+         "ranges": [
+          {
+           "startIndex": 38,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "1075"
+         },
+         "lineNumber": "1075"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "... e_cache_check, remote_download, remote_network, filesystem_traversal, worker_execution, worker_setup, worker_borrow, worker_working, worker_copying_outputs, credential_help ...",
+         "matchingRanges": {
+          "lineNumber": "1082",
+          "columnRanges": [
+           {
+            "startIndex": 74,
+            "length": 6
+           },
+           {
+            "startIndex": 92,
+            "length": 6
+           },
+           {
+            "startIndex": 106,
+            "length": 6
+           },
+           {
+            "startIndex": 113,
+            "length": 6
+           },
+           {
+            "startIndex": 121,
+            "length": 6
+           },
+           {
+            "startIndex": 137,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "1082",
+         "ranges": [
+          {
+           "startIndex": 74,
+           "length": 6
+          },
+          {
+           "startIndex": 92,
+           "length": 6
+          },
+          {
+           "startIndex": 106,
+           "length": 6
+          },
+          {
+           "startIndex": 113,
+           "length": 6
+          },
+          {
+           "startIndex": 121,
+           "length": 6
+          },
+          {
+           "startIndex": 137,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "`--experimental_worker_for_repo_fetching=\u003coff, platform, virtual or auto\u003e` default: \"auto\"",
+         "matchingRanges": {
+          "lineNumber": "1309",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "1309",
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": ":   The threading mode to use for repo fetching. If set to 'off', no worker thread is used, and the repo fetching is subject to restarts. Otherwise, uses a virtual worker thread.",
+         "matchingRanges": {
+          "lineNumber": "1310",
+          "columnRanges": [
+           {
+            "startIndex": 69,
+            "length": 6
+           },
+           {
+            "startIndex": 164,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "1310",
+         "ranges": [
+          {
+           "startIndex": 69,
+           "length": 6
+          },
+          {
+           "startIndex": 164,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "... l strategies, in order, to use for the given mnemonic - the first applicable strategy is used. For example, `worker,sandboxed` runs actions that support persistent workers using the worker strategy, and all others using the sandboxed strategy. I ...",
+         "matchingRanges": {
+          "lineNumber": "3217",
+          "columnRanges": [
+           {
+            "startIndex": 113,
+            "length": 6
+           },
+           {
+            "startIndex": 168,
+            "length": 6
+           },
+           {
+            "startIndex": 186,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "3217",
+         "ranges": [
+          {
+           "startIndex": 113,
+           "length": 6
+          },
+          {
+           "startIndex": 168,
+           "length": 6
+          },
+          {
+           "startIndex": 186,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "... ic is given, the list of strategies is used as the fallback for all mnemonics. The default fallback list is `worker,sandboxed`, or`worker,sandboxed,standalone` if `experime ...",
+         "matchingRanges": {
+          "lineNumber": "3217",
+          "columnRanges": [
+           {
+            "startIndex": 113,
+            "length": 6
+           },
+           {
+            "startIndex": 135,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "3217",
+         "ranges": [
+          {
+           "startIndex": 113,
+           "length": 6
+          },
+          {
+           "startIndex": 135,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "... the action to be delayed). If greater than zero, execute the deletion of such threes on an asynchronous thread pool that has size 1 when the build is running and grows to t ...",
+         "matchingRanges": {
+          "lineNumber": "3272",
+          "columnRanges": [
+           {
+            "startIndex": 115,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "3272",
+         "ranges": [
+          {
+           "startIndex": 115,
+           "length": 4
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "`--[no]experimental_shrink_worker_pool` default: \"false\"",
+         "matchingRanges": {
+          "lineNumber": "3295",
+          "columnRanges": [
+           {
+            "startIndex": 27,
+            "length": 6
+           },
+           {
+            "startIndex": 34,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "3295",
+         "ranges": [
+          {
+           "startIndex": 27,
+           "length": 6
+          },
+          {
+           "startIndex": 34,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": ":   If enabled, could shrink worker pool if worker memory pressure is high. This flag works only when flag experimental\\_total\\_worker\\_memory\\_limit\\_mb is enabled.",
+         "matchingRanges": {
+          "lineNumber": "3296",
+          "columnRanges": [
+           {
+            "startIndex": 29,
+            "length": 6
+           },
+           {
+            "startIndex": 36,
+            "length": 4
+           },
+           {
+            "startIndex": 44,
+            "length": 6
+           },
+           {
+            "startIndex": 128,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "3296",
+         "ranges": [
+          {
+           "startIndex": 29,
+           "length": 6
+          },
+          {
+           "startIndex": 36,
+           "length": 4
+          },
+          {
+           "startIndex": 44,
+           "length": 6
+          },
+          {
+           "startIndex": 128,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "3297"
+         },
+         "lineNumber": "3297"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 27
+    },
+    "resultToken": "CA0SAggBOLrL1ZDPsPrLc0AASA0"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/8.4.2/reference/command-line-reference.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "`--[no]experimental_collect_worker_data_in_profiler` default: \"false\"",
+         "matchingRanges": {
+          "lineNumber": "1102",
+          "columnRanges": [
+           {
+            "startIndex": 28,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "1102",
+         "ranges": [
+          {
+           "startIndex": 28,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": ":   If enabled, the profiler collects worker's aggregated resource data.",
+         "matchingRanges": {
+          "lineNumber": "1103",
+          "columnRanges": [
+           {
+            "startIndex": 38,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "1103",
+         "ranges": [
+          {
+           "startIndex": 38,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "1104"
+         },
+         "lineNumber": "1104"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "... e_cache_check, remote_download, remote_network, filesystem_traversal, worker_execution, worker_setup, worker_borrow, worker_working, worker_copying_outputs, credential_help ...",
+         "matchingRanges": {
+          "lineNumber": "1111",
+          "columnRanges": [
+           {
+            "startIndex": 74,
+            "length": 6
+           },
+           {
+            "startIndex": 92,
+            "length": 6
+           },
+           {
+            "startIndex": 106,
+            "length": 6
+           },
+           {
+            "startIndex": 113,
+            "length": 6
+           },
+           {
+            "startIndex": 121,
+            "length": 6
+           },
+           {
+            "startIndex": 137,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "1111",
+         "ranges": [
+          {
+           "startIndex": 74,
+           "length": 6
+          },
+          {
+           "startIndex": 92,
+           "length": 6
+          },
+          {
+           "startIndex": 106,
+           "length": 6
+          },
+          {
+           "startIndex": 113,
+           "length": 6
+          },
+          {
+           "startIndex": 121,
+           "length": 6
+          },
+          {
+           "startIndex": 137,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "`--experimental_worker_for_repo_fetching=\u0026lt;off, platform, virtual or auto\u0026gt;` default: \"auto\"",
+         "matchingRanges": {
+          "lineNumber": "1335",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "1335",
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": ":   The threading mode to use for repo fetching. If set to 'off', no worker thread is used, and the repo fetching is subject to restarts. Otherwise, uses a virtual worker thread.",
+         "matchingRanges": {
+          "lineNumber": "1336",
+          "columnRanges": [
+           {
+            "startIndex": 69,
+            "length": 6
+           },
+           {
+            "startIndex": 164,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "1336",
+         "ranges": [
+          {
+           "startIndex": 69,
+           "length": 6
+          },
+          {
+           "startIndex": 164,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "... l strategies, in order, to use for the given mnemonic - the first applicable strategy is used. For example, `worker,sandboxed` runs actions that support persistent workers using the worker strategy, and all others using the sandboxed strategy. I ...",
+         "matchingRanges": {
+          "lineNumber": "3276",
+          "columnRanges": [
+           {
+            "startIndex": 113,
+            "length": 6
+           },
+           {
+            "startIndex": 168,
+            "length": 6
+           },
+           {
+            "startIndex": 186,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "3276",
+         "ranges": [
+          {
+           "startIndex": 113,
+           "length": 6
+          },
+          {
+           "startIndex": 168,
+           "length": 6
+          },
+          {
+           "startIndex": 186,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "... ic is given, the list of strategies is used as the fallback for all mnemonics. The default fallback list is `worker,sandboxed`, or`worker,sandboxed,standalone` if `experime ...",
+         "matchingRanges": {
+          "lineNumber": "3276",
+          "columnRanges": [
+           {
+            "startIndex": 113,
+            "length": 6
+           },
+           {
+            "startIndex": 135,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "3276",
+         "ranges": [
+          {
+           "startIndex": 113,
+           "length": 6
+          },
+          {
+           "startIndex": 135,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "... the action to be delayed). If greater than zero, execute the deletion of such threes on an asynchronous thread pool that has size 1 when the build is running and grows to t ...",
+         "matchingRanges": {
+          "lineNumber": "3331",
+          "columnRanges": [
+           {
+            "startIndex": 115,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "3331",
+         "ranges": [
+          {
+           "startIndex": 115,
+           "length": 4
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "`--[no]experimental_shrink_worker_pool` default: \"false\"",
+         "matchingRanges": {
+          "lineNumber": "3354",
+          "columnRanges": [
+           {
+            "startIndex": 27,
+            "length": 6
+           },
+           {
+            "startIndex": 34,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "3354",
+         "ranges": [
+          {
+           "startIndex": 27,
+           "length": 6
+          },
+          {
+           "startIndex": 34,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": ":   If enabled, could shrink worker pool if worker memory pressure is high. This flag works only when flag experimental\\_total\\_worker\\_memory\\_limit\\_mb is enabled.",
+         "matchingRanges": {
+          "lineNumber": "3355",
+          "columnRanges": [
+           {
+            "startIndex": 29,
+            "length": 6
+           },
+           {
+            "startIndex": 36,
+            "length": 4
+           },
+           {
+            "startIndex": 44,
+            "length": 6
+           },
+           {
+            "startIndex": 128,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "3355",
+         "ranges": [
+          {
+           "startIndex": 29,
+           "length": 6
+          },
+          {
+           "startIndex": 36,
+           "length": 4
+          },
+          {
+           "startIndex": 44,
+           "length": 6
+          },
+          {
+           "startIndex": 128,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "3356"
+         },
+         "lineNumber": "3356"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 27
+    },
+    "resultToken": "CA4SAggBOOTbo5TI6Jmqe0AASA4"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/7.6.1/reference/command-line-reference.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "`--[no]experimental_collect_worker_data_in_profiler` default: \"false\"",
+         "matchingRanges": {
+          "lineNumber": "927",
+          "columnRanges": [
+           {
+            "startIndex": 28,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "927",
+         "ranges": [
+          {
+           "startIndex": 28,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": ":   If enabled, the profiler collects worker's aggregated resource data.",
+         "matchingRanges": {
+          "lineNumber": "928",
+          "columnRanges": [
+           {
+            "startIndex": 38,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "928",
+         "ranges": [
+          {
+           "startIndex": 38,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "929"
+         },
+         "lineNumber": "929"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "... e_cache_check, remote_download, remote_network, filesystem_traversal, worker_execution, worker_setup, worker_borrow, worker_working, worker_copying_outputs, credential_help ...",
+         "matchingRanges": {
+          "lineNumber": "933",
+          "columnRanges": [
+           {
+            "startIndex": 74,
+            "length": 6
+           },
+           {
+            "startIndex": 92,
+            "length": 6
+           },
+           {
+            "startIndex": 106,
+            "length": 6
+           },
+           {
+            "startIndex": 113,
+            "length": 6
+           },
+           {
+            "startIndex": 121,
+            "length": 6
+           },
+           {
+            "startIndex": 137,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "933",
+         "ranges": [
+          {
+           "startIndex": 74,
+           "length": 6
+          },
+          {
+           "startIndex": 92,
+           "length": 6
+          },
+          {
+           "startIndex": 106,
+           "length": 6
+          },
+          {
+           "startIndex": 113,
+           "length": 6
+          },
+          {
+           "startIndex": 121,
+           "length": 6
+          },
+          {
+           "startIndex": 137,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "`--experimental_worker_for_repo_fetching=\u003coff, platform, virtual or auto\u003e` default: \"auto\"",
+         "matchingRanges": {
+          "lineNumber": "1513",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "1513",
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": ":   The threading mode to use for repo fetching. If set to 'off', no worker thread is used, and the repo fetching is subject to restarts. Otherwise, uses a virtual worker thread.",
+         "matchingRanges": {
+          "lineNumber": "1514",
+          "columnRanges": [
+           {
+            "startIndex": 69,
+            "length": 6
+           },
+           {
+            "startIndex": 164,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "1514",
+         "ranges": [
+          {
+           "startIndex": 69,
+           "length": 6
+          },
+          {
+           "startIndex": 164,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "`--experimental_worker_for_repo_fetching=\u003coff, platform, virtual or auto\u003e` default: \"auto\"",
+         "matchingRanges": {
+          "lineNumber": "1869",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "1869",
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": ":   The threading mode to use for repo fetching. If set to 'off', no worker thread is used, and the repo fetching is subject to restarts. Otherwise, uses a virtual worker thread.",
+         "matchingRanges": {
+          "lineNumber": "1870",
+          "columnRanges": [
+           {
+            "startIndex": 69,
+            "length": 6
+           },
+           {
+            "startIndex": 164,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "1870",
+         "ranges": [
+          {
+           "startIndex": 69,
+           "length": 6
+          },
+          {
+           "startIndex": 164,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "... l strategies, in order, to use for the given mnemonic - the first applicable strategy is used. For example, `worker,sandboxed` runs actions that support persistent workers  ...",
+         "matchingRanges": {
+          "lineNumber": "3648",
+          "columnRanges": [
+           {
+            "startIndex": 113,
+            "length": 6
+           },
+           {
+            "startIndex": 168,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "3648",
+         "ranges": [
+          {
+           "startIndex": 113,
+           "length": 6
+          },
+          {
+           "startIndex": 168,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "... the action to be delayed). If greater than zero, execute the deletion of such threes on an asynchronous thread pool that has size 1 when the build is running and grows to t ...",
+         "matchingRanges": {
+          "lineNumber": "3703",
+          "columnRanges": [
+           {
+            "startIndex": 115,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "3703",
+         "ranges": [
+          {
+           "startIndex": 115,
+           "length": 4
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "`--[no]experimental_shrink_worker_pool` default: \"false\"",
+         "matchingRanges": {
+          "lineNumber": "3714",
+          "columnRanges": [
+           {
+            "startIndex": 27,
+            "length": 6
+           },
+           {
+            "startIndex": 34,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "3714",
+         "ranges": [
+          {
+           "startIndex": 27,
+           "length": 6
+          },
+          {
+           "startIndex": 34,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": ":   If enabled, could shrink worker pool if worker memory pressure is high. This flag works only when flag experimental\\_total\\_worker\\_memory\\_limit\\_mb is enabled.",
+         "matchingRanges": {
+          "lineNumber": "3715",
+          "columnRanges": [
+           {
+            "startIndex": 29,
+            "length": 6
+           },
+           {
+            "startIndex": 36,
+            "length": 4
+           },
+           {
+            "startIndex": 44,
+            "length": 6
+           },
+           {
+            "startIndex": 128,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "3715",
+         "ranges": [
+          {
+           "startIndex": 29,
+           "length": 6
+          },
+          {
+           "startIndex": 36,
+           "length": 4
+          },
+          {
+           "startIndex": 44,
+           "length": 6
+          },
+          {
+           "startIndex": 128,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "3716"
+         },
+         "lineNumber": "3716"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 26
+    },
+    "resultToken": "CA8SAggBOMrEs-OSvNq1oAFAAEgP"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/8.5.1/reference/command-line-reference.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "`--[no]experimental_collect_worker_data_in_profiler` default: \"false\"",
+         "matchingRanges": {
+          "lineNumber": "1114",
+          "columnRanges": [
+           {
+            "startIndex": 28,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "1114",
+         "ranges": [
+          {
+           "startIndex": 28,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": ":   If enabled, the profiler collects worker's aggregated resource data.",
+         "matchingRanges": {
+          "lineNumber": "1115",
+          "columnRanges": [
+           {
+            "startIndex": 38,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "1115",
+         "ranges": [
+          {
+           "startIndex": 38,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "1116"
+         },
+         "lineNumber": "1116"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "... e_cache_check, remote_download, remote_network, filesystem_traversal, worker_execution, worker_setup, worker_borrow, worker_working, worker_copying_outputs, credential_help ...",
+         "matchingRanges": {
+          "lineNumber": "1123",
+          "columnRanges": [
+           {
+            "startIndex": 74,
+            "length": 6
+           },
+           {
+            "startIndex": 92,
+            "length": 6
+           },
+           {
+            "startIndex": 106,
+            "length": 6
+           },
+           {
+            "startIndex": 113,
+            "length": 6
+           },
+           {
+            "startIndex": 121,
+            "length": 6
+           },
+           {
+            "startIndex": 137,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "1123",
+         "ranges": [
+          {
+           "startIndex": 74,
+           "length": 6
+          },
+          {
+           "startIndex": 92,
+           "length": 6
+          },
+          {
+           "startIndex": 106,
+           "length": 6
+          },
+          {
+           "startIndex": 113,
+           "length": 6
+          },
+          {
+           "startIndex": 121,
+           "length": 6
+          },
+          {
+           "startIndex": 137,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "`--experimental_worker_for_repo_fetching=\u003coff, platform, virtual or auto\u003e` default: \"auto\"",
+         "matchingRanges": {
+          "lineNumber": "1347",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "1347",
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": ":   The threading mode to use for repo fetching. If set to 'off', no worker thread is used, and the repo fetching is subject to restarts. Otherwise, uses a virtual worker thread.",
+         "matchingRanges": {
+          "lineNumber": "1348",
+          "columnRanges": [
+           {
+            "startIndex": 69,
+            "length": 6
+           },
+           {
+            "startIndex": 164,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "1348",
+         "ranges": [
+          {
+           "startIndex": 69,
+           "length": 6
+          },
+          {
+           "startIndex": 164,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "... l strategies, in order, to use for the given mnemonic - the first applicable strategy is used. For example, `worker,sandboxed` runs actions that support persistent workers using the worker strategy, and all others using the sandboxed strategy. I ...",
+         "matchingRanges": {
+          "lineNumber": "3297",
+          "columnRanges": [
+           {
+            "startIndex": 113,
+            "length": 6
+           },
+           {
+            "startIndex": 168,
+            "length": 6
+           },
+           {
+            "startIndex": 186,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "3297",
+         "ranges": [
+          {
+           "startIndex": 113,
+           "length": 6
+          },
+          {
+           "startIndex": 168,
+           "length": 6
+          },
+          {
+           "startIndex": 186,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "... ic is given, the list of strategies is used as the fallback for all mnemonics. The default fallback list is `worker,sandboxed`, or`worker,sandboxed,standalone` if `experime ...",
+         "matchingRanges": {
+          "lineNumber": "3297",
+          "columnRanges": [
+           {
+            "startIndex": 113,
+            "length": 6
+           },
+           {
+            "startIndex": 135,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "3297",
+         "ranges": [
+          {
+           "startIndex": 113,
+           "length": 6
+          },
+          {
+           "startIndex": 135,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "... the action to be delayed). If greater than zero, execute the deletion of such threes on an asynchronous thread pool that has size 1 when the build is running and grows to t ...",
+         "matchingRanges": {
+          "lineNumber": "3352",
+          "columnRanges": [
+           {
+            "startIndex": 115,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "3352",
+         "ranges": [
+          {
+           "startIndex": 115,
+           "length": 4
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "`--[no]experimental_shrink_worker_pool` default: \"false\"",
+         "matchingRanges": {
+          "lineNumber": "3375",
+          "columnRanges": [
+           {
+            "startIndex": 27,
+            "length": 6
+           },
+           {
+            "startIndex": 34,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "3375",
+         "ranges": [
+          {
+           "startIndex": 27,
+           "length": 6
+          },
+          {
+           "startIndex": 34,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": ":   If enabled, could shrink worker pool if worker memory pressure is high. This flag works only when flag experimental\\_total\\_worker\\_memory\\_limit\\_mb is enabled.",
+         "matchingRanges": {
+          "lineNumber": "3376",
+          "columnRanges": [
+           {
+            "startIndex": 29,
+            "length": 6
+           },
+           {
+            "startIndex": 36,
+            "length": 4
+           },
+           {
+            "startIndex": 44,
+            "length": 6
+           },
+           {
+            "startIndex": 128,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "3376",
+         "ranges": [
+          {
+           "startIndex": 29,
+           "length": 6
+          },
+          {
+           "startIndex": 36,
+           "length": 4
+          },
+          {
+           "startIndex": 44,
+           "length": 6
+          },
+          {
+           "startIndex": 128,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "3377"
+         },
+         "lineNumber": "3377"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 27
+    },
+    "resultToken": "CBASAggBOIDc9v2Ji63SwgFAAEgQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/9.0.0/reference/command-line-reference.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "`--[no]experimental_collect_worker_data_in_profiler` default: \"true\"",
+         "matchingRanges": {
+          "lineNumber": "1229",
+          "columnRanges": [
+           {
+            "startIndex": 28,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "1229",
+         "ranges": [
+          {
+           "startIndex": 28,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": ":   If enabled, the profiler collects worker's aggregated resource data.",
+         "matchingRanges": {
+          "lineNumber": "1230",
+          "columnRanges": [
+           {
+            "startIndex": 38,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "1230",
+         "ranges": [
+          {
+           "startIndex": 38,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "1231"
+         },
+         "lineNumber": "1231"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "... e_cache_check, remote_download, remote_network, filesystem_traversal, worker_execution, worker_setup, worker_borrow, worker_working, worker_copying_outputs, credential_help ...",
+         "matchingRanges": {
+          "lineNumber": "1238",
+          "columnRanges": [
+           {
+            "startIndex": 74,
+            "length": 6
+           },
+           {
+            "startIndex": 92,
+            "length": 6
+           },
+           {
+            "startIndex": 106,
+            "length": 6
+           },
+           {
+            "startIndex": 113,
+            "length": 6
+           },
+           {
+            "startIndex": 121,
+            "length": 6
+           },
+           {
+            "startIndex": 137,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "1238",
+         "ranges": [
+          {
+           "startIndex": 74,
+           "length": 6
+          },
+          {
+           "startIndex": 92,
+           "length": 6
+          },
+          {
+           "startIndex": 106,
+           "length": 6
+          },
+          {
+           "startIndex": 113,
+           "length": 6
+          },
+          {
+           "startIndex": 121,
+           "length": 6
+          },
+          {
+           "startIndex": 137,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "      `--strategy=Desugar=worker`",
+         "matchingRanges": {
+          "lineNumber": "2026",
+          "columnRanges": [
+           {
+            "startIndex": 26,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "2026",
+         "ranges": [
+          {
+           "startIndex": 26,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "2027"
+         },
+         "lineNumber": "2027"
+        },
+        {
+         "lineText": "      `--strategy=DexBuilder=worker`",
+         "matchingRanges": {
+          "lineNumber": "2028",
+          "columnRanges": [
+           {
+            "startIndex": 29,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "2028",
+         "ranges": [
+          {
+           "startIndex": 29,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "2029"
+         },
+         "lineNumber": "2029"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "`--[no]experimental_shrink_worker_pool` default: \"false\"",
+         "matchingRanges": {
+          "lineNumber": "3781",
+          "columnRanges": [
+           {
+            "startIndex": 34,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "3781",
+         "ranges": [
+          {
+           "startIndex": 34,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": ":   If enabled, could shrink worker pool if worker memory pressure is high. This flag works only when flag experimental\\_total\\_worker\\_memory\\_limit\\_mb is enabled.",
+         "matchingRanges": {
+          "lineNumber": "3782",
+          "columnRanges": [
+           {
+            "startIndex": 36,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "3782",
+         "ranges": [
+          {
+           "startIndex": 36,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "3783"
+         },
+         "lineNumber": "3783"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 38
+    },
+    "resultToken": "CBESAggBOPKarYH-w7aEaEAASBE"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/9.1.0/reference/command-line-reference.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "`--[no]experimental_collect_worker_data_in_profiler` default: \"true\"",
+         "matchingRanges": {
+          "lineNumber": "1235",
+          "columnRanges": [
+           {
+            "startIndex": 28,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "1235",
+         "ranges": [
+          {
+           "startIndex": 28,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": ":   If enabled, the profiler collects worker's aggregated resource data.",
+         "matchingRanges": {
+          "lineNumber": "1236",
+          "columnRanges": [
+           {
+            "startIndex": 38,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "1236",
+         "ranges": [
+          {
+           "startIndex": 38,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "1237"
+         },
+         "lineNumber": "1237"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "... e_cache_check, remote_download, remote_network, filesystem_traversal, worker_execution, worker_setup, worker_borrow, worker_working, worker_copying_outputs, credential_help ...",
+         "matchingRanges": {
+          "lineNumber": "1244",
+          "columnRanges": [
+           {
+            "startIndex": 74,
+            "length": 6
+           },
+           {
+            "startIndex": 92,
+            "length": 6
+           },
+           {
+            "startIndex": 106,
+            "length": 6
+           },
+           {
+            "startIndex": 113,
+            "length": 6
+           },
+           {
+            "startIndex": 121,
+            "length": 6
+           },
+           {
+            "startIndex": 137,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "1244",
+         "ranges": [
+          {
+           "startIndex": 74,
+           "length": 6
+          },
+          {
+           "startIndex": 92,
+           "length": 6
+          },
+          {
+           "startIndex": 106,
+           "length": 6
+          },
+          {
+           "startIndex": 113,
+           "length": 6
+          },
+          {
+           "startIndex": 121,
+           "length": 6
+          },
+          {
+           "startIndex": 137,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "      `--strategy=Desugar=worker`",
+         "matchingRanges": {
+          "lineNumber": "2038",
+          "columnRanges": [
+           {
+            "startIndex": 26,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "2038",
+         "ranges": [
+          {
+           "startIndex": 26,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "2039"
+         },
+         "lineNumber": "2039"
+        },
+        {
+         "lineText": "      `--strategy=DexBuilder=worker`",
+         "matchingRanges": {
+          "lineNumber": "2040",
+          "columnRanges": [
+           {
+            "startIndex": 29,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "2040",
+         "ranges": [
+          {
+           "startIndex": 29,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "2041"
+         },
+         "lineNumber": "2041"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "`--[no]experimental_shrink_worker_pool` default: \"false\"",
+         "matchingRanges": {
+          "lineNumber": "3787",
+          "columnRanges": [
+           {
+            "startIndex": 34,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "3787",
+         "ranges": [
+          {
+           "startIndex": 34,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": ":   If enabled, could shrink worker pool if worker memory pressure is high. This flag works only when flag experimental_total_worker_memory_limit_mb is enabled.",
+         "matchingRanges": {
+          "lineNumber": "3788",
+          "columnRanges": [
+           {
+            "startIndex": 36,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "3788",
+         "ranges": [
+          {
+           "startIndex": 36,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "3789"
+         },
+         "lineNumber": "3789"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 38
+    },
+    "resultToken": "CBISAggBOJrBy8rNoNTpswFAAEgS"
+   }
+  ],
+  "estimatedResultCount": "19",
+  "exhaustive": true,
+  "requestToken": "ChJ3b3JrZXIgcG9vbCBib3Jyb3cSIyggZ2l0OmJhemVsL2JhemVsQG1hc3RlciBjYXNlOnllcyApGgwI4uys0QYQ2ZaFlwEgDCoAMgBIAQ"
+ }
+}

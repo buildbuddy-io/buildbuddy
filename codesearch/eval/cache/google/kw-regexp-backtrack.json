@@ -1,0 +1,1389 @@
+{
+ "query": "regexp backtrack",
+ "oss_project": "go",
+ "repo_name": "go",
+ "page_size": 50,
+ "fetched_at": "2026-06-11T02:29:15Z",
+ "response": {
+  "searchResults": [
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/regexp/backtrack.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// visited.",
+         "matchingRanges": {
+          "lineNumber": "128"
+         },
+         "lineNumber": "128",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 11
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "func (b *bitState) push(re *Regexp, pc uint32, pos int, arg bool) {",
+         "matchingRanges": {
+          "lineNumber": "129",
+          "columnRanges": [
+           {
+            "startIndex": 28,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "129",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 28,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t// Only check shouldVisit when arg is false.",
+         "matchingRanges": {
+          "lineNumber": "130"
+         },
+         "lineNumber": "130",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 44
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// tryBacktrack runs a backtracking search starting at pos.",
+         "matchingRanges": {
+          "lineNumber": "137",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 9
+           },
+           {
+            "startIndex": 23,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "137",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 59
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 9
+          },
+          {
+           "startIndex": 23,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "func (re *Regexp) tryBacktrack(b *bitState, i input, pc uint32, pos int) bool {",
+         "matchingRanges": {
+          "lineNumber": "138",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 6
+           },
+           {
+            "startIndex": 21,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "138",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 6
+          },
+          {
+           "startIndex": 21,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\tlongest := re.longest",
+         "matchingRanges": {
+          "lineNumber": "139"
+         },
+         "lineNumber": "139"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// backtrack runs a backtracking search of prog on the input starting at pos.",
+         "matchingRanges": {
+          "lineNumber": "304",
+          "columnRanges": [
+           {
+            "startIndex": 3,
+            "length": 9
+           },
+           {
+            "startIndex": 20,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "304",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 77
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 3,
+           "length": 9
+          },
+          {
+           "startIndex": 20,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "func (re *Regexp) backtrack(ib []byte, is string, pos int, ncap int, dstCap []int) []int {",
+         "matchingRanges": {
+          "lineNumber": "305",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 6
+           },
+           {
+            "startIndex": 18,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "305",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 6
+          },
+          {
+           "startIndex": 18,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\tstartCond := re.cond",
+         "matchingRanges": {
+          "lineNumber": "306"
+         },
+         "lineNumber": "306"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 25
+    },
+    "resultToken": "CAASBAgBIAE49uXnn7OO15E3QABIAA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/regexp/regexp.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "//",
+         "matchingRanges": {
+          "lineNumber": "23"
+         },
+         "lineNumber": "23",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "// There are 24 methods of [Regexp] that match a regular expression and identify",
+         "matchingRanges": {
+          "lineNumber": "24",
+          "columnRanges": [
+           {
+            "startIndex": 28,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "24",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 80
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 28,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "// the matched text. Their names are matched by this regular expression:",
+         "matchingRanges": {
+          "lineNumber": "25"
+         },
+         "lineNumber": "25",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 72
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// A Regexp is safe for concurrent use by multiple goroutines,",
+         "matchingRanges": {
+          "lineNumber": "77",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "77",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 62
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "// except for configuration methods, such as [Regexp.Longest].",
+         "matchingRanges": {
+          "lineNumber": "78",
+          "columnRanges": [
+           {
+            "startIndex": 46,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "78",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 62
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 46,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "type Regexp struct {",
+         "matchingRanges": {
+          "lineNumber": "79",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "79",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// it chooses the one that a backtracking search would have found first.",
+         "matchingRanges": {
+          "lineNumber": "124",
+          "columnRanges": [
+           {
+            "startIndex": 29,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "124",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 72
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 29,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "// This so-called leftmost-first matching is the same semantics",
+         "matchingRanges": {
+          "lineNumber": "125"
+         },
+         "lineNumber": "125",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 63
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "// that Perl, Python, and other implementations use, although this",
+         "matchingRanges": {
+          "lineNumber": "126"
+         },
+         "lineNumber": "126",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 66
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "// package implements it without the expense of backtracking.",
+         "matchingRanges": {
+          "lineNumber": "127",
+          "columnRanges": [
+           {
+            "startIndex": 48,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "127",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 61
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 48,
+           "length": 9
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 37
+    },
+    "resultToken": "CAESBAgBIAE45Om4nNaw-8AQQABIAQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/regexp/exec_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\tinStrings bool",
+         "matchingRanges": {
+          "lineNumber": "89"
+         },
+         "lineNumber": "89"
+        },
+        {
+         "lineText": "\t\tre        *Regexp",
+         "matchingRanges": {
+          "lineNumber": "90",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "90",
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t\trefull    *Regexp",
+         "matchingRanges": {
+          "lineNumber": "91",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "91",
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tnfail     int",
+         "matchingRanges": {
+          "lineNumber": "92"
+         },
+         "lineNumber": "92"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "var run = []func(*Regexp, *Regexp, string) ([]int, string){",
+         "matchingRanges": {
+          "lineNumber": "201",
+          "columnRanges": [
+           {
+            "startIndex": 18,
+            "length": 6
+           },
+           {
+            "startIndex": 27,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "201",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 18,
+           "length": 6
+          },
+          {
+           "startIndex": 27,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\trunFull,",
+         "matchingRanges": {
+          "lineNumber": "202"
+         },
+         "lineNumber": "202"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// TestProgramTooLongForBacktrack tests that a regex which is too long",
+         "matchingRanges": {
+          "lineNumber": "726",
+          "columnRanges": [
+           {
+            "startIndex": 24,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "726",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 70
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 24,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "// for the backtracker still executes properly.",
+         "matchingRanges": {
+          "lineNumber": "727",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "727",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 47
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "func TestProgramTooLongForBacktrack(t *testing.T) {",
+         "matchingRanges": {
+          "lineNumber": "728",
+          "columnRanges": [
+           {
+            "startIndex": 26,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "728",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 26,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\tlongRegex := MustCompile(`(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|twentyone|tw ...",
+         "matchingRanges": {
+          "lineNumber": "729"
+         },
+         "lineNumber": "729",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 26,
+            "length": 146
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 34
+    },
+    "resultToken": "CAISBAgBIAE4mL7lrY_Nl6ISQABIAg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/regexp/exec.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "type machine struct {",
+         "matchingRanges": {
+          "lineNumber": "38"
+         },
+         "lineNumber": "38",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 13,
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tre       *Regexp      // corresponding Regexp",
+         "matchingRanges": {
+          "lineNumber": "39",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 6
+           },
+           {
+            "startIndex": 40,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "39",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 23,
+            "length": 23
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 6
+          },
+          {
+           "startIndex": 40,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tp        *syntax.Prog // compiled program",
+         "matchingRanges": {
+          "lineNumber": "40"
+         },
+         "lineNumber": "40",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 23,
+            "length": 19
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// doOnePass implements r.find using the one-pass execution engine.",
+         "matchingRanges": {
+          "lineNumber": "396"
+         },
+         "lineNumber": "396",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 67
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "func (re *Regexp) doOnePass(ir io.RuneReader, ib []byte, is string, pos, ncap int, dstCap []int) []int {",
+         "matchingRanges": {
+          "lineNumber": "397",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "397",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tstartCond := re.cond",
+         "matchingRanges": {
+          "lineNumber": "398"
+         },
+         "lineNumber": "398"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tif r == nil \u0026\u0026 len(b)+len(s) \u003c re.maxBitStateLen {",
+         "matchingRanges": {
+          "lineNumber": "534"
+         },
+         "lineNumber": "534",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\treturn re.backtrack(b, s, pos, ncap, dstCap)",
+         "matchingRanges": {
+          "lineNumber": "535",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "535",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\t}",
+         "matchingRanges": {
+          "lineNumber": "536"
+         },
+         "lineNumber": "536"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 9
+    },
+    "resultToken": "CAMSAggBONrAwciF0fu0jAFAAEgD"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/regexp/all_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "func compileTest(t *testing.T, expr string, error string) *Regexp {",
+         "matchingRanges": {
+          "lineNumber": "57",
+          "columnRanges": [
+           {
+            "startIndex": 59,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "57",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 59,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tre, err := Compile(expr)",
+         "matchingRanges": {
+          "lineNumber": "58"
+         },
+         "lineNumber": "58"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tif m1 != m2 {",
+         "matchingRanges": {
+          "lineNumber": "130"
+         },
+         "lineNumber": "130",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tt.Errorf(\"Copied Regexp match failure on %s: original gave %t; copy gave %t; should be %t\",",
+         "matchingRanges": {
+          "lineNumber": "131",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "131",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 81
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\ttest, m1, m2, len(test.matches) \u003e 0)",
+         "matchingRanges": {
+          "lineNumber": "132"
+         },
+         "lineNumber": "132",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 37,
+            "length": 1
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// and then the backtracker when there are no captures.",
+         "matchingRanges": {
+          "lineNumber": "582",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "582",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 55
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "func TestSwitchBacktrack(t *testing.T) {",
+         "matchingRanges": {
+          "lineNumber": "583",
+          "columnRanges": [
+           {
+            "startIndex": 15,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "583",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 15,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\tre := MustCompile(`a|b`)",
+         "matchingRanges": {
+          "lineNumber": "584"
+         },
+         "lineNumber": "584",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 19,
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tlong := make([]byte, maxBacktrackVector+1)",
+         "matchingRanges": {
+          "lineNumber": "585",
+          "columnRanges": [
+           {
+            "startIndex": 25,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "585",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 41,
+            "length": 1
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 25,
+           "length": 9
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 18
+    },
+    "resultToken": "CAQSBAgBIAE4qLbrl4nf4MVCQABIBA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/regexp/onepass.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "package regexp",
+         "matchingRanges": {
+          "lineNumber": "5",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "5",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "6"
+         },
+         "lineNumber": "6"
+        },
+        {
+         "lineText": "import (",
+         "matchingRanges": {
+          "lineNumber": "7"
+         },
+         "lineNumber": "7",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\"regexp/syntax\"",
+         "matchingRanges": {
+          "lineNumber": "8",
+          "columnRanges": [
+           {
+            "startIndex": 2,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "8",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 1,
+            "length": 15
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 2,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t\"slices\"",
+         "matchingRanges": {
+          "lineNumber": "9"
+         },
+         "lineNumber": "9",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 1,
+            "length": 8
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// \"One-pass\" regexp execution.",
+         "matchingRanges": {
+          "lineNumber": "15",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "15",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 31
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "// Some regexps can be analyzed to determine that they never need",
+         "matchingRanges": {
+          "lineNumber": "16",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "16",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 65
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "// backtracking: they are guaranteed to run in one pass over the string",
+         "matchingRanges": {
+          "lineNumber": "17",
+          "columnRanges": [
+           {
+            "startIndex": 3,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "17",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 71
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 3,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "// without bothering to save all the usual NFA state.",
+         "matchingRanges": {
+          "lineNumber": "18"
+         },
+         "lineNumber": "18",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 53
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 8
+    },
+    "resultToken": "CAUSAggBOLCfttCZ__KkIUAASAU"
+   }
+  ],
+  "estimatedResultCount": "6",
+  "exhaustive": true,
+  "requestToken": "ChByZWdleHAgYmFja3RyYWNrEh0oIGdpdDpnby9nb0BtYXN0ZXIgY2FzZTp5ZXMgKRoMCPu6qNEGEOD1tKQCIAwqADIASAE"
+ }
+}

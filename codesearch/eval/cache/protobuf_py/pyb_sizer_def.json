@@ -1,0 +1,2267 @@
+{
+ "query": "def \\w+Sizer",
+ "oss_project": "protobuf",
+ "repo_name": "protobuf",
+ "page_size": 50,
+ "fetched_at": "2026-06-17T23:22:04Z",
+ "response": {
+  "searchResults": [
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "protobuf",
+        "ossProject": "protobuf"
+       },
+       "refSpec": "refs/heads/main"
+      },
+      "path": "python/google/protobuf/internal/encoder.py",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "def _SimpleSizer(compute_value_size):",
+         "matchingRanges": {
+          "lineNumber": "120",
+          "columnRanges": [
+           {
+            "length": 3
+           },
+           {
+            "startIndex": 4,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "120",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "length": 3
+          },
+          {
+           "startIndex": 4,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "  \"\"\"A sizer which uses the function compute_value_size to compute the size of",
+         "matchingRanges": {
+          "lineNumber": "121"
+         },
+         "lineNumber": "121",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 76
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  def SpecificSizer(field_number, is_repeated, is_packed):",
+         "matchingRanges": {
+          "lineNumber": "126",
+          "columnRanges": [
+           {
+            "startIndex": 2,
+            "length": 3
+           },
+           {
+            "startIndex": 6,
+            "length": 13
+           }
+          ]
+         },
+         "lineNumber": "126",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 2,
+           "length": 3
+          },
+          {
+           "startIndex": 6,
+           "length": 13
+          }
+         ]
+        },
+        {
+         "lineText": "    tag_size = _TagSize(field_number)",
+         "matchingRanges": {
+          "lineNumber": "127"
+         },
+         "lineNumber": "127"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "def _ModifiedSizer(compute_value_size, modify_value):",
+         "matchingRanges": {
+          "lineNumber": "157",
+          "columnRanges": [
+           {
+            "length": 3
+           },
+           {
+            "startIndex": 4,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "157",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "length": 3
+          },
+          {
+           "startIndex": 4,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "  \"\"\"Like SimpleSizer, but modify_value is invoked on each value before it is",
+         "matchingRanges": {
+          "lineNumber": "158",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "158",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 75
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 11
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "      def EncodeField(write, value, deterministic):",
+         "matchingRanges": {
+          "lineNumber": "503",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "503",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "        write(tag_bytes)",
+         "matchingRanges": {
+          "lineNumber": "504"
+         },
+         "lineNumber": "504"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "      def EncodeField(write, value, deterministic):",
+         "matchingRanges": {
+          "lineNumber": "545",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "545",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "        write(tag_bytes)",
+         "matchingRanges": {
+          "lineNumber": "546"
+         },
+         "lineNumber": "546"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 63
+    },
+    "resultToken": "CAASBAgBIAE46vnmidzc1c6yAUAASAA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "protobuf",
+        "ossProject": "protobuf"
+       },
+       "refSpec": "refs/heads/main"
+      },
+      "path": "python/google/protobuf/internal/type_checkers.py",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  def DefaultValue(self):",
+         "matchingRanges": {
+          "lineNumber": "113",
+          "columnRanges": [
+           {
+            "startIndex": 2,
+            "length": 3
+           },
+           {
+            "startIndex": 6,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "113",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 2,
+           "length": 3
+          },
+          {
+           "startIndex": 6,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "    return self._default_value",
+         "matchingRanges": {
+          "lineNumber": "114",
+          "columnRanges": [
+           {
+            "startIndex": 17,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "114",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 17,
+           "length": 3
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  def DefaultValue(self):",
+         "matchingRanges": {
+          "lineNumber": "148",
+          "columnRanges": [
+           {
+            "startIndex": 2,
+            "length": 3
+           },
+           {
+            "startIndex": 6,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "148",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 2,
+           "length": 3
+          },
+          {
+           "startIndex": 6,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "    return False",
+         "matchingRanges": {
+          "lineNumber": "149"
+         },
+         "lineNumber": "149",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 11,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "TYPE_TO_SIZER = {",
+         "matchingRanges": {
+          "lineNumber": "402",
+          "columnRanges": [
+           {
+            "length": 13
+           }
+          ]
+         },
+         "lineNumber": "402",
+         "ranges": [
+          {
+           "length": 13
+          }
+         ]
+        },
+        {
+         "lineText": "    _FieldDescriptor.TYPE_DOUBLE: encoder.DoubleSizer,",
+         "matchingRanges": {
+          "lineNumber": "403",
+          "columnRanges": [
+           {
+            "startIndex": 42,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "403",
+         "ranges": [
+          {
+           "startIndex": 42,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": "    _FieldDescriptor.TYPE_FLOAT: encoder.FloatSizer,",
+         "matchingRanges": {
+          "lineNumber": "404",
+          "columnRanges": [
+           {
+            "startIndex": 41,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "404",
+         "ranges": [
+          {
+           "startIndex": 41,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "    _FieldDescriptor.TYPE_INT64: encoder.Int64Sizer,",
+         "matchingRanges": {
+          "lineNumber": "405",
+          "columnRanges": [
+           {
+            "startIndex": 41,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "405",
+         "ranges": [
+          {
+           "startIndex": 41,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "    _FieldDescriptor.TYPE_UINT64: encoder.UInt64Sizer,",
+         "matchingRanges": {
+          "lineNumber": "406",
+          "columnRanges": [
+           {
+            "startIndex": 42,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "406",
+         "ranges": [
+          {
+           "startIndex": 42,
+           "length": 11
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 43
+    },
+    "resultToken": "CAESBAgBIAE4xrDvyKT3t8DqAUAASAE"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "protobuf",
+        "ossProject": "protobuf"
+       },
+       "refSpec": "refs/heads/main"
+      },
+      "path": "python/google/protobuf/internal/python_message.py",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    )",
+         "matchingRanges": {
+          "lineNumber": "332"
+         },
+         "lineNumber": "332"
+        },
+        {
+         "lineText": "    sizer = encoder.MapSizer(field_descriptor, key_sizer, value_sizer)",
+         "matchingRanges": {
+          "lineNumber": "333",
+          "columnRanges": [
+           {
+            "startIndex": 20,
+            "length": 8
+           },
+           {
+            "startIndex": 47,
+            "length": 9
+           },
+           {
+            "startIndex": 58,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "333",
+         "ranges": [
+          {
+           "startIndex": 20,
+           "length": 8
+          },
+          {
+           "startIndex": 47,
+           "length": 9
+          },
+          {
+           "startIndex": 58,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": "  elif _IsMessageSetExtension(field_descriptor):",
+         "matchingRanges": {
+          "lineNumber": "334"
+         },
+         "lineNumber": "334",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    field_encoder = encoder.MessageSetItemEncoder(field_descriptor.number)",
+         "matchingRanges": {
+          "lineNumber": "335"
+         },
+         "lineNumber": "335"
+        },
+        {
+         "lineText": "    sizer = encoder.MessageSetItemSizer(field_descriptor.number)",
+         "matchingRanges": {
+          "lineNumber": "336",
+          "columnRanges": [
+           {
+            "startIndex": 20,
+            "length": 19
+           }
+          ]
+         },
+         "lineNumber": "336",
+         "ranges": [
+          {
+           "startIndex": 20,
+           "length": 19
+          }
+         ]
+        },
+        {
+         "lineText": "  else:",
+         "matchingRanges": {
+          "lineNumber": "337"
+         },
+         "lineNumber": "337",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    def MakeMessageMapDefault(message):",
+         "matchingRanges": {
+          "lineNumber": "448",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 3
+           },
+           {
+            "startIndex": 22,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "448",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 3
+          },
+          {
+           "startIndex": 22,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "      return containers.MessageMap(",
+         "matchingRanges": {
+          "lineNumber": "449"
+         },
+         "lineNumber": "449",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  def MakeScalarDefault(message):",
+         "matchingRanges": {
+          "lineNumber": "534",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "534",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "    # TODO: This may be broken since there may not be",
+         "matchingRanges": {
+          "lineNumber": "535"
+         },
+         "lineNumber": "535",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 49
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 47
+    },
+    "resultToken": "CAISBAgBIAE42PXd_oG9gJu1AUAASAI"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "protobuf",
+        "ossProject": "protobuf"
+       },
+       "refSpec": "refs/heads/main"
+      },
+      "path": "php/ext/google/protobuf/php-upb.c",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  size_t sz = *size + kUpb_MemblockReserve;",
+         "matchingRanges": {
+          "lineNumber": "7528"
+         },
+         "lineNumber": "7528"
+        },
+        {
+         "lineText": "  upb_SizedPtr alloc_result = upb_SizeReturningMalloc(alloc, sz);",
+         "matchingRanges": {
+          "lineNumber": "7529",
+          "columnRanges": [
+           {
+            "startIndex": 30,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "7529",
+         "ranges": [
+          {
+           "startIndex": 30,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "  if (!alloc_result.p) return NULL;",
+         "matchingRanges": {
+          "lineNumber": "7530"
+         },
+         "lineNumber": "7530",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 23,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "struct upb_EnumValueDef {",
+         "matchingRanges": {
+          "lineNumber": "12981",
+          "columnRanges": [
+           {
+            "startIndex": 20,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "12981",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 20,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "  UPB_ALIGN_AS(8) const google_protobuf_EnumValueOptions* opts;",
+         "matchingRanges": {
+          "lineNumber": "12982"
+         },
+         "lineNumber": "12982",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 15,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 18,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "struct upb_FieldDef {",
+         "matchingRanges": {
+          "lineNumber": "13177",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "13177",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "  UPB_ALIGN_AS(8) const google_protobuf_FieldOptions* opts;",
+         "matchingRanges": {
+          "lineNumber": "13178"
+         },
+         "lineNumber": "13178",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 15,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 18,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "struct upb_MessageDef {",
+         "matchingRanges": {
+          "lineNumber": "15271",
+          "columnRanges": [
+           {
+            "startIndex": 18,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "15271",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 18,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "  UPB_ALIGN_AS(8) const google_protobuf_MessageOptions* opts;",
+         "matchingRanges": {
+          "lineNumber": "15272"
+         },
+         "lineNumber": "15272",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 15,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 18,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 77
+    },
+    "resultToken": "CAMSBAgBIAE45v_xwcnr9NPoAUAASAM"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "protobuf",
+        "ossProject": "protobuf"
+       },
+       "refSpec": "refs/heads/main"
+      },
+      "path": "ruby/ext/google/protobuf_c/ruby-upb.c",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  size_t sz = *size + kUpb_MemblockReserve;",
+         "matchingRanges": {
+          "lineNumber": "6334"
+         },
+         "lineNumber": "6334"
+        },
+        {
+         "lineText": "  upb_SizedPtr alloc_result = upb_SizeReturningMalloc(alloc, sz);",
+         "matchingRanges": {
+          "lineNumber": "6335",
+          "columnRanges": [
+           {
+            "startIndex": 30,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "6335",
+         "ranges": [
+          {
+           "startIndex": 30,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "  if (!alloc_result.p) return NULL;",
+         "matchingRanges": {
+          "lineNumber": "6336"
+         },
+         "lineNumber": "6336",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 23,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "struct upb_EnumValueDef {",
+         "matchingRanges": {
+          "lineNumber": "11787",
+          "columnRanges": [
+           {
+            "startIndex": 20,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "11787",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 20,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "  UPB_ALIGN_AS(8) const google_protobuf_EnumValueOptions* opts;",
+         "matchingRanges": {
+          "lineNumber": "11788"
+         },
+         "lineNumber": "11788",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 15,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 18,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "struct upb_FieldDef {",
+         "matchingRanges": {
+          "lineNumber": "11983",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "11983",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "  UPB_ALIGN_AS(8) const google_protobuf_FieldOptions* opts;",
+         "matchingRanges": {
+          "lineNumber": "11984"
+         },
+         "lineNumber": "11984",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 15,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 18,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "struct upb_MessageDef {",
+         "matchingRanges": {
+          "lineNumber": "14077",
+          "columnRanges": [
+           {
+            "startIndex": 18,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "14077",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 18,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "  UPB_ALIGN_AS(8) const google_protobuf_MessageOptions* opts;",
+         "matchingRanges": {
+          "lineNumber": "14078"
+         },
+         "lineNumber": "14078",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 15,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 18,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 77
+    },
+    "resultToken": "CAQSBAgBIAE4toun9oq9tMRAQABIBA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "protobuf",
+        "ossProject": "protobuf"
+       },
+       "refSpec": "refs/heads/main"
+      },
+      "path": "php/ext/google/protobuf/php-upb.h",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "UPB_INLINE upb_SizedPtr upb_SizeReturningMalloc(upb_alloc* alloc, size_t size) {",
+         "matchingRanges": {
+          "lineNumber": "942",
+          "columnRanges": [
+           {
+            "startIndex": 24,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "942",
+         "ranges": [
+          {
+           "startIndex": 24,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "  UPB_ASSERT(alloc);",
+         "matchingRanges": {
+          "lineNumber": "943"
+         },
+         "lineNumber": "943",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "startIndex": 13,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// For generated code only: loads a generated descriptor.",
+         "matchingRanges": {
+          "lineNumber": "15334"
+         },
+         "lineNumber": "15334",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 57
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "typedef struct _upb_DefPool_Init {",
+         "matchingRanges": {
+          "lineNumber": "15335",
+          "columnRanges": [
+           {
+            "startIndex": 20,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "15335",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 20,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "  struct _upb_DefPool_Init** deps;  // Dependencies of this file.",
+         "matchingRanges": {
+          "lineNumber": "15336"
+         },
+         "lineNumber": "15336",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 36,
+            "length": 29
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "#define UPB_DEF_SET_OPTIONS(target, desc_type, options_type, proto)        \\",
+         "matchingRanges": {
+          "lineNumber": "17802",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "17802",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "  if (google_protobuf_##desc_type##_has_options(proto)) {                           \\",
+         "matchingRanges": {
+          "lineNumber": "17803"
+         },
+         "lineNumber": "17803",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "struct upb_DefBuilder {",
+         "matchingRanges": {
+          "lineNumber": "17821",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "17821",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "  upb_DefPool* symtab;",
+         "matchingRanges": {
+          "lineNumber": "17822"
+         },
+         "lineNumber": "17822"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 75
+    },
+    "resultToken": "CAUSBAgBIAE4-I3piL36568sQABIBQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "protobuf",
+        "ossProject": "protobuf"
+       },
+       "refSpec": "refs/heads/main"
+      },
+      "path": "ruby/ext/google/protobuf_c/ruby-upb.h",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "UPB_INLINE upb_SizedPtr upb_SizeReturningMalloc(upb_alloc* alloc, size_t size) {",
+         "matchingRanges": {
+          "lineNumber": "942",
+          "columnRanges": [
+           {
+            "startIndex": 24,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "942",
+         "ranges": [
+          {
+           "startIndex": 24,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "  UPB_ASSERT(alloc);",
+         "matchingRanges": {
+          "lineNumber": "943"
+         },
+         "lineNumber": "943",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "startIndex": 13,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// For generated code only: loads a generated descriptor.",
+         "matchingRanges": {
+          "lineNumber": "17504"
+         },
+         "lineNumber": "17504",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 57
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "typedef struct _upb_DefPool_Init {",
+         "matchingRanges": {
+          "lineNumber": "17505",
+          "columnRanges": [
+           {
+            "startIndex": 20,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "17505",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 20,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "  struct _upb_DefPool_Init** deps;  // Dependencies of this file.",
+         "matchingRanges": {
+          "lineNumber": "17506"
+         },
+         "lineNumber": "17506",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 36,
+            "length": 29
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "#define UPB_DEF_SET_OPTIONS(target, desc_type, options_type, proto)        \\",
+         "matchingRanges": {
+          "lineNumber": "17599",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "17599",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "  if (google_protobuf_##desc_type##_has_options(proto)) {                           \\",
+         "matchingRanges": {
+          "lineNumber": "17600"
+         },
+         "lineNumber": "17600",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "struct upb_DefBuilder {",
+         "matchingRanges": {
+          "lineNumber": "17618",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "17618",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "  upb_DefPool* symtab;",
+         "matchingRanges": {
+          "lineNumber": "17619"
+         },
+         "lineNumber": "17619"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 75
+    },
+    "resultToken": "CAYSBAgBIAE4yurrjfWkwKeBAUAASAY"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "protobuf",
+        "ossProject": "protobuf"
+       },
+       "refSpec": "refs/heads/main"
+      },
+      "path": "upb/mem/arena.c",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "#ifdef UPB_TRACING_ENABLED",
+         "matchingRanges": {
+          "lineNumber": "14",
+          "columnRanges": [
+           {
+            "startIndex": 3,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "14",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 3,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "#include \u003cstdatomic.h\u003e",
+         "matchingRanges": {
+          "lineNumber": "15"
+         },
+         "lineNumber": "15",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 9,
+            "length": 13
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// Must be last.",
+         "matchingRanges": {
+          "lineNumber": "26"
+         },
+         "lineNumber": "26",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 16
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "#include \"upb/port/def.inc\"",
+         "matchingRanges": {
+          "lineNumber": "27",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "27",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 9,
+            "length": 18
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "28"
+         },
+         "lineNumber": "28"
+        },
+        {
+         "lineText": "static UPB_ATOMIC(size_t) g_max_block_size = UPB_DEFAULT_MAX_BLOCK_SIZE;",
+         "matchingRanges": {
+          "lineNumber": "29",
+          "columnRanges": [
+           {
+            "startIndex": 49,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "29",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 49,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "30"
+         },
+         "lineNumber": "30"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  size_t sz = *size + kUpb_MemblockReserve;",
+         "matchingRanges": {
+          "lineNumber": "376"
+         },
+         "lineNumber": "376"
+        },
+        {
+         "lineText": "  upb_SizedPtr alloc_result = upb_SizeReturningMalloc(alloc, sz);",
+         "matchingRanges": {
+          "lineNumber": "377",
+          "columnRanges": [
+           {
+            "startIndex": 30,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "377",
+         "ranges": [
+          {
+           "startIndex": 30,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "  if (!alloc_result.p) return NULL;",
+         "matchingRanges": {
+          "lineNumber": "378"
+         },
+         "lineNumber": "378",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 23,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 21
+    },
+    "resultToken": "CAcSAggBOJSk-KCos92y9wFAAEgH"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "protobuf",
+        "ossProject": "protobuf"
+       },
+       "refSpec": "refs/heads/main"
+      },
+      "path": "upb/mem/alloc.h",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "#ifndef UPB_MEM_ALLOC_H_",
+         "matchingRanges": {
+          "lineNumber": "8",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "8",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "#define UPB_MEM_ALLOC_H_",
+         "matchingRanges": {
+          "lineNumber": "9",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "9",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "10"
+         },
+         "lineNumber": "10"
+        },
+        {
+         "lineText": "#include \u003cstddef.h\u003e",
+         "matchingRanges": {
+          "lineNumber": "11",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "11",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 9,
+            "length": 10
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "12"
+         },
+         "lineNumber": "12"
+        },
+        {
+         "lineText": "// Must be last.",
+         "matchingRanges": {
+          "lineNumber": "13"
+         },
+         "lineNumber": "13",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 16
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "#include \"upb/port/def.inc\"",
+         "matchingRanges": {
+          "lineNumber": "14",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "14",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 9,
+            "length": 18
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "15"
+         },
+         "lineNumber": "15"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "UPB_INLINE upb_SizedPtr upb_SizeReturningMalloc(upb_alloc* alloc, size_t size) {",
+         "matchingRanges": {
+          "lineNumber": "52",
+          "columnRanges": [
+           {
+            "startIndex": 24,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "52",
+         "ranges": [
+          {
+           "startIndex": 24,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "  UPB_ASSERT(alloc);",
+         "matchingRanges": {
+          "lineNumber": "53"
+         },
+         "lineNumber": "53",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "startIndex": 13,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 11
+    },
+    "resultToken": "CAgSAggBOKCAvYbq_eCJ8gFAAEgI"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "protobuf",
+        "ossProject": "protobuf"
+       },
+       "refSpec": "refs/heads/main"
+      },
+      "path": "cmake/protobuf-module.cmake.in",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  if(DEFINED Protobuf_IMPORT_DIRS)",
+         "matchingRanges": {
+          "lineNumber": "17",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "17",
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "    set(_import_arg IMPORT_DIRS ${Protobuf_IMPORT_DIRS})",
+         "matchingRanges": {
+          "lineNumber": "18"
+         },
+         "lineNumber": "18"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  if(DEFINED Protobuf_IMPORT_DIRS)",
+         "matchingRanges": {
+          "lineNumber": "47",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "47",
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "    set(_import_arg IMPORT_DIRS ${Protobuf_IMPORT_DIRS})",
+         "matchingRanges": {
+          "lineNumber": "48"
+         },
+         "lineNumber": "48"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "if(DEFINED Protobuf_SRC_ROOT_FOLDER)",
+         "matchingRanges": {
+          "lineNumber": "81",
+          "columnRanges": [
+           {
+            "startIndex": 3,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "81",
+         "ranges": [
+          {
+           "startIndex": 3,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "  message(AUTHOR_WARNING \"Variable Protobuf_SRC_ROOT_FOLDER defined, but not\"",
+         "matchingRanges": {
+          "lineNumber": "82",
+          "columnRanges": [
+           {
+            "startIndex": 60,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "82",
+         "ranges": [
+          {
+           "startIndex": 60,
+           "length": 3
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "      LOCATION_RELWITHDEBINFO)",
+         "matchingRanges": {
+          "lineNumber": "101"
+         },
+         "lineNumber": "101"
+        },
+        {
+         "lineText": "    get_target_property(${name}_LIBRARY_MINSIZEREL protobuf::lib${filename}",
+         "matchingRanges": {
+          "lineNumber": "102",
+          "columnRanges": [
+           {
+            "startIndex": 31,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "102",
+         "ranges": [
+          {
+           "startIndex": 31,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "      LOCATION_MINSIZEREL)",
+         "matchingRanges": {
+          "lineNumber": "103",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "103",
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "    get_target_property(${name}_LIBRARY_DEBUG protobuf::lib${filename}",
+         "matchingRanges": {
+          "lineNumber": "104"
+         },
+         "lineNumber": "104"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 13
+    },
+    "resultToken": "CAkSAggBONSuufDe7PWkbUAASAk"
+   }
+  ],
+  "estimatedResultCount": "10",
+  "exhaustive": true,
+  "requestToken": "CgxkZWYgXHcrU2l6ZXISNSggZ2l0OmdpdGh1Yi9wcm90b2NvbGJ1ZmZlcnMvcHJvdG9idWZAbWFpbiBjYXNlOnllcyApGgsInNjM0QYQtqbrVSAMKgAyAEgB"
+ }
+}

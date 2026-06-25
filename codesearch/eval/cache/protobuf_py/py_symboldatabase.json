@@ -1,0 +1,564 @@
+{
+ "query": "SymbolDatabase",
+ "oss_project": "protobuf",
+ "repo_name": "protobuf",
+ "page_size": 50,
+ "fetched_at": "2026-06-17T22:22:48Z",
+ "response": {
+  "searchResults": [
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "protobuf",
+        "ossProject": "protobuf"
+       },
+       "refSpec": "refs/heads/main"
+      },
+      "path": "python/google/protobuf/symbol_database.py",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "SymbolDatabase is the MessageFactory for messages generated at compile time,",
+         "matchingRanges": {
+          "lineNumber": "9",
+          "columnRanges": [
+           {
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "9",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "length": 76
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "length": 76
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "and makes it easy to create new instances of a registered type, given only the",
+         "matchingRanges": {
+          "lineNumber": "10"
+         },
+         "lineNumber": "10",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "length": 78
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "length": 78
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  db = symbol_database.SymbolDatabase()",
+         "matchingRanges": {
+          "lineNumber": "15",
+          "columnRanges": [
+           {
+            "startIndex": 23,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "15",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "length": 39
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "length": 39
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 23,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "16"
+         },
+         "lineNumber": "16",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {}
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {}
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "class SymbolDatabase:",
+         "matchingRanges": {
+          "lineNumber": "43",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "43",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "  \"\"\"A database of Python generated symbols.\"\"\"",
+         "matchingRanges": {
+          "lineNumber": "44"
+         },
+         "lineNumber": "44",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 45
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  def __init__(self, pool=None):",
+         "matchingRanges": {
+          "lineNumber": "49"
+         },
+         "lineNumber": "49",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 26,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    \"\"\"Initializes a new SymbolDatabase.\"\"\"",
+         "matchingRanges": {
+          "lineNumber": "50",
+          "columnRanges": [
+           {
+            "startIndex": 25,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "50",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 4,
+            "length": 39
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 25,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "    self.pool = pool or descriptor_pool.DescriptorPool()",
+         "matchingRanges": {
+          "lineNumber": "51"
+         },
+         "lineNumber": "51",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 21,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "_DEFAULT = SymbolDatabase(pool=descriptor_pool.Default())",
+         "matchingRanges": {
+          "lineNumber": "173",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "173",
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "174"
+         },
+         "lineNumber": "174"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "def Default():",
+         "matchingRanges": {
+          "lineNumber": "176"
+         },
+         "lineNumber": "176",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  \"\"\"Returns the default SymbolDatabase.\"\"\"",
+         "matchingRanges": {
+          "lineNumber": "177",
+          "columnRanges": [
+           {
+            "startIndex": 25,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "177",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 41
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 25,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "  return _DEFAULT",
+         "matchingRanges": {
+          "lineNumber": "178"
+         },
+         "lineNumber": "178",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 6
+    },
+    "resultToken": "CAASBAgBIAE44OnqpNm93cg0QABIAA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "protobuf",
+        "ossProject": "protobuf"
+       },
+       "refSpec": "refs/heads/main"
+      },
+      "path": "python/google/protobuf/internal/symbol_database_test.py",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "class SymbolDatabaseTest(unittest.TestCase):",
+         "matchingRanges": {
+          "lineNumber": "19",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "19",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "20"
+         },
+         "lineNumber": "20"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "      # different pools.",
+         "matchingRanges": {
+          "lineNumber": "24"
+         },
+         "lineNumber": "24",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 6,
+            "length": 18
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "      db = symbol_database.SymbolDatabase(pool=descriptor_pool.Default())",
+         "matchingRanges": {
+          "lineNumber": "25",
+          "columnRanges": [
+           {
+            "startIndex": 27,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "25",
+         "ranges": [
+          {
+           "startIndex": 27,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "    else:",
+         "matchingRanges": {
+          "lineNumber": "26"
+         },
+         "lineNumber": "26",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "      db = symbol_database.SymbolDatabase()",
+         "matchingRanges": {
+          "lineNumber": "27",
+          "columnRanges": [
+           {
+            "startIndex": 27,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "27",
+         "ranges": [
+          {
+           "startIndex": 27,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "    # Register representative types from unittest_pb2.",
+         "matchingRanges": {
+          "lineNumber": "28"
+         },
+         "lineNumber": "28",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 50
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CAESBAgBIAE4tJiO9df3q6-0AUAASAE"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "protobuf",
+        "ossProject": "protobuf"
+       },
+       "refSpec": "refs/heads/main"
+      },
+      "path": "python/google/protobuf/internal/generator_test.py",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "class SymbolDatabaseRegistrationTest(unittest.TestCase):",
+         "matchingRanges": {
+          "lineNumber": "412",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "412",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "  \"\"\"Checks that messages, enums and files are correctly registered.\"\"\"",
+         "matchingRanges": {
+          "lineNumber": "413"
+         },
+         "lineNumber": "413",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 69
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAISBAgBIAE42Jr8pse3uM9dQABIAg"
+   }
+  ],
+  "estimatedResultCount": "3",
+  "exhaustive": true,
+  "requestToken": "Cg5TeW1ib2xEYXRhYmFzZRI1KCBnaXQ6Z2l0aHViL3Byb3RvY29sYnVmZmVycy9wcm90b2J1ZkBtYWluIGNhc2U6eWVzICkaDAi4vMzRBhC-nvidAiAMKgAyAEgB"
+ }
+}

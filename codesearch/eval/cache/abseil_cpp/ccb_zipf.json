@@ -1,0 +1,1290 @@
+{
+ "query": "zipf_distribution",
+ "oss_project": "abseil",
+ "repo_name": "abseil-cpp",
+ "page_size": 50,
+ "fetched_at": "2026-06-17T23:22:56Z",
+ "response": {
+  "searchResults": [
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "abseil-cpp",
+        "ossProject": "abseil"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "absl/random/zipf_distribution.h",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "template \u003ctypename IntType = int\u003e",
+         "matchingRanges": {
+          "lineNumber": "52"
+         },
+         "lineNumber": "52",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 29,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "class zipf_distribution {",
+         "matchingRanges": {
+          "lineNumber": "53",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "53",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": " public:",
+         "matchingRanges": {
+          "lineNumber": "54"
+         },
+         "lineNumber": "54",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  zipf_distribution()",
+         "matchingRanges": {
+          "lineNumber": "104",
+          "columnRanges": [
+           {
+            "startIndex": 2,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "104",
+         "ranges": [
+          {
+           "startIndex": 2,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "      : zipf_distribution((std::numeric_limits\u003cIntType\u003e::max)()) {}",
+         "matchingRanges": {
+          "lineNumber": "105",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "105",
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 17
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  explicit zipf_distribution(result_type k, double q = 2.0, double v = 1.0)",
+         "matchingRanges": {
+          "lineNumber": "107",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "107",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 44,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 55,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 60,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 71,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "      : param_(k, q, v) {}",
+         "matchingRanges": {
+          "lineNumber": "108"
+         },
+         "lineNumber": "108"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  explicit zipf_distribution(const param_type\u0026 p) : param_(p) {}",
+         "matchingRanges": {
+          "lineNumber": "110",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "110",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 29,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "111"
+         },
+         "lineNumber": "111"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 28
+    },
+    "resultToken": "CAASBAgBIAE4zq7ojqXwy-XGAUAASAA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "abseil-cpp",
+        "ossProject": "abseil"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "absl/random/zipf_distribution_test.cc",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "#include \"absl/random/zipf_distribution.h\"",
+         "matchingRanges": {
+          "lineNumber": "15",
+          "columnRanges": [
+           {
+            "startIndex": 22,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "15",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 9,
+            "length": 33
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 22,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "16"
+         },
+         "lineNumber": "16"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "TYPED_TEST(ZipfDistributionTypedTest, SerializeTest) {",
+         "matchingRanges": {
+          "lineNumber": "49"
+         },
+         "lineNumber": "49",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "startIndex": 11,
+            "length": 25
+           }
+          },
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "startIndex": 38,
+            "length": 13
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  using param_type = typename absl::zipf_distribution\u003cTypeParam\u003e::param_type;",
+         "matchingRanges": {
+          "lineNumber": "50",
+          "columnRanges": [
+           {
+            "startIndex": 36,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "50",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 21,
+            "length": 8
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 36,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "51"
+         },
+         "lineNumber": "51"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    absl::zipf_distribution\u003cTypeParam\u003e before(k, q, v);",
+         "matchingRanges": {
+          "lineNumber": "66",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "66",
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "    EXPECT_EQ(before.k(), param.k());",
+         "matchingRanges": {
+          "lineNumber": "67"
+         },
+         "lineNumber": "67"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    {",
+         "matchingRanges": {
+          "lineNumber": "71"
+         },
+         "lineNumber": "71"
+        },
+        {
+         "lineText": "      absl::zipf_distribution\u003cTypeParam\u003e via_param(param);",
+         "matchingRanges": {
+          "lineNumber": "72",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "72",
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "      EXPECT_EQ(via_param, before);",
+         "matchingRanges": {
+          "lineNumber": "73"
+         },
+         "lineNumber": "73",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "startIndex": 16,
+            "length": 9
+           }
+          },
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "startIndex": 27,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 11
+    },
+    "resultToken": "CAESAggBOOjzrvDWmY6RCUAASAE"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "abseil-cpp",
+        "ossProject": "abseil"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "absl/random/distributions.h",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "#include \"absl/random/uniform_real_distribution.h\"  // IWYU pragma: export",
+         "matchingRanges": {
+          "lineNumber": "64"
+         },
+         "lineNumber": "64",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 9,
+            "length": 41
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 52,
+            "length": 22
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "#include \"absl/random/zipf_distribution.h\"",
+         "matchingRanges": {
+          "lineNumber": "65",
+          "columnRanges": [
+           {
+            "startIndex": 22,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "65",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 9,
+            "length": 33
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 22,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "66"
+         },
+         "lineNumber": "66"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  using gen_t = std::decay_t\u003cURBG\u003e;",
+         "matchingRanges": {
+          "lineNumber": "443"
+         },
+         "lineNumber": "443",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  using distribution_t = typename absl::zipf_distribution\u003cIntType\u003e;",
+         "matchingRanges": {
+          "lineNumber": "444",
+          "columnRanges": [
+           {
+            "startIndex": 40,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "444",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 25,
+            "length": 8
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 40,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "445"
+         },
+         "lineNumber": "445"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAISAggBOPSE0Ojg5dGnUEAASAI"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "abseil-cpp",
+        "ossProject": "abseil"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "absl/random/mock_distributions.h",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "#include \"absl/random/poisson_distribution.h\"",
+         "matchingRanges": {
+          "lineNumber": "59"
+         },
+         "lineNumber": "59",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 9,
+            "length": 36
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "#include \"absl/random/zipf_distribution.h\"",
+         "matchingRanges": {
+          "lineNumber": "60",
+          "columnRanges": [
+           {
+            "startIndex": 22,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "60",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 9,
+            "length": 33
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 22,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "61"
+         },
+         "lineNumber": "61"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "using MockZipf =",
+         "matchingRanges": {
+          "lineNumber": "261"
+         },
+         "lineNumber": "261",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    random_internal::MockOverloadSet\u003cabsl::zipf_distribution\u003cIntType\u003e,",
+         "matchingRanges": {
+          "lineNumber": "262",
+          "columnRanges": [
+           {
+            "startIndex": 43,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "262",
+         "ranges": [
+          {
+           "startIndex": 43,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "                                     IntType(MockingBitGen\u0026, IntType, double,",
+         "matchingRanges": {
+          "lineNumber": "263"
+         },
+         "lineNumber": "263",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 70,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAMSAggBOMjghNTdo4KMc0AASAM"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "abseil-cpp",
+        "ossProject": "abseil"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "absl/random/CMakeLists.txt",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    \"uniform_real_distribution.h\"",
+         "matchingRanges": {
+          "lineNumber": "198"
+         },
+         "lineNumber": "198"
+        },
+        {
+         "lineText": "    \"zipf_distribution.h\"",
+         "matchingRanges": {
+          "lineNumber": "199",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "199",
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "  COPTS",
+         "matchingRanges": {
+          "lineNumber": "200"
+         },
+         "lineNumber": "200"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  NAME",
+         "matchingRanges": {
+          "lineNumber": "494"
+         },
+         "lineNumber": "494"
+        },
+        {
+         "lineText": "    random_zipf_distribution_test",
+         "matchingRanges": {
+          "lineNumber": "495",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "495",
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "  SRCS",
+         "matchingRanges": {
+          "lineNumber": "496"
+         },
+         "lineNumber": "496"
+        },
+        {
+         "lineText": "    \"zipf_distribution_test.cc\"",
+         "matchingRanges": {
+          "lineNumber": "497",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "497",
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "  COPTS",
+         "matchingRanges": {
+          "lineNumber": "498"
+         },
+         "lineNumber": "498"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CAQSAggBOPiPlJrivtXJfUAASAQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "abseil-cpp",
+        "ossProject": "abseil"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "CMake/AbseilDll.cmake",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  \"random/uniform_real_distribution.h\"",
+         "matchingRanges": {
+          "lineNumber": "283"
+         },
+         "lineNumber": "283"
+        },
+        {
+         "lineText": "  \"random/zipf_distribution.h\"",
+         "matchingRanges": {
+          "lineNumber": "284",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "284",
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "  \"status/internal/status_internal.cc\"",
+         "matchingRanges": {
+          "lineNumber": "285"
+         },
+         "lineNumber": "285"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAUSAggBOKiFlKzi8OOdngFAAEgF"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "abseil-cpp",
+        "ossProject": "abseil"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "absl/random/BUILD.bazel",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "        \"uniform_real_distribution.h\",",
+         "matchingRanges": {
+          "lineNumber": "71"
+         },
+         "lineNumber": "71",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 29
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "        \"zipf_distribution.h\",",
+         "matchingRanges": {
+          "lineNumber": "72",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "72",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 21
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "    ],",
+         "matchingRanges": {
+          "lineNumber": "73"
+         },
+         "lineNumber": "73"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "cc_test(",
+         "matchingRanges": {
+          "lineNumber": "435"
+         },
+         "lineNumber": "435"
+        },
+        {
+         "lineText": "    name = \"zipf_distribution_test\",",
+         "matchingRanges": {
+          "lineNumber": "436",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "436",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 24
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "    size = \"medium\",",
+         "matchingRanges": {
+          "lineNumber": "437"
+         },
+         "lineNumber": "437",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 8
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    srcs = [",
+         "matchingRanges": {
+          "lineNumber": "438"
+         },
+         "lineNumber": "438"
+        },
+        {
+         "lineText": "        \"zipf_distribution_test.cc\",",
+         "matchingRanges": {
+          "lineNumber": "439",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "439",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 27
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "    ],",
+         "matchingRanges": {
+          "lineNumber": "440"
+         },
+         "lineNumber": "440"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CAYSBAgBIAE4jPj009_4hqvjAUAASAY"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "abseil-cpp",
+        "ossProject": "abseil"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "absl/random/benchmarks.cc",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "#include \"absl/random/uniform_real_distribution.h\"",
+         "matchingRanges": {
+          "lineNumber": "39"
+         },
+         "lineNumber": "39",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 9,
+            "length": 41
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "#include \"absl/random/zipf_distribution.h\"",
+         "matchingRanges": {
+          "lineNumber": "40",
+          "columnRanges": [
+           {
+            "startIndex": 22,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "40",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 9,
+            "length": 33
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 22,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "#include \"benchmark/benchmark.h\"",
+         "matchingRanges": {
+          "lineNumber": "41"
+         },
+         "lineNumber": "41",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 9,
+            "length": 23
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  BENCHMARK_TEMPLATE(BM_Dist, Engine, std::geometric_distribution\u003cint64_t\u003e);   \\",
+         "matchingRanges": {
+          "lineNumber": "327"
+         },
+         "lineNumber": "327"
+        },
+        {
+         "lineText": "  BENCHMARK_TEMPLATE(BM_Zipf, Engine, absl::zipf_distribution\u003cuint64_t\u003e);      \\",
+         "matchingRanges": {
+          "lineNumber": "328",
+          "columnRanges": [
+           {
+            "startIndex": 44,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "328",
+         "ranges": [
+          {
+           "startIndex": 44,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "  BENCHMARK_TEMPLATE(BM_Zipf, Engine, absl::zipf_distribution\u003cuint64_t\u003e, 2,    \\",
+         "matchingRanges": {
+          "lineNumber": "329",
+          "columnRanges": [
+           {
+            "startIndex": 44,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "329",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 73,
+            "length": 1
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 44,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "                     3);                                                       \\",
+         "matchingRanges": {
+          "lineNumber": "330"
+         },
+         "lineNumber": "330",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 21,
+            "length": 1
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CAcSAggBOJ7-n8OTlfNTQABIBw"
+   }
+  ],
+  "estimatedResultCount": "8",
+  "exhaustive": true,
+  "requestToken": "ChF6aXBmX2Rpc3RyaWJ1dGlvbhIwKCBnaXQ6Z2l0aHViL2Fic2VpbC9hYnNlaWwtY3BwQG1hc3RlciBjYXNlOnllcyApGgwI0NjM0QYQ1OC65QEgDCoAMgBIAQ"
+ }
+}

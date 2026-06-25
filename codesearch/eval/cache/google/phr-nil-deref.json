@@ -1,0 +1,810 @@
+{
+ "query": "\"invalid memory address or nil pointer dereference\"",
+ "oss_project": "go",
+ "repo_name": "go",
+ "page_size": 50,
+ "fetched_at": "2026-06-11T02:29:39Z",
+ "response": {
+  "searchResults": [
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "test/convert4.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t},",
+         "matchingRanges": {
+          "lineNumber": "64"
+         },
+         "lineNumber": "64"
+        },
+        {
+         "lineText": "\t\t\"runtime error: invalid memory address or nil pointer dereference\",",
+         "matchingRanges": {
+          "lineNumber": "65",
+          "columnRanges": [
+           {
+            "startIndex": 18,
+            "length": 49
+           }
+          ]
+         },
+         "lineNumber": "65",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 66
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 18,
+           "length": 49
+          }
+         ]
+        },
+        {
+         "lineText": "\t)",
+         "matchingRanges": {
+          "lineNumber": "66"
+         },
+         "lineNumber": "66"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAASAggBOPDRzqDY9KvUxgFAAEgA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "test/devirtualization_nil_panics.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t}",
+         "matchingRanges": {
+          "lineNumber": "76"
+         },
+         "lineNumber": "76"
+        },
+        {
+         "lineText": "\t\tif strings.Contains(fmt.Sprintf(\"%s\", p), \"invalid memory address or nil pointer dereference\") {",
+         "matchingRanges": {
+          "lineNumber": "77",
+          "columnRanges": [
+           {
+            "startIndex": 45,
+            "length": 49
+           }
+          ]
+         },
+         "lineNumber": "77",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 34,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 44,
+            "length": 51
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 45,
+           "length": 49
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\tcallers := make([]uintptr, 128)",
+         "matchingRanges": {
+          "lineNumber": "78"
+         },
+         "lineNumber": "78",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 30,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAESAggBONSDq_Pd6e73KkAASAE"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/panic_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t{\"panicCustomUintptr\", `panic: main.MyUintptr(93)`},",
+         "matchingRanges": {
+          "lineNumber": "38"
+         },
+         "lineNumber": "38",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 3,
+            "length": 20
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 25,
+            "length": 27
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t{\"panicDeferFatal\", \"panic: runtime.errorString(\\\"invalid memory address or nil pointer dereference\\\")\\n\\tfatal error: sync: unlock of unlocked mutex\"},",
+         "matchingRanges": {
+          "lineNumber": "39",
+          "columnRanges": [
+           {
+            "startIndex": 52,
+            "length": 49
+           }
+          ]
+         },
+         "lineNumber": "39",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 3,
+            "length": 17
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 22,
+            "length": 130
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 52,
+           "length": 49
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t{\"panicDoublieDeferFatal\", \"panic: runtime.errorString(\\\"invalid memory address or nil pointer dereference\\\") [recovered, repanicked]\\n\\tfatal error: sync: unlock of unlo ...",
+         "matchingRanges": {
+          "lineNumber": "40",
+          "columnRanges": [
+           {
+            "startIndex": 59,
+            "length": 49
+           }
+          ]
+         },
+         "lineNumber": "40",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 3,
+            "length": 24
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 29,
+            "length": 143
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 59,
+           "length": 49
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAISAggBOPTbhf7b-IuET0AASAI"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/text/template/exec_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t\t\"{{.GetU}}\", (*T)(nil),",
+         "matchingRanges": {
+          "lineNumber": "1801"
+         },
+         "lineNumber": "1801",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 3,
+            "length": 11
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t`template: t:1:2: executing \"t\" at \u003c.GetU\u003e: error calling GetU: runtime error: invalid memory address or nil pointer dereference`,",
+         "matchingRanges": {
+          "lineNumber": "1802",
+          "columnRanges": [
+           {
+            "startIndex": 82,
+            "length": 49
+           }
+          ]
+         },
+         "lineNumber": "1802",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 3,
+            "length": 129
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 82,
+           "length": 49
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t},",
+         "matchingRanges": {
+          "lineNumber": "1803"
+         },
+         "lineNumber": "1803"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t\t\"{{call .GetU}}\", (*T)(nil),",
+         "matchingRanges": {
+          "lineNumber": "1806"
+         },
+         "lineNumber": "1806",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 3,
+            "length": 16
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t`template: t:1:7: executing \"t\" at \u003c.GetU\u003e: error calling GetU: runtime error: invalid memory address or nil pointer dereference`,",
+         "matchingRanges": {
+          "lineNumber": "1807",
+          "columnRanges": [
+           {
+            "startIndex": 82,
+            "length": 49
+           }
+          ]
+         },
+         "lineNumber": "1807",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 3,
+            "length": 129
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 82,
+           "length": 49
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t},",
+         "matchingRanges": {
+          "lineNumber": "1808"
+         },
+         "lineNumber": "1808"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAMSAggBOKL32c3u5JDM5AFAAEgD"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/html/template/exec_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t\t\"{{.GetU}}\", (*T)(nil),",
+         "matchingRanges": {
+          "lineNumber": "1644"
+         },
+         "lineNumber": "1644",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 3,
+            "length": 11
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t`template: t:1:2: executing \"t\" at \u003c.GetU\u003e: error calling GetU: runtime error: invalid memory address or nil pointer dereference`,",
+         "matchingRanges": {
+          "lineNumber": "1645",
+          "columnRanges": [
+           {
+            "startIndex": 82,
+            "length": 49
+           }
+          ]
+         },
+         "lineNumber": "1645",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 3,
+            "length": 129
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 82,
+           "length": 49
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t},",
+         "matchingRanges": {
+          "lineNumber": "1646"
+         },
+         "lineNumber": "1646"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t\t\"{{call .GetU}}\", (*T)(nil),",
+         "matchingRanges": {
+          "lineNumber": "1649"
+         },
+         "lineNumber": "1649",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 3,
+            "length": 16
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t`template: t:1:7: executing \"t\" at \u003c.GetU\u003e: error calling GetU: runtime error: invalid memory address or nil pointer dereference`,",
+         "matchingRanges": {
+          "lineNumber": "1650",
+          "columnRanges": [
+           {
+            "startIndex": 82,
+            "length": 49
+           }
+          ]
+         },
+         "lineNumber": "1650",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 3,
+            "length": 129
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 82,
+           "length": 49
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t},",
+         "matchingRanges": {
+          "lineNumber": "1651"
+         },
+         "lineNumber": "1651"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAQSAggBOLSDlqHczLqdgwFAAEgE"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/panic.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "var memoryError = error(errorString(\"invalid memory address or nil pointer dereference\"))",
+         "matchingRanges": {
+          "lineNumber": "332",
+          "columnRanges": [
+           {
+            "startIndex": 37,
+            "length": 49
+           }
+          ]
+         },
+         "lineNumber": "332",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 36,
+            "length": 51
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 37,
+           "length": 49
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "333"
+         },
+         "lineNumber": "333"
+        },
+        {
+         "lineText": "func panicmem() {",
+         "matchingRanges": {
+          "lineNumber": "334"
+         },
+         "lineNumber": "334",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tpanicCheck2(\"invalid memory address or nil pointer dereference\")",
+         "matchingRanges": {
+          "lineNumber": "335",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 49
+           }
+          ]
+         },
+         "lineNumber": "335",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 13,
+            "length": 51
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 49
+          }
+         ]
+        },
+        {
+         "lineText": "\tpanic(memoryError)",
+         "matchingRanges": {
+          "lineNumber": "336"
+         },
+         "lineNumber": "336"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func panicmemAddr(addr uintptr) {",
+         "matchingRanges": {
+          "lineNumber": "339"
+         },
+         "lineNumber": "339",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tpanicCheck2(\"invalid memory address or nil pointer dereference\")",
+         "matchingRanges": {
+          "lineNumber": "340",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 49
+           }
+          ]
+         },
+         "lineNumber": "340",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 13,
+            "length": 51
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 49
+          }
+         ]
+        },
+        {
+         "lineText": "\tpanic(errorAddressString{msg: \"invalid memory address or nil pointer dereference\", addr: addr})",
+         "matchingRanges": {
+          "lineNumber": "341",
+          "columnRanges": [
+           {
+            "startIndex": 32,
+            "length": 49
+           }
+          ]
+         },
+         "lineNumber": "341",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 31,
+            "length": 51
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 32,
+           "length": 49
+          }
+         ]
+        },
+        {
+         "lineText": "}",
+         "matchingRanges": {
+          "lineNumber": "342"
+         },
+         "lineNumber": "342"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 4
+    },
+    "resultToken": "CAUSAggBOPDUzp2Nq9_XIEAASAU"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/crash_cgo_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tt.Log(got)",
+         "matchingRanges": {
+          "lineNumber": "716"
+         },
+         "lineNumber": "716"
+        },
+        {
+         "lineText": "\twant := \"panic: runtime error: invalid memory address or nil pointer dereference\"",
+         "matchingRanges": {
+          "lineNumber": "717",
+          "columnRanges": [
+           {
+            "startIndex": 32,
+            "length": 49
+           }
+          ]
+         },
+         "lineNumber": "717",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 9,
+            "length": 73
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 32,
+           "length": 49
+          }
+         ]
+        },
+        {
+         "lineText": "\tif !strings.Contains(got, want) {",
+         "matchingRanges": {
+          "lineNumber": "718"
+         },
+         "lineNumber": "718",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAYSAggBOKKx_crKlJPLIEAASAY"
+   }
+  ],
+  "estimatedResultCount": "8",
+  "exhaustive": true,
+  "requestToken": "CjMiaW52YWxpZCBtZW1vcnkgYWRkcmVzcyBvciBuaWwgcG9pbnRlciBkZXJlZmVyZW5jZSISHSggZ2l0OmdvL2dvQG1hc3RlciBjYXNlOnllcyApGgwIk7uo0QYQ7YjixwEgDCoAMgBIAQ"
+ }
+}

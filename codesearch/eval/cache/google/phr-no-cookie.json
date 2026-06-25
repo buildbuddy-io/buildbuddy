@@ -1,0 +1,92 @@
+{
+ "query": "\"named cookie not present\"",
+ "oss_project": "go",
+ "repo_name": "go",
+ "page_size": 50,
+ "fetched_at": "2026-06-11T02:29:42Z",
+ "response": {
+  "searchResults": [
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/http/request.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// ErrNoCookie is returned by Request's Cookie method when a cookie is not found.",
+         "matchingRanges": {
+          "lineNumber": "441"
+         },
+         "lineNumber": "441",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 81
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "var ErrNoCookie = errors.New(\"http: named cookie not present\")",
+         "matchingRanges": {
+          "lineNumber": "442",
+          "columnRanges": [
+           {
+            "startIndex": 36,
+            "length": 24
+           }
+          ]
+         },
+         "lineNumber": "442",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 29,
+            "length": 32
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 36,
+           "length": 24
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "443"
+         },
+         "lineNumber": "443"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAASAggBOOrJqbOT18v6tgFAAEgA"
+   }
+  ],
+  "estimatedResultCount": "1",
+  "exhaustive": true,
+  "requestToken": "ChoibmFtZWQgY29va2llIG5vdCBwcmVzZW50IhIdKCBnaXQ6Z28vZ29AbWFzdGVyIGNhc2U6eWVzICkaDAiWu6jRBhDXw43UASAMIA8qADIASAE"
+ }
+}

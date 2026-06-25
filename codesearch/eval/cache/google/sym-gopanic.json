@@ -1,0 +1,3899 @@
+{
+ "query": "gopanic",
+ "oss_project": "go",
+ "repo_name": "go",
+ "page_size": 50,
+ "fetched_at": "2026-06-11T02:27:17Z",
+ "response": {
+  "searchResults": [
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/panic.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "//go:yeswritebarrierrec",
+         "matchingRanges": {
+          "lineNumber": "111"
+         },
+         "lineNumber": "111",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 23
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "func goPanicIndex(x int, y int) {",
+         "matchingRanges": {
+          "lineNumber": "112",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "112",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tpanicCheck1(sys.GetCallerPC(), \"index out of range\")",
+         "matchingRanges": {
+          "lineNumber": "113"
+         },
+         "lineNumber": "113",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 32,
+            "length": 20
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "//go:yeswritebarrierrec",
+         "matchingRanges": {
+          "lineNumber": "117"
+         },
+         "lineNumber": "117",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 23
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "func goPanicIndexU(x uint, y int) {",
+         "matchingRanges": {
+          "lineNumber": "118",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "118",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tpanicCheck1(sys.GetCallerPC(), \"index out of range\")",
+         "matchingRanges": {
+          "lineNumber": "119"
+         },
+         "lineNumber": "119",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 32,
+            "length": 20
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "//go:linkname gopanic",
+         "matchingRanges": {
+          "lineNumber": "808",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "808",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 21
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "func gopanic(e any) {",
+         "matchingRanges": {
+          "lineNumber": "809",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "809",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tif e == nil {",
+         "matchingRanges": {
+          "lineNumber": "810"
+         },
+         "lineNumber": "810",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 26
+    },
+    "resultToken": "CAASBAgBIAE48NTOnY2r39cgQABIAA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/testdata/testprogcgo/threadpanic.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "//export gopanic",
+         "matchingRanges": {
+          "lineNumber": "22",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "22",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 16
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "func gopanic() {",
+         "matchingRanges": {
+          "lineNumber": "23",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "23",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tpanic(\"BOOM\")",
+         "matchingRanges": {
+          "lineNumber": "24"
+         },
+         "lineNumber": "24",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 7,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAESBAgBIAE4ouzr48Kxo6wBQABIAQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/testdata/testprogcgo/threadpanic_unix.c",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "void gopanic(void);",
+         "matchingRanges": {
+          "lineNumber": "11",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "11",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 13,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "12"
+         },
+         "lineNumber": "12"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "{",
+         "matchingRanges": {
+          "lineNumber": "15"
+         },
+         "lineNumber": "15"
+        },
+        {
+         "lineText": "\tgopanic();",
+         "matchingRanges": {
+          "lineNumber": "16",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "16",
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\treturn 0;",
+         "matchingRanges": {
+          "lineNumber": "17"
+         },
+         "lineNumber": "17",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 1
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAISBAgBIAE4gOjV6ZXphcbvAUAASAI"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/testdata/testprogcgo/threadpanic_windows.c",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "void gopanic(void);",
+         "matchingRanges": {
+          "lineNumber": "9",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "9",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 13,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "10"
+         },
+         "lineNumber": "10"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "{",
+         "matchingRanges": {
+          "lineNumber": "13"
+         },
+         "lineNumber": "13"
+        },
+        {
+         "lineText": "\tgopanic();",
+         "matchingRanges": {
+          "lineNumber": "14",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "14",
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\treturn 0;",
+         "matchingRanges": {
+          "lineNumber": "15"
+         },
+         "lineNumber": "15",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 1
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAMSBAgBIAE4qsnp8dWisK65AUAASAM"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/panic32.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// failures in the comparisons for s[x], 0 \u003c= x \u003c y (y == len(s))",
+         "matchingRanges": {
+          "lineNumber": "17"
+         },
+         "lineNumber": "17",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 65
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "func goPanicExtendIndex(hi int, lo uint, y int) {",
+         "matchingRanges": {
+          "lineNumber": "18",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "18",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tpanicCheck1(sys.GetCallerPC(), \"index out of range\")",
+         "matchingRanges": {
+          "lineNumber": "19"
+         },
+         "lineNumber": "19",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 32,
+            "length": 20
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "}",
+         "matchingRanges": {
+          "lineNumber": "21"
+         },
+         "lineNumber": "21"
+        },
+        {
+         "lineText": "func goPanicExtendIndexU(hi uint, lo uint, y int) {",
+         "matchingRanges": {
+          "lineNumber": "22",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "22",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tpanicCheck1(sys.GetCallerPC(), \"index out of range\")",
+         "matchingRanges": {
+          "lineNumber": "23"
+         },
+         "lineNumber": "23",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 32,
+            "length": 20
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// failures in the comparisons for s[x:y], 0 \u003c= x \u003c= y",
+         "matchingRanges": {
+          "lineNumber": "45"
+         },
+         "lineNumber": "45",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 54
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "func goPanicExtendSliceB(hi int, lo uint, y int) {",
+         "matchingRanges": {
+          "lineNumber": "46",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "46",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tpanicCheck1(sys.GetCallerPC(), \"slice bounds out of range\")",
+         "matchingRanges": {
+          "lineNumber": "47"
+         },
+         "lineNumber": "47",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 32,
+            "length": 27
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 16
+    },
+    "resultToken": "CAQSBAgBIAE4rNffxLSrjpZJQABIBA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/compile/internal/typecheck/_builtin/runtime.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "func gopanic(interface{})",
+         "matchingRanges": {
+          "lineNumber": "27",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "27",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 13,
+            "length": 9
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "func gorecover() interface{}",
+         "matchingRanges": {
+          "lineNumber": "28"
+         },
+         "lineNumber": "28",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 17,
+            "length": 9
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func goPanicIndex(x int, y int)",
+         "matchingRanges": {
+          "lineNumber": "33",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "33",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "func goPanicIndexU(x uint, y int)",
+         "matchingRanges": {
+          "lineNumber": "34",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "34",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "func goPanicSliceAlen(x int, y int)",
+         "matchingRanges": {
+          "lineNumber": "35",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "35",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 7
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func goPanicSliceAcapU(x uint, y int)",
+         "matchingRanges": {
+          "lineNumber": "38",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "38",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "func goPanicSliceB(x int, y int)",
+         "matchingRanges": {
+          "lineNumber": "39",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "39",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "func goPanicSliceBU(x uint, y int)",
+         "matchingRanges": {
+          "lineNumber": "40",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "40",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "func goPanicSlice3Alen(x int, y int)",
+         "matchingRanges": {
+          "lineNumber": "41",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "41",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 7
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 18
+    },
+    "resultToken": "CAUSBAgBIAE4usyf097cqsZaQABIBQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/crash_cgo_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "func TestCgoPanicDeadlock(t *testing.T) {",
+         "matchingRanges": {
+          "lineNumber": "290",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "290",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tt.Parallel()",
+         "matchingRanges": {
+          "lineNumber": "291"
+         },
+         "lineNumber": "291"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// test issue 14432",
+         "matchingRanges": {
+          "lineNumber": "295"
+         },
+         "lineNumber": "295",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 19
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tgot := runTestProg(t, \"testprogcgo\", \"CgoPanicDeadlock\")",
+         "matchingRanges": {
+          "lineNumber": "296",
+          "columnRanges": [
+           {
+            "startIndex": 40,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "296",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 23,
+            "length": 13
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 38,
+            "length": 18
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 40,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\twant := \"panic: cgo error\\n\\n\"",
+         "matchingRanges": {
+          "lineNumber": "297"
+         },
+         "lineNumber": "297",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 9,
+            "length": 22
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func TestCgoPanicCallback(t *testing.T) {",
+         "matchingRanges": {
+          "lineNumber": "710",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "710",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tif runtime.GOOS == \"freebsd\" \u0026\u0026 race.Enabled {",
+         "matchingRanges": {
+          "lineNumber": "711"
+         },
+         "lineNumber": "711",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 9
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CAYSBAgBIAE4orH9ysqUk8sgQABIBg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/testdata/testprogcgo/deadlock.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "func init() {",
+         "matchingRanges": {
+          "lineNumber": "17"
+         },
+         "lineNumber": "17",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tregister(\"CgoPanicDeadlock\", CgoPanicDeadlock)",
+         "matchingRanges": {
+          "lineNumber": "18",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 7
+           },
+           {
+            "startIndex": 31,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "18",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 10,
+            "length": 18
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 7
+          },
+          {
+           "startIndex": 31,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "}",
+         "matchingRanges": {
+          "lineNumber": "19"
+         },
+         "lineNumber": "19"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func CgoPanicDeadlock() {",
+         "matchingRanges": {
+          "lineNumber": "28",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "28",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tpanic(cgoError{})",
+         "matchingRanges": {
+          "lineNumber": "29"
+         },
+         "lineNumber": "29"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAcSBAgBIAE4rtjKjKuArdZmQABIBw"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/internal/abi/symtab.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tFuncID_gogo",
+         "matchingRanges": {
+          "lineNumber": "81"
+         },
+         "lineNumber": "81"
+        },
+        {
+         "lineText": "\tFuncID_gopanic",
+         "matchingRanges": {
+          "lineNumber": "82",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "82",
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tFuncID_handleAsyncEvent",
+         "matchingRanges": {
+          "lineNumber": "83"
+         },
+         "lineNumber": "83"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAgSBAgBIAE4lqSllLP_ncPfAUAASAg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/internal/goobj/builtinlist.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t{\"runtime.goPanicIndex\", 1},",
+         "matchingRanges": {
+          "lineNumber": "20",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "20",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 22
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 26,
+            "length": 1
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\t{\"runtime.goPanicIndexU\", 1},",
+         "matchingRanges": {
+          "lineNumber": "21",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "21",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 23
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 27,
+            "length": 1
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\t{\"runtime.goPanicSliceAlen\", 1},",
+         "matchingRanges": {
+          "lineNumber": "22",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "22",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 26
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 30,
+            "length": 1
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\t{\"runtime.goPanicSliceAlenU\", 1},",
+         "matchingRanges": {
+          "lineNumber": "23",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "23",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 27
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 31,
+            "length": 1
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\t{\"runtime.goPanicSliceAcap\", 1},",
+         "matchingRanges": {
+          "lineNumber": "24",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "24",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 26
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 30,
+            "length": 1
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\t{\"runtime.goPanicSliceAcapU\", 1},",
+         "matchingRanges": {
+          "lineNumber": "25",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "25",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 27
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 31,
+            "length": 1
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\t{\"runtime.goPanicSliceB\", 1},",
+         "matchingRanges": {
+          "lineNumber": "26",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "26",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 23
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 27,
+            "length": 1
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\t{\"runtime.goPanicSliceBU\", 1},",
+         "matchingRanges": {
+          "lineNumber": "27",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "27",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 24
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 28,
+            "length": 1
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\t{\"runtime.goPanicSlice3Alen\", 1},",
+         "matchingRanges": {
+          "lineNumber": "28",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "28",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 27
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 31,
+            "length": 1
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\t{\"runtime.goPanicSlice3AlenU\", 1},",
+         "matchingRanges": {
+          "lineNumber": "29",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "29",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 28
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 32,
+            "length": 1
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 7
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 18
+    },
+    "resultToken": "CAkSAggBOPq95vSLnP28B0AASAk"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/testing/testing.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t}",
+         "matchingRanges": {
+          "lineNumber": "827"
+         },
+         "lineNumber": "827"
+        },
+        {
+         "lineText": "\t\tif frame.Function == \"runtime.gopanic\" {",
+         "matchingRanges": {
+          "lineNumber": "828",
+          "columnRanges": [
+           {
+            "startIndex": 32,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "828",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 23,
+            "length": 17
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 32,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\tcontinue",
+         "matchingRanges": {
+          "lineNumber": "829"
+         },
+         "lineNumber": "829",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 3,
+            "length": 8
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAoSAggBOIKP1-eb9POkuQFAAEgK"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/runtime2.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "//",
+         "matchingRanges": {
+          "lineNumber": "1170"
+         },
+         "lineNumber": "1170",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "// The gopanicFP and link fields are stack pointers, but don't need special",
+         "matchingRanges": {
+          "lineNumber": "1171",
+          "columnRanges": [
+           {
+            "startIndex": 7,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "1171",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 75
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 7,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "// handling during stack growth: because they are pointer-typed and",
+         "matchingRanges": {
+          "lineNumber": "1172"
+         },
+         "lineNumber": "1172",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 67
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// startPC and startSP track where _panic.start was called.",
+         "matchingRanges": {
+          "lineNumber": "1179"
+         },
+         "lineNumber": "1179",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 59
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t// (These are the SP and PC of the gopanic frame itself.)",
+         "matchingRanges": {
+          "lineNumber": "1180",
+          "columnRanges": [
+           {
+            "startIndex": 36,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "1180",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 57
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 36,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tstartPC uintptr",
+         "matchingRanges": {
+          "lineNumber": "1181"
+         },
+         "lineNumber": "1181"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// savedOpenDeferState tracks the extra state from _panic that's",
+         "matchingRanges": {
+          "lineNumber": "1203"
+         },
+         "lineNumber": "1203",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 64
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "// necessary for deferreturn to pick up where gopanic left off,",
+         "matchingRanges": {
+          "lineNumber": "1204",
+          "columnRanges": [
+           {
+            "startIndex": 46,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "1204",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 63
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 46,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "// without needing to unwind the stack.",
+         "matchingRanges": {
+          "lineNumber": "1205"
+         },
+         "lineNumber": "1205",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 39
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CAsSAggBOOrurqjI8qiIPkAASAs"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/traceback.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "func printFuncName(name string) {",
+         "matchingRanges": {
+          "lineNumber": "820"
+         },
+         "lineNumber": "820",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tif name == \"runtime.gopanic\" {",
+         "matchingRanges": {
+          "lineNumber": "821",
+          "columnRanges": [
+           {
+            "startIndex": 21,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "821",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 12,
+            "length": 17
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 21,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tprint(\"panic\")",
+         "matchingRanges": {
+          "lineNumber": "822"
+         },
+         "lineNumber": "822",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 7
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// Special case: always show runtime.gopanic frame",
+         "matchingRanges": {
+          "lineNumber": "1207",
+          "columnRanges": [
+           {
+            "startIndex": 38,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "1207",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 50
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 38,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\t// in the middle of a stack trace, so that we can",
+         "matchingRanges": {
+          "lineNumber": "1208"
+         },
+         "lineNumber": "1208",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 49
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// See golang.org/issue/5832.",
+         "matchingRanges": {
+          "lineNumber": "1211"
+         },
+         "lineNumber": "1211",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 29
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tif name == \"runtime.gopanic\" \u0026\u0026 !firstFrame {",
+         "matchingRanges": {
+          "lineNumber": "1212",
+          "columnRanges": [
+           {
+            "startIndex": 21,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "1212",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 12,
+            "length": 17
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 21,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\t\treturn true",
+         "matchingRanges": {
+          "lineNumber": "1213"
+         },
+         "lineNumber": "1213",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 4
+    },
+    "resultToken": "CAwSAggBOLbto8-r5I_wFkAASAw"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/stack_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// to test because it is very unlikely that the stack will be copied",
+         "matchingRanges": {
+          "lineNumber": "480"
+         },
+         "lineNumber": "480",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 68
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t// in the middle of gopanic. But it can happen.",
+         "matchingRanges": {
+          "lineNumber": "481",
+          "columnRanges": [
+           {
+            "startIndex": 21,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "481",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 47
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 21,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\t// To make this test effective, edit panic.go:gopanic and uncomment",
+         "matchingRanges": {
+          "lineNumber": "482",
+          "columnRanges": [
+           {
+            "startIndex": 47,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "482",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 67
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 47,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\t// the GC() call just before freedefer(d).",
+         "matchingRanges": {
+          "lineNumber": "483"
+         },
+         "lineNumber": "483",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 42
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CA0SAggBOND2yauDwdmFFkAASA0"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/callers_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\twant := []string{\"runtime.Callers\", \"runtime_test.TestCallersPanic.func1\",",
+         "matchingRanges": {
+          "lineNumber": "95"
+         },
+         "lineNumber": "95",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 18,
+            "length": 17
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 37,
+            "length": 37
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\"runtime.gopanic\", \"runtime_test.f3\", \"runtime_test.f2\", \"runtime_test.f1\",",
+         "matchingRanges": {
+          "lineNumber": "96",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "96",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 17
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 21,
+            "length": 17
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 40,
+            "length": 17
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 59,
+            "length": 17
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\"runtime_test.TestCallersPanic\"}",
+         "matchingRanges": {
+          "lineNumber": "97"
+         },
+         "lineNumber": "97",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 31
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\twant := []string{\"runtime.Callers\", \"runtime_test.TestCallersDoublePanic.func1.1\",",
+         "matchingRanges": {
+          "lineNumber": "114"
+         },
+         "lineNumber": "114",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 18,
+            "length": 17
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 37,
+            "length": 45
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\"runtime.gopanic\", \"runtime_test.TestCallersDoublePanic.func1\", \"runtime.gopanic\", \"runtime_test.TestCallersDoublePanic\"}",
+         "matchingRanges": {
+          "lineNumber": "115",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 7
+           },
+           {
+            "startIndex": 75,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "115",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 17
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 21,
+            "length": 43
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 66,
+            "length": 17
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 85,
+            "length": 37
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 7
+          },
+          {
+           "startIndex": 75,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "116"
+         },
+         "lineNumber": "116"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\twant := []string{\"runtime.Callers\", \"runtime_test.TestCallersNilPointerPanic.func1\",",
+         "matchingRanges": {
+          "lineNumber": "217"
+         },
+         "lineNumber": "217",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 18,
+            "length": 17
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 37,
+            "length": 47
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\"runtime.gopanic\", \"runtime.panicmem\", \"runtime.sigpanic\",",
+         "matchingRanges": {
+          "lineNumber": "218",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "218",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 17
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 21,
+            "length": 18
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 41,
+            "length": 18
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\"runtime_test.TestCallersNilPointerPanic\"}",
+         "matchingRanges": {
+          "lineNumber": "219"
+         },
+         "lineNumber": "219",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 41
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 7
+    },
+    "resultToken": "CA4SAggBOMCAoNy_p6PgbEAASA4"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/internal/objabi/funcid.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\"gogo\":               abi.FuncID_gogo,",
+         "matchingRanges": {
+          "lineNumber": "22"
+         },
+         "lineNumber": "22",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 1,
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\"gopanic\":            abi.FuncID_gopanic,",
+         "matchingRanges": {
+          "lineNumber": "23",
+          "columnRanges": [
+           {
+            "startIndex": 2,
+            "length": 7
+           },
+           {
+            "startIndex": 34,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "23",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 1,
+            "length": 9
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 2,
+           "length": 7
+          },
+          {
+           "startIndex": 34,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\t\"handleAsyncEvent\":   abi.FuncID_handleAsyncEvent,",
+         "matchingRanges": {
+          "lineNumber": "24"
+         },
+         "lineNumber": "24",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 1,
+            "length": 18
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CA8SAggBOPadt5jPyNyybEAASA8"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/compile/internal/ssagen/ssa.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\tBoundsCheckFunc[ssa.BoundsIndex] = typecheck.LookupRuntimeFunc(\"goPanicIndex\")",
+         "matchingRanges": {
+          "lineNumber": "190",
+          "columnRanges": [
+           {
+            "startIndex": 66,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "190",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 65,
+            "length": 14
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 66,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tBoundsCheckFunc[ssa.BoundsIndexU] = typecheck.LookupRuntimeFunc(\"goPanicIndexU\")",
+         "matchingRanges": {
+          "lineNumber": "191",
+          "columnRanges": [
+           {
+            "startIndex": 67,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "191",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 66,
+            "length": 15
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 67,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tBoundsCheckFunc[ssa.BoundsSliceAlen] = typecheck.LookupRuntimeFunc(\"goPanicSliceAlen\")",
+         "matchingRanges": {
+          "lineNumber": "192",
+          "columnRanges": [
+           {
+            "startIndex": 70,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "192",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 69,
+            "length": 18
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 70,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tBoundsCheckFunc[ssa.BoundsSliceAlenU] = typecheck.LookupRuntimeFunc(\"goPanicSliceAlenU\")",
+         "matchingRanges": {
+          "lineNumber": "193",
+          "columnRanges": [
+           {
+            "startIndex": 71,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "193",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 70,
+            "length": 19
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 71,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tBoundsCheckFunc[ssa.BoundsSliceAcap] = typecheck.LookupRuntimeFunc(\"goPanicSliceAcap\")",
+         "matchingRanges": {
+          "lineNumber": "194",
+          "columnRanges": [
+           {
+            "startIndex": 70,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "194",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 69,
+            "length": 18
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 70,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tBoundsCheckFunc[ssa.BoundsSliceAcapU] = typecheck.LookupRuntimeFunc(\"goPanicSliceAcapU\")",
+         "matchingRanges": {
+          "lineNumber": "195",
+          "columnRanges": [
+           {
+            "startIndex": 71,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "195",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 70,
+            "length": 19
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 71,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tBoundsCheckFunc[ssa.BoundsSliceB] = typecheck.LookupRuntimeFunc(\"goPanicSliceB\")",
+         "matchingRanges": {
+          "lineNumber": "196",
+          "columnRanges": [
+           {
+            "startIndex": 67,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "196",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 66,
+            "length": 15
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 67,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tBoundsCheckFunc[ssa.BoundsSliceBU] = typecheck.LookupRuntimeFunc(\"goPanicSliceBU\")",
+         "matchingRanges": {
+          "lineNumber": "197",
+          "columnRanges": [
+           {
+            "startIndex": 68,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "197",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 67,
+            "length": 16
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 68,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tBoundsCheckFunc[ssa.BoundsSlice3Alen] = typecheck.LookupRuntimeFunc(\"goPanicSlice3Alen\")",
+         "matchingRanges": {
+          "lineNumber": "198",
+          "columnRanges": [
+           {
+            "startIndex": 71,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "198",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 70,
+            "length": 19
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 71,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tBoundsCheckFunc[ssa.BoundsSlice3AlenU] = typecheck.LookupRuntimeFunc(\"goPanicSlice3AlenU\")",
+         "matchingRanges": {
+          "lineNumber": "199",
+          "columnRanges": [
+           {
+            "startIndex": 72,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "199",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 71,
+            "length": 20
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 72,
+           "length": 7
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 18
+    },
+    "resultToken": "CBASAggBOJydpebWmM6YmQFAAEgQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/traceback_system_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t\tname: \"panic\",",
+         "matchingRanges": {
+          "lineNumber": "137"
+         },
+         "lineNumber": "137",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 9,
+            "length": 7
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\twant: `redacted.go:0: runtime.gopanic",
+         "matchingRanges": {
+          "lineNumber": "138",
+          "columnRanges": [
+           {
+            "startIndex": 33,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "138",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 9,
+            "length": 31
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 33,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "traceback_system_test.go:100: runtime_test.child7: \tpanic(\"oops\")",
+         "matchingRanges": {
+          "lineNumber": "139"
+         },
+         "lineNumber": "139",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "length": 65
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t\tname: \"trap\",",
+         "matchingRanges": {
+          "lineNumber": "155"
+         },
+         "lineNumber": "155",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 9,
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\twant: `redacted.go:0: runtime.gopanic",
+         "matchingRanges": {
+          "lineNumber": "156",
+          "columnRanges": [
+           {
+            "startIndex": 33,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "156",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 9,
+            "length": 31
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 33,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "redacted.go:0: runtime.panicmem",
+         "matchingRanges": {
+          "lineNumber": "157"
+         },
+         "lineNumber": "157",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "length": 31
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CBESAggBOKi09Nn16KSfF0AASBE"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/compile/internal/walk/expr.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\tn := n.(*ir.UnaryExpr)",
+         "matchingRanges": {
+          "lineNumber": "191"
+         },
+         "lineNumber": "191"
+        },
+        {
+         "lineText": "\t\treturn mkcall(\"gopanic\", nil, init, n.X)",
+         "matchingRanges": {
+          "lineNumber": "192",
+          "columnRanges": [
+           {
+            "startIndex": 17,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "192",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 16,
+            "length": 9
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 17,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "193"
+         },
+         "lineNumber": "193"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBISAggBOOqkiZCTgePtLEAASBI"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/runtime-seh_windows_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t}",
+         "matchingRanges": {
+          "lineNumber": "151"
+         },
+         "lineNumber": "151"
+        },
+        {
+         "lineText": "\twant := []string{\"runtime_test.TestSehUnwindPanic.func1\", \"runtime.gopanic\",",
+         "matchingRanges": {
+          "lineNumber": "152",
+          "columnRanges": [
+           {
+            "startIndex": 68,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "152",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 18,
+            "length": 39
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 59,
+            "length": 17
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 68,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\"runtime_test.sehf4\", \"runtime_test.sehf3\", \"runtime_test.TestSehUnwindPanic\"}",
+         "matchingRanges": {
+          "lineNumber": "153"
+         },
+         "lineNumber": "153",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 20
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 24,
+            "length": 20
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 46,
+            "length": 33
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t}",
+         "matchingRanges": {
+          "lineNumber": "167"
+         },
+         "lineNumber": "167"
+        },
+        {
+         "lineText": "\twant := []string{\"runtime_test.TestSehUnwindDoublePanic.func1.1\", \"runtime.gopanic\",",
+         "matchingRanges": {
+          "lineNumber": "168",
+          "columnRanges": [
+           {
+            "startIndex": 76,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "168",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 18,
+            "length": 47
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 67,
+            "length": 17
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 76,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\"runtime_test.TestSehUnwindDoublePanic.func1\", \"runtime.gopanic\", \"runtime_test.TestSehUnwindDoublePanic\"}",
+         "matchingRanges": {
+          "lineNumber": "169",
+          "columnRanges": [
+           {
+            "startIndex": 58,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "169",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 45
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 49,
+            "length": 17
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 68,
+            "length": 39
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 58,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tdefer func() {",
+         "matchingRanges": {
+          "lineNumber": "170"
+         },
+         "lineNumber": "170",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t}",
+         "matchingRanges": {
+          "lineNumber": "189"
+         },
+         "lineNumber": "189"
+        },
+        {
+         "lineText": "\twant := []string{\"runtime_test.TestSehUnwindNilPointerPanic.func1\", \"runtime.gopanic\",",
+         "matchingRanges": {
+          "lineNumber": "190",
+          "columnRanges": [
+           {
+            "startIndex": 78,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "190",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 18,
+            "length": 49
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 69,
+            "length": 17
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 78,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\"runtime.sigpanic\", \"runtime_test.TestSehUnwindNilPointerPanic\"}",
+         "matchingRanges": {
+          "lineNumber": "191"
+         },
+         "lineNumber": "191",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 18
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 22,
+            "length": 43
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 4
+    },
+    "resultToken": "CBMSAggBOPTb4cqR7uCflwFAAEgT"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/compile/internal/typecheck/builtin.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t{\"goPanicIndex\", funcTag, 14},",
+         "matchingRanges": {
+          "lineNumber": "41",
+          "columnRanges": [
+           {
+            "startIndex": 3,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "41",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 14
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 27,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 3,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\t{\"goPanicIndexU\", funcTag, 16},",
+         "matchingRanges": {
+          "lineNumber": "42",
+          "columnRanges": [
+           {
+            "startIndex": 3,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "42",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 15
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 28,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 3,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\t{\"goPanicSliceAlen\", funcTag, 14},",
+         "matchingRanges": {
+          "lineNumber": "43",
+          "columnRanges": [
+           {
+            "startIndex": 3,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "43",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 18
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 31,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 3,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\t{\"goPanicSliceAlenU\", funcTag, 16},",
+         "matchingRanges": {
+          "lineNumber": "44",
+          "columnRanges": [
+           {
+            "startIndex": 3,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "44",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 19
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 32,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 3,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\t{\"goPanicSliceAcap\", funcTag, 14},",
+         "matchingRanges": {
+          "lineNumber": "45",
+          "columnRanges": [
+           {
+            "startIndex": 3,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "45",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 18
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 31,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 3,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\t{\"goPanicSliceAcapU\", funcTag, 16},",
+         "matchingRanges": {
+          "lineNumber": "46",
+          "columnRanges": [
+           {
+            "startIndex": 3,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "46",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 19
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 32,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 3,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\t{\"goPanicSliceB\", funcTag, 14},",
+         "matchingRanges": {
+          "lineNumber": "47",
+          "columnRanges": [
+           {
+            "startIndex": 3,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "47",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 15
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 28,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 3,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\t{\"goPanicSliceBU\", funcTag, 16},",
+         "matchingRanges": {
+          "lineNumber": "48",
+          "columnRanges": [
+           {
+            "startIndex": 3,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "48",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 16
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 29,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 3,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\t{\"goPanicSlice3Alen\", funcTag, 14},",
+         "matchingRanges": {
+          "lineNumber": "49",
+          "columnRanges": [
+           {
+            "startIndex": 3,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "49",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 19
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 32,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 3,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\t{\"goPanicSlice3AlenU\", funcTag, 16},",
+         "matchingRanges": {
+          "lineNumber": "50",
+          "columnRanges": [
+           {
+            "startIndex": 3,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "50",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 20
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 33,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 3,
+           "length": 7
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 18
+    },
+    "resultToken": "CBQSAggBONqYpPbJ2cvTowFAAEgU"
+   }
+  ],
+  "estimatedResultCount": "21",
+  "exhaustive": true,
+  "requestToken": "Cgdnb3BhbmljEh0oIGdpdDpnby9nb0BtYXN0ZXIgY2FzZTp5ZXMgKRoLCIW6qNEGEOn20xQgDCoAMgBIAQ"
+ }
+}

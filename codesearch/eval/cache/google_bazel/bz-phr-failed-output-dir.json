@@ -1,0 +1,292 @@
+{
+ "query": "\"failed to create output directory\"",
+ "oss_project": "bazel",
+ "repo_name": "bazel",
+ "page_size": 50,
+ "fetched_at": "2026-06-11T22:28:40Z",
+ "response": {
+  "searchResults": [
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/skyframe/ArtifactFunction.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "          String.format(",
+         "matchingRanges": {
+          "lineNumber": "202"
+         },
+         "lineNumber": "202"
+        },
+        {
+         "lineText": "              \"Failed to create output directory for TreeArtifact %s: %s\",",
+         "matchingRanges": {
+          "lineNumber": "203",
+          "columnRanges": [
+           {
+            "startIndex": 15,
+            "length": 33
+           }
+          ]
+         },
+         "lineNumber": "203",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 14,
+            "length": 59
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 15,
+           "length": 33
+          }
+         ]
+        },
+        {
+         "lineText": "              artifact.getExecPath(), e.getMessage());",
+         "matchingRanges": {
+          "lineNumber": "204"
+         },
+         "lineNumber": "204"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAASAggBOKik8tmC2fLDnQFAAEgA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/skyframe/SkyframeActionExecutor.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "          String.format(",
+         "matchingRanges": {
+          "lineNumber": "1448"
+         },
+         "lineNumber": "1448"
+        },
+        {
+         "lineText": "              \"failed to create output directory '%s': %s\", e.getDirectoryPath(), e.getMessage()),",
+         "matchingRanges": {
+          "lineNumber": "1449",
+          "columnRanges": [
+           {
+            "startIndex": 15,
+            "length": 33
+           }
+          ]
+         },
+         "lineNumber": "1449",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 14,
+            "length": 44
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 15,
+           "length": 33
+          }
+         ]
+        },
+        {
+         "lineText": "          e,",
+         "matchingRanges": {
+          "lineNumber": "1450"
+         },
+         "lineNumber": "1450"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "          String.format(",
+         "matchingRanges": {
+          "lineNumber": "1462"
+         },
+         "lineNumber": "1462"
+        },
+        {
+         "lineText": "              \"failed to create output directory '%s': %s\", e.getDirectoryPath(), e.getMessage()),",
+         "matchingRanges": {
+          "lineNumber": "1463",
+          "columnRanges": [
+           {
+            "startIndex": 15,
+            "length": 33
+           }
+          ]
+         },
+         "lineNumber": "1463",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 14,
+            "length": 44
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 15,
+           "length": 33
+          }
+         ]
+        },
+        {
+         "lineText": "          e,",
+         "matchingRanges": {
+          "lineNumber": "1464"
+         },
+         "lineNumber": "1464"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "          String.format(",
+         "matchingRanges": {
+          "lineNumber": "1490"
+         },
+         "lineNumber": "1490"
+        },
+        {
+         "lineText": "              \"failed to create output directory for output streams '%s': %s\",",
+         "matchingRanges": {
+          "lineNumber": "1491",
+          "columnRanges": [
+           {
+            "startIndex": 15,
+            "length": 33
+           }
+          ]
+         },
+         "lineNumber": "1491",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 14,
+            "length": 63
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 15,
+           "length": 33
+          }
+         ]
+        },
+        {
+         "lineText": "              fileOutErr.getErrorPath(), e.getMessage());",
+         "matchingRanges": {
+          "lineNumber": "1492"
+         },
+         "lineNumber": "1492"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CAESAggBOKLly5LK-K7T_gFAAEgB"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "CHANGELOG.md",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "   + 27e4c6243524156d880bd04e834db5ebdb0a69af:",
+         "matchingRanges": {
+          "lineNumber": "4365"
+         },
+         "lineNumber": "4365"
+        },
+        {
+         "lineText": "     Add exception message to 'failed to create output directory'",
+         "matchingRanges": {
+          "lineNumber": "4366",
+          "columnRanges": [
+           {
+            "startIndex": 31,
+            "length": 33
+           }
+          ]
+         },
+         "lineNumber": "4366",
+         "ranges": [
+          {
+           "startIndex": 31,
+           "length": 33
+          }
+         ]
+        },
+        {
+         "lineText": "   + 405012066d2394ad9986830ca028badd3c65ad38:",
+         "matchingRanges": {
+          "lineNumber": "4367"
+         },
+         "lineNumber": "4367"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAISAggBOM6Q6oHo3avs2AFAAEgC"
+   }
+  ],
+  "estimatedResultCount": "4",
+  "exhaustive": true,
+  "requestToken": "CiMiZmFpbGVkIHRvIGNyZWF0ZSBvdXRwdXQgZGlyZWN0b3J5IhIjKCBnaXQ6YmF6ZWwvYmF6ZWxAbWFzdGVyIGNhc2U6eWVzICkaDAiX7azRBhCdsd3FAyAMKgAyAEgB"
+ }
+}

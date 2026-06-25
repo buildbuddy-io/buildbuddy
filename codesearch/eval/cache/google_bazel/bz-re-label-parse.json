@@ -1,0 +1,7044 @@
+{
+ "query": "Label\\.parse(Canonical|WithRepoContext)?",
+ "oss_project": "bazel",
+ "repo_name": "bazel",
+ "page_size": 50,
+ "fetched_at": "2026-06-11T22:29:09Z",
+ "response": {
+  "searchResults": [
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/bazel/repository/starlark/StarlarkRepositoryContextTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "        .idBuilder()",
+         "matchingRanges": {
+          "lineNumber": "132"
+         },
+         "lineNumber": "132"
+        },
+        {
+         "lineText": "        .bzlFileLabel(Label.parseCanonicalUnchecked(\"//:test.bzl\"))",
+         "matchingRanges": {
+          "lineNumber": "133",
+          "columnRanges": [
+           {
+            "startIndex": 22,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "133",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 52,
+            "length": 13
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 22,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "        .ruleName(\"test\");",
+         "matchingRanges": {
+          "lineNumber": "134"
+         },
+         "lineNumber": "134",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 18,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    when(environment.getListener()).thenReturn(listener);",
+         "matchingRanges": {
+          "lineNumber": "171"
+         },
+         "lineNumber": "171"
+        },
+        {
+         "lineText": "    fakeFileLabel = Label.parseCanonical(\"//:foo\");",
+         "matchingRanges": {
+          "lineNumber": "172",
+          "columnRanges": [
+           {
+            "startIndex": 20,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "172",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 41,
+            "length": 8
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 20,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "    when(environment.getValue(PackageLookupValue.key(fakeFileLabel.getPackageIdentifier())))",
+         "matchingRanges": {
+          "lineNumber": "173"
+         },
+         "lineNumber": "173"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAASAggBONaliOjTxoGF9wFAAEgA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/bazel/repository/starlark/StarlarkRepositoryIntegrationTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "        (List\u003cLabel\u003e) target.getTargetForTesting().getAssociatedRule().getAttr(\"srcs\", LABEL_LIST);",
+         "matchingRanges": {
+          "lineNumber": "123"
+         },
+         "lineNumber": "123",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 79,
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    assertThat(srcs).containsExactly(Label.parseCanonical(\"@@+repo+foo//:foo\"));",
+         "matchingRanges": {
+          "lineNumber": "124",
+          "columnRanges": [
+           {
+            "startIndex": 37,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "124",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 58,
+            "length": 19
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 37,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "  }",
+         "matchingRanges": {
+          "lineNumber": "125"
+         },
+         "lineNumber": "125"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "        (List\u003cLabel\u003e) target.getTargetForTesting().getAssociatedRule().getAttr(\"srcs\", LABEL_LIST);",
+         "matchingRanges": {
+          "lineNumber": "154"
+         },
+         "lineNumber": "154",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 79,
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    assertThat(srcs).containsExactly(Label.parseCanonical(\"@@+repo+foobar//:+repo+foobar\"));",
+         "matchingRanges": {
+          "lineNumber": "155",
+          "columnRanges": [
+           {
+            "startIndex": 37,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "155",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 58,
+            "length": 31
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 37,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "  }",
+         "matchingRanges": {
+          "lineNumber": "156"
+         },
+         "lineNumber": "156"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAESAggBONzXttyYzui1H0AASAE"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/starlark/StarlarkRuleContextTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    Label keyLabel = (Label) ev.eval(\"ruleContext.attr.label_dict.keys()[0].label\");",
+         "matchingRanges": {
+          "lineNumber": "1216"
+         },
+         "lineNumber": "1216",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 37,
+            "length": 45
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    assertThat(keyLabel).isEqualTo(Label.parseCanonical(\"//:dep\"));",
+         "matchingRanges": {
+          "lineNumber": "1217",
+          "columnRanges": [
+           {
+            "startIndex": 35,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "1217",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 56,
+            "length": 8
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 35,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "    String valueString = (String) ev.eval(\"ruleContext.attr.label_dict.values()[0]\");",
+         "matchingRanges": {
+          "lineNumber": "1218"
+         },
+         "lineNumber": "1218",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 42,
+            "length": 41
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    Label keyLabel = (Label) ev.eval(\"ruleContext.attr.label_dict.keys()[0].label\");",
+         "matchingRanges": {
+          "lineNumber": "1247"
+         },
+         "lineNumber": "1247",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 37,
+            "length": 45
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    assertThat(keyLabel).isEqualTo(Label.parseCanonical(\"//:dep\"));",
+         "matchingRanges": {
+          "lineNumber": "1248",
+          "columnRanges": [
+           {
+            "startIndex": 35,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "1248",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 56,
+            "length": 8
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 35,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "    String valueString = (String) ev.eval(\"ruleContext.attr.label_dict.values()[0]\");",
+         "matchingRanges": {
+          "lineNumber": "1249"
+         },
+         "lineNumber": "1249",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 42,
+            "length": 41
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    Label keyLabel = (Label) ev.eval(\"ruleContext.attr.label_dict.keys()[0].label\");",
+         "matchingRanges": {
+          "lineNumber": "1276"
+         },
+         "lineNumber": "1276",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 37,
+            "length": 45
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    assertThat(keyLabel).isEqualTo(Label.parseCanonical(\"//:default\"));",
+         "matchingRanges": {
+          "lineNumber": "1277",
+          "columnRanges": [
+           {
+            "startIndex": 35,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "1277",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 56,
+            "length": 12
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 35,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "    String valueString = (String) ev.eval(\"ruleContext.attr.label_dict.values()[0]\");",
+         "matchingRanges": {
+          "lineNumber": "1278"
+         },
+         "lineNumber": "1278",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 42,
+            "length": 41
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 24
+    },
+    "resultToken": "CAISAggBOKrMrc_YpIyj7AFAAEgC"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/analysis/starlark/StarlarkRuleContext.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    try {",
+         "matchingRanges": {
+          "lineNumber": "1225"
+         },
+         "lineNumber": "1225",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "      return Label.parseWithPackageContext(",
+         "matchingRanges": {
+          "lineNumber": "1226",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "1226",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": "          (String) input,",
+         "matchingRanges": {
+          "lineNumber": "1227"
+         },
+         "lineNumber": "1227"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAMSAggBONy-16Lay72EE0AASAM"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/packages/LabelConverterTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    assertThat(converter.convert(\"@orig_repo//foo:bar\"))",
+         "matchingRanges": {
+          "lineNumber": "41"
+         },
+         "lineNumber": "41",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 33,
+            "length": 21
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "        .isEqualTo(Label.parseCanonical(\"@new_repo//foo:bar\"));",
+         "matchingRanges": {
+          "lineNumber": "42",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "42",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 40,
+            "length": 20
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "    assertThat(converter.convert(\"//foo:bar\")).isEqualTo(Label.parseCanonical(\"@quux//foo:bar\"));",
+         "matchingRanges": {
+          "lineNumber": "43",
+          "columnRanges": [
+           {
+            "startIndex": 57,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "43",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 33,
+            "length": 11
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 78,
+            "length": 16
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 57,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "    assertThat(converter.convert(\":bar\")).isEqualTo(Label.parseCanonical(\"@quux//baz:bar\"));",
+         "matchingRanges": {
+          "lineNumber": "44",
+          "columnRanges": [
+           {
+            "startIndex": 52,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "44",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 33,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 73,
+            "length": 16
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 52,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "  }",
+         "matchingRanges": {
+          "lineNumber": "45"
+         },
+         "lineNumber": "45"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CAQSAggBONDv2tO2jt2xkQFAAEgE"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/cmdline/LabelInternerIntegrationTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    // before target build to ensure it is stored in weak interner.",
+         "matchingRanges": {
+          "lineNumber": "205"
+         },
+         "lineNumber": "205",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 63
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    Label preBuildLabel = Label.parseCanonical(\"//hello:foo\");",
+         "matchingRanges": {
+          "lineNumber": "206",
+          "columnRanges": [
+           {
+            "startIndex": 26,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "206",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 47,
+            "length": 13
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 26,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "    buildTarget(\"//hello:foo\");",
+         "matchingRanges": {
+          "lineNumber": "207"
+         },
+         "lineNumber": "207",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 16,
+            "length": 13
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    // the same instance as the original one.",
+         "matchingRanges": {
+          "lineNumber": "226"
+         },
+         "lineNumber": "226",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 41
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    Label postBuildLabel = Label.parseCanonical(\"//hello:foo\");",
+         "matchingRanges": {
+          "lineNumber": "227",
+          "columnRanges": [
+           {
+            "startIndex": 27,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "227",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 48,
+            "length": 13
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 27,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "    assertThat(postBuildLabel).isSameInstanceAs(preBuildLabel);",
+         "matchingRanges": {
+          "lineNumber": "228"
+         },
+         "lineNumber": "228"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAUSAggBOKDZip_d0YKFN0AASAU"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/exec/CompactSpawnLogContextTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "        ActionOwner.createDummy(",
+         "matchingRanges": {
+          "lineNumber": "126"
+         },
+         "lineNumber": "126"
+        },
+        {
+         "lineText": "            Label.parseCanonicalUnchecked(\"//pkg:symlink\"),",
+         "matchingRanges": {
+          "lineNumber": "127",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "127",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 42,
+            "length": 15
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "            new Location(\"dummy-file\", 0, 0),",
+         "matchingRanges": {
+          "lineNumber": "128"
+         },
+         "lineNumber": "128",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 25,
+            "length": 12
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 39,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 42,
+            "length": 1
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAYSAggBOKbYj_ulyrC6akAASAY"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/analysis/config/transitions/ComparingTransitionTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "            options.underlying().toBuilder()",
+         "matchingRanges": {
+          "lineNumber": "264"
+         },
+         "lineNumber": "264"
+        },
+        {
+         "lineText": "                .addStarlarkOption(Label.parseCanonicalUnchecked(\"//foo\"), \"1\")",
+         "matchingRanges": {
+          "lineNumber": "265",
+          "columnRanges": [
+           {
+            "startIndex": 35,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "265",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 65,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 75,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 35,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "                .build();",
+         "matchingRanges": {
+          "lineNumber": "266"
+         },
+         "lineNumber": "266"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "            options.underlying().toBuilder()",
+         "matchingRanges": {
+          "lineNumber": "269"
+         },
+         "lineNumber": "269"
+        },
+        {
+         "lineText": "                .addStarlarkOption(Label.parseCanonicalUnchecked(\"//foo\"), \"2\")",
+         "matchingRanges": {
+          "lineNumber": "270",
+          "columnRanges": [
+           {
+            "startIndex": 35,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "270",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 65,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 75,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 35,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "                .build();",
+         "matchingRanges": {
+          "lineNumber": "271"
+         },
+         "lineNumber": "271"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "            options.underlying().toBuilder()",
+         "matchingRanges": {
+          "lineNumber": "289"
+         },
+         "lineNumber": "289"
+        },
+        {
+         "lineText": "                .addStarlarkOption(Label.parseCanonicalUnchecked(\"//a\"), \"a\")",
+         "matchingRanges": {
+          "lineNumber": "290",
+          "columnRanges": [
+           {
+            "startIndex": 35,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "290",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 65,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 73,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 35,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "                .addStarlarkOption(Label.parseCanonicalUnchecked(\"//b\"), \"b\")",
+         "matchingRanges": {
+          "lineNumber": "291",
+          "columnRanges": [
+           {
+            "startIndex": 35,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "291",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 65,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 73,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 35,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "                .build();",
+         "matchingRanges": {
+          "lineNumber": "292"
+         },
+         "lineNumber": "292"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 6
+    },
+    "resultToken": "CAcSAggBONqwqZm7h5_gmgFAAEgH"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/analysis/testing/ToolchainContextSubject.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  public void hasExecutionPlatform(String platformLabel) throws LabelSyntaxException {",
+         "matchingRanges": {
+          "lineNumber": "61"
+         },
+         "lineNumber": "61",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 57,
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    hasExecutionPlatform(Label.parseCanonical(platformLabel));",
+         "matchingRanges": {
+          "lineNumber": "62",
+          "columnRanges": [
+           {
+            "startIndex": 25,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "62",
+         "ranges": [
+          {
+           "startIndex": 25,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "  }",
+         "matchingRanges": {
+          "lineNumber": "63"
+         },
+         "lineNumber": "63"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  public void hasTargetPlatform(String platformLabel) throws LabelSyntaxException {",
+         "matchingRanges": {
+          "lineNumber": "70"
+         },
+         "lineNumber": "70",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 54,
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    hasTargetPlatform(Label.parseCanonical(platformLabel));",
+         "matchingRanges": {
+          "lineNumber": "71",
+          "columnRanges": [
+           {
+            "startIndex": 22,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "71",
+         "ranges": [
+          {
+           "startIndex": 22,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "  }",
+         "matchingRanges": {
+          "lineNumber": "72"
+         },
+         "lineNumber": "72"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  public void hasResolvedToolchain(String resolvedToolchainLabel) throws LabelSyntaxException {",
+         "matchingRanges": {
+          "lineNumber": "111"
+         },
+         "lineNumber": "111",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 66,
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    hasResolvedToolchain(Label.parseCanonical(resolvedToolchainLabel));",
+         "matchingRanges": {
+          "lineNumber": "112",
+          "columnRanges": [
+           {
+            "startIndex": 25,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "112",
+         "ranges": [
+          {
+           "startIndex": 25,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "  }",
+         "matchingRanges": {
+          "lineNumber": "113"
+         },
+         "lineNumber": "113"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 5
+    },
+    "resultToken": "CAgSAggBOJyq3NuI2siKL0AASAg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/skyframe/serialization/LabelCodecTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  public void testCodec(@TestParameter boolean useSharedValues) throws Exception {",
+         "matchingRanges": {
+          "lineNumber": "29"
+         },
+         "lineNumber": "29",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 64,
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    var tester = new SerializationTester(Label.parseCanonical(\"//foo/bar:baz\"));",
+         "matchingRanges": {
+          "lineNumber": "30",
+          "columnRanges": [
+           {
+            "startIndex": 41,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "30",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 17,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 62,
+            "length": 15
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 41,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "31"
+         },
+         "lineNumber": "31"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAkSAggBOJS9p8y477bxUEAASAk"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/analysis/config/CoreOptionConverters.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "        // Starlark, for example in a transition implementation function.",
+         "matchingRanges": {
+          "lineNumber": "336"
+         },
+         "lineNumber": "336",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 8,
+            "length": 65
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "        return Label.parseWithPackageContext(input, (Label.PackageContext) conversionContext);",
+         "matchingRanges": {
+          "lineNumber": "337",
+          "columnRanges": [
+           {
+            "startIndex": 15,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "337",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 15,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": "      }",
+         "matchingRanges": {
+          "lineNumber": "338"
+         },
+         "lineNumber": "338"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "        // they shouldn't be used anywhere anyway.",
+         "matchingRanges": {
+          "lineNumber": "348"
+         },
+         "lineNumber": "348",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 8,
+            "length": 42
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "        return Label.parseCanonical(input);",
+         "matchingRanges": {
+          "lineNumber": "349",
+          "columnRanges": [
+           {
+            "startIndex": 15,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "349",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 15,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "      }",
+         "matchingRanges": {
+          "lineNumber": "350"
+         },
+         "lineNumber": "350"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "      // This can happen in the second round of option parsing.",
+         "matchingRanges": {
+          "lineNumber": "355"
+         },
+         "lineNumber": "355",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 6,
+            "length": 57
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "      return Label.parseWithRepoContext(",
+         "matchingRanges": {
+          "lineNumber": "356",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 26
+           }
+          ]
+         },
+         "lineNumber": "356",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 26
+          }
+         ]
+        },
+        {
+         "lineText": "          input, Label.RepoContext.of(RepositoryName.MAIN, (RepositoryMapping) conversionContext));",
+         "matchingRanges": {
+          "lineNumber": "357"
+         },
+         "lineNumber": "357"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CAoSAggBOPy5sfCku-D4cEAASAo"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/analysis/config/StarlarkDefinedConfigTransition.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    if (setting.startsWith(LabelConstants.COMMAND_LINE_OPTION_PREFIX)) {",
+         "matchingRanges": {
+          "lineNumber": "136"
+         },
+         "lineNumber": "136",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "      return Label.parseCanonical(setting);",
+         "matchingRanges": {
+          "lineNumber": "137",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "137",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "    }",
+         "matchingRanges": {
+          "lineNumber": "138"
+         },
+         "lineNumber": "138"
+        },
+        {
+         "lineText": "    return Label.parseWithPackageContext(",
+         "matchingRanges": {
+          "lineNumber": "139",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "139",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": "        setting, PackageContext.of(parentLabel.getPackageIdentifier(), repoMapping));",
+         "matchingRanges": {
+          "lineNumber": "140"
+         },
+         "lineNumber": "140"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAsSAggBOOakvt7Om_yJ3QFAAEgL"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/analysis/constraints/ConstraintConstants.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "      ConstraintSettingInfo.create(",
+         "matchingRanges": {
+          "lineNumber": "31"
+         },
+         "lineNumber": "31"
+        },
+        {
+         "lineText": "          Label.parseCanonicalUnchecked(\"@platforms//os:os\"));",
+         "matchingRanges": {
+          "lineNumber": "32",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "32",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 40,
+            "length": 19
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "33"
+         },
+         "lineNumber": "33"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "      ConstraintSettingInfo.create(",
+         "matchingRanges": {
+          "lineNumber": "35"
+         },
+         "lineNumber": "35"
+        },
+        {
+         "lineText": "          Label.parseCanonicalUnchecked(\"@platforms//cpu:cpu\"));",
+         "matchingRanges": {
+          "lineNumber": "36",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "36",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 40,
+            "length": 21
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "37"
+         },
+         "lineNumber": "37"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "              OS_CONSTRAINT_SETTING,",
+         "matchingRanges": {
+          "lineNumber": "42"
+         },
+         "lineNumber": "42"
+        },
+        {
+         "lineText": "              Label.parseCanonicalUnchecked(\"@platforms//os:linux\")),",
+         "matchingRanges": {
+          "lineNumber": "43",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "43",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 44,
+            "length": 22
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "          OS.LINUX,",
+         "matchingRanges": {
+          "lineNumber": "44"
+         },
+         "lineNumber": "44"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 9
+    },
+    "resultToken": "CAwSAggBOJSxrOXFzP2qJkAASAw"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/starlarkdocextract/LabelRendererTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  public void defaultRenderer() throws Exception {",
+         "matchingRanges": {
+          "lineNumber": "36"
+         },
+         "lineNumber": "36",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 32,
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    Label mainRepoLabel = Label.parseCanonicalUnchecked(\"//foo:bar\");",
+         "matchingRanges": {
+          "lineNumber": "37",
+          "columnRanges": [
+           {
+            "startIndex": 26,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "37",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 56,
+            "length": 11
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 26,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "    Label depRepoLabel = Label.parseCanonicalUnchecked(\"@dep//foo:baz\");",
+         "matchingRanges": {
+          "lineNumber": "38",
+          "columnRanges": [
+           {
+            "startIndex": 25,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "38",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 55,
+            "length": 15
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 25,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "39"
+         },
+         "lineNumber": "39"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  public void mainRepoLabel_withoutMainRepoName() throws Exception {",
+         "matchingRanges": {
+          "lineNumber": "52"
+         },
+         "lineNumber": "52",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 50,
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    Label label = Label.parseCanonicalUnchecked(\"//foo:bar\");",
+         "matchingRanges": {
+          "lineNumber": "53",
+          "columnRanges": [
+           {
+            "startIndex": 18,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "53",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 48,
+            "length": 11
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 18,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "    Label shorthandLabel = Label.parseCanonicalUnchecked(\"//foo\");",
+         "matchingRanges": {
+          "lineNumber": "54",
+          "columnRanges": [
+           {
+            "startIndex": 27,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "54",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 57,
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 27,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "    Object dict = Dict.immutableCopyOf(ImmutableMap.of(label, shorthandLabel));",
+         "matchingRanges": {
+          "lineNumber": "55"
+         },
+         "lineNumber": "55"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 9
+    },
+    "resultToken": "CA0SAggBOKK_94CH7sLb_AFAAEgN"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/analysis/starlark/StarlarkAttrTransitionProviderTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "        new StarlarkProvider.Key(",
+         "matchingRanges": {
+          "lineNumber": "86"
+         },
+         "lineNumber": "86",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "            keyForBuild(Label.parseCanonical(\"//myinfo:myinfo.bzl\")), \"MyInfo\");",
+         "matchingRanges": {
+          "lineNumber": "87",
+          "columnRanges": [
+           {
+            "startIndex": 24,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "87",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 45,
+            "length": 21
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 70,
+            "length": 8
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 24,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "    return (StructImpl) configuredTarget.get(key);",
+         "matchingRanges": {
+          "lineNumber": "88"
+         },
+         "lineNumber": "88",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "                            .getStarlarkOptions()",
+         "matchingRanges": {
+          "lineNumber": "734"
+         },
+         "lineNumber": "734"
+        },
+        {
+         "lineText": "                            .get(Label.parseCanonicalUnchecked(\"//test/starlark:dest\")))",
+         "matchingRanges": {
+          "lineNumber": "735",
+          "columnRanges": [
+           {
+            "startIndex": 33,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "735",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 63,
+            "length": 22
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 33,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "            .collect(toImmutableSet());",
+         "matchingRanges": {
+          "lineNumber": "736"
+         },
+         "lineNumber": "736"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  private Object getStarlarkOption(ConfiguredTarget target, String absName) {",
+         "matchingRanges": {
+          "lineNumber": "1536"
+         },
+         "lineNumber": "1536",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    return getStarlarkOptions(target).get(Label.parseCanonicalUnchecked(absName));",
+         "matchingRanges": {
+          "lineNumber": "1537",
+          "columnRanges": [
+           {
+            "startIndex": 42,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "1537",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 42,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "  }",
+         "matchingRanges": {
+          "lineNumber": "1538"
+         },
+         "lineNumber": "1538"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 13
+    },
+    "resultToken": "CA4SAggBOLy4gc-LpMKz9gFAAEgO"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/starlarkbuildapi/core/ContextGuardedValueTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    return BazelCompileContext.create(",
+         "matchingRanges": {
+          "lineNumber": "98"
+         },
+         "lineNumber": "98",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "        Label.parseCanonicalUnchecked(callerLabelStr), \"unused_caller.bzl\");",
+         "matchingRanges": {
+          "lineNumber": "99",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "99",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 55,
+            "length": 19
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "  }",
+         "matchingRanges": {
+          "lineNumber": "100"
+         },
+         "lineNumber": "100"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CA8SAggBOPaBrs36hYTCekAASA8"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/analysis/ResolvedToolchainContextTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "                        testToolchainTypeInfo,",
+         "matchingRanges": {
+          "lineNumber": "67"
+         },
+         "lineNumber": "67"
+        },
+        {
+         "lineText": "                        Label.parseCanonicalUnchecked(\"//extra:extra_toolchain_linux_impl\"))",
+         "matchingRanges": {
+          "lineNumber": "68",
+          "columnRanges": [
+           {
+            "startIndex": 24,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "68",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 54,
+            "length": 36
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 24,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "                    .build())",
+         "matchingRanges": {
+          "lineNumber": "69"
+         },
+         "lineNumber": "69"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "        getConfiguredTargetAndData(",
+         "matchingRanges": {
+          "lineNumber": "74"
+         },
+         "lineNumber": "74"
+        },
+        {
+         "lineText": "            Label.parseCanonicalUnchecked(\"//extra:extra_toolchain_linux_impl\"), targetConfig);",
+         "matchingRanges": {
+          "lineNumber": "75",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "75",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 42,
+            "length": 36
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "76"
+         },
+         "lineNumber": "76"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "                        optionalToolchainTypeInfo,",
+         "matchingRanges": {
+          "lineNumber": "138"
+         },
+         "lineNumber": "138"
+        },
+        {
+         "lineText": "                        Label.parseCanonicalUnchecked(\"//extra:extra_toolchain_linux_impl\"))",
+         "matchingRanges": {
+          "lineNumber": "139",
+          "columnRanges": [
+           {
+            "startIndex": 24,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "139",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 54,
+            "length": 36
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 24,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "                    .build())",
+         "matchingRanges": {
+          "lineNumber": "140"
+         },
+         "lineNumber": "140"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 13
+    },
+    "resultToken": "CBASAggBOIrsmY_BmIWvuwFAAEgQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/analysis/config/transitions/ComposingTransitionFactoryTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  // Use starlark flags for the test since they are easy to set and check.",
+         "matchingRanges": {
+          "lineNumber": "43"
+         },
+         "lineNumber": "43",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 72
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  private static final Label FLAG_1 = Label.parseCanonicalUnchecked(\"//flag1\");",
+         "matchingRanges": {
+          "lineNumber": "44",
+          "columnRanges": [
+           {
+            "startIndex": 38,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "44",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 17,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 68,
+            "length": 9
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 38,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "  private static final Label FLAG_2 = Label.parseCanonicalUnchecked(\"//flag2\");",
+         "matchingRanges": {
+          "lineNumber": "45",
+          "columnRanges": [
+           {
+            "startIndex": 38,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "45",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 17,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 68,
+            "length": 9
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 38,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "  private EventHandler eventHandler;",
+         "matchingRanges": {
+          "lineNumber": "46"
+         },
+         "lineNumber": "46",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CBESAggBOO7PyJ_B3YqIWkAASBE"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/analysis/ConfigurationsForLateBoundTargetsTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "                                      Attribute.LateBoundDefault.fromConstantForTesting(",
+         "matchingRanges": {
+          "lineNumber": "90"
+         },
+         "lineNumber": "90"
+        },
+        {
+         "lineText": "                                          Label.parseCanonicalUnchecked(\"//foo:latebound_dep\")))",
+         "matchingRanges": {
+          "lineNumber": "91",
+          "columnRanges": [
+           {
+            "startIndex": 42,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "91",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 72,
+            "length": 21
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 42,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "                                  .cfg(CHANGE_FOO_FLAG_TRANSITION_FACTORY))",
+         "matchingRanges": {
+          "lineNumber": "92"
+         },
+         "lineNumber": "92"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "            SkyframeExecutorTestUtils.getExistingConfiguredTargets(",
+         "matchingRanges": {
+          "lineNumber": "122"
+         },
+         "lineNumber": "122"
+        },
+        {
+         "lineText": "                skyframeExecutor, Label.parseCanonical(\"//foo:latebound_dep\")));",
+         "matchingRanges": {
+          "lineNumber": "123",
+          "columnRanges": [
+           {
+            "startIndex": 34,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "123",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 55,
+            "length": 21
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 34,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "    assertThat(getConfiguration(dep)).isNotEqualTo(getTargetConfiguration());",
+         "matchingRanges": {
+          "lineNumber": "124"
+         },
+         "lineNumber": "124"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "            SkyframeExecutorTestUtils.getExistingConfiguredTargets(",
+         "matchingRanges": {
+          "lineNumber": "155"
+         },
+         "lineNumber": "155"
+        },
+        {
+         "lineText": "                skyframeExecutor, Label.parseCanonical(\"//foo:latebound_dep\")));",
+         "matchingRanges": {
+          "lineNumber": "156",
+          "columnRanges": [
+           {
+            "startIndex": 34,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "156",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 55,
+            "length": 21
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 34,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "    assertThat(deps).hasSize(1);",
+         "matchingRanges": {
+          "lineNumber": "157"
+         },
+         "lineNumber": "157",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 29,
+            "length": 1
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CBISAggBOLigvOPOpPnF_gFAAEgS"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/starlark/StarlarkIntegrationTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "        new StarlarkProvider.Key(",
+         "matchingRanges": {
+          "lineNumber": "134"
+         },
+         "lineNumber": "134",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "            keyForBuild(Label.parseCanonical(\"//myinfo:myinfo.bzl\")), \"MyInfo\");",
+         "matchingRanges": {
+          "lineNumber": "135",
+          "columnRanges": [
+           {
+            "startIndex": 24,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "135",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 45,
+            "length": 21
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 70,
+            "length": 8
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 24,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "    return (StructImpl) configuredTarget.get(key);",
+         "matchingRanges": {
+          "lineNumber": "136"
+         },
+         "lineNumber": "136",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    StarlarkProvider.Key pInfoKey =",
+         "matchingRanges": {
+          "lineNumber": "2542"
+         },
+         "lineNumber": "2542"
+        },
+        {
+         "lineText": "        new StarlarkProvider.Key(keyForBuild(Label.parseCanonical(\"//test:rule.bzl\")), \"PInfo\");",
+         "matchingRanges": {
+          "lineNumber": "2543",
+          "columnRanges": [
+           {
+            "startIndex": 45,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "2543",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 66,
+            "length": 17
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 87,
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 45,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "2544"
+         },
+         "lineNumber": "2544"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "            keyForBuild(Label.parseCanonical(\"//test:extension.bzl\")), \"MyInfo\");",
+         "matchingRanges": {
+          "lineNumber": "2818",
+          "columnRanges": [
+           {
+            "startIndex": 24,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "2818",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 45,
+            "length": 22
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 71,
+            "length": 8
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 24,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "    StarlarkProvider.Key myDepKey =",
+         "matchingRanges": {
+          "lineNumber": "2819"
+         },
+         "lineNumber": "2819"
+        },
+        {
+         "lineText": "        new StarlarkProvider.Key(",
+         "matchingRanges": {
+          "lineNumber": "2820"
+         },
+         "lineNumber": "2820",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "            keyForBuild(Label.parseCanonical(\"//test:extension.bzl\")), \"MyDep\");",
+         "matchingRanges": {
+          "lineNumber": "2821",
+          "columnRanges": [
+           {
+            "startIndex": 24,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "2821",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 45,
+            "length": 22
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 71,
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 24,
+           "length": 20
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 4
+    },
+    "resultToken": "CBMSAggBOPKHhODOu8n0UEAASBM"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/analysis/config/BuildConfigurationStarlarkTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "        new StarlarkProvider.Key(",
+         "matchingRanges": {
+          "lineNumber": "73"
+         },
+         "lineNumber": "73",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "            keyForBuild(Label.parseCanonical(\"//examples/rule:config_test.bzl\")), \"MyInfo\");",
+         "matchingRanges": {
+          "lineNumber": "74",
+          "columnRanges": [
+           {
+            "startIndex": 24,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "74",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 45,
+            "length": 33
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 82,
+            "length": 8
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 24,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "    StructImpl myInfo = (StructImpl) starlarkTarget.get(key);",
+         "matchingRanges": {
+          "lineNumber": "75"
+         },
+         "lineNumber": "75"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    Provider.Key key =",
+         "matchingRanges": {
+          "lineNumber": "150"
+         },
+         "lineNumber": "150"
+        },
+        {
+         "lineText": "        new StarlarkProvider.Key(keyForBuild(Label.parseCanonical(\"//example:rule.bzl\")), \"MyInfo\");",
+         "matchingRanges": {
+          "lineNumber": "151",
+          "columnRanges": [
+           {
+            "startIndex": 45,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "151",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 66,
+            "length": 20
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 90,
+            "length": 8
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 45,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "    StructImpl myInfo = (StructImpl) target.get(key);",
+         "matchingRanges": {
+          "lineNumber": "152"
+         },
+         "lineNumber": "152"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CBQSAggBOL7z8_Dsp5PvAUAASBQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/skyframe/RuleContextTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    assertThat(ruleContext.getToolchainContext().resolvedToolchainLabels())",
+         "matchingRanges": {
+          "lineNumber": "37"
+         },
+         "lineNumber": "37"
+        },
+        {
+         "lineText": "        .contains(Label.parseCanonical(\"//toolchain:toolchain_1_impl\"));",
+         "matchingRanges": {
+          "lineNumber": "38",
+          "columnRanges": [
+           {
+            "startIndex": 18,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "38",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 39,
+            "length": 30
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 18,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "39"
+         },
+         "lineNumber": "39"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    ToolchainInfo toolchain =",
+         "matchingRanges": {
+          "lineNumber": "41"
+         },
+         "lineNumber": "41"
+        },
+        {
+         "lineText": "        ruleContext.getToolchainInfo(Label.parseCanonical(\"//toolchain:test_toolchain\"));",
+         "matchingRanges": {
+          "lineNumber": "42",
+          "columnRanges": [
+           {
+            "startIndex": 37,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "42",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 58,
+            "length": 28
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 37,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "    assertThat(toolchain.getValue(\"data\")).isEqualTo(\"foo\");",
+         "matchingRanges": {
+          "lineNumber": "43"
+         },
+         "lineNumber": "43",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 34,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 53,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CBUSAggBOJKxt6yRw_25N0AASBU"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/analysis/starlark/StarlarkTransitionTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    assertThat(starlarkOptions).hasSize(1);",
+         "matchingRanges": {
+          "lineNumber": "273"
+         },
+         "lineNumber": "273",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 40,
+            "length": 1
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    assertThat(starlarkOptions.get(Label.parseCanonicalUnchecked(\"//test:formation\")))",
+         "matchingRanges": {
+          "lineNumber": "274",
+          "columnRanges": [
+           {
+            "startIndex": 35,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "274",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 65,
+            "length": 18
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 35,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "        .isEqualTo(\"canyon-transitioned\");",
+         "matchingRanges": {
+          "lineNumber": "275"
+         },
+         "lineNumber": "275",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 19,
+            "length": 21
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "                .getStarlarkOptions()",
+         "matchingRanges": {
+          "lineNumber": "336"
+         },
+         "lineNumber": "336"
+        },
+        {
+         "lineText": "                .get(Label.parseCanonicalUnchecked(\"//options:fruit\")))",
+         "matchingRanges": {
+          "lineNumber": "337",
+          "columnRanges": [
+           {
+            "startIndex": 21,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "337",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 51,
+            "length": 17
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 21,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "        .isEqualTo(\"apple-eaten\");",
+         "matchingRanges": {
+          "lineNumber": "338"
+         },
+         "lineNumber": "338",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 19,
+            "length": 13
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "                .getStarlarkOptions()",
+         "matchingRanges": {
+          "lineNumber": "354"
+         },
+         "lineNumber": "354"
+        },
+        {
+         "lineText": "                .get(Label.parseCanonicalUnchecked(\"//options:fruit\")))",
+         "matchingRanges": {
+          "lineNumber": "355",
+          "columnRanges": [
+           {
+            "startIndex": 21,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "355",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 51,
+            "length": 17
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 21,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "        .isEqualTo(\"orange-eaten\");",
+         "matchingRanges": {
+          "lineNumber": "356"
+         },
+         "lineNumber": "356",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 19,
+            "length": 14
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 14
+    },
+    "resultToken": "CBYSAggBOI6U4riJj-qoL0AASBY"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/starlarkdocextract/LabelRenderer.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "   * repositoryMapping} allows fallback, then {@code this.repr(label)} equals {@code",
+         "matchingRanges": {
+          "lineNumber": "99"
+         },
+         "lineNumber": "99",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 84
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "   * Starlark.repr(Label.parseCanonicalUnchecked(this.render(label)))}.",
+         "matchingRanges": {
+          "lineNumber": "100",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "100",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 71
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "   */",
+         "matchingRanges": {
+          "lineNumber": "101"
+         },
+         "lineNumber": "101",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBcSAggBOJi_nZO14J7w8QFAAEgX"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/analysis/LabelExpander.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    try {",
+         "matchingRanges": {
+          "lineNumber": "164"
+         },
+         "lineNumber": "164",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "      return Label.parseWithPackageContext(",
+         "matchingRanges": {
+          "lineNumber": "165",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "165",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": "          labelText,",
+         "matchingRanges": {
+          "lineNumber": "166"
+         },
+         "lineNumber": "166"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBgSAggBOKCy8Lnaz--FUEAASBg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/packages/LabelConverter.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    if (converted == null) {",
+         "matchingRanges": {
+          "lineNumber": "89"
+         },
+         "lineNumber": "89",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "      converted = Label.parseWithPackageContext(input, packageContext, repoMappingRecorder);",
+         "matchingRanges": {
+          "lineNumber": "90",
+          "columnRanges": [
+           {
+            "startIndex": 18,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "90",
+         "ranges": [
+          {
+           "startIndex": 18,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": "      labelCache.put(input, converted);",
+         "matchingRanges": {
+          "lineNumber": "91"
+         },
+         "lineNumber": "91"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBkSAggBOMix2tS9w_yuRUAASBk"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/skyframe/serialization/analysis/SkycacheIntegrationTestBase.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import static com.google.common.truth.Truth.assertWithMessage;",
+         "matchingRanges": {
+          "lineNumber": "19"
+         },
+         "lineNumber": "19",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "import static com.google.devtools.build.lib.cmdline.Label.parseCanonicalUnchecked;",
+         "matchingRanges": {
+          "lineNumber": "20",
+          "columnRanges": [
+           {
+            "startIndex": 52,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "20",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 52,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "import static java.util.stream.Collectors.joining;",
+         "matchingRanges": {
+          "lineNumber": "21"
+         },
+         "lineNumber": "21",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBoSAggBOMDAyMrLg-TcPkAASBo"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/analysis/config/BuildConfigurationValueTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    BuildConfigurationValue oneEnvConfig = create(\"--target_environment=//foo\");",
+         "matchingRanges": {
+          "lineNumber": "98"
+         },
+         "lineNumber": "98",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 50,
+            "length": 28
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    assertThat(oneEnvConfig.getTargetEnvironments()).containsExactly(Label.parseCanonical(\"//foo\"));",
+         "matchingRanges": {
+          "lineNumber": "99",
+          "columnRanges": [
+           {
+            "startIndex": 69,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "99",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 90,
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 69,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "100"
+         },
+         "lineNumber": "100"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    assertThat(twoEnvsConfig.getTargetEnvironments())",
+         "matchingRanges": {
+          "lineNumber": "103"
+         },
+         "lineNumber": "103"
+        },
+        {
+         "lineText": "        .containsExactly(Label.parseCanonical(\"//foo\"), Label.parseCanonical(\"//bar\"));",
+         "matchingRanges": {
+          "lineNumber": "104",
+          "columnRanges": [
+           {
+            "startIndex": 25,
+            "length": 20
+           },
+           {
+            "startIndex": 56,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "104",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 46,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 77,
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 25,
+           "length": 20
+          },
+          {
+           "startIndex": 56,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "105"
+         },
+         "lineNumber": "105"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "                .getStarlarkOptions()",
+         "matchingRanges": {
+          "lineNumber": "327"
+         },
+         "lineNumber": "327"
+        },
+        {
+         "lineText": "                .get(Label.parseCanonicalUnchecked(\"//my_starlark_flag:starlark_flag\")))",
+         "matchingRanges": {
+          "lineNumber": "328",
+          "columnRanges": [
+           {
+            "startIndex": 21,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "328",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 51,
+            "length": 34
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 21,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "        .isNull();",
+         "matchingRanges": {
+          "lineNumber": "329"
+         },
+         "lineNumber": "329"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 20
+    },
+    "resultToken": "CBsSAggBOMCK3bjPnomgCEAASBs"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/analysis/select/ConfiguredAttributeMapperTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    List\u003cLabel\u003e visitedLabels = new ArrayList\u003c\u003e();",
+         "matchingRanges": {
+          "lineNumber": "121"
+         },
+         "lineNumber": "121",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 32,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    Label binSrc = Label.parseCanonical(\"//a:bin.sh\");",
+         "matchingRanges": {
+          "lineNumber": "122",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "122",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 40,
+            "length": 12
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "123"
+         },
+         "lineNumber": "123"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    addRelevantLabels(getMapper(\"//a:bin\"), visitedLabels);",
+         "matchingRanges": {
+          "lineNumber": "125"
+         },
+         "lineNumber": "125",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 32,
+            "length": 9
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    assertThat(visitedLabels).containsExactly(binSrc, Label.parseCanonical(\"//a:adep\"));",
+         "matchingRanges": {
+          "lineNumber": "126",
+          "columnRanges": [
+           {
+            "startIndex": 54,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "126",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 75,
+            "length": 10
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 54,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "127"
+         },
+         "lineNumber": "127"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    addRelevantLabels(getMapper(\"//a:bin\"), visitedLabels);",
+         "matchingRanges": {
+          "lineNumber": "130"
+         },
+         "lineNumber": "130",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 32,
+            "length": 9
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    assertThat(visitedLabels).containsExactly(binSrc, Label.parseCanonical(\"//a:bdep\"));",
+         "matchingRanges": {
+          "lineNumber": "131",
+          "columnRanges": [
+           {
+            "startIndex": 54,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "131",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 75,
+            "length": 10
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 54,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "132"
+         },
+         "lineNumber": "132"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 6
+    },
+    "resultToken": "CBwSAggBOICp7NH-gYOLNkAASBw"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/analysis/config/StarlarkExecTransitionLoader.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "      try {",
+         "matchingRanges": {
+          "lineNumber": "161"
+         },
+         "lineNumber": "161",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "        return new TransitionReference(Label.parseCanonical(splitval.get(0)), splitval.get(1));",
+         "matchingRanges": {
+          "lineNumber": "162",
+          "columnRanges": [
+           {
+            "startIndex": 39,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "162",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 15,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 73,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 91,
+            "length": 1
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 39,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "      } catch (LabelSyntaxException e) {",
+         "matchingRanges": {
+          "lineNumber": "163"
+         },
+         "lineNumber": "163",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CB0SAggBOKCW_ZK4lL61hgFAAEgd"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/analysis/ConfiguredTargetTransitivePackagesTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "        SkyframeExecutorTestUtils.getExistingConfiguredTargetValue(",
+         "matchingRanges": {
+          "lineNumber": "54"
+         },
+         "lineNumber": "54"
+        },
+        {
+         "lineText": "            skyframeExecutor, Label.parseCanonical(target), config);",
+         "matchingRanges": {
+          "lineNumber": "55",
+          "columnRanges": [
+           {
+            "startIndex": 30,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "55",
+         "ranges": [
+          {
+           "startIndex": 30,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "    ImmutableSet\u003cString\u003e packageNames =",
+         "matchingRanges": {
+          "lineNumber": "56"
+         },
+         "lineNumber": "56"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CB4SAggBOIbqzIiu2JWiX0AASB4"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/analysis/config/BuildConfigurationFunctionTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "        new StarlarkProvider.Key(",
+         "matchingRanges": {
+          "lineNumber": "50"
+         },
+         "lineNumber": "50",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "            keyForBuild(Label.parseCanonical(\"//myinfo:myinfo.bzl\")), \"MyInfo\");",
+         "matchingRanges": {
+          "lineNumber": "51",
+          "columnRanges": [
+           {
+            "startIndex": 24,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "51",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 45,
+            "length": 21
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 70,
+            "length": 8
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 24,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "    return (StructImpl) configuredTarget.get(key);",
+         "matchingRanges": {
+          "lineNumber": "52"
+         },
+         "lineNumber": "52",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CB8SAggBOJTNu_fpxt6s0wFAAEgf"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/analysis/ConfigurableAttributesTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    assertThat(rootCause.getLabel())",
+         "matchingRanges": {
+          "lineNumber": "1031"
+         },
+         "lineNumber": "1031"
+        },
+        {
+         "lineText": "        .isEqualTo(Label.parseCanonical(\"//java/hello:hello_default_no_match_error\"));",
+         "matchingRanges": {
+          "lineNumber": "1032",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "1032",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 40,
+            "length": 43
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "1033"
+         },
+         "lineNumber": "1033"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    assertThat(rootCause.getLabel())",
+         "matchingRanges": {
+          "lineNumber": "1046"
+         },
+         "lineNumber": "1046"
+        },
+        {
+         "lineText": "        .isEqualTo(Label.parseCanonical(\"//java/hello:hello_custom_no_match_error\"));",
+         "matchingRanges": {
+          "lineNumber": "1047",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "1047",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 40,
+            "length": 42
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "  }",
+         "matchingRanges": {
+          "lineNumber": "1048"
+         },
+         "lineNumber": "1048"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    assertThat(attributes.get(\"dep\", BuildType.LABEL))",
+         "matchingRanges": {
+          "lineNumber": "1563"
+         },
+         "lineNumber": "1563",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 30,
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "        .isEqualTo(Label.parseCanonical(\"//foo:default\"));",
+         "matchingRanges": {
+          "lineNumber": "1564",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "1564",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 40,
+            "length": 15
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "  }",
+         "matchingRanges": {
+          "lineNumber": "1565"
+         },
+         "lineNumber": "1565"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 5
+    },
+    "resultToken": "CCASAggBOP7Msuyx7_Oj2AFAAEgg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/analysis/config/OutputPathMnemonicComputer.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "      Object value =",
+         "matchingRanges": {
+          "lineNumber": "342"
+         },
+         "lineNumber": "342"
+        },
+        {
+         "lineText": "          toOptions.getStarlarkOptions().get(Label.parseCanonicalUnchecked(starlarkOptionName));",
+         "matchingRanges": {
+          "lineNumber": "343",
+          "columnRanges": [
+           {
+            "startIndex": 45,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "343",
+         "ranges": [
+          {
+           "startIndex": 45,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "      toHash.put(starlarkOptionName, value);",
+         "matchingRanges": {
+          "lineNumber": "344"
+         },
+         "lineNumber": "344"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CCESAggBOM6HntrMxKWaKUAASCE"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/analysis/starlark/StarlarkRuleTransitionProviderTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "                .getStarlarkOptions()",
+         "matchingRanges": {
+          "lineNumber": "512"
+         },
+         "lineNumber": "512"
+        },
+        {
+         "lineText": "                .get(Label.parseCanonicalUnchecked(\"//test:cute-animal-fact\")))",
+         "matchingRanges": {
+          "lineNumber": "513",
+          "columnRanges": [
+           {
+            "startIndex": 21,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "513",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 51,
+            "length": 25
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 21,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "        .isEqualTo(\"puffins mate for life\");",
+         "matchingRanges": {
+          "lineNumber": "514"
+         },
+         "lineNumber": "514",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 19,
+            "length": 23
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "                .getStarlarkOptions()",
+         "matchingRanges": {
+          "lineNumber": "539"
+         },
+         "lineNumber": "539"
+        },
+        {
+         "lineText": "                .get(Label.parseCanonicalUnchecked(\"//test:cute-animal-fact\")))",
+         "matchingRanges": {
+          "lineNumber": "540",
+          "columnRanges": [
+           {
+            "startIndex": 21,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "540",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 51,
+            "length": 25
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 21,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "        .isEqualTo(\"puffins_mate_for_life\");",
+         "matchingRanges": {
+          "lineNumber": "541"
+         },
+         "lineNumber": "541",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 19,
+            "length": 23
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    assertThat(configuration.getOptions().getStarlarkOptions())",
+         "matchingRanges": {
+          "lineNumber": "676"
+         },
+         "lineNumber": "676"
+        },
+        {
+         "lineText": "        .doesNotContainKey(Label.parseCanonicalUnchecked(\"//test:cute-animal-fact\"));",
+         "matchingRanges": {
+          "lineNumber": "677",
+          "columnRanges": [
+           {
+            "startIndex": 27,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "677",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 57,
+            "length": 25
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 27,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "  }",
+         "matchingRanges": {
+          "lineNumber": "678"
+         },
+         "lineNumber": "678"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 13
+    },
+    "resultToken": "CCISAggBOJip4PH8h67aYUAASCI"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/bazel/bzlmod/LocalPathRepoSpecs.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "      new RepoRuleId(",
+         "matchingRanges": {
+          "lineNumber": "28"
+         },
+         "lineNumber": "28",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "          Label.parseCanonicalUnchecked(\"@@bazel_tools//tools/build_defs/repo:local.bzl\"),",
+         "matchingRanges": {
+          "lineNumber": "29",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "29",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 40,
+            "length": 48
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "          \"local_repository\");",
+         "matchingRanges": {
+          "lineNumber": "30"
+         },
+         "lineNumber": "30",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 10,
+            "length": 18
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CCMSAggBOL6nmsPPz7e0JEAASCM"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/starlark/StarlarkRuleImplementationFunctionsTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "        new StarlarkProvider.Key(",
+         "matchingRanges": {
+          "lineNumber": "237"
+         },
+         "lineNumber": "237",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "            keyForBuild(Label.parseCanonical(\"//myinfo:myinfo.bzl\")), \"MyInfo\");",
+         "matchingRanges": {
+          "lineNumber": "238",
+          "columnRanges": [
+           {
+            "startIndex": 24,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "238",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 45,
+            "length": 21
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 70,
+            "length": 8
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 24,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "    return (StructImpl) configuredTarget.get(key);",
+         "matchingRanges": {
+          "lineNumber": "239"
+         },
+         "lineNumber": "239",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "            new StarlarkProvider.Key(",
+         "matchingRanges": {
+          "lineNumber": "1596"
+         },
+         "lineNumber": "1596",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "                keyForBuild(Label.parseCanonical(\"//test:foo.bzl\")), \"foo_provider\"));",
+         "matchingRanges": {
+          "lineNumber": "1597",
+          "columnRanges": [
+           {
+            "startIndex": 28,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "1597",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 49,
+            "length": 16
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 69,
+            "length": 14
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 28,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "  }",
+         "matchingRanges": {
+          "lineNumber": "1598"
+         },
+         "lineNumber": "1598"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "            new StarlarkProvider.Key(",
+         "matchingRanges": {
+          "lineNumber": "1645"
+         },
+         "lineNumber": "1645",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "                keyForBuild(Label.parseCanonical(\"//test:foo.bzl\")), \"FooInfo\"));",
+         "matchingRanges": {
+          "lineNumber": "1646",
+          "columnRanges": [
+           {
+            "startIndex": 28,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "1646",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 49,
+            "length": 16
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 69,
+            "length": 9
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 28,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "  }",
+         "matchingRanges": {
+          "lineNumber": "1647"
+         },
+         "lineNumber": "1647"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 6
+    },
+    "resultToken": "CCQSAggBOPzDgdydqqKr8QFAAEgk"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/analysis/AnalysisFailureReportingTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "            new AnalysisFailedCause(",
+         "matchingRanges": {
+          "lineNumber": "184"
+         },
+         "lineNumber": "184",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "                Label.parseCanonical(\"//cycles1\"),",
+         "matchingRanges": {
+          "lineNumber": "185",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "185",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 37,
+            "length": 11
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "                collector.getOnlyConfigurationId(),",
+         "matchingRanges": {
+          "lineNumber": "186"
+         },
+         "lineNumber": "186"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "            new AnalysisFailedCause(",
+         "matchingRanges": {
+          "lineNumber": "207"
+         },
+         "lineNumber": "207",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "                Label.parseCanonical(\"//foo\"),",
+         "matchingRanges": {
+          "lineNumber": "208",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "208",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 37,
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "                collector.getOnlyConfigurationId(),",
+         "matchingRanges": {
+          "lineNumber": "209"
+         },
+         "lineNumber": "209"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "            new AnalysisFailedCause(",
+         "matchingRanges": {
+          "lineNumber": "229"
+         },
+         "lineNumber": "229",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "                Label.parseCanonical(\"//foo\"),",
+         "matchingRanges": {
+          "lineNumber": "230",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "230",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 37,
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "                collector.getOnlyConfigurationId(),",
+         "matchingRanges": {
+          "lineNumber": "231"
+         },
+         "lineNumber": "231"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 12
+    },
+    "resultToken": "CCUSAggBOLrTjpWXkOenS0AASCU"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/skyframe/serialization/NoSuchTargetExceptionCodecTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "            new NoSuchTargetException(\"sup\"),",
+         "matchingRanges": {
+          "lineNumber": "35"
+         },
+         "lineNumber": "35",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 38,
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "            new NoSuchTargetException(Label.parseCanonical(\"//foo:bar\"), \"busted\"),",
+         "matchingRanges": {
+          "lineNumber": "36",
+          "columnRanges": [
+           {
+            "startIndex": 38,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "36",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 59,
+            "length": 11
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 73,
+            "length": 8
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 38,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "            new NoSuchTargetException(mockTarget(\"//broken:target\")))",
+         "matchingRanges": {
+          "lineNumber": "37"
+         },
+         "lineNumber": "37",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 49,
+            "length": 17
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    Target mockTarget = mock(Target.class);",
+         "matchingRanges": {
+          "lineNumber": "44"
+         },
+         "lineNumber": "44",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 36,
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    when(mockTarget.getLabel()).thenReturn(Label.parseCanonical(label));",
+         "matchingRanges": {
+          "lineNumber": "45",
+          "columnRanges": [
+           {
+            "startIndex": 43,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "45",
+         "ranges": [
+          {
+           "startIndex": 43,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "    return mockTarget;",
+         "matchingRanges": {
+          "lineNumber": "46"
+         },
+         "lineNumber": "46",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CCYSAggBOJ7qpdiap-7WhwFAAEgm"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/analysis/starlark/StarlarkSubruleTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "        getRuleAttrName(",
+         "matchingRanges": {
+          "lineNumber": "846"
+         },
+         "lineNumber": "846"
+        },
+        {
+         "lineText": "            Label.parseCanonical(\"//subrule_testing:myrule.bzl\"),",
+         "matchingRanges": {
+          "lineNumber": "847",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "847",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 33,
+            "length": 30
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "            \"_my_subrule\",",
+         "matchingRanges": {
+          "lineNumber": "848"
+         },
+         "lineNumber": "848",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 12,
+            "length": 13
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "        getRuleAttrName(",
+         "matchingRanges": {
+          "lineNumber": "906"
+         },
+         "lineNumber": "906"
+        },
+        {
+         "lineText": "            Label.parseCanonical(\"//subrule_testing:myrule.bzl\"),",
+         "matchingRanges": {
+          "lineNumber": "907",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "907",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 33,
+            "length": 30
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "            \"_my_subrule\",",
+         "matchingRanges": {
+          "lineNumber": "908"
+         },
+         "lineNumber": "908",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 12,
+            "length": 13
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    Provider.Key key =",
+         "matchingRanges": {
+          "lineNumber": "1940"
+         },
+         "lineNumber": "1940"
+        },
+        {
+         "lineText": "        new StarlarkProvider.Key(keyForBuild(Label.parseCanonical(providerLabel)), providerName);",
+         "matchingRanges": {
+          "lineNumber": "1941",
+          "columnRanges": [
+           {
+            "startIndex": 45,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "1941",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 45,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "    return (StructImpl) target.get(key);",
+         "matchingRanges": {
+          "lineNumber": "1942"
+         },
+         "lineNumber": "1942",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CCcSAggBOLa5uL7b3vnReUAASCc"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/skyframe/TestSuiteExpansionKeyCodecTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "                ImmutableSortedSet.of(",
+         "matchingRanges": {
+          "lineNumber": "32"
+         },
+         "lineNumber": "32"
+        },
+        {
+         "lineText": "                    Label.parseCanonical(\"//foo/bar:baz\"), Label.parseCanonical(\"//a/b:c\"))),",
+         "matchingRanges": {
+          "lineNumber": "33",
+          "columnRanges": [
+           {
+            "startIndex": 20,
+            "length": 20
+           },
+           {
+            "startIndex": 59,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "33",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 41,
+            "length": 15
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 80,
+            "length": 9
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 20,
+           "length": 20
+          },
+          {
+           "startIndex": 59,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "            new TestsForTargetPatternKey(ImmutableSortedSet.\u003cLabel\u003eof()))",
+         "matchingRanges": {
+          "lineNumber": "34"
+         },
+         "lineNumber": "34",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CCgSAggBOIC-_OK24tKZXEAASCg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/skyframe/PrepareDepsOfPatternFunctionTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    // And the TransitiveTraversalValue for \"a:a\" is evaluated,",
+         "matchingRanges": {
+          "lineNumber": "107"
+         },
+         "lineNumber": "107",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 59
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    SkyKey aaKey = TransitiveTraversalValue.key(Label.parseCanonical(\"@//a:a\"));",
+         "matchingRanges": {
+          "lineNumber": "108",
+          "columnRanges": [
+           {
+            "startIndex": 48,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "108",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 69,
+            "length": 8
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 48,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "    assertThat(exists(aaKey, graph)).isTrue();",
+         "matchingRanges": {
+          "lineNumber": "109"
+         },
+         "lineNumber": "109"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "        Iterables.getOnlyElement(graph.getDirectDeps(ImmutableList.of(aaKey)).values());",
+         "matchingRanges": {
+          "lineNumber": "113"
+         },
+         "lineNumber": "113"
+        },
+        {
+         "lineText": "    SkyKey bTxtKey = TransitiveTraversalValue.key(Label.parseCanonical(\"@//b:b.txt\"));",
+         "matchingRanges": {
+          "lineNumber": "114",
+          "columnRanges": [
+           {
+            "startIndex": 50,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "114",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 71,
+            "length": 12
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 50,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "    assertThat(depsOfAa).contains(bTxtKey);",
+         "matchingRanges": {
+          "lineNumber": "115"
+         },
+         "lineNumber": "115"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    // And the TransitiveTraversalValue for \"c:c\" is NOT evaluated.",
+         "matchingRanges": {
+          "lineNumber": "120"
+         },
+         "lineNumber": "120",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 63
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    SkyKey ccKey = TransitiveTraversalValue.key(Label.parseCanonical(\"@//c:c\"));",
+         "matchingRanges": {
+          "lineNumber": "121",
+          "columnRanges": [
+           {
+            "startIndex": 48,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "121",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 69,
+            "length": 8
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 48,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "    assertThat(exists(ccKey, graph)).isFalse();",
+         "matchingRanges": {
+          "lineNumber": "122"
+         },
+         "lineNumber": "122"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 4
+    },
+    "resultToken": "CCkSAggBOJzJlqz_xIHKqQFAAEgp"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/bazel/bzlmod/ModuleExtensionResolutionTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    SkyKey skyKey = BzlLoadValue.keyForBuild(Label.parseCanonical(\"//:data.bzl\"));",
+         "matchingRanges": {
+          "lineNumber": "118",
+          "columnRanges": [
+           {
+            "startIndex": 45,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "118",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 66,
+            "length": 13
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 45,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "    EvaluationResult\u003cBzlLoadValue\u003e result =",
+         "matchingRanges": {
+          "lineNumber": "119"
+         },
+         "lineNumber": "119"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    SkyKey skyKey = BzlLoadValue.keyForBuild(Label.parseCanonical(\"//:data.bzl\"));",
+         "matchingRanges": {
+          "lineNumber": "168",
+          "columnRanges": [
+           {
+            "startIndex": 45,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "168",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 66,
+            "length": 13
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 45,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "    EvaluationResult\u003cBzlLoadValue\u003e result =",
+         "matchingRanges": {
+          "lineNumber": "169"
+         },
+         "lineNumber": "169"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    SkyKey skyKey = BzlLoadValue.keyForBuild(Label.parseCanonical(\"//:data.bzl\"));",
+         "matchingRanges": {
+          "lineNumber": "211",
+          "columnRanges": [
+           {
+            "startIndex": 45,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "211",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 66,
+            "length": 13
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 45,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "    EvaluationResult\u003cBzlLoadValue\u003e result =",
+         "matchingRanges": {
+          "lineNumber": "212"
+         },
+         "lineNumber": "212"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    SkyKey skyKey = BzlLoadValue.keyForBuild(Label.parseCanonical(\"//:data.bzl\"));",
+         "matchingRanges": {
+          "lineNumber": "256",
+          "columnRanges": [
+           {
+            "startIndex": 45,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "256",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 66,
+            "length": 13
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 45,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "    EvaluationResult\u003cBzlLoadValue\u003e result =",
+         "matchingRanges": {
+          "lineNumber": "257"
+         },
+         "lineNumber": "257"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    SkyKey skyKey = BzlLoadValue.keyForBuild(Label.parseCanonical(\"//:data.bzl\"));",
+         "matchingRanges": {
+          "lineNumber": "329",
+          "columnRanges": [
+           {
+            "startIndex": 45,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "329",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 66,
+            "length": 13
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 45,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "    EvaluationResult\u003cBzlLoadValue\u003e result =",
+         "matchingRanges": {
+          "lineNumber": "330"
+         },
+         "lineNumber": "330"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 40
+    },
+    "resultToken": "CCoSAggBOOaB_67z3MCFUUAASCo"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/skyframe/PrepareDepsOfPatternsFunctionTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    assertThat(evaluationResult.getError(pdopsKey).getCycleInfo().get(0).getCycle())",
+         "matchingRanges": {
+          "lineNumber": "260"
+         },
+         "lineNumber": "260",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 70,
+            "length": 1
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "        .containsExactly(Label.parseCanonical(\"//foo:t1\"), Label.parseCanonical(\"//foo:t2\"))",
+         "matchingRanges": {
+          "lineNumber": "261",
+          "columnRanges": [
+           {
+            "startIndex": 25,
+            "length": 20
+           },
+           {
+            "startIndex": 59,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "261",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 46,
+            "length": 10
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 80,
+            "length": 10
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 25,
+           "length": 20
+          },
+          {
+           "startIndex": 59,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "        .inOrder();",
+         "matchingRanges": {
+          "lineNumber": "262"
+         },
+         "lineNumber": "262"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CCsSAggBOODi_fyr78vqlwFAAEgr"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/cmdline/LabelTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    {",
+         "matchingRanges": {
+          "lineNumber": "43"
+         },
+         "lineNumber": "43"
+        },
+        {
+         "lineText": "      Label l = Label.parseCanonical(\"//foo/bar:baz\");",
+         "matchingRanges": {
+          "lineNumber": "44",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "44",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 37,
+            "length": 15
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "      assertThat(l.getPackageName()).isEqualTo(\"foo/bar\");",
+         "matchingRanges": {
+          "lineNumber": "45"
+         },
+         "lineNumber": "45",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 47,
+            "length": 9
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    {",
+         "matchingRanges": {
+          "lineNumber": "48"
+         },
+         "lineNumber": "48"
+        },
+        {
+         "lineText": "      Label l = Label.parseCanonical(\"//foo/bar\");",
+         "matchingRanges": {
+          "lineNumber": "49",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "49",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 37,
+            "length": 11
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "      assertThat(l.getPackageName()).isEqualTo(\"foo/bar\");",
+         "matchingRanges": {
+          "lineNumber": "50"
+         },
+         "lineNumber": "50",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 47,
+            "length": 9
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    {",
+         "matchingRanges": {
+          "lineNumber": "53"
+         },
+         "lineNumber": "53"
+        },
+        {
+         "lineText": "      Label l = Label.parseCanonical(\"//:bar\");",
+         "matchingRanges": {
+          "lineNumber": "54",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "54",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 37,
+            "length": 8
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "      assertThat(l.getPackageName()).isEmpty();",
+         "matchingRanges": {
+          "lineNumber": "55"
+         },
+         "lineNumber": "55"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 39
+    },
+    "resultToken": "CCwSAggBOLyAuZ3ft42IZ0AASCw"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/analysis/constraints/ConstraintsTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "          .setUndocumented()",
+         "matchingRanges": {
+          "lineNumber": "66"
+         },
+         "lineNumber": "66"
+        },
+        {
+         "lineText": "          .compatibleWith(Label.parseCanonicalUnchecked(\"//buildenv/rule_class_compat:b\"))",
+         "matchingRanges": {
+          "lineNumber": "67",
+          "columnRanges": [
+           {
+            "startIndex": 26,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "67",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 56,
+            "length": 32
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 26,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "          .restrictedTo(Label.parseCanonicalUnchecked(\"//buildenv/rule_class_restrict:d\"))",
+         "matchingRanges": {
+          "lineNumber": "68",
+          "columnRanges": [
+           {
+            "startIndex": 24,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "68",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 54,
+            "length": 34
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 24,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "          .build();",
+         "matchingRanges": {
+          "lineNumber": "69"
+         },
+         "lineNumber": "69"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "                      .compatibleWith(",
+         "matchingRanges": {
+          "lineNumber": "95"
+         },
+         "lineNumber": "95"
+        },
+        {
+         "lineText": "                          Label.parseCanonicalUnchecked(\"//buildenv/rule_class_compat:a\"))",
+         "matchingRanges": {
+          "lineNumber": "96",
+          "columnRanges": [
+           {
+            "startIndex": 26,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "96",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 56,
+            "length": 32
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 26,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "                      .restrictedTo(",
+         "matchingRanges": {
+          "lineNumber": "97"
+         },
+         "lineNumber": "97"
+        },
+        {
+         "lineText": "                          Label.parseCanonicalUnchecked(\"//buildenv/rule_class_compat:b\")));",
+         "matchingRanges": {
+          "lineNumber": "98",
+          "columnRanges": [
+           {
+            "startIndex": 26,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "98",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 56,
+            "length": 32
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 26,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "99"
+         },
+         "lineNumber": "99"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 8
+    },
+    "resultToken": "CC0SAggBOIb7w_LYhNTxxQFAAEgt"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/analysis/starlark/StarlarkCustomCommandLineTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "                  BazelModuleKey.createFakeModuleKeyForTesting(",
+         "matchingRanges": {
+          "lineNumber": "929"
+         },
+         "lineNumber": "929"
+        },
+        {
+         "lineText": "                      Label.parseCanonicalUnchecked(\"//test:label\")),",
+         "matchingRanges": {
+          "lineNumber": "930",
+          "columnRanges": [
+           {
+            "startIndex": 22,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "930",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 52,
+            "length": 14
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 22,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "                  RepositoryMapping.EMPTY,",
+         "matchingRanges": {
+          "lineNumber": "931"
+         },
+         "lineNumber": "931"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CC4SAggBOLDRnNrOn_jAhgFAAEgu"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/analysis/util/AnalysisTestCase.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    try {",
+         "matchingRanges": {
+          "lineNumber": "499"
+         },
+         "lineNumber": "499",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "      parsedLabel = Label.parseCanonical(label);",
+         "matchingRanges": {
+          "lineNumber": "500",
+          "columnRanges": [
+           {
+            "startIndex": 20,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "500",
+         "ranges": [
+          {
+           "startIndex": 20,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "    } catch (LabelSyntaxException e) {",
+         "matchingRanges": {
+          "lineNumber": "501"
+         },
+         "lineNumber": "501",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "      return SkyframeExecutorTestUtils.getExistingTarget(",
+         "matchingRanges": {
+          "lineNumber": "513"
+         },
+         "lineNumber": "513",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "          skyframeExecutor, Label.parseCanonical(label));",
+         "matchingRanges": {
+          "lineNumber": "514",
+          "columnRanges": [
+           {
+            "startIndex": 28,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "514",
+         "ranges": [
+          {
+           "startIndex": 28,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "    } catch (LabelSyntaxException e) {",
+         "matchingRanges": {
+          "lineNumber": "515"
+         },
+         "lineNumber": "515",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    try {",
+         "matchingRanges": {
+          "lineNumber": "548"
+         },
+         "lineNumber": "548",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "      parsedLabel = Label.parseCanonical(label);",
+         "matchingRanges": {
+          "lineNumber": "549",
+          "columnRanges": [
+           {
+            "startIndex": 20,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "549",
+         "ranges": [
+          {
+           "startIndex": 20,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "    } catch (LabelSyntaxException e) {",
+         "matchingRanges": {
+          "lineNumber": "550"
+         },
+         "lineNumber": "550",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 5
+    },
+    "resultToken": "CC8SAggBONLnjoSmkNDPX0AASC8"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/starlark/util/BazelEvaluationTestCase.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  public BazelEvaluationTestCase(String label) {",
+         "matchingRanges": {
+          "lineNumber": "89"
+         },
+         "lineNumber": "89",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    this.label = Label.parseCanonicalUnchecked(label);",
+         "matchingRanges": {
+          "lineNumber": "90",
+          "columnRanges": [
+           {
+            "startIndex": 17,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "90",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 17,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "  }",
+         "matchingRanges": {
+          "lineNumber": "91"
+         },
+         "lineNumber": "91"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CDASAggBONjd29qxh9ucW0AASDA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/analysis/RuleConfiguredTargetTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    assertThat(",
+         "matchingRanges": {
+          "lineNumber": "650"
+         },
+         "lineNumber": "650"
+        },
+        {
+         "lineText": "            foo.findArtifactByOutputLabel(Label.parseCanonical(\"//foo:sub/out\"))",
+         "matchingRanges": {
+          "lineNumber": "651",
+          "columnRanges": [
+           {
+            "startIndex": 42,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "651",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 63,
+            "length": 15
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 42,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "                .getRepositoryRelativePath()",
+         "matchingRanges": {
+          "lineNumber": "652"
+         },
+         "lineNumber": "652"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    assertThat(",
+         "matchingRanges": {
+          "lineNumber": "655"
+         },
+         "lineNumber": "655"
+        },
+        {
+         "lineText": "            foo.findArtifactByOutputLabel(Label.parseCanonical(\"//foo:out\"))",
+         "matchingRanges": {
+          "lineNumber": "656",
+          "columnRanges": [
+           {
+            "startIndex": 42,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "656",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 63,
+            "length": 11
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 42,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "                .getRepositoryRelativePath()",
+         "matchingRanges": {
+          "lineNumber": "657"
+         },
+         "lineNumber": "657"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CDESAggBOMjQ7-Pxi_XPQkAASDE"
+   }
+  ],
+  "estimatedResultCount": "307",
+  "nextPageToken": "CL7z8/Dsp5PvAQjAit24z56JoAgI3L7XotrLvYQTCNzXttyYzui1Hwi+p5rDz8+3tCQIlLGs5cXM/aomCM6HntrMxKWaKQicqtzbiNrIii8IjpTiuImP6qgvCICp7NH+gYOLNgig2Yqf3dGChTcIkrG3rJHD/bk3CMDAyMrLg+TcPgjI0O/j8Yv1z0IIyLHa1L3D/K5FCLrTjpWXkOenSwigsvC52s/vhVAIlL2nzLjvtvFQCPKHhODOu8n0UAjmgf+u89zAhVEI7s/In8HdiohaCNjd29qxh9ucWwiAvvzituLSmVwIhurMiK7YlaJfCNLnjoSmkNDPXwiYqeDx/Ieu2mEIvIC5nd+3jYhnCKbYj/ulyrC6agj8ubHwpLvg+HAItrm4vtve+dF5CPaBrs36hYTCegiglv2SuJS+tYYBCLDRnNrOn/jAhgEInuql2Jqn7taHAQjQ79rTto7dsZEBCODi/fyr78vqlwEI2rCpmbuHn+CaAQicyZas/8SByqkBCIrsmY/BmIWvuwEIhvvD8tiE1PHFAQiUzbv36cberNMBCP7Msuyx7/Oj2AEI5qS+3s6b/IndAQiqzK3P2KSMo+wBCPzDgdydqqKr8QEImL+dk7XgnvDxAQi8uIHPi6TCs/YBCNaliOjTxoGF9wEIor/3gIfuwtv8AQi4oLzjzqT5xf4B",
+  "exhaustive": true,
+  "requestToken": "CihMYWJlbFwucGFyc2UoQ2Fub25pY2FsfFdpdGhSZXBvQ29udGV4dCk_EiMoIGdpdDpiYXplbC9iYXplbEBtYXN0ZXIgY2FzZTp5ZXMgKRoMCLTtrNEGEP_6_f4CIAwqADIASAE"
+ }
+}

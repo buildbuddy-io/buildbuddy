@@ -1,0 +1,3665 @@
+{
+ "query": "file:runtime/map delete",
+ "oss_project": "go",
+ "repo_name": "go",
+ "page_size": 50,
+ "fetched_at": "2026-06-11T02:31:12Z",
+ "response": {
+  "searchResults": [
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/internal/runtime/maps/map.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// (see deleteSmall). Use matchEmptyOrDeleted as it is a bit",
+         "matchingRanges": {
+          "lineNumber": "568",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 6
+           },
+           {
+            "startIndex": 39,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "568",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 60
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 6
+          },
+          {
+           "startIndex": 39,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t// more efficient than matchEmpty.",
+         "matchingRanges": {
+          "lineNumber": "569"
+         },
+         "lineNumber": "569",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 34
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tmatch = g.ctrls().matchEmptyOrDeleted()",
+         "matchingRanges": {
+          "lineNumber": "570",
+          "columnRanges": [
+           {
+            "startIndex": 31,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "570",
+         "ranges": [
+          {
+           "startIndex": 31,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func (m *Map) Delete(typ *abi.MapType, key unsafe.Pointer) {",
+         "matchingRanges": {
+          "lineNumber": "649",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "649",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tif m == nil || m.Used() == 0 {",
+         "matchingRanges": {
+          "lineNumber": "650"
+         },
+         "lineNumber": "650",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 28,
+            "length": 1
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\tidx := m.directoryIndex(hash)",
+         "matchingRanges": {
+          "lineNumber": "670"
+         },
+         "lineNumber": "670"
+        },
+        {
+         "lineText": "\t\tif m.directoryAt(idx).Delete(typ, m, hash, key) {",
+         "matchingRanges": {
+          "lineNumber": "671",
+          "columnRanges": [
+           {
+            "startIndex": 24,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "671",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 24,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\tm.tombstonePossible = true",
+         "matchingRanges": {
+          "lineNumber": "672"
+         },
+         "lineNumber": "672"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func (m *Map) deleteSmall(typ *abi.MapType, hash uintptr, key unsafe.Pointer) {",
+         "matchingRanges": {
+          "lineNumber": "689",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "689",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tg := groupReference{",
+         "matchingRanges": {
+          "lineNumber": "690"
+         },
+         "lineNumber": "690"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 17
+    },
+    "resultToken": "CAASBAgBIAE47q6mt_HBishbQABIAA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/map.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "//",
+         "matchingRanges": {
+          "lineNumber": "133"
+         },
+         "lineNumber": "133",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "//go:linkname mapdelete",
+         "matchingRanges": {
+          "lineNumber": "134",
+          "columnRanges": [
+           {
+            "startIndex": 17,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "134",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 23
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 17,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "func mapdelete(t *abi.MapType, m *maps.Map, key unsafe.Pointer) {",
+         "matchingRanges": {
+          "lineNumber": "135",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "135",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tif raceenabled \u0026\u0026 m != nil {",
+         "matchingRanges": {
+          "lineNumber": "136"
+         },
+         "lineNumber": "136",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "//go:linkname reflect_mapdelete reflect.mapdelete",
+         "matchingRanges": {
+          "lineNumber": "264",
+          "columnRanges": [
+           {
+            "startIndex": 25,
+            "length": 6
+           },
+           {
+            "startIndex": 43,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "264",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 49
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 25,
+           "length": 6
+          },
+          {
+           "startIndex": 43,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "func reflect_mapdelete(t *abi.MapType, m *maps.Map, key unsafe.Pointer) {",
+         "matchingRanges": {
+          "lineNumber": "265",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "265",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tmapdelete(t, m, key)",
+         "matchingRanges": {
+          "lineNumber": "266",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "266",
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "//go:linkname reflect_mapdelete_faststr reflect.mapdelete_faststr",
+         "matchingRanges": {
+          "lineNumber": "269",
+          "columnRanges": [
+           {
+            "startIndex": 25,
+            "length": 6
+           },
+           {
+            "startIndex": 51,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "269",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 65
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 25,
+           "length": 6
+          },
+          {
+           "startIndex": 51,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "func reflect_mapdelete_faststr(t *abi.MapType, m *maps.Map, key string) {",
+         "matchingRanges": {
+          "lineNumber": "270",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "270",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tmapdelete_faststr(t, m, key)",
+         "matchingRanges": {
+          "lineNumber": "271",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "271",
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 12
+    },
+    "resultToken": "CAESBAgBIAE49o_YgvLZv9i-AUAASAE"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/internal/runtime/maps/table.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// group, we stop and return an error; otherwise we continue to the",
+         "matchingRanges": {
+          "lineNumber": "175"
+         },
+         "lineNumber": "175",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 67
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t// next probe index. Tombstones (ctrlDeleted) effectively behave like",
+         "matchingRanges": {
+          "lineNumber": "176",
+          "columnRanges": [
+           {
+            "startIndex": 38,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "176",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 69
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 38,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t// full slots that never match the value we're looking for.",
+         "matchingRanges": {
+          "lineNumber": "177"
+         },
+         "lineNumber": "177",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 59
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// find, which we'll use to insert the new entry if necessary.",
+         "matchingRanges": {
+          "lineNumber": "271"
+         },
+         "lineNumber": "271",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 62
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tvar firstDeletedGroup groupReference",
+         "matchingRanges": {
+          "lineNumber": "272",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "272",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tvar firstDeletedSlot uintptr",
+         "matchingRanges": {
+          "lineNumber": "273",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "273",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "274"
+         },
+         "lineNumber": "274"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// Delete returns true if it put a tombstone in t.",
+         "matchingRanges": {
+          "lineNumber": "477",
+          "columnRanges": [
+           {
+            "startIndex": 3,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "477",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 50
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 3,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "func (t *table) Delete(typ *abi.MapType, m *Map, hash uintptr, key unsafe.Pointer) bool {",
+         "matchingRanges": {
+          "lineNumber": "478",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "478",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tseq := makeProbeSeq(h1(hash), t.groups.lengthMask)",
+         "matchingRanges": {
+          "lineNumber": "479"
+         },
+         "lineNumber": "479"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 38
+    },
+    "resultToken": "CAISBAgBIAE4-pDuiobd46UGQABIAg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/map_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "func TestIterGrowAndDelete(t *testing.T) {",
+         "matchingRanges": {
+          "lineNumber": "253",
+          "columnRanges": [
+           {
+            "startIndex": 20,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "253",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 20,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tm := make(map[int]int, 4)",
+         "matchingRanges": {
+          "lineNumber": "254"
+         },
+         "lineNumber": "254",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 11,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 24,
+            "length": 1
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func TestDeferDeleteSlow(t *testing.T) {",
+         "matchingRanges": {
+          "lineNumber": "710",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "710",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tks := []complex128{0, 1, 2, 3}",
+         "matchingRanges": {
+          "lineNumber": "711"
+         },
+         "lineNumber": "711",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 23,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 26,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 29,
+            "length": 1
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// works as expected.",
+         "matchingRanges": {
+          "lineNumber": "733"
+         },
+         "lineNumber": "733",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 21
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "func TestIncrementAfterDeleteValueInt(t *testing.T) {",
+         "matchingRanges": {
+          "lineNumber": "734",
+          "columnRanges": [
+           {
+            "startIndex": 23,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "734",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 23,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tconst key1 = 12",
+         "matchingRanges": {
+          "lineNumber": "735"
+         },
+         "lineNumber": "735",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 14,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func TestMapIterDeleteReplace(t *testing.T) {",
+         "matchingRanges": {
+          "lineNumber": "1118",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "1118",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tinc := 1",
+         "matchingRanges": {
+          "lineNumber": "1119"
+         },
+         "lineNumber": "1119",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 1
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 24
+    },
+    "resultToken": "CAMSBAgBIAE46ty3nb7j4L8kQABIAw"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/internal/runtime/maps/map_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "func TestMapDelete(t *testing.T) {",
+         "matchingRanges": {
+          "lineNumber": "148",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "148",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tm, typ := maps.NewTestMap[uint32, uint64](32)",
+         "matchingRanges": {
+          "lineNumber": "149"
+         },
+         "lineNumber": "149",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 43,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func TestTablePutDelete(t *testing.T) {",
+         "matchingRanges": {
+          "lineNumber": "267",
+          "columnRanges": [
+           {
+            "startIndex": 17,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "267",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 17,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t// Put will reuse the first deleted slot it encounters.",
+         "matchingRanges": {
+          "lineNumber": "268",
+          "columnRanges": [
+           {
+            "startIndex": 29,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "268",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 55
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 29,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t//",
+         "matchingRanges": {
+          "lineNumber": "269"
+         },
+         "lineNumber": "269",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t// This is awkward to test because Delete will only install ctrlDeleted",
+         "matchingRanges": {
+          "lineNumber": "270",
+          "columnRanges": [
+           {
+            "startIndex": 36,
+            "length": 6
+           },
+           {
+            "startIndex": 65,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "270",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 71
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 36,
+           "length": 6
+          },
+          {
+           "startIndex": 65,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// Deleted keys shouldn't be visible in iteration.",
+         "matchingRanges": {
+          "lineNumber": "382",
+          "columnRanges": [
+           {
+            "startIndex": 3,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "382",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 50
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 3,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "func TestTableIterationDelete(t *testing.T) {",
+         "matchingRanges": {
+          "lineNumber": "383",
+          "columnRanges": [
+           {
+            "startIndex": 23,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "383",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 23,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tm, typ := maps.NewTestMap[uint32, uint64](8)",
+         "matchingRanges": {
+          "lineNumber": "384"
+         },
+         "lineNumber": "384",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 43,
+            "length": 1
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 34
+    },
+    "resultToken": "CAQSBAgBIAE4kJigpO7F4_iMAUAASAQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/internal/runtime/maps/runtime.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t// As we look for a match, keep track of the first deleted slot",
+         "matchingRanges": {
+          "lineNumber": "202",
+          "columnRanges": [
+           {
+            "startIndex": 53,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "202",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 63
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 53,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t// we find, which we'll use to insert the new entry if",
+         "matchingRanges": {
+          "lineNumber": "203"
+         },
+         "lineNumber": "203",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 54
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t// necessary.",
+         "matchingRanges": {
+          "lineNumber": "204"
+         },
+         "lineNumber": "204",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 13
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tvar firstDeletedGroup groupReference",
+         "matchingRanges": {
+          "lineNumber": "205",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "205",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tvar firstDeletedSlot uintptr",
+         "matchingRanges": {
+          "lineNumber": "206",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "206",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t\t\t// can replace it without consuming growthLeft.",
+         "matchingRanges": {
+          "lineNumber": "252"
+         },
+         "lineNumber": "252",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 47
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t\tif firstDeletedGroup.data != nil {",
+         "matchingRanges": {
+          "lineNumber": "253",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "253",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t\t\tg = firstDeletedGroup",
+         "matchingRanges": {
+          "lineNumber": "254",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "254",
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t\t\ti = firstDeletedSlot",
+         "matchingRanges": {
+          "lineNumber": "255",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "255",
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t\t\tt.growthLeft++ // will be decremented below to become a no-op.",
+         "matchingRanges": {
+          "lineNumber": "256"
+         },
+         "lineNumber": "256",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 20,
+            "length": 47
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 14
+    },
+    "resultToken": "CAUSAggBOKDEorWvkv-jFUAASAU"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/internal/runtime/maps/runtime_fast64.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// There can't be deleted slots, small maps can't have them",
+         "matchingRanges": {
+          "lineNumber": "129",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "129",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 59
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t// (see deleteSmall). Use matchEmptyOrDeleted as it is a bit",
+         "matchingRanges": {
+          "lineNumber": "130",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 6
+           },
+           {
+            "startIndex": 39,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "130",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 60
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 6
+          },
+          {
+           "startIndex": 39,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t// more efficient than matchEmpty.",
+         "matchingRanges": {
+          "lineNumber": "131"
+         },
+         "lineNumber": "131",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 34
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tmatch = g.ctrls().matchEmptyOrDeleted()",
+         "matchingRanges": {
+          "lineNumber": "132",
+          "columnRanges": [
+           {
+            "startIndex": 31,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "132",
+         "ranges": [
+          {
+           "startIndex": 31,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tif match == 0 {",
+         "matchingRanges": {
+          "lineNumber": "133"
+         },
+         "lineNumber": "133",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 13,
+            "length": 1
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\tmatch := g.ctrls().matchEmptyOrDeleted()",
+         "matchingRanges": {
+          "lineNumber": "164",
+          "columnRanges": [
+           {
+            "startIndex": 33,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "164",
+         "ranges": [
+          {
+           "startIndex": 33,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tif match != 0 {",
+         "matchingRanges": {
+          "lineNumber": "165"
+         },
+         "lineNumber": "165",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 14,
+            "length": 1
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "//go:linkname runtime_mapdelete_fast64 runtime.mapdelete_fast64",
+         "matchingRanges": {
+          "lineNumber": "543",
+          "columnRanges": [
+           {
+            "startIndex": 25,
+            "length": 6
+           },
+           {
+            "startIndex": 50,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "543",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 63
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 25,
+           "length": 6
+          },
+          {
+           "startIndex": 50,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "func runtime_mapdelete_fast64(typ *abi.MapType, m *Map, key uint64) {",
+         "matchingRanges": {
+          "lineNumber": "544",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "544",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tif race.Enabled {",
+         "matchingRanges": {
+          "lineNumber": "545"
+         },
+         "lineNumber": "545",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 38
+    },
+    "resultToken": "CAYSBAgBIAE4qpLY_9Wx68SGAUAASAY"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/internal/runtime/maps/runtime_fast32.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// There can't be deleted slots, small maps can't have them",
+         "matchingRanges": {
+          "lineNumber": "134",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "134",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 59
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t// (see deleteSmall). Use matchEmptyOrDeleted as it is a bit",
+         "matchingRanges": {
+          "lineNumber": "135",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 6
+           },
+           {
+            "startIndex": 39,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "135",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 60
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 6
+          },
+          {
+           "startIndex": 39,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t// more efficient than matchEmpty.",
+         "matchingRanges": {
+          "lineNumber": "136"
+         },
+         "lineNumber": "136",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 34
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tmatch = g.ctrls().matchEmptyOrDeleted()",
+         "matchingRanges": {
+          "lineNumber": "137",
+          "columnRanges": [
+           {
+            "startIndex": 31,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "137",
+         "ranges": [
+          {
+           "startIndex": 31,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tif match == 0 {",
+         "matchingRanges": {
+          "lineNumber": "138"
+         },
+         "lineNumber": "138",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 13,
+            "length": 1
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "//go:linkname runtime_mapdelete_fast32 runtime.mapdelete_fast32",
+         "matchingRanges": {
+          "lineNumber": "478",
+          "columnRanges": [
+           {
+            "startIndex": 25,
+            "length": 6
+           },
+           {
+            "startIndex": 50,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "478",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 63
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 25,
+           "length": 6
+          },
+          {
+           "startIndex": 50,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "func runtime_mapdelete_fast32(typ *abi.MapType, m *Map, key uint32) {",
+         "matchingRanges": {
+          "lineNumber": "479",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "479",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tif race.Enabled {",
+         "matchingRanges": {
+          "lineNumber": "480"
+         },
+         "lineNumber": "480",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tm.Delete(typ, abi.NoEscape(unsafe.Pointer(\u0026key)))",
+         "matchingRanges": {
+          "lineNumber": "490",
+          "columnRanges": [
+           {
+            "startIndex": 3,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "490",
+         "ranges": [
+          {
+           "startIndex": 3,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "}",
+         "matchingRanges": {
+          "lineNumber": "491"
+         },
+         "lineNumber": "491"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 35
+    },
+    "resultToken": "CAcSBAgBIAE4zsqk_t-AivUFQABIBw"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/map_benchmark_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "func benchmarkMapDelete[K mapBenchmarkKeyType, E mapBenchmarkElemType](b *testing.B, n int) {",
+         "matchingRanges": {
+          "lineNumber": "1092",
+          "columnRanges": [
+           {
+            "startIndex": 17,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "1092",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 17,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tif n == 0 {",
+         "matchingRanges": {
+          "lineNumber": "1093"
+         },
+         "lineNumber": "1093",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 9,
+            "length": 1
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func BenchmarkMapDelete(b *testing.B) {",
+         "matchingRanges": {
+          "lineNumber": "1115",
+          "columnRanges": [
+           {
+            "startIndex": 17,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "1115",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 17,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tb.Run(\"Key=int32/Elem=int32\", benchSizes(benchmarkMapDelete[int32, int32]))",
+         "matchingRanges": {
+          "lineNumber": "1116",
+          "columnRanges": [
+           {
+            "startIndex": 54,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "1116",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 7,
+            "length": 22
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 54,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tb.Run(\"Key=int64/Elem=int64\", benchSizes(benchmarkMapDelete[int64, int64]))",
+         "matchingRanges": {
+          "lineNumber": "1117",
+          "columnRanges": [
+           {
+            "startIndex": 54,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "1117",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 7,
+            "length": 22
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 54,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tb.Run(\"Key=string/Elem=string\", benchSizes(benchmarkMapDelete[string, string]))",
+         "matchingRanges": {
+          "lineNumber": "1118",
+          "columnRanges": [
+           {
+            "startIndex": 56,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "1118",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 7,
+            "length": 24
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 56,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tb.Run(\"Key=smallType/Elem=int32\", benchSizes(benchmarkMapDelete[smallType, int32]))",
+         "matchingRanges": {
+          "lineNumber": "1119",
+          "columnRanges": [
+           {
+            "startIndex": 58,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "1119",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 7,
+            "length": 26
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 58,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tb.Run(\"Key=mediumType/Elem=int32\", benchSizes(benchmarkMapDelete[mediumType, int32]))",
+         "matchingRanges": {
+          "lineNumber": "1120",
+          "columnRanges": [
+           {
+            "startIndex": 59,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "1120",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 7,
+            "length": 27
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 59,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func BenchmarkMapDeleteLargeKey(b *testing.B) {",
+         "matchingRanges": {
+          "lineNumber": "1169",
+          "columnRanges": [
+           {
+            "startIndex": 17,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "1169",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 17,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tm := map[string]int{}",
+         "matchingRanges": {
+          "lineNumber": "1170"
+         },
+         "lineNumber": "1170",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 18
+    },
+    "resultToken": "CAgSBAgBIAE4ut2w66iby4HJAUAASAg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/internal/runtime/maps/runtime_faststr.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// There can't be deleted slots, small maps can't have them",
+         "matchingRanges": {
+          "lineNumber": "208",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "208",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 59
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t// (see deleteSmall). Use matchEmptyOrDeleted as it is a bit",
+         "matchingRanges": {
+          "lineNumber": "209",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 6
+           },
+           {
+            "startIndex": 39,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "209",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 60
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 6
+          },
+          {
+           "startIndex": 39,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t// more efficient than matchEmpty.",
+         "matchingRanges": {
+          "lineNumber": "210"
+         },
+         "lineNumber": "210",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 34
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tmatch = g.ctrls().matchEmptyOrDeleted()",
+         "matchingRanges": {
+          "lineNumber": "211",
+          "columnRanges": [
+           {
+            "startIndex": 31,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "211",
+         "ranges": [
+          {
+           "startIndex": 31,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tif match == 0 {",
+         "matchingRanges": {
+          "lineNumber": "212"
+         },
+         "lineNumber": "212",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 13,
+            "length": 1
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "//go:linkname runtime_mapdelete_faststr runtime.mapdelete_faststr",
+         "matchingRanges": {
+          "lineNumber": "408",
+          "columnRanges": [
+           {
+            "startIndex": 25,
+            "length": 6
+           },
+           {
+            "startIndex": 51,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "408",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 65
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 25,
+           "length": 6
+          },
+          {
+           "startIndex": 51,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "func runtime_mapdelete_faststr(typ *abi.MapType, m *Map, key string) {",
+         "matchingRanges": {
+          "lineNumber": "409",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "409",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tif race.Enabled {",
+         "matchingRanges": {
+          "lineNumber": "410"
+         },
+         "lineNumber": "410",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tm.Delete(typ, abi.NoEscape(unsafe.Pointer(\u0026key)))",
+         "matchingRanges": {
+          "lineNumber": "420",
+          "columnRanges": [
+           {
+            "startIndex": 3,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "420",
+         "ranges": [
+          {
+           "startIndex": 3,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "}",
+         "matchingRanges": {
+          "lineNumber": "421"
+         },
+         "lineNumber": "421"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 22
+    },
+    "resultToken": "CAkSBAgBIAE4pLX6pvDas8w4QABICQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/map_fast32.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "//go:linkname mapdelete_fast32",
+         "matchingRanges": {
+          "lineNumber": "52",
+          "columnRanges": [
+           {
+            "startIndex": 17,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "52",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 30
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 17,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "func mapdelete_fast32(t *abi.MapType, m *maps.Map, key uint32)",
+         "matchingRanges": {
+          "lineNumber": "53",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "53",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAoSBAgBIAE4pOz_9talsvMHQABICg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/map_fast64.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "//go:linkname mapdelete_fast64",
+         "matchingRanges": {
+          "lineNumber": "53",
+          "columnRanges": [
+           {
+            "startIndex": 17,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "53",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 30
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 17,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "func mapdelete_fast64(t *abi.MapType, m *maps.Map, key uint64)",
+         "matchingRanges": {
+          "lineNumber": "54",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "54",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAsSBAgBIAE4gP7v74Cb8Ma1AUAASAs"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/internal/runtime/maps/fuzz_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// Used for Get, Put, Delete.",
+         "matchingRanges": {
+          "lineNumber": "26",
+          "columnRanges": [
+           {
+            "startIndex": 23,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "26",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 29
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 23,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tKey uint16",
+         "matchingRanges": {
+          "lineNumber": "27"
+         },
+         "lineNumber": "27"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tfuzzOpPut",
+         "matchingRanges": {
+          "lineNumber": "40"
+         },
+         "lineNumber": "40"
+        },
+        {
+         "lineText": "\tfuzzOpDelete",
+         "matchingRanges": {
+          "lineNumber": "41",
+          "columnRanges": [
+           {
+            "startIndex": 7,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "41",
+         "ranges": [
+          {
+           "startIndex": 7,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": ")",
+         "matchingRanges": {
+          "lineNumber": "42"
+         },
+         "lineNumber": "42"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t\t\tref[c.Key] = c.Elem",
+         "matchingRanges": {
+          "lineNumber": "200"
+         },
+         "lineNumber": "200"
+        },
+        {
+         "lineText": "\t\t\tcase fuzzOpDelete:",
+         "matchingRanges": {
+          "lineNumber": "201",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "201",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 3,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t\tm.Delete(typ, unsafe.Pointer(\u0026c.Key))",
+         "matchingRanges": {
+          "lineNumber": "202",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "202",
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t\tdelete(ref, c.Key)",
+         "matchingRanges": {
+          "lineNumber": "203",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "203",
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\tdefault:",
+         "matchingRanges": {
+          "lineNumber": "204"
+         },
+         "lineNumber": "204",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 3,
+            "length": 7
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 7
+    },
+    "resultToken": "CAwSBAgBIAE4yprJx5eTs9h7QABIDA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/internal/runtime/maps/group.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tctrlEmpty   ctrl = 0b10000000",
+         "matchingRanges": {
+          "lineNumber": "22"
+         },
+         "lineNumber": "22",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 10
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tctrlDeleted ctrl = 0b11111110",
+         "matchingRanges": {
+          "lineNumber": "23",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "23",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 10
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "24"
+         },
+         "lineNumber": "24"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// matchEmptyOrDeleted returns the set of slots in the group that are empty or",
+         "matchingRanges": {
+          "lineNumber": "198",
+          "columnRanges": [
+           {
+            "startIndex": 15,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "198",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 78
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 15,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "// deleted.",
+         "matchingRanges": {
+          "lineNumber": "199",
+          "columnRanges": [
+           {
+            "startIndex": 3,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "199",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 11
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 3,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "func (g ctrlGroup) matchEmptyOrDeleted() bitset {",
+         "matchingRanges": {
+          "lineNumber": "200",
+          "columnRanges": [
+           {
+            "startIndex": 31,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "200",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 31,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\treturn ctrlGroupMatchEmptyOrDeleted(g)",
+         "matchingRanges": {
+          "lineNumber": "201",
+          "columnRanges": [
+           {
+            "startIndex": 29,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "201",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 29,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// note on bitset about the packed intrinsified return value.",
+         "matchingRanges": {
+          "lineNumber": "207"
+         },
+         "lineNumber": "207",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 61
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "func ctrlGroupMatchEmptyOrDeleted(g ctrlGroup) bitset {",
+         "matchingRanges": {
+          "lineNumber": "208",
+          "columnRanges": [
+           {
+            "startIndex": 26,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "208",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 26,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t// An empty slot is  1000 0000",
+         "matchingRanges": {
+          "lineNumber": "209"
+         },
+         "lineNumber": "209",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 30
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 14
+    },
+    "resultToken": "CA0SBAgBIAE41qSQrb3a7M5pQABIDQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/map_faststr.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "//go:linkname mapdelete_faststr",
+         "matchingRanges": {
+          "lineNumber": "41",
+          "columnRanges": [
+           {
+            "startIndex": 17,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "41",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 31
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 17,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "func mapdelete_faststr(t *abi.MapType, m *maps.Map, ky string)",
+         "matchingRanges": {
+          "lineNumber": "42",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "42",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CA4SBAgBIAE4qKms2_v7ptj_AUAASA4"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/internal/runtime/maps/table_debug.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// Count the number of used and deleted slots.",
+         "matchingRanges": {
+          "lineNumber": "20",
+          "columnRanges": [
+           {
+            "startIndex": 33,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "20",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 46
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 33,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tvar used uint16",
+         "matchingRanges": {
+          "lineNumber": "21"
+         },
+         "lineNumber": "21",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tvar deleted uint16",
+         "matchingRanges": {
+          "lineNumber": "22",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "22",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t\tswitch {",
+         "matchingRanges": {
+          "lineNumber": "28"
+         },
+         "lineNumber": "28",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 3,
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\tcase c == ctrlDeleted:",
+         "matchingRanges": {
+          "lineNumber": "29",
+          "columnRanges": [
+           {
+            "startIndex": 17,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "29",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 3,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 17,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t\tdeleted++",
+         "matchingRanges": {
+          "lineNumber": "30",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "30",
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\tcase c == ctrlEmpty:",
+         "matchingRanges": {
+          "lineNumber": "31"
+         },
+         "lineNumber": "31",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 3,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t\tcase ctrlDeleted:",
+         "matchingRanges": {
+          "lineNumber": "106",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "106",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 3,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t\tprint(\" (deleted)\\n\")",
+         "matchingRanges": {
+          "lineNumber": "107",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "107",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 10,
+            "length": 14
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 9
+    },
+    "resultToken": "CA8SAggBOPDf7Z-mlu-83AFAAEgP"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/internal/runtime/maps/export_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// Returns nil if there are no full groups.",
+         "matchingRanges": {
+          "lineNumber": "68"
+         },
+         "lineNumber": "68",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 43
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "// Returns nil if a group is full but contains entirely deleted slots.",
+         "matchingRanges": {
+          "lineNumber": "69",
+          "columnRanges": [
+           {
+            "startIndex": 56,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "69",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 70
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 56,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "// Returns nil if the map is small.",
+         "matchingRanges": {
+          "lineNumber": "70"
+         },
+         "lineNumber": "70",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 35
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t\t// All full or deleted slots.",
+         "matchingRanges": {
+          "lineNumber": "91",
+          "columnRanges": [
+           {
+            "startIndex": 18,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "91",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 3,
+            "length": 29
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 18,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\tfor j := uintptr(0); j \u003c abi.MapGroupSlots; j++ {",
+         "matchingRanges": {
+          "lineNumber": "92"
+         },
+         "lineNumber": "92",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 3,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 1
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t\tif g.ctrls().get(j) == ctrlDeleted {",
+         "matchingRanges": {
+          "lineNumber": "93",
+          "columnRanges": [
+           {
+            "startIndex": 31,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "93",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 31,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t\t\tcontinue",
+         "matchingRanges": {
+          "lineNumber": "94"
+         },
+         "lineNumber": "94",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 5,
+            "length": 8
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CBASAggBOLbQ7O7pxcSM0gFAAEgQ"
+   }
+  ],
+  "estimatedResultCount": "17",
+  "exhaustive": true,
+  "requestToken": "ChdmaWxlOnJ1bnRpbWUvbWFwIGRlbGV0ZRIdKCBnaXQ6Z28vZ29AbWFzdGVyIGNhc2U6eWVzICkaDAjwu6jRBhD2iJqVASAMKgAyAEgB"
+ }
+}

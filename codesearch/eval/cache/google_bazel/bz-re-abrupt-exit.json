@@ -1,0 +1,8329 @@
+{
+ "query": "throw new AbruptExitException\\(",
+ "oss_project": "bazel",
+ "repo_name": "bazel",
+ "page_size": 50,
+ "fetched_at": "2026-06-11T22:28:55Z",
+ "response": {
+  "searchResults": [
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/util/AbruptExitException.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  public AbruptExitException(DetailedExitCode detailedExitCode) {",
+         "matchingRanges": {
+          "lineNumber": "36",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "36",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "    super(detailedExitCode.getFailureDetail().getMessage());",
+         "matchingRanges": {
+          "lineNumber": "37"
+         },
+         "lineNumber": "37",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  public AbruptExitException(DetailedExitCode detailedExitCode, @Nullable Throwable cause) {",
+         "matchingRanges": {
+          "lineNumber": "41",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 20
+           },
+           {
+            "startIndex": 74,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "41",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 20
+          },
+          {
+           "startIndex": 74,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "lineText": "    super(detailedExitCode.getFailureDetail().getMessage(), cause);",
+         "matchingRanges": {
+          "lineNumber": "42"
+         },
+         "lineNumber": "42",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    byte[] serializedFailureDetail = detailedExitCode.getFailureDetail().toByteArray();",
+         "matchingRanges": {
+          "lineNumber": "55"
+         },
+         "lineNumber": "55"
+        },
+        {
+         "lineText": "    return new SerializedAbruptExitException(getMessage(), serializedFailureDetail, this);",
+         "matchingRanges": {
+          "lineNumber": "56",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 3
+           },
+           {
+            "startIndex": 25,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "56",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 11,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 84,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 3
+          },
+          {
+           "startIndex": 25,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "  }",
+         "matchingRanges": {
+          "lineNumber": "57"
+         },
+         "lineNumber": "57"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "      return new AbruptExitException(DetailedExitCode.of(failureDetail), e);",
+         "matchingRanges": {
+          "lineNumber": "64",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 3
+           },
+           {
+            "startIndex": 17,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "64",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 13,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 3
+          },
+          {
+           "startIndex": 17,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "    } catch (InvalidProtocolBufferException ipbe) {",
+         "matchingRanges": {
+          "lineNumber": "65"
+         },
+         "lineNumber": "65",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "      return new AbruptExitException(",
+         "matchingRanges": {
+          "lineNumber": "66",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 3
+           },
+           {
+            "startIndex": 17,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "66",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 13,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 3
+          },
+          {
+           "startIndex": 17,
+           "length": 20
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 9
+    },
+    "resultToken": "CAASAggBOOyDxdbJjtW4QUAASAA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/runtime/ThreadDumpModule.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  private final AtomicReference\u003cThreadDumpTask\u003e threadDumpTaskRef = new AtomicReference\u003c\u003e();",
+         "matchingRanges": {
+          "lineNumber": "61",
+          "columnRanges": [
+           {
+            "startIndex": 68,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "61",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 68,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 68,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "62"
+         },
+         "lineNumber": "62"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "      } catch (InvalidPackagePathSymlinkException e) {",
+         "matchingRanges": {
+          "lineNumber": "87"
+         },
+         "lineNumber": "87",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "        throw createAbruptExitException(\"Failed to create uploader\", e);",
+         "matchingRanges": {
+          "lineNumber": "88",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 5
+           },
+           {
+            "startIndex": 20,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "88",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 40,
+            "length": 27
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 5
+          },
+          {
+           "startIndex": 20,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "      }",
+         "matchingRanges": {
+          "lineNumber": "89"
+         },
+         "lineNumber": "89"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  private static BuildEventArtifactUploader newUploader(",
+         "matchingRanges": {
+          "lineNumber": "108",
+          "columnRanges": [
+           {
+            "startIndex": 44,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "108",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 44,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "      CommandEnvironment env, BuildEventProtocolOptions bepOptions)",
+         "matchingRanges": {
+          "lineNumber": "109"
+         },
+         "lineNumber": "109"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  private static AbruptExitException createAbruptExitException(String message, Throwable cause) {",
+         "matchingRanges": {
+          "lineNumber": "130",
+          "columnRanges": [
+           {
+            "startIndex": 43,
+            "length": 20
+           },
+           {
+            "startIndex": 79,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "130",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 43,
+           "length": 20
+          },
+          {
+           "startIndex": 79,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "lineText": "    return new AbruptExitException(",
+         "matchingRanges": {
+          "lineNumber": "131",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 3
+           },
+           {
+            "startIndex": 15,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "131",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 11,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 3
+          },
+          {
+           "startIndex": 15,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "        DetailedExitCode.of(",
+         "matchingRanges": {
+          "lineNumber": "132"
+         },
+         "lineNumber": "132"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 17
+    },
+    "resultToken": "CAESBAgBIAE4xKiLi-f7qIbDAUAASAE"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/runtime/BlockWaitingModuleTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    // arrange",
+         "matchingRanges": {
+          "lineNumber": "48"
+         },
+         "lineNumber": "48",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 10
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    BlockWaitingModule m = new BlockWaitingModule();",
+         "matchingRanges": {
+          "lineNumber": "49",
+          "columnRanges": [
+           {
+            "startIndex": 27,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "49",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 27,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 27,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "50"
+         },
+         "lineNumber": "50"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  @Test",
+         "matchingRanges": {
+          "lineNumber": "94"
+         },
+         "lineNumber": "94"
+        },
+        {
+         "lineText": "  public void testTaskThrowsAbruptExitException() throws Exception {",
+         "matchingRanges": {
+          "lineNumber": "95",
+          "columnRanges": [
+           {
+            "startIndex": 22,
+            "length": 5
+           },
+           {
+            "startIndex": 28,
+            "length": 20
+           },
+           {
+            "startIndex": 50,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "95",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 50,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 22,
+           "length": 5
+          },
+          {
+           "startIndex": 28,
+           "length": 20
+          },
+          {
+           "startIndex": 50,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "lineText": "    // arrange",
+         "matchingRanges": {
+          "lineNumber": "96"
+         },
+         "lineNumber": "96",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 10
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    BlockWaitingModule m = new BlockWaitingModule();",
+         "matchingRanges": {
+          "lineNumber": "97",
+          "columnRanges": [
+           {
+            "startIndex": 27,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "97",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 27,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 27,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "    Task t = mock(Task.class);",
+         "matchingRanges": {
+          "lineNumber": "98"
+         },
+         "lineNumber": "98",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 23,
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    doThrow(new AbruptExitException(CRASH)).when(t).call();",
+         "matchingRanges": {
+          "lineNumber": "99",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 5
+           },
+           {
+            "startIndex": 12,
+            "length": 3
+           },
+           {
+            "startIndex": 16,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "99",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 5
+          },
+          {
+           "startIndex": 12,
+           "length": 3
+          },
+          {
+           "startIndex": 16,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "100"
+         },
+         "lineNumber": "100"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 18
+    },
+    "resultToken": "CAISBAgBIAE4pp7y0pi82-b0AUAASAI"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/runtime/CommandInterruptionTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "      this.isTestShuttingDown = isTestShuttingDown;",
+         "matchingRanges": {
+          "lineNumber": "122"
+         },
+         "lineNumber": "122",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "      this.commandStateHandoff = new AtomicReference\u003c\u003e();",
+         "matchingRanges": {
+          "lineNumber": "123",
+          "columnRanges": [
+           {
+            "startIndex": 33,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "123",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 33,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 33,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "    }",
+         "matchingRanges": {
+          "lineNumber": "124"
+         },
+         "lineNumber": "124"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "     */",
+         "matchingRanges": {
+          "lineNumber": "260"
+         },
+         "lineNumber": "260",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 7
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    private void completeWithFailure(Throwable throwable) {",
+         "matchingRanges": {
+          "lineNumber": "261",
+          "columnRanges": [
+           {
+            "startIndex": 37,
+            "length": 5
+           },
+           {
+            "startIndex": 47,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "261",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 37,
+           "length": 5
+          },
+          {
+           "startIndex": 47,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "lineText": "      result.setException(throwable);",
+         "matchingRanges": {
+          "lineNumber": "262",
+          "columnRanges": [
+           {
+            "startIndex": 26,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "262",
+         "ranges": [
+          {
+           "startIndex": 26,
+           "length": 5
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    CommandState command = snooze.runIn(executor, dispatcher, /* expectInterruption= */ false);",
+         "matchingRanges": {
+          "lineNumber": "483"
+         },
+         "lineNumber": "483",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 62,
+            "length": 25
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    command.getModuleEnvironment().exit(new AbruptExitException(NO_TEST_TARGETS_CODE));",
+         "matchingRanges": {
+          "lineNumber": "484",
+          "columnRanges": [
+           {
+            "startIndex": 40,
+            "length": 3
+           },
+           {
+            "startIndex": 44,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "484",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 40,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 40,
+           "length": 3
+          },
+          {
+           "startIndex": 44,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "    command.assertFinishedWith(NO_TEST_TARGETS_CODE);",
+         "matchingRanges": {
+          "lineNumber": "485"
+         },
+         "lineNumber": "485"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 63
+    },
+    "resultToken": "CAMSAggBOMao1MK00YbhZEAASAM"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/runtime/ExecutionGraphModule.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "      env.getBlazeModuleEnvironment().exit(new AbruptExitException(detailedExitCode, e));",
+         "matchingRanges": {
+          "lineNumber": "290",
+          "columnRanges": [
+           {
+            "startIndex": 43,
+            "length": 3
+           },
+           {
+            "startIndex": 47,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "290",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 43,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 43,
+           "length": 3
+          },
+          {
+           "startIndex": 47,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "    } catch (ActionDumpFileCreationException e) {",
+         "matchingRanges": {
+          "lineNumber": "291"
+         },
+         "lineNumber": "291",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "      DetailedExitCode detailedExitCode = DetailedExitCode.of(makeReportWriteFailedDetail());",
+         "matchingRanges": {
+          "lineNumber": "292"
+         },
+         "lineNumber": "292"
+        },
+        {
+         "lineText": "      env.getBlazeModuleEnvironment().exit(new AbruptExitException(detailedExitCode, e));",
+         "matchingRanges": {
+          "lineNumber": "293",
+          "columnRanges": [
+           {
+            "startIndex": 43,
+            "length": 3
+           },
+           {
+            "startIndex": 47,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "293",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 43,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 43,
+           "length": 3
+          },
+          {
+           "startIndex": 47,
+           "length": 20
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    } catch (InterruptedException e) {",
+         "matchingRanges": {
+          "lineNumber": "416"
+         },
+         "lineNumber": "416",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "      throw InterruptedFailureDetails.abruptExitException(\"action dump shutdown interrupted\", e);",
+         "matchingRanges": {
+          "lineNumber": "417",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 5
+           },
+           {
+            "startIndex": 38,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "417",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 58,
+            "length": 34
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 5
+          },
+          {
+           "startIndex": 38,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "    }",
+         "matchingRanges": {
+          "lineNumber": "418"
+         },
+         "lineNumber": "418"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  private static BuildEventArtifactUploader newUploader(",
+         "matchingRanges": {
+          "lineNumber": "944",
+          "columnRanges": [
+           {
+            "startIndex": 44,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "944",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 44,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "      CommandEnvironment env, BuildEventProtocolOptions bepOptions)",
+         "matchingRanges": {
+          "lineNumber": "945"
+         },
+         "lineNumber": "945"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 49
+    },
+    "resultToken": "CAQSBAgBIAE46LG07KnYydMzQABIBA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/buildeventservice/BuildEventServiceModule.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    reportCommandLineError(commandLineReporter, exception);",
+         "matchingRanges": {
+          "lineNumber": "191"
+         },
+         "lineNumber": "191"
+        },
+        {
+         "lineText": "    moduleEnvironment.exit(createAbruptExitException(exception, msg, besCode));",
+         "matchingRanges": {
+          "lineNumber": "192",
+          "columnRanges": [
+           {
+            "startIndex": 33,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "192",
+         "ranges": [
+          {
+           "startIndex": 33,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "  }",
+         "matchingRanges": {
+          "lineNumber": "193"
+         },
+         "lineNumber": "193"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "                  }",
+         "matchingRanges": {
+          "lineNumber": "275"
+         },
+         "lineNumber": "275"
+        },
+        {
+         "lineText": "                  return new SimpleEntry\u003c\u003e(transport, future);",
+         "matchingRanges": {
+          "lineNumber": "276",
+          "columnRanges": [
+           {
+            "startIndex": 25,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "276",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 18,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 25,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 25,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "                })",
+         "matchingRanges": {
+          "lineNumber": "277"
+         },
+         "lineNumber": "277"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  private static AbruptExitException createAbruptExitException(",
+         "matchingRanges": {
+          "lineNumber": "946",
+          "columnRanges": [
+           {
+            "startIndex": 43,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "946",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 43,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "      Exception e, String message, BuildProgress.Code besCode) {",
+         "matchingRanges": {
+          "lineNumber": "947"
+         },
+         "lineNumber": "947"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  private static class ThrowingBuildEventArtifactUploaderSupplier {",
+         "matchingRanges": {
+          "lineNumber": "991",
+          "columnRanges": [
+           {
+            "startIndex": 23,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "991",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 17,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 23,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "lineText": "    private final Callable\u003cBuildEventArtifactUploader\u003e callable;",
+         "matchingRanges": {
+          "lineNumber": "992"
+         },
+         "lineNumber": "992",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 68
+    },
+    "resultToken": "CAUSBAgBIAE46qS59cSp5peAAUAASAU"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/skyframe/IncrementalPackageRoots.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  private final ListeningExecutorService symlinkPlantingPool;",
+         "matchingRanges": {
+          "lineNumber": "80"
+         },
+         "lineNumber": "80",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  private final Object stateLock = new Object();",
+         "matchingRanges": {
+          "lineNumber": "81",
+          "columnRanges": [
+           {
+            "startIndex": 35,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "81",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 35,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 35,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "  private final Path execroot;",
+         "matchingRanges": {
+          "lineNumber": "82"
+         },
+         "lineNumber": "82",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    } catch (IOException e) {",
+         "matchingRanges": {
+          "lineNumber": "174"
+         },
+         "lineNumber": "174",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "      throwAbruptExitException(e);",
+         "matchingRanges": {
+          "lineNumber": "175",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 25
+           }
+          ]
+         },
+         "lineNumber": "175",
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 25
+          }
+         ]
+        },
+        {
+         "lineText": "    }",
+         "matchingRanges": {
+          "lineNumber": "176"
+         },
+         "lineNumber": "176"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  private static void throwAbruptExitException(Exception e) throws AbruptExitException {",
+         "matchingRanges": {
+          "lineNumber": "336",
+          "columnRanges": [
+           {
+            "startIndex": 22,
+            "length": 25
+           },
+           {
+            "startIndex": 60,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "336",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 17,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 60,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 22,
+           "length": 25
+          },
+          {
+           "startIndex": 60,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "lineText": "    throw new AbruptExitException(",
+         "matchingRanges": {
+          "lineNumber": "337",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 5
+           },
+           {
+            "startIndex": 10,
+            "length": 3
+           },
+           {
+            "startIndex": 14,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "337",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 5
+          },
+          {
+           "startIndex": 10,
+           "length": 3
+          },
+          {
+           "startIndex": 14,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "        DetailedExitCode.of(",
+         "matchingRanges": {
+          "lineNumber": "338"
+         },
+         "lineNumber": "338"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 24
+    },
+    "resultToken": "CAYSBAgBIAE45tOhkbekldqkAUAASAY"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/buildtool/ContextProviderInitializationTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import static org.junit.Assert.assertThrows;",
+         "matchingRanges": {
+          "lineNumber": "16",
+          "columnRanges": [
+           {
+            "startIndex": 37,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "16",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 37,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "17"
+         },
+         "lineNumber": "17"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "      builder.addExecutorLifecycleListener(",
+         "matchingRanges": {
+          "lineNumber": "49"
+         },
+         "lineNumber": "49"
+        },
+        {
+         "lineText": "          new ExecutorLifecycleListener() {",
+         "matchingRanges": {
+          "lineNumber": "50",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "50",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "51"
+         },
+         "lineNumber": "51"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "                throws AbruptExitException {",
+         "matchingRanges": {
+          "lineNumber": "60",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "60",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 16,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "lineText": "              throw new AbruptExitException(",
+         "matchingRanges": {
+          "lineNumber": "61",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 5
+           },
+           {
+            "startIndex": 20,
+            "length": 3
+           },
+           {
+            "startIndex": 24,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "61",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 14,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 20,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 5
+          },
+          {
+           "startIndex": 20,
+           "length": 3
+          },
+          {
+           "startIndex": 24,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "                  DetailedExitCode.of(",
+         "matchingRanges": {
+          "lineNumber": "62"
+         },
+         "lineNumber": "62"
+        },
+        {
+         "lineText": "                      FailureDetail.newBuilder()",
+         "matchingRanges": {
+          "lineNumber": "63",
+          "columnRanges": [
+           {
+            "startIndex": 36,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "63",
+         "ranges": [
+          {
+           "startIndex": 36,
+           "length": 3
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 9
+    },
+    "resultToken": "CAcSAggBOLLS--_klP2aDkAASAc"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/runtime/CommandEnvironment.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  private final ImmutableMap\u003cString, String\u003e clientEnv;",
+         "matchingRanges": {
+          "lineNumber": "117"
+         },
+         "lineNumber": "117",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  private final Set\u003cString\u003e visibleActionEnv = new TreeSet\u003c\u003e();",
+         "matchingRanges": {
+          "lineNumber": "118",
+          "columnRanges": [
+           {
+            "startIndex": 47,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "118",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 47,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 47,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "  private final Set\u003cString\u003e visibleTestEnv = new TreeSet\u003c\u003e();",
+         "matchingRanges": {
+          "lineNumber": "119",
+          "columnRanges": [
+           {
+            "startIndex": 45,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "119",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 45,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 45,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "  private final ImmutableMap\u003cString, String\u003e repoEnv;",
+         "matchingRanges": {
+          "lineNumber": "120"
+         },
+         "lineNumber": "120",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "      this.blazeModuleEnvironment.exit(",
+         "matchingRanges": {
+          "lineNumber": "307"
+         },
+         "lineNumber": "307",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "          new AbruptExitException(",
+         "matchingRanges": {
+          "lineNumber": "308",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 3
+           },
+           {
+            "startIndex": 14,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "308",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 3
+          },
+          {
+           "startIndex": 14,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "              DetailedExitCode.of(",
+         "matchingRanges": {
+          "lineNumber": "309"
+         },
+         "lineNumber": "309"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "   */",
+         "matchingRanges": {
+          "lineNumber": "812"
+         },
+         "lineNumber": "812",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  public void throwPendingException() throws AbruptExitException {",
+         "matchingRanges": {
+          "lineNumber": "813",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 5
+           },
+           {
+            "startIndex": 38,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "813",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 38,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 5
+          },
+          {
+           "startIndex": 38,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "lineText": "    AbruptExitException exception = getPendingException();",
+         "matchingRanges": {
+          "lineNumber": "814"
+         },
+         "lineNumber": "814"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 51
+    },
+    "resultToken": "CAgSBAgBIAE4gNrfnMiKrqFtQABICA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/dynamic/DynamicExecutionModule.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "          Executors.newCachedThreadPool(",
+         "matchingRanges": {
+          "lineNumber": "86",
+          "columnRanges": [
+           {
+            "startIndex": 20,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "86",
+         "ranges": [
+          {
+           "startIndex": 20,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "              new ThreadFactoryBuilder().setNameFormat(\"dynamic-execution-thread-%d\").build());",
+         "matchingRanges": {
+          "lineNumber": "87",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "87",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 14,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 55,
+            "length": 29
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "    }",
+         "matchingRanges": {
+          "lineNumber": "88"
+         },
+         "lineNumber": "88"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  private void throwIfContainsDynamic(List\u003cString\u003e strategies, String flagName)",
+         "matchingRanges": {
+          "lineNumber": "185",
+          "columnRanges": [
+           {
+            "startIndex": 15,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "185",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 15,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "lineText": "      throws AbruptExitException {",
+         "matchingRanges": {
+          "lineNumber": "186",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "186",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 5
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "              identifiers, flagName);",
+         "matchingRanges": {
+          "lineNumber": "192"
+         },
+         "lineNumber": "192"
+        },
+        {
+         "lineText": "      throw new AbruptExitException(",
+         "matchingRanges": {
+          "lineNumber": "193",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 5
+           },
+           {
+            "startIndex": 12,
+            "length": 3
+           },
+           {
+            "startIndex": 16,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "193",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 5
+          },
+          {
+           "startIndex": 12,
+           "length": 3
+          },
+          {
+           "startIndex": 16,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "          DetailedExitCode.of(",
+         "matchingRanges": {
+          "lineNumber": "194"
+         },
+         "lineNumber": "194"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 16
+    },
+    "resultToken": "CAkSBAgBIAE4wOuC1brHn4MoQABICQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/runtime/BlazeRuntime.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "      String[] args,",
+         "matchingRanges": {
+          "lineNumber": "941"
+         },
+         "lineNumber": "941"
+        },
+        {
+         "lineText": "      @Nullable Throwable delayedJniLinkingError) {",
+         "matchingRanges": {
+          "lineNumber": "942",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "942",
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "lineText": "    // Transform args into Bazel's internal string representation.",
+         "matchingRanges": {
+          "lineNumber": "943"
+         },
+         "lineNumber": "943",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 62
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "   */",
+         "matchingRanges": {
+          "lineNumber": "1366"
+         },
+         "lineNumber": "1366",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  private static BlazeRuntime newRuntime(",
+         "matchingRanges": {
+          "lineNumber": "1367",
+          "columnRanges": [
+           {
+            "startIndex": 30,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "1367",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 30,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "      Iterable\u003cBlazeModule\u003e blazeModules,",
+         "matchingRanges": {
+          "lineNumber": "1368"
+         },
+         "lineNumber": "1368"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "          delayedJniLinkingError.getMessage(), installBase);",
+         "matchingRanges": {
+          "lineNumber": "1414"
+         },
+         "lineNumber": "1414"
+        },
+        {
+         "lineText": "      throw new AbruptExitException(",
+         "matchingRanges": {
+          "lineNumber": "1415",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 5
+           },
+           {
+            "startIndex": 16,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "1415",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 5
+          },
+          {
+           "startIndex": 16,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "          DetailedExitCode.of(",
+         "matchingRanges": {
+          "lineNumber": "1416"
+         },
+         "lineNumber": "1416"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 73
+    },
+    "resultToken": "CAoSBAgBIAE44J-z-MfllcRqQABICg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/buildtool/util/BuildIntegrationTestCase.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import static com.google.common.base.Preconditions.checkState;",
+         "matchingRanges": {
+          "lineNumber": "19"
+         },
+         "lineNumber": "19",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "import static com.google.common.base.Throwables.throwIfUnchecked;",
+         "matchingRanges": {
+          "lineNumber": "20",
+          "columnRanges": [
+           {
+            "startIndex": 37,
+            "length": 5
+           },
+           {
+            "startIndex": 48,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "20",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 37,
+           "length": 5
+          },
+          {
+           "startIndex": 48,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "lineText": "import static com.google.common.collect.ImmutableList.toImmutableList;",
+         "matchingRanges": {
+          "lineNumber": "21"
+         },
+         "lineNumber": "21",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  protected final EventCollectionApparatus events =",
+         "matchingRanges": {
+          "lineNumber": "218"
+         },
+         "lineNumber": "218",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 9
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "      new EventCollectionApparatus(",
+         "matchingRanges": {
+          "lineNumber": "219",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "219",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "          Sets.union(EventKind.ERRORS_WARNINGS_AND_INFO, additionalEventsToCollect()));",
+         "matchingRanges": {
+          "lineNumber": "220"
+         },
+         "lineNumber": "220"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "          throw new AbruptExitException(DetailedExitCode.of(failureDetail), e);",
+         "matchingRanges": {
+          "lineNumber": "372",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 5
+           },
+           {
+            "startIndex": 16,
+            "length": 3
+           },
+           {
+            "startIndex": 20,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "372",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 16,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 5
+          },
+          {
+           "startIndex": 16,
+           "length": 3
+          },
+          {
+           "startIndex": 20,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "        } catch (InvalidProtocolBufferException ipbe) {",
+         "matchingRanges": {
+          "lineNumber": "373"
+         },
+         "lineNumber": "373",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "          throw new AbruptExitException(",
+         "matchingRanges": {
+          "lineNumber": "374",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 5
+           },
+           {
+            "startIndex": 16,
+            "length": 3
+           },
+           {
+            "startIndex": 20,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "374",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 16,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 5
+          },
+          {
+           "startIndex": 16,
+           "length": 3
+          },
+          {
+           "startIndex": 20,
+           "length": 20
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 74
+    },
+    "resultToken": "CAsSAggBOPjQ382rjvHM1gFAAEgL"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/runtime/BlazeCommandDispatcherTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "                    if (errorOnAfterCommand != null) {",
+         "matchingRanges": {
+          "lineNumber": "122"
+         },
+         "lineNumber": "122",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 20,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "                      throw errorOnAfterCommand;",
+         "matchingRanges": {
+          "lineNumber": "123",
+          "columnRanges": [
+           {
+            "startIndex": 22,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "123",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 22,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 22,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "lineText": "                    }",
+         "matchingRanges": {
+          "lineNumber": "124"
+         },
+         "lineNumber": "124"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  @Test",
+         "matchingRanges": {
+          "lineNumber": "282"
+         },
+         "lineNumber": "282"
+        },
+        {
+         "lineText": "  public void crashPreventsNewCommand() throws Exception {",
+         "matchingRanges": {
+          "lineNumber": "283",
+          "columnRanges": [
+           {
+            "startIndex": 27,
+            "length": 3
+           },
+           {
+            "startIndex": 40,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "283",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 40,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 27,
+           "length": 3
+          },
+          {
+           "startIndex": 40,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "lineText": "    CountDownLatch commandStarted = new CountDownLatch(1);",
+         "matchingRanges": {
+          "lineNumber": "284",
+          "columnRanges": [
+           {
+            "startIndex": 36,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "284",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 36,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 55,
+            "length": 1
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 36,
+           "length": 3
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "                .build());",
+         "matchingRanges": {
+          "lineNumber": "410"
+         },
+         "lineNumber": "410"
+        },
+        {
+         "lineText": "    errorOnAfterCommand = new AbruptExitException(detailedExitCode);",
+         "matchingRanges": {
+          "lineNumber": "411",
+          "columnRanges": [
+           {
+            "startIndex": 30,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "411",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 26,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 30,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "    runtime.overrideCommands(ImmutableList.of(foo));",
+         "matchingRanges": {
+          "lineNumber": "412"
+         },
+         "lineNumber": "412"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 79
+    },
+    "resultToken": "CAwSBAgBIAE42K_95_nDtujWAUAASAw"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/buildtool/ExecutionTool.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import com.google.common.base.Stopwatch;",
+         "matchingRanges": {
+          "lineNumber": "20"
+         },
+         "lineNumber": "20",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.common.base.Throwables;",
+         "matchingRanges": {
+          "lineNumber": "21",
+          "columnRanges": [
+           {
+            "startIndex": 30,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "21",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 30,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.common.collect.ImmutableList;",
+         "matchingRanges": {
+          "lineNumber": "22"
+         },
+         "lineNumber": "22",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    ExecutorBuilder executorBuilder = new ExecutorBuilder();",
+         "matchingRanges": {
+          "lineNumber": "166",
+          "columnRanges": [
+           {
+            "startIndex": 38,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "166",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 38,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 38,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "    ModuleActionContextRegistry.Builder actionContextRegistryBuilder =",
+         "matchingRanges": {
+          "lineNumber": "167"
+         },
+         "lineNumber": "167"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    Throwable catastrophe = null;",
+         "matchingRanges": {
+          "lineNumber": "435",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "435",
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "lineText": "    boolean buildCompleted = false;",
+         "matchingRanges": {
+          "lineNumber": "436"
+         },
+         "lineNumber": "436"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "      String message = String.format(\"Source forest creation failed: %s\", e.getMessage());",
+         "matchingRanges": {
+          "lineNumber": "661"
+         },
+         "lineNumber": "661",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 37,
+            "length": 35
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "      throw new AbruptExitException(",
+         "matchingRanges": {
+          "lineNumber": "662",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 5
+           },
+           {
+            "startIndex": 12,
+            "length": 3
+           },
+           {
+            "startIndex": 16,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "662",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 5
+          },
+          {
+           "startIndex": 12,
+           "length": 3
+          },
+          {
+           "startIndex": 16,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "          DetailedExitCode.of(",
+         "matchingRanges": {
+          "lineNumber": "663"
+         },
+         "lineNumber": "663"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 49
+    },
+    "resultToken": "CA0SAggBOIr8wPKPkuSr0wFAAEgN"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/skyframe/SkyframeExecutor.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  protected SkyFunction newFileStateFunction() {",
+         "matchingRanges": {
+          "lineNumber": "999",
+          "columnRanges": [
+           {
+            "startIndex": 24,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "999",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 9
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 24,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "    return new FileStateFunction(tsgm::get, syscallCache, externalFilesHelper);",
+         "matchingRanges": {
+          "lineNumber": "1000"
+         },
+         "lineNumber": "1000",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 11,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  protected GlobFunction newGlobFunction() {",
+         "matchingRanges": {
+          "lineNumber": "1027",
+          "columnRanges": [
+           {
+            "startIndex": 25,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "1027",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 9
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 25,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "    return GlobFunction.create(/* recursionInSingleFunction= */ true);",
+         "matchingRanges": {
+          "lineNumber": "1028"
+         },
+         "lineNumber": "1028",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 31,
+            "length": 32
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  protected SkyFunction newBzlLoadFunction(RuleClassProvider ruleClassProvider) {",
+         "matchingRanges": {
+          "lineNumber": "1036",
+          "columnRanges": [
+           {
+            "startIndex": 24,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "1036",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 9
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 24,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "    return BzlLoadFunction.create(",
+         "matchingRanges": {
+          "lineNumber": "1037"
+         },
+         "lineNumber": "1037",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  private void tryThrowTargetParsingException(",
+         "matchingRanges": {
+          "lineNumber": "3243",
+          "columnRanges": [
+           {
+            "startIndex": 18,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "3243",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 18,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "lineText": "      ExtendedEventHandler eventHandler,",
+         "matchingRanges": {
+          "lineNumber": "3244"
+         },
+         "lineNumber": "3244"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    throw new AbruptExitException(",
+         "matchingRanges": {
+          "lineNumber": "4163",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "4163",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "        DetailedExitCode.of(",
+         "matchingRanges": {
+          "lineNumber": "4164"
+         },
+         "lineNumber": "4164"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 89
+    },
+    "resultToken": "CA4SBAgBIAE4nsWrmaelgJ1zQABIDg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/exec/ModuleActionContextRegistry.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  /**",
+         "matchingRanges": {
+          "lineNumber": "92"
+         },
+         "lineNumber": "92",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "   * Returns a new {@link Builder} suitable for creating instances of ModuleActionContextRegistry.",
+         "matchingRanges": {
+          "lineNumber": "93",
+          "columnRanges": [
+           {
+            "startIndex": 15,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "93",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 98
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 15,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "   */",
+         "matchingRanges": {
+          "lineNumber": "94"
+         },
+         "lineNumber": "94",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  public static Builder builder() {",
+         "matchingRanges": {
+          "lineNumber": "95"
+         },
+         "lineNumber": "95",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    return new Builder();",
+         "matchingRanges": {
+          "lineNumber": "96",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "96",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 11,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "  }",
+         "matchingRanges": {
+          "lineNumber": "97"
+         },
+         "lineNumber": "97"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "      if (!unusedRestrictions.isEmpty()) {",
+         "matchingRanges": {
+          "lineNumber": "161"
+         },
+         "lineNumber": "161",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "        throw new AbruptExitException(",
+         "matchingRanges": {
+          "lineNumber": "162",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 5
+           },
+           {
+            "startIndex": 14,
+            "length": 3
+           },
+           {
+            "startIndex": 18,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "162",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 14,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 5
+          },
+          {
+           "startIndex": 14,
+           "length": 3
+          },
+          {
+           "startIndex": 18,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "            DetailedExitCode.of(",
+         "matchingRanges": {
+          "lineNumber": "163"
+         },
+         "lineNumber": "163"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 12
+    },
+    "resultToken": "CA8SAggBOJykz_-ixcOa0gFAAEgP"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/buildeventservice/BuildEventServiceUploader.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import com.google.common.base.Preconditions;",
+         "matchingRanges": {
+          "lineNumber": "19"
+         },
+         "lineNumber": "19",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.common.base.Throwables;",
+         "matchingRanges": {
+          "lineNumber": "20",
+          "columnRanges": [
+           {
+            "startIndex": 30,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "20",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 30,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.common.collect.Iterables;",
+         "matchingRanges": {
+          "lineNumber": "21"
+         },
+         "lineNumber": "21",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  private sealed interface Command {",
+         "matchingRanges": {
+          "lineNumber": "88"
+         },
+         "lineNumber": "88",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 17,
+            "length": 9
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    /** Tells the event loop to open a new BES stream. */",
+         "matchingRanges": {
+          "lineNumber": "89",
+          "columnRanges": [
+           {
+            "startIndex": 39,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "89",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 53
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 39,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "    record OpenStream() implements Command {}",
+         "matchingRanges": {
+          "lineNumber": "90"
+         },
+         "lineNumber": "90",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 24,
+            "length": 10
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "      logger.atSevere().withCause(e).log();",
+         "matchingRanges": {
+          "lineNumber": "350"
+         },
+         "lineNumber": "350"
+        },
+        {
+         "lineText": "      closeFuture.setException(new AbruptExitException(detailedExitCode, e));",
+         "matchingRanges": {
+          "lineNumber": "351",
+          "columnRanges": [
+           {
+            "startIndex": 31,
+            "length": 3
+           },
+           {
+            "startIndex": 35,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "351",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 31,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 31,
+           "length": 3
+          },
+          {
+           "startIndex": 35,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "      eventBus.post(",
+         "matchingRanges": {
+          "lineNumber": "352"
+         },
+         "lineNumber": "352"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 55
+    },
+    "resultToken": "CBASAggBOMaE5p2Sh8DX2QFAAEgQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/remote/RemoteModule.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import com.google.common.base.Strings;",
+         "matchingRanges": {
+          "lineNumber": "26"
+         },
+         "lineNumber": "26",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.common.base.Throwables;",
+         "matchingRanges": {
+          "lineNumber": "27",
+          "columnRanges": [
+           {
+            "startIndex": 30,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "27",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 30,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.common.collect.ImmutableList;",
+         "matchingRanges": {
+          "lineNumber": "28"
+         },
+         "lineNumber": "28",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "      new ChannelFactory() {",
+         "matchingRanges": {
+          "lineNumber": "162",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "162",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "        @Override",
+         "matchingRanges": {
+          "lineNumber": "163"
+         },
+         "lineNumber": "163"
+        },
+        {
+         "lineText": "        public ManagedChannel newChannel(",
+         "matchingRanges": {
+          "lineNumber": "164",
+          "columnRanges": [
+           {
+            "startIndex": 30,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "164",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 30,
+           "length": 3
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    if (digestUtil.getDigestFunction() == DigestFunction.Value.UNKNOWN) {",
+         "matchingRanges": {
+          "lineNumber": "525"
+         },
+         "lineNumber": "525",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "      throw new AbruptExitException(",
+         "matchingRanges": {
+          "lineNumber": "526",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 5
+           },
+           {
+            "startIndex": 12,
+            "length": 3
+           },
+           {
+            "startIndex": 16,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "526",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 5
+          },
+          {
+           "startIndex": 12,
+           "length": 3
+          },
+          {
+           "startIndex": 16,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "          DetailedExitCode.of(",
+         "matchingRanges": {
+          "lineNumber": "527"
+         },
+         "lineNumber": "527"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 61
+    },
+    "resultToken": "CBESBAgBIAE4vregnYPAv4rQAUAASBE"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/bazel/BazelRepositoryModule.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  private final RepositoryCache repositoryCache = new RepositoryCache();",
+         "matchingRanges": {
+          "lineNumber": "135",
+          "columnRanges": [
+           {
+            "startIndex": 50,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "135",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 50,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 50,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "  private final MutableSupplier\u003cImmutableMap\u003cString, String\u003e\u003e repoEnvSupplier =",
+         "matchingRanges": {
+          "lineNumber": "136"
+         },
+         "lineNumber": "136",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "      new MutableSupplier\u003c\u003e();",
+         "matchingRanges": {
+          "lineNumber": "137",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "137",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "  private final MutableSupplier\u003cImmutableMap\u003cString, String\u003e\u003e nonstrictRepoEnvSupplier =",
+         "matchingRanges": {
+          "lineNumber": "138"
+         },
+         "lineNumber": "138",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "        } catch (IOException e) {",
+         "matchingRanges": {
+          "lineNumber": "347"
+         },
+         "lineNumber": "347",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "          throw new AbruptExitException(",
+         "matchingRanges": {
+          "lineNumber": "348",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 5
+           },
+           {
+            "startIndex": 16,
+            "length": 3
+           },
+           {
+            "startIndex": 20,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "348",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 16,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 5
+          },
+          {
+           "startIndex": 16,
+           "length": 3
+          },
+          {
+           "startIndex": 20,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "              detailedExitCode(",
+         "matchingRanges": {
+          "lineNumber": "349"
+         },
+         "lineNumber": "349"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "        }",
+         "matchingRanges": {
+          "lineNumber": "646"
+         },
+         "lineNumber": "646"
+        },
+        {
+         "lineText": "        moduleMirrors = moduleMirrorsBuilder.buildOrThrow();",
+         "matchingRanges": {
+          "lineNumber": "647",
+          "columnRanges": [
+           {
+            "startIndex": 52,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "647",
+         "ranges": [
+          {
+           "startIndex": 52,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "lineText": "      } else {",
+         "matchingRanges": {
+          "lineNumber": "648"
+         },
+         "lineNumber": "648",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 50
+    },
+    "resultToken": "CBISAggBOPzD8-CSl6fPtwFAAEgS"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/buildtool/BuildTool.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import com.google.common.base.Stopwatch;",
+         "matchingRanges": {
+          "lineNumber": "28"
+         },
+         "lineNumber": "28",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.common.base.Throwables;",
+         "matchingRanges": {
+          "lineNumber": "29",
+          "columnRanges": [
+           {
+            "startIndex": 30,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "29",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 30,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.common.collect.ImmutableList;",
+         "matchingRanges": {
+          "lineNumber": "30"
+         },
+         "lineNumber": "30",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "      env.getEventBus().post(new ExecRootEvent(env.getExecRoot()));",
+         "matchingRanges": {
+          "lineNumber": "276",
+          "columnRanges": [
+           {
+            "startIndex": 29,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "276",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 29,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 29,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "277"
+         },
+         "lineNumber": "277"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "      if (maybeFailureDetail.isPresent()) {",
+         "matchingRanges": {
+          "lineNumber": "1307"
+         },
+         "lineNumber": "1307",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "        throw new AbruptExitException(DetailedExitCode.of(maybeFailureDetail.get()));",
+         "matchingRanges": {
+          "lineNumber": "1308",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 3
+           },
+           {
+            "startIndex": 18,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "1308",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 14,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 3
+          },
+          {
+           "startIndex": 18,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "      }",
+         "matchingRanges": {
+          "lineNumber": "1309"
+         },
+         "lineNumber": "1309"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 65
+    },
+    "resultToken": "CBMSAggBOL7k8cqLu6PNYkAASBM"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/skyframe/serialization/analysis/RemoteAnalysisCacheFactory.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "      RemoteAnalysisCacheDeps disabledDeps = RemoteAnalysisCacheDeps.createDisabled();",
+         "matchingRanges": {
+          "lineNumber": "98"
+         },
+         "lineNumber": "98"
+        },
+        {
+         "lineText": "      return new AnalysisDeps(",
+         "matchingRanges": {
+          "lineNumber": "99",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "99",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 13,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "          RemoteAnalysisCacheManager.createDisabled(), disabledDeps, disabledDeps);",
+         "matchingRanges": {
+          "lineNumber": "100"
+         },
+         "lineNumber": "100"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "      if (coreOptions != null \u0026\u0026 !coreOptions.getCheckVisibility()) {",
+         "matchingRanges": {
+          "lineNumber": "106"
+         },
+         "lineNumber": "106",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "        throw new AbruptExitException(",
+         "matchingRanges": {
+          "lineNumber": "107",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 5
+           },
+           {
+            "startIndex": 14,
+            "length": 3
+           },
+           {
+            "startIndex": 18,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "107",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 14,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 5
+          },
+          {
+           "startIndex": 14,
+           "length": 3
+          },
+          {
+           "startIndex": 18,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "            DetailedExitCode.of(",
+         "matchingRanges": {
+          "lineNumber": "108"
+         },
+         "lineNumber": "108"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    if (options.getMode() != RemoteAnalysisCacheMode.DOWNLOAD) {",
+         "matchingRanges": {
+          "lineNumber": "395"
+         },
+         "lineNumber": "395",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "      throw new AbruptExitException(",
+         "matchingRanges": {
+          "lineNumber": "396",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 5
+           },
+           {
+            "startIndex": 12,
+            "length": 3
+           },
+           {
+            "startIndex": 16,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "396",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 5
+          },
+          {
+           "startIndex": 12,
+           "length": 3
+          },
+          {
+           "startIndex": 16,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "          DetailedExitCode.of(",
+         "matchingRanges": {
+          "lineNumber": "397"
+         },
+         "lineNumber": "397"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 24
+    },
+    "resultToken": "CBQSAggBOI7Jjd-uudWec0AASBQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/analysis/BuildView.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "        .filter(ct -\u003e allowedTargetLabels.contains(ct.getLabel()))",
+         "matchingRanges": {
+          "lineNumber": "214"
+         },
+         "lineNumber": "214"
+        },
+        {
+         "lineText": "        .collect(Collectors.toCollection(LinkedHashSet::new));",
+         "matchingRanges": {
+          "lineNumber": "215",
+          "columnRanges": [
+           {
+            "startIndex": 56,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "215",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 56,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 56,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "  }",
+         "matchingRanges": {
+          "lineNumber": "216"
+         },
+         "lineNumber": "216"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "        \u0026\u0026 remoteAnalysisCachingDependenciesProvider.mode() == RemoteAnalysisCacheMode.UPLOAD) {",
+         "matchingRanges": {
+          "lineNumber": "264"
+         },
+         "lineNumber": "264"
+        },
+        {
+         "lineText": "      throw new AbruptExitException(",
+         "matchingRanges": {
+          "lineNumber": "265",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 5
+           },
+           {
+            "startIndex": 12,
+            "length": 3
+           },
+           {
+            "startIndex": 16,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "265",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 5
+          },
+          {
+           "startIndex": 12,
+           "length": 3
+          },
+          {
+           "startIndex": 16,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "          DetailedExitCode.of(",
+         "matchingRanges": {
+          "lineNumber": "266"
+         },
+         "lineNumber": "266"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    }",
+         "matchingRanges": {
+          "lineNumber": "547"
+         },
+         "lineNumber": "547"
+        },
+        {
+         "lineText": "    return builder.buildOrThrow();",
+         "matchingRanges": {
+          "lineNumber": "548",
+          "columnRanges": [
+           {
+            "startIndex": 26,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "548",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 26,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "lineText": "  }",
+         "matchingRanges": {
+          "lineNumber": "549"
+         },
+         "lineNumber": "549"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 46
+    },
+    "resultToken": "CBUSAggBOPq-8Yiy5pC7lQFAAEgV"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/runtime/commands/info/BuildLanguageInfoItem.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  public byte[] get(Supplier\u003cBuildConfigurationValue\u003e configurationSupplier, CommandEnvironment env)",
+         "matchingRanges": {
+          "lineNumber": "73"
+         },
+         "lineNumber": "73",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "      throws AbruptExitException {",
+         "matchingRanges": {
+          "lineNumber": "74",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "74",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "lineText": "    checkNotNull(env);",
+         "matchingRanges": {
+          "lineNumber": "75"
+         },
+         "lineNumber": "75"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "      throw new AbruptExitException(",
+         "matchingRanges": {
+          "lineNumber": "94",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 5
+           },
+           {
+            "startIndex": 12,
+            "length": 3
+           },
+           {
+            "startIndex": 16,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "94",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 5
+          },
+          {
+           "startIndex": 12,
+           "length": 3
+          },
+          {
+           "startIndex": 16,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "          DetailedExitCode.of(",
+         "matchingRanges": {
+          "lineNumber": "95"
+         },
+         "lineNumber": "95"
+        },
+        {
+         "lineText": "              FailureDetails.FailureDetail.newBuilder()",
+         "matchingRanges": {
+          "lineNumber": "96",
+          "columnRanges": [
+           {
+            "startIndex": 43,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "96",
+         "ranges": [
+          {
+           "startIndex": 43,
+           "length": 3
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "      // No native rule attribute of this type (FilesetEntry?) has a default value.",
+         "matchingRanges": {
+          "lineNumber": "184"
+         },
+         "lineNumber": "184",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 6,
+            "length": 77
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "      throw new IllegalStateException(\"unexpected type of attribute default value: \" + t);",
+         "matchingRanges": {
+          "lineNumber": "185",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 5
+           },
+           {
+            "startIndex": 12,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "185",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 38,
+            "length": 46
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 5
+          },
+          {
+           "startIndex": 12,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "    }",
+         "matchingRanges": {
+          "lineNumber": "186"
+         },
+         "lineNumber": "186"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 10
+    },
+    "resultToken": "CBYSAggBONiFkeX7yMzNowFAAEgW"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/vfs/LocalOutputService.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "      UUID buildId, String workspaceName, EventHandler eventHandler, boolean finalizeActions)",
+         "matchingRanges": {
+          "lineNumber": "60"
+         },
+         "lineNumber": "60"
+        },
+        {
+         "lineText": "      throws AbruptExitException {",
+         "matchingRanges": {
+          "lineNumber": "61",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "61",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "lineText": "    Path outputPath = directories.getOutputPath(workspaceName);",
+         "matchingRanges": {
+          "lineNumber": "62"
+         },
+         "lineNumber": "62"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "        throw new AbruptExitException(",
+         "matchingRanges": {
+          "lineNumber": "74",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 5
+           },
+           {
+            "startIndex": 14,
+            "length": 3
+           },
+           {
+            "startIndex": 18,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "74",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 14,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 5
+          },
+          {
+           "startIndex": 14,
+           "length": 3
+          },
+          {
+           "startIndex": 18,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "            DetailedExitCode.of(",
+         "matchingRanges": {
+          "lineNumber": "75"
+         },
+         "lineNumber": "75"
+        },
+        {
+         "lineText": "                FailureDetail.newBuilder()",
+         "matchingRanges": {
+          "lineNumber": "76",
+          "columnRanges": [
+           {
+            "startIndex": 30,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "76",
+         "ranges": [
+          {
+           "startIndex": 30,
+           "length": 3
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "      Map\u003cPathFragment, PathFragment\u003e symlinks, PathFragment symlinkTreeRoot) {",
+         "matchingRanges": {
+          "lineNumber": "107"
+         },
+         "lineNumber": "107"
+        },
+        {
+         "lineText": "    throw new UnsupportedOperationException();",
+         "matchingRanges": {
+          "lineNumber": "108",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 5
+           },
+           {
+            "startIndex": 10,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "108",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 5
+          },
+          {
+           "startIndex": 10,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "  }",
+         "matchingRanges": {
+          "lineNumber": "109"
+         },
+         "lineNumber": "109"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 5
+    },
+    "resultToken": "CBcSAggBOPDgiqvQ9cPgIUAASBc"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/remote/BazelOutputService.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    } catch (IOException e) {",
+         "matchingRanges": {
+          "lineNumber": "144"
+         },
+         "lineNumber": "144",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "      throw new AbruptExitException(",
+         "matchingRanges": {
+          "lineNumber": "145",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 5
+           },
+           {
+            "startIndex": 12,
+            "length": 3
+           },
+           {
+            "startIndex": 16,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "145",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 5
+          },
+          {
+           "startIndex": 12,
+           "length": 3
+          },
+          {
+           "startIndex": 16,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "          DetailedExitCode.of(",
+         "matchingRanges": {
+          "lineNumber": "146"
+         },
+         "lineNumber": "146"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    if (outputPathPrefix.isEmpty() \u0026\u0026 !outputPathSuffix.isAbsolute()) {",
+         "matchingRanges": {
+          "lineNumber": "160"
+         },
+         "lineNumber": "160",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "      throw new AbruptExitException(",
+         "matchingRanges": {
+          "lineNumber": "161",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 5
+           },
+           {
+            "startIndex": 12,
+            "length": 3
+           },
+           {
+            "startIndex": 16,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "161",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 5
+          },
+          {
+           "startIndex": 12,
+           "length": 3
+          },
+          {
+           "startIndex": 16,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "          DetailedExitCode.of(",
+         "matchingRanges": {
+          "lineNumber": "162"
+         },
+         "lineNumber": "162"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    } else if (outputPathSuffix.isAbsolute()) {",
+         "matchingRanges": {
+          "lineNumber": "173"
+         },
+         "lineNumber": "173",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 11,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "      throw new AbruptExitException(",
+         "matchingRanges": {
+          "lineNumber": "174",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 5
+           },
+           {
+            "startIndex": 12,
+            "length": 3
+           },
+           {
+            "startIndex": 16,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "174",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 5
+          },
+          {
+           "startIndex": 12,
+           "length": 3
+          },
+          {
+           "startIndex": 16,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "          DetailedExitCode.of(",
+         "matchingRanges": {
+          "lineNumber": "175"
+         },
+         "lineNumber": "175"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 68
+    },
+    "resultToken": "CBgSAggBOO6DpcvPq6i1dUAASBg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/remote/RemoteOutputService.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    if (rewindLostInputs) {",
+         "matchingRanges": {
+          "lineNumber": "73"
+         },
+         "lineNumber": "73",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "      this.rewoundActionSynchronizer = new RemoteRewoundActionSynchronizer(actionInputFetcher);",
+         "matchingRanges": {
+          "lineNumber": "74",
+          "columnRanges": [
+           {
+            "startIndex": 39,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "74",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 39,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 39,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "    }",
+         "matchingRanges": {
+          "lineNumber": "75"
+         },
+         "lineNumber": "75"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    checkNotNull(actionInputFetcher, \"actionInputFetcher\");",
+         "matchingRanges": {
+          "lineNumber": "99"
+         },
+         "lineNumber": "99",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 37,
+            "length": 20
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    return new RemoteActionFileSystem(",
+         "matchingRanges": {
+          "lineNumber": "100",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "100",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 11,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "        delegateFileSystem,",
+         "matchingRanges": {
+          "lineNumber": "101"
+         },
+         "lineNumber": "101"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "      } catch (IOException e) {",
+         "matchingRanges": {
+          "lineNumber": "132"
+         },
+         "lineNumber": "132",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "        throw new AbruptExitException(",
+         "matchingRanges": {
+          "lineNumber": "133",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 5
+           },
+           {
+            "startIndex": 14,
+            "length": 3
+           },
+           {
+            "startIndex": 18,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "133",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 14,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 5
+          },
+          {
+           "startIndex": 14,
+           "length": 3
+          },
+          {
+           "startIndex": 18,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "            DetailedExitCode.of(",
+         "matchingRanges": {
+          "lineNumber": "134"
+         },
+         "lineNumber": "134"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 11
+    },
+    "resultToken": "CBkSAggBOPjsyu2Owe6vFEAASBk"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/pkgcache/PathPackageLocator.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "      List\u003cBuildFileName\u003e buildFilesByPriority) {",
+         "matchingRanges": {
+          "lineNumber": "190"
+         },
+         "lineNumber": "190"
+        },
+        {
+         "lineText": "    return new PathPackageLocator(outputBase, pathElements, buildFilesByPriority);",
+         "matchingRanges": {
+          "lineNumber": "191",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "191",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 11,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "  }",
+         "matchingRanges": {
+          "lineNumber": "192"
+         },
+         "lineNumber": "192"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "      List\u003cBuildFileName\u003e buildFilesByPriority) {",
+         "matchingRanges": {
+          "lineNumber": "200"
+         },
+         "lineNumber": "200"
+        },
+        {
+         "lineText": "    List\u003cRoot\u003e resolvedPaths = new ArrayList\u003c\u003e();",
+         "matchingRanges": {
+          "lineNumber": "201",
+          "columnRanges": [
+           {
+            "startIndex": 31,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "201",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 31,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 31,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "202"
+         },
+         "lineNumber": "202"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "      OptionsProvider options, BlazeDirectories directories) throws AbruptExitException {",
+         "matchingRanges": {
+          "lineNumber": "242",
+          "columnRanges": [
+           {
+            "startIndex": 61,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "242",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 61,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 61,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "lineText": "    List\u003cString\u003e packagePaths = options.getOptions(PackageOptions.class).getPackagePath();",
+         "matchingRanges": {
+          "lineNumber": "243"
+         },
+         "lineNumber": "243",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 66,
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    if (packagePaths.size() != 1) {",
+         "matchingRanges": {
+          "lineNumber": "244"
+         },
+         "lineNumber": "244",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 31,
+            "length": 1
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "      throw new AbruptExitException(",
+         "matchingRanges": {
+          "lineNumber": "245",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 5
+           },
+           {
+            "startIndex": 12,
+            "length": 3
+           },
+           {
+            "startIndex": 16,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "245",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 5
+          },
+          {
+           "startIndex": 12,
+           "length": 3
+          },
+          {
+           "startIndex": 16,
+           "length": 20
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 8
+    },
+    "resultToken": "CBoSAggBOKLLjObLhIWbZ0AASBo"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/bazel/debug/WorkspaceRuleModule.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "        outFileStream =",
+         "matchingRanges": {
+          "lineNumber": "53"
+         },
+         "lineNumber": "53"
+        },
+        {
+         "lineText": "            new AsynchronousMessageOutputStream\u003c\u003e(env.getWorkingDirectory().getRelative(logFile));",
+         "matchingRanges": {
+          "lineNumber": "54",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "54",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "      } catch (IOException e) {",
+         "matchingRanges": {
+          "lineNumber": "55"
+         },
+         "lineNumber": "55",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "            .exit(",
+         "matchingRanges": {
+          "lineNumber": "58"
+         },
+         "lineNumber": "58"
+        },
+        {
+         "lineText": "                new AbruptExitException(",
+         "matchingRanges": {
+          "lineNumber": "59",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 3
+           },
+           {
+            "startIndex": 20,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "59",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 16,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 3
+          },
+          {
+           "startIndex": 20,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "                    createDetailedExitCode(",
+         "matchingRanges": {
+          "lineNumber": "60"
+         },
+         "lineNumber": "60"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "            e.getMessage() == null ? \"Error writing workspace rule log file.\" : e.getMessage();",
+         "matchingRanges": {
+          "lineNumber": "76"
+         },
+         "lineNumber": "76",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 37,
+            "length": 40
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "        throw new AbruptExitException(",
+         "matchingRanges": {
+          "lineNumber": "77",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 5
+           },
+           {
+            "startIndex": 14,
+            "length": 3
+           },
+           {
+            "startIndex": 18,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "77",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 14,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 5
+          },
+          {
+           "startIndex": 14,
+           "length": 3
+          },
+          {
+           "startIndex": 18,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "            createDetailedExitCode(message, Code.WORKSPACES_LOG_WRITE_FAILURE), e);",
+         "matchingRanges": {
+          "lineNumber": "78"
+         },
+         "lineNumber": "78"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 7
+    },
+    "resultToken": "CBsSAggBOMrE5d6EpZfk4AFAAEgb"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/sandbox/SandboxModule.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "   */",
+         "matchingRanges": {
+          "lineNumber": "88"
+         },
+         "lineNumber": "88",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  private final Set\u003cSpawnRunner\u003e spawnRunners = new HashSet\u003c\u003e();",
+         "matchingRanges": {
+          "lineNumber": "89",
+          "columnRanges": [
+           {
+            "startIndex": 48,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "89",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 48,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 48,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "90"
+         },
+         "lineNumber": "90"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    } catch (IOException e) {",
+         "matchingRanges": {
+          "lineNumber": "154"
+         },
+         "lineNumber": "154",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "      throw new AbruptExitException(",
+         "matchingRanges": {
+          "lineNumber": "155",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 5
+           },
+           {
+            "startIndex": 12,
+            "length": 3
+           },
+           {
+            "startIndex": 16,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "155",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 5
+          },
+          {
+           "startIndex": 12,
+           "length": 3
+          },
+          {
+           "startIndex": 16,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "          DetailedExitCode.of(",
+         "matchingRanges": {
+          "lineNumber": "156"
+         },
+         "lineNumber": "156"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "   *",
+         "matchingRanges": {
+          "lineNumber": "168"
+         },
+         "lineNumber": "168",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "   * \u003cp\u003eReturns true if requested in [\"auto\", \"yes\"] and binary is valid. Throws an error if state",
+         "matchingRanges": {
+          "lineNumber": "169",
+          "columnRanges": [
+           {
+            "startIndex": 74,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "169",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 98
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 74,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "lineText": "   * is \"yes\" and binary is not valid.",
+         "matchingRanges": {
+          "lineNumber": "170"
+         },
+         "lineNumber": "170",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 38
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 27
+    },
+    "resultToken": "CBwSAggBONi659L9u8ySpAFAAEgc"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/server/CommandServer.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "      @Nullable String slowInterruptMessageSuffix) {",
+         "matchingRanges": {
+          "lineNumber": "99"
+         },
+         "lineNumber": "99"
+        },
+        {
+         "lineText": "    SecureRandom random = new SecureRandom();",
+         "matchingRanges": {
+          "lineNumber": "100",
+          "columnRanges": [
+           {
+            "startIndex": 26,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "100",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 26,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 26,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "    return new CommandServer(",
+         "matchingRanges": {
+          "lineNumber": "101",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "101",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 11,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "        grpcCommandServer,",
+         "matchingRanges": {
+          "lineNumber": "102"
+         },
+         "lineNumber": "102"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "          // I am not sure whether there are any circumstances under which this call could throw an",
+         "matchingRanges": {
+          "lineNumber": "206",
+          "columnRanges": [
+           {
+            "startIndex": 91,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "206",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 10,
+            "length": 89
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 91,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "lineText": "          // exception, but I'd rather it be logged than that we crash silently. The documentation",
+         "matchingRanges": {
+          "lineNumber": "207"
+         },
+         "lineNumber": "207",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 10,
+            "length": 88
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "          // only says that onNext does not throw a CancelledException if the stream is canceled,",
+         "matchingRanges": {
+          "lineNumber": "208",
+          "columnRanges": [
+           {
+            "startIndex": 44,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "208",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 10,
+            "length": 87
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 44,
+           "length": 5
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    } catch (IOException e) {",
+         "matchingRanges": {
+          "lineNumber": "324"
+         },
+         "lineNumber": "324",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "      throw new AbruptExitException(",
+         "matchingRanges": {
+          "lineNumber": "325",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 5
+           },
+           {
+            "startIndex": 12,
+            "length": 3
+           },
+           {
+            "startIndex": 16,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "325",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 5
+          },
+          {
+           "startIndex": 12,
+           "length": 3
+          },
+          {
+           "startIndex": 16,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "          DetailedExitCode.of(",
+         "matchingRanges": {
+          "lineNumber": "326"
+         },
+         "lineNumber": "326"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 47
+    },
+    "resultToken": "CB0SAggBOK7G4b7Sjc-j-QFAAEgd"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/bazel/SpawnLogModule.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "            .exit(",
+         "matchingRanges": {
+          "lineNumber": "102"
+         },
+         "lineNumber": "102"
+        },
+        {
+         "lineText": "                new AbruptExitException(",
+         "matchingRanges": {
+          "lineNumber": "103",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 3
+           },
+           {
+            "startIndex": 20,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "103",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 16,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 3
+          },
+          {
+           "startIndex": 20,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "                    DetailedExitCode.of(",
+         "matchingRanges": {
+          "lineNumber": "104"
+         },
+         "lineNumber": "104"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "            .exit(",
+         "matchingRanges": {
+          "lineNumber": "155"
+         },
+         "lineNumber": "155"
+        },
+        {
+         "lineText": "                new AbruptExitException(",
+         "matchingRanges": {
+          "lineNumber": "156",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 3
+           },
+           {
+            "startIndex": 20,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "156",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 16,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 3
+          },
+          {
+           "startIndex": 20,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "                    DetailedExitCode.of(",
+         "matchingRanges": {
+          "lineNumber": "157"
+         },
+         "lineNumber": "157"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  public void afterCommand() throws AbruptExitException {",
+         "matchingRanges": {
+          "lineNumber": "315",
+          "columnRanges": [
+           {
+            "startIndex": 29,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "315",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 29,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 29,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "lineText": "    if (abruptExit != null) {",
+         "matchingRanges": {
+          "lineNumber": "316"
+         },
+         "lineNumber": "316",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "      throw abruptExit;",
+         "matchingRanges": {
+          "lineNumber": "317",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "317",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 5
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 17
+    },
+    "resultToken": "CB4SAggBOIDL5-iqycuUugFAAEge"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/includescanning/IncludeScanningModule.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  private final MutableSupplier\u003cSpawnIncludeScanner\u003e spawnIncludeScannerSupplier =",
+         "matchingRanges": {
+          "lineNumber": "84"
+         },
+         "lineNumber": "84",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "      new MutableSupplier\u003c\u003e();",
+         "matchingRanges": {
+          "lineNumber": "85",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "85",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "  private final MutableSupplier\u003cArtifactFactory\u003e artifactFactory = new MutableSupplier\u003c\u003e();",
+         "matchingRanges": {
+          "lineNumber": "86",
+          "columnRanges": [
+           {
+            "startIndex": 67,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "86",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 67,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 67,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "  private IncludeScannerLifecycleManager lifecycleManager;",
+         "matchingRanges": {
+          "lineNumber": "87"
+         },
+         "lineNumber": "87",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "          IncludeScanningSkyFunctions.INCLUDE_HINTS, new IncludeHintsFunction(includeHintsFile));",
+         "matchingRanges": {
+          "lineNumber": "150",
+          "columnRanges": [
+           {
+            "startIndex": 53,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "150",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 53,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 53,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "    }",
+         "matchingRanges": {
+          "lineNumber": "151"
+         },
+         "lineNumber": "151"
+        },
+        {
+         "lineText": "    return skyFunctions.buildOrThrow();",
+         "matchingRanges": {
+          "lineNumber": "152",
+          "columnRanges": [
+           {
+            "startIndex": 31,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "152",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 31,
+           "length": 5
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "        } catch (ExecException e) {",
+         "matchingRanges": {
+          "lineNumber": "292"
+         },
+         "lineNumber": "292",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "          throw new AbruptExitException(",
+         "matchingRanges": {
+          "lineNumber": "293",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 5
+           },
+           {
+            "startIndex": 16,
+            "length": 3
+           },
+           {
+            "startIndex": 20,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "293",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 16,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 5
+          },
+          {
+           "startIndex": 16,
+           "length": 3
+          },
+          {
+           "startIndex": 20,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "              DetailedExitCode.of(",
+         "matchingRanges": {
+          "lineNumber": "294"
+         },
+         "lineNumber": "294"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 28
+    },
+    "resultToken": "CB8SAggBOJ6JmtDelr_JPUAASB8"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/exec/SpawnStrategyRegistry.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  /** Returns a new {@link Builder} suitable for creating instances of SpawnStrategyRegistry. */",
+         "matchingRanges": {
+          "lineNumber": "264",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "264",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 94
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "  @VisibleForTesting",
+         "matchingRanges": {
+          "lineNumber": "265"
+         },
+         "lineNumber": "265"
+        },
+        {
+         "lineText": "  public static Builder builder() {",
+         "matchingRanges": {
+          "lineNumber": "266"
+         },
+         "lineNumber": "266",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    return new Builder(",
+         "matchingRanges": {
+          "lineNumber": "267",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "267",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 11,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 3
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "          // TODO(schmitt): Check if all strategies can use the same base and remove check if so.",
+         "matchingRanges": {
+          "lineNumber": "528"
+         },
+         "lineNumber": "528",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 10,
+            "length": 87
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "          throw createExitException(",
+         "matchingRanges": {
+          "lineNumber": "529",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "529",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "lineText": "              String.format(",
+         "matchingRanges": {
+          "lineNumber": "530"
+         },
+         "lineNumber": "530"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  private static AbruptExitException createExitException(String message, Code detailedCode) {",
+         "matchingRanges": {
+          "lineNumber": "753"
+         },
+         "lineNumber": "753",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    return new AbruptExitException(",
+         "matchingRanges": {
+          "lineNumber": "754",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 3
+           },
+           {
+            "startIndex": 15,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "754",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 11,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 3
+          },
+          {
+           "startIndex": 15,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "        DetailedExitCode.of(",
+         "matchingRanges": {
+          "lineNumber": "755"
+         },
+         "lineNumber": "755"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 35
+    },
+    "resultToken": "CCASAggBOIL7sY7y3NvgVkAASCA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/bazel/BazelFileSystemModule.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  public ModuleFileSystem getFileSystem(OptionsParsingResult startupOptions)",
+         "matchingRanges": {
+          "lineNumber": "67"
+         },
+         "lineNumber": "67",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "      throws AbruptExitException {",
+         "matchingRanges": {
+          "lineNumber": "68",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "68",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "lineText": "    BlazeServerStartupOptions options =",
+         "matchingRanges": {
+          "lineNumber": "69"
+         },
+         "lineNumber": "69"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "      try {",
+         "matchingRanges": {
+          "lineNumber": "74"
+         },
+         "lineNumber": "74",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "        digestHashFunction = new DigestFunctionConverter().convert(value);",
+         "matchingRanges": {
+          "lineNumber": "75",
+          "columnRanges": [
+           {
+            "startIndex": 29,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "75",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 29,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 29,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "      } catch (OptionsParsingException e) {",
+         "matchingRanges": {
+          "lineNumber": "76"
+         },
+         "lineNumber": "76",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "        throw new AbruptExitException(",
+         "matchingRanges": {
+          "lineNumber": "77",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 5
+           },
+           {
+            "startIndex": 14,
+            "length": 3
+           },
+           {
+            "startIndex": 18,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "77",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 14,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 5
+          },
+          {
+           "startIndex": 14,
+           "length": 3
+          },
+          {
+           "startIndex": 18,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "            DetailedExitCode.of(",
+         "matchingRanges": {
+          "lineNumber": "78"
+         },
+         "lineNumber": "78"
+        },
+        {
+         "lineText": "                FailureDetail.newBuilder()",
+         "matchingRanges": {
+          "lineNumber": "79",
+          "columnRanges": [
+           {
+            "startIndex": 30,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "79",
+         "ranges": [
+          {
+           "startIndex": 30,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "                    .setMessage(Strings.nullToEmpty(e.getMessage()))",
+         "matchingRanges": {
+          "lineNumber": "80"
+         },
+         "lineNumber": "80"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 7
+    },
+    "resultToken": "CCESAggBOLrorvTDu-ntEUAASCE"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/buildeventstream/transports/FileTransport.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "          Executors.newSingleThreadScheduledExecutor(",
+         "matchingRanges": {
+          "lineNumber": "75",
+          "columnRanges": [
+           {
+            "startIndex": 20,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "75",
+         "ranges": [
+          {
+           "startIndex": 20,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "              new ThreadFactoryBuilder().setNameFormat(\"file-uploader-timeout-%d\").build()));",
+         "matchingRanges": {
+          "lineNumber": "76",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "76",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 14,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 55,
+            "length": 26
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "77"
+         },
+         "lineNumber": "77"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    private void exitFailure(Throwable e) {",
+         "matchingRanges": {
+          "lineNumber": "173",
+          "columnRanges": [
+           {
+            "startIndex": 29,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "173",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 29,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "lineText": "      final String message;",
+         "matchingRanges": {
+          "lineNumber": "174"
+         },
+         "lineNumber": "174",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "      closeFuture.setException(",
+         "matchingRanges": {
+          "lineNumber": "184"
+         },
+         "lineNumber": "184"
+        },
+        {
+         "lineText": "          new AbruptExitException(",
+         "matchingRanges": {
+          "lineNumber": "185",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 3
+           },
+           {
+            "startIndex": 14,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "185",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 3
+          },
+          {
+           "startIndex": 14,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "              DetailedExitCode.of(",
+         "matchingRanges": {
+          "lineNumber": "186"
+         },
+         "lineNumber": "186"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    private static BuildProgress.Code getBuildProgressCode(Throwable e) {",
+         "matchingRanges": {
+          "lineNumber": "196",
+          "columnRanges": [
+           {
+            "startIndex": 59,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "196",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 59,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "lineText": "      if (e instanceof ExecutionException \u0026\u0026 e.getCause() instanceof TimeoutException) {",
+         "matchingRanges": {
+          "lineNumber": "197"
+         },
+         "lineNumber": "197",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 10
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 58,
+            "length": 10
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 14
+    },
+    "resultToken": "CCISAggBOJ6ZuqDatdfMqQFAAEgi"
+   }
+  ],
+  "estimatedResultCount": "37",
+  "exhaustive": true,
+  "requestToken": "Ch90aHJvdyBuZXcgQWJydXB0RXhpdEV4Y2VwdGlvblwoEiMoIGdpdDpiYXplbC9iYXplbEBtYXN0ZXIgY2FzZTp5ZXMgKRoMCKftrNEGEIPCzKoCIAwqADIASAE"
+ }
+}

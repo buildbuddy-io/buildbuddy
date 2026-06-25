@@ -1,0 +1,14 @@
+{
+ "query": "@StarlarkMethod\\(name = \"(get|to)",
+ "oss_project": "bazel",
+ "repo_name": "bazel",
+ "page_size": 50,
+ "fetched_at": "2026-06-11T22:28:58Z",
+ "response": {
+  "error": {
+   "code": 400,
+   "message": "Request contains an invalid argument.",
+   "status": "INVALID_ARGUMENT"
+  }
+ }
+}

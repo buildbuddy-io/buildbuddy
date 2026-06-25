@@ -1,0 +1,85 @@
+{
+ "query": "\"ad-hoc data model\"",
+ "oss_project": "opentitan",
+ "repo_name": "manticore",
+ "page_size": 50,
+ "fetched_at": "2026-06-17T23:22:30Z",
+ "response": {
+  "searchResults": [
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "manticore",
+        "ossProject": "opentitan"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/protocol/wire.rs",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "//! generically serializeable type, they represent types that can be converted",
+         "matchingRanges": {
+          "lineNumber": "9"
+         },
+         "lineNumber": "9",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 78
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "//! to and from Cerberus's wire format, which has a unique, ad-hoc data model.",
+         "matchingRanges": {
+          "lineNumber": "10",
+          "columnRanges": [
+           {
+            "startIndex": 60,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "10",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 78
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 60,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "11"
+         },
+         "lineNumber": "11"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAASAggBOLLDxvnxgJLQS0AASAA"
+   }
+  ],
+  "estimatedResultCount": "1",
+  "exhaustive": true,
+  "requestToken": "ChMiYWQtaG9jIGRhdGEgbW9kZWwiEjAoIGdpdDpnaXRodWIvbG93UklTQy9tYW50aWNvcmVAbWFzdGVyIGNhc2U6eWVzICkaDAi22MzRBhCtp7X_AiAMIA8qADIASAE"
+ }
+}

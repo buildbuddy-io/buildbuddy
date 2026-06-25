@@ -1,0 +1,6860 @@
+{
+ "query": "scheduler",
+ "oss_project": "go",
+ "repo_name": "go",
+ "page_size": 50,
+ "fetched_at": "2026-06-11T02:31:36Z",
+ "response": {
+  "searchResults": [
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/http/internal/http2/writesched.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// WriteScheduler is the interface implemented by HTTP/2 write schedulers.",
+         "matchingRanges": {
+          "lineNumber": "9",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 9
+           },
+           {
+            "startIndex": 63,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "9",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 74
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 9
+          },
+          {
+           "startIndex": 63,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "// Methods are never called concurrently.",
+         "matchingRanges": {
+          "lineNumber": "10"
+         },
+         "lineNumber": "10",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 41
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "type WriteScheduler interface {",
+         "matchingRanges": {
+          "lineNumber": "11",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "11",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 20,
+            "length": 9
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\t// OpenStream opens a new stream in the write scheduler.",
+         "matchingRanges": {
+          "lineNumber": "12",
+          "columnRanges": [
+           {
+            "startIndex": 47,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "12",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 56
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 47,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\t// It is illegal to call this with streamID=0 or with a streamID that is",
+         "matchingRanges": {
+          "lineNumber": "13"
+         },
+         "lineNumber": "13",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 72
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// OpenStreamOptions specifies extra options for WriteScheduler.OpenStream.",
+         "matchingRanges": {
+          "lineNumber": "40",
+          "columnRanges": [
+           {
+            "startIndex": 54,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "40",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 75
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 54,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "type OpenStreamOptions struct {",
+         "matchingRanges": {
+          "lineNumber": "41"
+         },
+         "lineNumber": "41",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 23,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// write is the interface value that does the writing, once the",
+         "matchingRanges": {
+          "lineNumber": "51"
+         },
+         "lineNumber": "51",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 63
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t// WriteScheduler has selected this frame to write. The write",
+         "matchingRanges": {
+          "lineNumber": "52",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "52",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 61
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\t// functions are all defined in write.go.",
+         "matchingRanges": {
+          "lineNumber": "53"
+         },
+         "lineNumber": "53",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 41
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 9
+    },
+    "resultToken": "CAASBAgBIAE41tuz_uD9xraPAUAASAA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/http/internal/http2/writesched_roundrobin.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "type roundRobinWriteScheduler struct {",
+         "matchingRanges": {
+          "lineNumber": "12",
+          "columnRanges": [
+           {
+            "startIndex": 20,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "12",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 30,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 20,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\t// control contains control frames (SETTINGS, PING, etc.).",
+         "matchingRanges": {
+          "lineNumber": "13"
+         },
+         "lineNumber": "13",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 58
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// newRoundRobinWriteScheduler constructs a new write scheduler.",
+         "matchingRanges": {
+          "lineNumber": "27",
+          "columnRanges": [
+           {
+            "startIndex": 21,
+            "length": 9
+           },
+           {
+            "startIndex": 54,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "27",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 64
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 21,
+           "length": 9
+          },
+          {
+           "startIndex": 54,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "// The round robin scheduler prioritizes control frames",
+         "matchingRanges": {
+          "lineNumber": "28",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "28",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 55
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 9
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// selection from the ready streams.",
+         "matchingRanges": {
+          "lineNumber": "31"
+         },
+         "lineNumber": "31",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 36
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "func newRoundRobinWriteScheduler() WriteScheduler {",
+         "matchingRanges": {
+          "lineNumber": "32",
+          "columnRanges": [
+           {
+            "startIndex": 23,
+            "length": 9
+           },
+           {
+            "startIndex": 40,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "32",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 23,
+           "length": 9
+          },
+          {
+           "startIndex": 40,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\tws := \u0026roundRobinWriteScheduler{",
+         "matchingRanges": {
+          "lineNumber": "33",
+          "columnRanges": [
+           {
+            "startIndex": 23,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "33",
+         "ranges": [
+          {
+           "startIndex": 23,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tstreams: make(map[uint32]*writeQueue),",
+         "matchingRanges": {
+          "lineNumber": "34"
+         },
+         "lineNumber": "34",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 16,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func (ws *roundRobinWriteScheduler) OpenStream(streamID uint32, options OpenStreamOptions) {",
+         "matchingRanges": {
+          "lineNumber": "39",
+          "columnRanges": [
+           {
+            "startIndex": 25,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "39",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 25,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\tif ws.streams[streamID] != nil {",
+         "matchingRanges": {
+          "lineNumber": "40"
+         },
+         "lineNumber": "40",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 10
+    },
+    "resultToken": "CAESBAgBIAE4nuGb3Lq2qpI-QABIAQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/http/internal/http2/writesched_roundrobin_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "func TestRoundRobinScheduler(t *testing.T) {",
+         "matchingRanges": {
+          "lineNumber": "12",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "12",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\tconst maxFrameSize = 16",
+         "matchingRanges": {
+          "lineNumber": "13"
+         },
+         "lineNumber": "13",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 22,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tsc := \u0026serverConn{maxFrameSize: maxFrameSize}",
+         "matchingRanges": {
+          "lineNumber": "14"
+         },
+         "lineNumber": "14"
+        },
+        {
+         "lineText": "\tws := newRoundRobinWriteScheduler()",
+         "matchingRanges": {
+          "lineNumber": "15",
+          "columnRanges": [
+           {
+            "startIndex": 25,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "15",
+         "ranges": [
+          {
+           "startIndex": 25,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\tstreams := make([]*stream, 4)",
+         "matchingRanges": {
+          "lineNumber": "16"
+         },
+         "lineNumber": "16",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 28,
+            "length": 1
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAISBAgBIAE4huDFzoiX5Ln5AUAASAI"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/http/internal/http2/writesched_benchmarks_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "func BenchmarkWriteSchedulerThroughputRoundRobin(b *testing.B) {",
+         "matchingRanges": {
+          "lineNumber": "126",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "126",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\tbenchmarkThroughput(b, newRoundRobinWriteScheduler, PriorityParam{})",
+         "matchingRanges": {
+          "lineNumber": "127",
+          "columnRanges": [
+           {
+            "startIndex": 42,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "127",
+         "ranges": [
+          {
+           "startIndex": 42,
+           "length": 9
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func BenchmarkWriteSchedulerLifetimeRoundRobin(b *testing.B) {",
+         "matchingRanges": {
+          "lineNumber": "130",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "130",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\tbenchmarkStreamLifetime(b, newRoundRobinWriteScheduler, PriorityParam{})",
+         "matchingRanges": {
+          "lineNumber": "131",
+          "columnRanges": [
+           {
+            "startIndex": 46,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "131",
+         "ranges": [
+          {
+           "startIndex": 46,
+           "length": 9
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func BenchmarkWriteSchedulerThroughputPriorityRFC9218Incremental(b *testing.B) {",
+         "matchingRanges": {
+          "lineNumber": "134",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "134",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\tbenchmarkThroughput(b, newPriorityWriteSchedulerRFC9218, PriorityParam{",
+         "matchingRanges": {
+          "lineNumber": "135",
+          "columnRanges": [
+           {
+            "startIndex": 40,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "135",
+         "ranges": [
+          {
+           "startIndex": 40,
+           "length": 9
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func BenchmarkWriteSchedulerLifetimePriorityRFC9218Incremental(b *testing.B) {",
+         "matchingRanges": {
+          "lineNumber": "140",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "140",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\tbenchmarkStreamLifetime(b, newPriorityWriteSchedulerRFC9218, PriorityParam{",
+         "matchingRanges": {
+          "lineNumber": "141",
+          "columnRanges": [
+           {
+            "startIndex": 44,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "141",
+         "ranges": [
+          {
+           "startIndex": 44,
+           "length": 9
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func BenchmarkWriteSchedulerLifetimePriorityRFC9218NonIncremental(b *testing.B) {",
+         "matchingRanges": {
+          "lineNumber": "152",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "152",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\tbenchmarkStreamLifetime(b, newPriorityWriteSchedulerRFC9218, PriorityParam{",
+         "matchingRanges": {
+          "lineNumber": "153",
+          "columnRanges": [
+           {
+            "startIndex": 44,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "153",
+         "ranges": [
+          {
+           "startIndex": 44,
+           "length": 9
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 14
+    },
+    "resultToken": "CAMSBAgBIAE41unby7Cmta17QABIAw"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/race/sched_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "func TestRandomScheduling(t *testing.T) {",
+         "matchingRanges": {
+          "lineNumber": "17"
+         },
+         "lineNumber": "17",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t// Scheduler is most consistent with GOMAXPROCS=1.",
+         "matchingRanges": {
+          "lineNumber": "18",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "18",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 50
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\t// Use that to make the test most likely to fail.",
+         "matchingRanges": {
+          "lineNumber": "19"
+         },
+         "lineNumber": "19",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 49
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAQSAggBOP7G4aTM-NHaFEAASAQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/http/internal/http2/writesched_priority_rfc9218.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "type priorityWriteSchedulerRFC9218 struct {",
+         "matchingRanges": {
+          "lineNumber": "17",
+          "columnRanges": [
+           {
+            "startIndex": 18,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "17",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 35,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 18,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\t// control contains control frames (SETTINGS, PING, etc.).",
+         "matchingRanges": {
+          "lineNumber": "18"
+         },
+         "lineNumber": "18",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 58
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func newPriorityWriteSchedulerRFC9218() WriteScheduler {",
+         "matchingRanges": {
+          "lineNumber": "51",
+          "columnRanges": [
+           {
+            "startIndex": 21,
+            "length": 9
+           },
+           {
+            "startIndex": 45,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "51",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 21,
+           "length": 9
+          },
+          {
+           "startIndex": 45,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\tws := \u0026priorityWriteSchedulerRFC9218{",
+         "matchingRanges": {
+          "lineNumber": "52",
+          "columnRanges": [
+           {
+            "startIndex": 21,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "52",
+         "ranges": [
+          {
+           "startIndex": 21,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tstreams: make(map[uint32]streamMetadata),",
+         "matchingRanges": {
+          "lineNumber": "53"
+         },
+         "lineNumber": "53",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 16,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func (ws *priorityWriteSchedulerRFC9218) OpenStream(streamID uint32, opt OpenStreamOptions) {",
+         "matchingRanges": {
+          "lineNumber": "58",
+          "columnRanges": [
+           {
+            "startIndex": 23,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "58",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 23,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\tif ws.streams[streamID].location != nil {",
+         "matchingRanges": {
+          "lineNumber": "59"
+         },
+         "lineNumber": "59",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func (ws *priorityWriteSchedulerRFC9218) CloseStream(streamID uint32) {",
+         "matchingRanges": {
+          "lineNumber": "87",
+          "columnRanges": [
+           {
+            "startIndex": 23,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "87",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 23,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\tmetadata := ws.streams[streamID]",
+         "matchingRanges": {
+          "lineNumber": "88"
+         },
+         "lineNumber": "88"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 8
+    },
+    "resultToken": "CAUSBAgBIAE4pteI2NvlruoCQABIBQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/http/internal/http2/writesched_priority_rfc9218_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "func TestPrioritySchedulerUrgency(t *testing.T) {",
+         "matchingRanges": {
+          "lineNumber": "12",
+          "columnRanges": [
+           {
+            "startIndex": 17,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "12",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 17,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\tconst maxFrameSize = 16",
+         "matchingRanges": {
+          "lineNumber": "13"
+         },
+         "lineNumber": "13",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 22,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func TestPrioritySchedulerIncremental(t *testing.T) {",
+         "matchingRanges": {
+          "lineNumber": "83",
+          "columnRanges": [
+           {
+            "startIndex": 17,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "83",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 17,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\tconst maxFrameSize = 16",
+         "matchingRanges": {
+          "lineNumber": "84"
+         },
+         "lineNumber": "84",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 22,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func TestPrioritySchedulerUrgencyAndIncremental(t *testing.T) {",
+         "matchingRanges": {
+          "lineNumber": "160",
+          "columnRanges": [
+           {
+            "startIndex": 17,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "160",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 17,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\tconst maxFrameSize = 16",
+         "matchingRanges": {
+          "lineNumber": "161"
+         },
+         "lineNumber": "161",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 22,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func TestPrioritySchedulerIdempotentUpdate(t *testing.T) {",
+         "matchingRanges": {
+          "lineNumber": "239",
+          "columnRanges": [
+           {
+            "startIndex": 17,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "239",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 17,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\tconst maxFrameSize = 16",
+         "matchingRanges": {
+          "lineNumber": "240"
+         },
+         "lineNumber": "240",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 22,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func TestPrioritySchedulerBuffersPriorityUpdate(t *testing.T) {",
+         "matchingRanges": {
+          "lineNumber": "328",
+          "columnRanges": [
+           {
+            "startIndex": 17,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "328",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 17,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\tconst maxFrameSize = 16",
+         "matchingRanges": {
+          "lineNumber": "329"
+         },
+         "lineNumber": "329",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 22,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 10
+    },
+    "resultToken": "CAYSBAgBIAE4wvH-mueIvKLvAUAASAY"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/time/sleep_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// the results.",
+         "matchingRanges": {
+          "lineNumber": "910"
+         },
+         "lineNumber": "910",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 15
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\twarmupScheduler(gmp)",
+         "matchingRanges": {
+          "lineNumber": "911",
+          "columnRanges": [
+           {
+            "startIndex": 7,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "911",
+         "ranges": [
+          {
+           "startIndex": 7,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "912"
+         },
+         "lineNumber": "912"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t\t\t\t// will not pollute the results.",
+         "matchingRanges": {
+          "lineNumber": "995"
+         },
+         "lineNumber": "995",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 5,
+            "length": 32
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t\t\twarmupScheduler(gmp)",
+         "matchingRanges": {
+          "lineNumber": "996",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "996",
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "997"
+         },
+         "lineNumber": "997"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// warmupScheduler ensures the scheduler has at least targetThreadCount threads",
+         "matchingRanges": {
+          "lineNumber": "1047",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 9
+           },
+           {
+            "startIndex": 31,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "1047",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 79
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 9
+          },
+          {
+           "startIndex": 31,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "// in its thread pool.",
+         "matchingRanges": {
+          "lineNumber": "1048"
+         },
+         "lineNumber": "1048",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 22
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "func warmupScheduler(targetThreadCount int) {",
+         "matchingRanges": {
+          "lineNumber": "1049",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "1049",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\tvar wg sync.WaitGroup",
+         "matchingRanges": {
+          "lineNumber": "1050"
+         },
+         "lineNumber": "1050",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 7
+    },
+    "resultToken": "CAcSBAgBIAE44unV9OvKpbBMQABIBw"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/syscall/zsysnum_linux_mipsle.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tSYS_SCHED_GETPARAM         = 4159",
+         "matchingRanges": {
+          "lineNumber": "166"
+         },
+         "lineNumber": "166",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 30,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tSYS_SCHED_SETSCHEDULER     = 4160",
+         "matchingRanges": {
+          "lineNumber": "167",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "167",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 30,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\tSYS_SCHED_GETSCHEDULER     = 4161",
+         "matchingRanges": {
+          "lineNumber": "168",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "168",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 30,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\tSYS_SCHED_YIELD            = 4162",
+         "matchingRanges": {
+          "lineNumber": "169"
+         },
+         "lineNumber": "169",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 30,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAgSBAgBIAE4rPPh3YS12sMRQABICA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/syscall/zsysnum_linux_ppc64le.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tSYS_SCHED_GETPARAM         = 155",
+         "matchingRanges": {
+          "lineNumber": "162"
+         },
+         "lineNumber": "162",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 30,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tSYS_SCHED_SETSCHEDULER     = 156",
+         "matchingRanges": {
+          "lineNumber": "163",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "163",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 30,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\tSYS_SCHED_GETSCHEDULER     = 157",
+         "matchingRanges": {
+          "lineNumber": "164",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "164",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 30,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\tSYS_SCHED_YIELD            = 158",
+         "matchingRanges": {
+          "lineNumber": "165"
+         },
+         "lineNumber": "165",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 30,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAkSBAgBIAE4_KW3qJ_8iql6QABICQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/syscall/zsysnum_linux_mips64le.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tSYS_SCHED_GETPARAM         = 5140",
+         "matchingRanges": {
+          "lineNumber": "147"
+         },
+         "lineNumber": "147",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 30,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tSYS_SCHED_SETSCHEDULER     = 5141",
+         "matchingRanges": {
+          "lineNumber": "148",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "148",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 30,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\tSYS_SCHED_GETSCHEDULER     = 5142",
+         "matchingRanges": {
+          "lineNumber": "149",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "149",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 30,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\tSYS_SCHED_GET_PRIORITY_MAX = 5143",
+         "matchingRanges": {
+          "lineNumber": "150"
+         },
+         "lineNumber": "150",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 30,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAoSBAgBIAE4oOTHqYXZuPxoQABICg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/syscall/zsysnum_linux_riscv64.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tSYS_SCHED_SETPARAM         = 118",
+         "matchingRanges": {
+          "lineNumber": "124"
+         },
+         "lineNumber": "124",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 30,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tSYS_SCHED_SETSCHEDULER     = 119",
+         "matchingRanges": {
+          "lineNumber": "125",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "125",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 30,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\tSYS_SCHED_GETSCHEDULER     = 120",
+         "matchingRanges": {
+          "lineNumber": "126",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "126",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 30,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\tSYS_SCHED_GETPARAM         = 121",
+         "matchingRanges": {
+          "lineNumber": "127"
+         },
+         "lineNumber": "127",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 30,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAsSBAgBIAE4muLS26_X-diEAUAASAs"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/syscall/zsysnum_freebsd_riscv64.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tSYS_SCHED_GETPARAM           = 328 // { int sched_getparam (pid_t pid, struct sched_param *param); }",
+         "matchingRanges": {
+          "lineNumber": "198"
+         },
+         "lineNumber": "198",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 32,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 36,
+            "length": 65
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tSYS_SCHED_SETSCHEDULER       = 329 // { int sched_setscheduler (pid_t pid, int policy, const struct sched_param *param); }",
+         "matchingRanges": {
+          "lineNumber": "199",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 9
+           },
+           {
+            "startIndex": 54,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "199",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 32,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 36,
+            "length": 87
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 9
+          },
+          {
+           "startIndex": 54,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\tSYS_SCHED_GETSCHEDULER       = 330 // { int sched_getscheduler (pid_t pid); }",
+         "matchingRanges": {
+          "lineNumber": "200",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 9
+           },
+           {
+            "startIndex": 54,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "200",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 32,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 36,
+            "length": 42
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 9
+          },
+          {
+           "startIndex": 54,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\tSYS_SCHED_YIELD              = 331 // { int sched_yield (void); }",
+         "matchingRanges": {
+          "lineNumber": "201"
+         },
+         "lineNumber": "201",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 32,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 36,
+            "length": 30
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAwSBAgBIAE41t24utvdobKwAUAASAw"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/testdata/testprog/schedmetrics.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// Tests runtime/metrics.Read for various scheduler metrics.",
+         "matchingRanges": {
+          "lineNumber": "26",
+          "columnRanges": [
+           {
+            "startIndex": 42,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "26",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 60
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 42,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "//",
+         "matchingRanges": {
+          "lineNumber": "27"
+         },
+         "lineNumber": "27",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t\tdefer runtime.GOMAXPROCS(runtime.GOMAXPROCS(count + 4))",
+         "matchingRanges": {
+          "lineNumber": "173"
+         },
+         "lineNumber": "173",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 3,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 55,
+            "length": 1
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t// It can take a little bit for the scheduler to",
+         "matchingRanges": {
+          "lineNumber": "174",
+          "columnRanges": [
+           {
+            "startIndex": 39,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "174",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 3,
+            "length": 48
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 39,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t// distribute the goroutines to Ps, so retry until",
+         "matchingRanges": {
+          "lineNumber": "175"
+         },
+         "lineNumber": "175",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 3,
+            "length": 50
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CA0SAggBOI6hsczK8tjIOUAASA0"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/proc.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// Scheduler returned, so we're allowed to run now.",
+         "matchingRanges": {
+          "lineNumber": "5048",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "5048",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 51
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\t// Delete the syscallsp information that we left for",
+         "matchingRanges": {
+          "lineNumber": "5049"
+         },
+         "lineNumber": "5049",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 52
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// assumptions.",
+         "matchingRanges": {
+          "lineNumber": "7514"
+         },
+         "lineNumber": "7514",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 15
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "const randomizeScheduler = raceenabled",
+         "matchingRanges": {
+          "lineNumber": "7515",
+          "columnRanges": [
+           {
+            "startIndex": 15,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "7515",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 15,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "7516"
+         },
+         "lineNumber": "7516"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t}",
+         "matchingRanges": {
+          "lineNumber": "7533"
+         },
+         "lineNumber": "7533"
+        },
+        {
+         "lineText": "\tif randomizeScheduler \u0026\u0026 next \u0026\u0026 randn(2) == 0 {",
+         "matchingRanges": {
+          "lineNumber": "7534",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "7534",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 40,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 46,
+            "length": 1
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tnext = false",
+         "matchingRanges": {
+          "lineNumber": "7535"
+         },
+         "lineNumber": "7535"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tif randomizeScheduler {",
+         "matchingRanges": {
+          "lineNumber": "7585",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "7585",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tfor i := uint32(1); i \u003c= n; i++ {",
+         "matchingRanges": {
+          "lineNumber": "7586"
+         },
+         "lineNumber": "7586",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 18,
+            "length": 1
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 31
+    },
+    "resultToken": "CA4SBAgBIAE4sListvyNuYpaQABIDg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/syscall/zsysnum_linux_arm.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tSYS_SCHED_GETPARAM         = 155",
+         "matchingRanges": {
+          "lineNumber": "139"
+         },
+         "lineNumber": "139",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 30,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tSYS_SCHED_SETSCHEDULER     = 156",
+         "matchingRanges": {
+          "lineNumber": "140",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "140",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 30,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\tSYS_SCHED_GETSCHEDULER     = 157",
+         "matchingRanges": {
+          "lineNumber": "141",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "141",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 30,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\tSYS_SCHED_YIELD            = 158",
+         "matchingRanges": {
+          "lineNumber": "142"
+         },
+         "lineNumber": "142",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 30,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CA8SBAgBIAE4vpDgiLz3qdAGQABIDw"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/syscall/zsysnum_linux_386.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tSYS_SCHED_GETPARAM         = 155",
+         "matchingRanges": {
+          "lineNumber": "162"
+         },
+         "lineNumber": "162",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 30,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tSYS_SCHED_SETSCHEDULER     = 156",
+         "matchingRanges": {
+          "lineNumber": "163",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "163",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 30,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\tSYS_SCHED_GETSCHEDULER     = 157",
+         "matchingRanges": {
+          "lineNumber": "164",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "164",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 30,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\tSYS_SCHED_YIELD            = 158",
+         "matchingRanges": {
+          "lineNumber": "165"
+         },
+         "lineNumber": "165",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 30,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CBASBAgBIAE4mKDVp6S14PWLAUAASBA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/proc_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tif race.Enabled {",
+         "matchingRanges": {
+          "lineNumber": "443"
+         },
+         "lineNumber": "443",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t// The race detector randomizes the scheduler,",
+         "matchingRanges": {
+          "lineNumber": "444",
+          "columnRanges": [
+           {
+            "startIndex": 38,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "444",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 46
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 38,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t// which causes this test to fail (#38266).",
+         "matchingRanges": {
+          "lineNumber": "445"
+         },
+         "lineNumber": "445",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 43
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// warmupScheduler ensures the scheduler has at least targetThreadCount threads",
+         "matchingRanges": {
+          "lineNumber": "715",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 9
+           },
+           {
+            "startIndex": 31,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "715",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 79
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 9
+          },
+          {
+           "startIndex": 31,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "// in its thread pool.",
+         "matchingRanges": {
+          "lineNumber": "716"
+         },
+         "lineNumber": "716",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 22
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "func warmupScheduler(targetThreadCount int) {",
+         "matchingRanges": {
+          "lineNumber": "717",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "717",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\tvar wg sync.WaitGroup",
+         "matchingRanges": {
+          "lineNumber": "718"
+         },
+         "lineNumber": "718",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// Since we are interested in stealing behavior, warm the scheduler to",
+         "matchingRanges": {
+          "lineNumber": "749",
+          "columnRanges": [
+           {
+            "startIndex": 59,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "749",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 70
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 59,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\t// get all the Ps running first.",
+         "matchingRanges": {
+          "lineNumber": "750"
+         },
+         "lineNumber": "750",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 32
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\twarmupScheduler(runtime.GOMAXPROCS(0))",
+         "matchingRanges": {
+          "lineNumber": "751",
+          "columnRanges": [
+           {
+            "startIndex": 7,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "751",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 36,
+            "length": 1
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 7,
+           "length": 9
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 11
+    },
+    "resultToken": "CBESBAgBIAE4ttyu9uf3hompAUAASBE"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/http/server.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// This field only takes effect if using HTTP/2, and if no custom write",
+         "matchingRanges": {
+          "lineNumber": "3136"
+         },
+         "lineNumber": "3136",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 71
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t// scheduler is defined for the HTTP/2 server. Otherwise, this field is a",
+         "matchingRanges": {
+          "lineNumber": "3137",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "3137",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 73
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\t// no-op.",
+         "matchingRanges": {
+          "lineNumber": "3138"
+         },
+         "lineNumber": "3138",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 9
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBISAggBOKqw0MDfgYL9SEAASBI"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/syscall/zsysnum_linux_mips.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tSYS_SCHED_GETPARAM         = 4159",
+         "matchingRanges": {
+          "lineNumber": "166"
+         },
+         "lineNumber": "166",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 30,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tSYS_SCHED_SETSCHEDULER     = 4160",
+         "matchingRanges": {
+          "lineNumber": "167",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "167",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 30,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\tSYS_SCHED_GETSCHEDULER     = 4161",
+         "matchingRanges": {
+          "lineNumber": "168",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "168",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 30,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\tSYS_SCHED_YIELD            = 4162",
+         "matchingRanges": {
+          "lineNumber": "169"
+         },
+         "lineNumber": "169",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 30,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CBMSBAgBIAE4jO7_rvqYsLAXQABIEw"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/syscall/zsysnum_linux_arm64.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tSYS_SCHED_SETPARAM         = 118",
+         "matchingRanges": {
+          "lineNumber": "126"
+         },
+         "lineNumber": "126",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 30,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tSYS_SCHED_SETSCHEDULER     = 119",
+         "matchingRanges": {
+          "lineNumber": "127",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "127",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 30,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\tSYS_SCHED_GETSCHEDULER     = 120",
+         "matchingRanges": {
+          "lineNumber": "128",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "128",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 30,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\tSYS_SCHED_GETPARAM         = 121",
+         "matchingRanges": {
+          "lineNumber": "129"
+         },
+         "lineNumber": "129",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 30,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CBQSBAgBIAE4mIzvxueAlewnQABIFA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/syscall/zsysnum_linux_ppc64.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tSYS_SCHED_GETPARAM         = 155",
+         "matchingRanges": {
+          "lineNumber": "162"
+         },
+         "lineNumber": "162",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 30,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tSYS_SCHED_SETSCHEDULER     = 156",
+         "matchingRanges": {
+          "lineNumber": "163",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "163",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 30,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\tSYS_SCHED_GETSCHEDULER     = 157",
+         "matchingRanges": {
+          "lineNumber": "164",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "164",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 30,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\tSYS_SCHED_YIELD            = 158",
+         "matchingRanges": {
+          "lineNumber": "165"
+         },
+         "lineNumber": "165",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 30,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CBUSBAgBIAE4tLzY_t6t2JNRQABIFQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/syscall/zsysnum_linux_amd64.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tSYS_SCHED_GETPARAM         = 143",
+         "matchingRanges": {
+          "lineNumber": "150"
+         },
+         "lineNumber": "150",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 30,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tSYS_SCHED_SETSCHEDULER     = 144",
+         "matchingRanges": {
+          "lineNumber": "151",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "151",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 30,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\tSYS_SCHED_GETSCHEDULER     = 145",
+         "matchingRanges": {
+          "lineNumber": "152",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "152",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 30,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\tSYS_SCHED_GET_PRIORITY_MAX = 146",
+         "matchingRanges": {
+          "lineNumber": "153"
+         },
+         "lineNumber": "153",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 30,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CBYSBAgBIAE4zrLG3dmr7OByQABIFg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/syscall/zsysnum_freebsd_386.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tSYS_SCHED_GETPARAM           = 328 // { int sched_getparam (pid_t pid, struct \\",
+         "matchingRanges": {
+          "lineNumber": "183"
+         },
+         "lineNumber": "183",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 32,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 36,
+            "length": 44
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tSYS_SCHED_SETSCHEDULER       = 329 // { int sched_setscheduler (pid_t pid, int \\",
+         "matchingRanges": {
+          "lineNumber": "184",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 9
+           },
+           {
+            "startIndex": 54,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "184",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 32,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 36,
+            "length": 45
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 9
+          },
+          {
+           "startIndex": 54,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\tSYS_SCHED_GETSCHEDULER       = 330 // { int sched_getscheduler (pid_t pid); }",
+         "matchingRanges": {
+          "lineNumber": "185",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 9
+           },
+           {
+            "startIndex": 54,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "185",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 32,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 36,
+            "length": 42
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 9
+          },
+          {
+           "startIndex": 54,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\tSYS_SCHED_YIELD              = 331 // { int sched_yield (void); }",
+         "matchingRanges": {
+          "lineNumber": "186"
+         },
+         "lineNumber": "186",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 32,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 36,
+            "length": 30
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CBcSBAgBIAE4mMy05M3gqPqPAUAASBc"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/syscall/zsysnum_linux_s390x.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tSYS_SCHED_GETPARAM         = 155",
+         "matchingRanges": {
+          "lineNumber": "122"
+         },
+         "lineNumber": "122",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 30,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tSYS_SCHED_SETSCHEDULER     = 156",
+         "matchingRanges": {
+          "lineNumber": "123",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "123",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 30,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\tSYS_SCHED_GETSCHEDULER     = 157",
+         "matchingRanges": {
+          "lineNumber": "124",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "124",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 30,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\tSYS_SCHED_YIELD            = 158",
+         "matchingRanges": {
+          "lineNumber": "125"
+         },
+         "lineNumber": "125",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 30,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CBgSBAgBIAE43r_sq62Lp8maAUAASBg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/syscall/zsysnum_freebsd_arm.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tSYS_SCHED_GETPARAM           = 328 // { int sched_getparam (pid_t pid, struct \\",
+         "matchingRanges": {
+          "lineNumber": "183"
+         },
+         "lineNumber": "183",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 32,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 36,
+            "length": 44
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tSYS_SCHED_SETSCHEDULER       = 329 // { int sched_setscheduler (pid_t pid, int \\",
+         "matchingRanges": {
+          "lineNumber": "184",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 9
+           },
+           {
+            "startIndex": 54,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "184",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 32,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 36,
+            "length": 45
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 9
+          },
+          {
+           "startIndex": 54,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\tSYS_SCHED_GETSCHEDULER       = 330 // { int sched_getscheduler (pid_t pid); }",
+         "matchingRanges": {
+          "lineNumber": "185",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 9
+           },
+           {
+            "startIndex": 54,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "185",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 32,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 36,
+            "length": 42
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 9
+          },
+          {
+           "startIndex": 54,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\tSYS_SCHED_YIELD              = 331 // { int sched_yield (void); }",
+         "matchingRanges": {
+          "lineNumber": "186"
+         },
+         "lineNumber": "186",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 32,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 36,
+            "length": 30
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CBkSBAgBIAE47KuC7evVnM-lAUAASBk"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/http/internal/http2/server.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\tsc.writeSched = newRoundRobinWriteScheduler()",
+         "matchingRanges": {
+          "lineNumber": "305",
+          "columnRanges": [
+           {
+            "startIndex": 36,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "305",
+         "ranges": [
+          {
+           "startIndex": 36,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\tdefault:",
+         "matchingRanges": {
+          "lineNumber": "306"
+         },
+         "lineNumber": "306",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 7
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tsc.writeSched = newPriorityWriteSchedulerRFC9218()",
+         "matchingRanges": {
+          "lineNumber": "307",
+          "columnRanges": [
+           {
+            "startIndex": 34,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "307",
+         "ranges": [
+          {
+           "startIndex": 34,
+           "length": 9
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tremoteAddrStr    string",
+         "matchingRanges": {
+          "lineNumber": "432"
+         },
+         "lineNumber": "432"
+        },
+        {
+         "lineText": "\twriteSched       WriteScheduler",
+         "matchingRanges": {
+          "lineNumber": "433",
+          "columnRanges": [
+           {
+            "startIndex": 23,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "433",
+         "ranges": [
+          {
+           "startIndex": 23,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\tcountErrorFunc   func(errType string)",
+         "matchingRanges": {
+          "lineNumber": "434"
+         },
+         "lineNumber": "434",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 18,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tcase *priorityWriteSchedulerRFC9218:",
+         "matchingRanges": {
+          "lineNumber": "488",
+          "columnRanges": [
+           {
+            "startIndex": 20,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "488",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 20,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\t\treturn true",
+         "matchingRanges": {
+          "lineNumber": "489"
+         },
+         "lineNumber": "489",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tcase *roundRobinWriteScheduler:",
+         "matchingRanges": {
+          "lineNumber": "490",
+          "columnRanges": [
+           {
+            "startIndex": 22,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "490",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 22,
+           "length": 9
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 9
+    },
+    "resultToken": "CBoSAggBOJTppZbnm-O27wFAAEga"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/compile/internal/test/reproduciblebuilds_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t\t\t// Note: use -c 2 to expose any nondeterminism which is the result",
+         "matchingRanges": {
+          "lineNumber": "39"
+         },
+         "lineNumber": "39",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 66
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t\t// of the runtime scheduler.",
+         "matchingRanges": {
+          "lineNumber": "40",
+          "columnRanges": [
+           {
+            "startIndex": 22,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "40",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 28
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 22,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t\tout, err := testenv.Command(t, testenv.GoToolPath(t), \"tool\", \"compile\", \"-p=p\", \"-c\", \"2\", \"-o\", tmp.Name(), filepath.Join(\"testdata\", \"reproducible\", test)).CombinedO ...",
+         "matchingRanges": {
+          "lineNumber": "41"
+         },
+         "lineNumber": "41",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 58,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 66,
+            "length": 9
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 77,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 85,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 91,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 96,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 128,
+            "length": 10
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 140,
+            "length": 14
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBsSAggBOLb-rPKR4eeEQUAASBs"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/syscall/zsysnum_linux_mips64.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tSYS_SCHED_GETPARAM         = 5140",
+         "matchingRanges": {
+          "lineNumber": "147"
+         },
+         "lineNumber": "147",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 30,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tSYS_SCHED_SETSCHEDULER     = 5141",
+         "matchingRanges": {
+          "lineNumber": "148",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "148",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 30,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\tSYS_SCHED_GETSCHEDULER     = 5142",
+         "matchingRanges": {
+          "lineNumber": "149",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "149",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 30,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\tSYS_SCHED_GET_PRIORITY_MAX = 5143",
+         "matchingRanges": {
+          "lineNumber": "150"
+         },
+         "lineNumber": "150",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 30,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CBwSBAgBIAE41IDwmb2O46RPQABIHA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/compile/internal/ssa/tuple.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// function also ensures that there are no duplicate tuple selectors.",
+         "matchingRanges": {
+          "lineNumber": "9"
+         },
+         "lineNumber": "9",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 69
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "// These properties are expected by the scheduler but may not have",
+         "matchingRanges": {
+          "lineNumber": "10",
+          "columnRanges": [
+           {
+            "startIndex": 40,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "10",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 66
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 40,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "// been maintained by the optimization pipeline up to this point.",
+         "matchingRanges": {
+          "lineNumber": "11"
+         },
+         "lineNumber": "11",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 65
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CB0SAggBONqwg7Hlid2EggFAAEgd"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/syscall/zsysnum_freebsd_amd64.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tSYS_SCHED_GETPARAM           = 328 // { int sched_getparam (pid_t pid, struct \\",
+         "matchingRanges": {
+          "lineNumber": "183"
+         },
+         "lineNumber": "183",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 32,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 36,
+            "length": 44
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tSYS_SCHED_SETSCHEDULER       = 329 // { int sched_setscheduler (pid_t pid, int \\",
+         "matchingRanges": {
+          "lineNumber": "184",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 9
+           },
+           {
+            "startIndex": 54,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "184",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 32,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 36,
+            "length": 45
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 9
+          },
+          {
+           "startIndex": 54,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\tSYS_SCHED_GETSCHEDULER       = 330 // { int sched_getscheduler (pid_t pid); }",
+         "matchingRanges": {
+          "lineNumber": "185",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 9
+           },
+           {
+            "startIndex": 54,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "185",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 32,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 36,
+            "length": 42
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 9
+          },
+          {
+           "startIndex": 54,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\tSYS_SCHED_YIELD              = 331 // { int sched_yield (void); }",
+         "matchingRanges": {
+          "lineNumber": "186"
+         },
+         "lineNumber": "186",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 32,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 36,
+            "length": 30
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CB4SBAgBIAE4sof1vsfzjZdPQABIHg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/syscall/zsysnum_linux_loong64.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tSYS_SCHED_SETPARAM          = 118",
+         "matchingRanges": {
+          "lineNumber": "122"
+         },
+         "lineNumber": "122",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 31,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tSYS_SCHED_SETSCHEDULER      = 119",
+         "matchingRanges": {
+          "lineNumber": "123",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "123",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 31,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\tSYS_SCHED_GETSCHEDULER      = 120",
+         "matchingRanges": {
+          "lineNumber": "124",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "124",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 31,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\tSYS_SCHED_GETPARAM          = 121",
+         "matchingRanges": {
+          "lineNumber": "125"
+         },
+         "lineNumber": "125",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 31,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CB8SBAgBIAE4-Iybsf_Px8y6AUAASB8"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/syscall/zsysnum_freebsd_arm64.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tSYS_SCHED_GETPARAM           = 328 // { int sched_getparam (pid_t pid, struct sched_param *param); }",
+         "matchingRanges": {
+          "lineNumber": "198"
+         },
+         "lineNumber": "198",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 32,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 36,
+            "length": 65
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tSYS_SCHED_SETSCHEDULER       = 329 // { int sched_setscheduler (pid_t pid, int policy, const struct sched_param *param); }",
+         "matchingRanges": {
+          "lineNumber": "199",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 9
+           },
+           {
+            "startIndex": 54,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "199",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 32,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 36,
+            "length": 87
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 9
+          },
+          {
+           "startIndex": 54,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\tSYS_SCHED_GETSCHEDULER       = 330 // { int sched_getscheduler (pid_t pid); }",
+         "matchingRanges": {
+          "lineNumber": "200",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 9
+           },
+           {
+            "startIndex": 54,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "200",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 32,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 36,
+            "length": 42
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 9
+          },
+          {
+           "startIndex": 54,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\tSYS_SCHED_YIELD              = 331 // { int sched_yield (void); }",
+         "matchingRanges": {
+          "lineNumber": "201"
+         },
+         "lineNumber": "201",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 32,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 36,
+            "length": 30
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CCASBAgBIAE4ltWBmsPA7fHQAUAASCA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/syscall/zsysnum_dragonfly_amd64.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tSYS_SCHED_GETPARAM         = 328 // { int sched_getparam (pid_t pid, struct sched_param *param); }",
+         "matchingRanges": {
+          "lineNumber": "191"
+         },
+         "lineNumber": "191",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 30,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 34,
+            "length": 65
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tSYS_SCHED_SETSCHEDULER     = 329 // { int sched_setscheduler (pid_t pid, int policy, const struct sched_param *param); }",
+         "matchingRanges": {
+          "lineNumber": "192",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 9
+           },
+           {
+            "startIndex": 52,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "192",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 30,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 34,
+            "length": 87
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 9
+          },
+          {
+           "startIndex": 52,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\tSYS_SCHED_GETSCHEDULER     = 330 // { int sched_getscheduler (pid_t pid); }",
+         "matchingRanges": {
+          "lineNumber": "193",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 9
+           },
+           {
+            "startIndex": 52,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "193",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 30,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 34,
+            "length": 42
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 9
+          },
+          {
+           "startIndex": 52,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\tSYS_SCHED_YIELD            = 331 // { int sched_yield (void); }",
+         "matchingRanges": {
+          "lineNumber": "194"
+         },
+         "lineNumber": "194",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 30,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 34,
+            "length": 30
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CCESBAgBIAE49uvg-eWfr6TDAUAASCE"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/http/internal/http2/export_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "func NewPriorityWriteSchedulerRFC9218() WriteScheduler {",
+         "matchingRanges": {
+          "lineNumber": "206",
+          "columnRanges": [
+           {
+            "startIndex": 21,
+            "length": 9
+           },
+           {
+            "startIndex": 45,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "206",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 21,
+           "length": 9
+          },
+          {
+           "startIndex": 45,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\treturn newPriorityWriteSchedulerRFC9218()",
+         "matchingRanges": {
+          "lineNumber": "207",
+          "columnRanges": [
+           {
+            "startIndex": 24,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "207",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 24,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "}",
+         "matchingRanges": {
+          "lineNumber": "208"
+         },
+         "lineNumber": "208"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func NewRoundRobinWriteScheduler() WriteScheduler {",
+         "matchingRanges": {
+          "lineNumber": "210",
+          "columnRanges": [
+           {
+            "startIndex": 23,
+            "length": 9
+           },
+           {
+            "startIndex": 40,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "210",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 23,
+           "length": 9
+          },
+          {
+           "startIndex": 40,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\treturn newRoundRobinWriteScheduler()",
+         "matchingRanges": {
+          "lineNumber": "211",
+          "columnRanges": [
+           {
+            "startIndex": 26,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "211",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 26,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "}",
+         "matchingRanges": {
+          "lineNumber": "212"
+         },
+         "lineNumber": "212"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 4
+    },
+    "resultToken": "CCISBAgBIAE4roiJleWoyf55QABIIg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/syscall/zerrors_dragonfly_amd64.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t31: \"user defined signal 2\",",
+         "matchingRanges": {
+          "lineNumber": "1527"
+         },
+         "lineNumber": "1527",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 5,
+            "length": 23
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t32: \"thread Scheduler\",",
+         "matchingRanges": {
+          "lineNumber": "1528",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "1528",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 5,
+            "length": 18
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\t33: \"checkPoint\",",
+         "matchingRanges": {
+          "lineNumber": "1529"
+         },
+         "lineNumber": "1529",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 5,
+            "length": 12
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CCMSAggBOOaRndafvbWniQFAAEgj"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/internal/trace/traceviewer/http.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\u003cli\u003e\u003ca href=\"/syscall\"\u003eSyscall profile\u003c/a\u003e (\u003ca href=\"/syscall?raw=1\" download=\"syscall.profile\"\u003e⬇\u003c/a\u003e)\u003c/li\u003e",
+         "matchingRanges": {
+          "lineNumber": "195"
+         },
+         "lineNumber": "195",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "length": 107
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\u003cli\u003e\u003ca href=\"/sched\"\u003eScheduler latency profile\u003c/a\u003e (\u003ca href=\"/sched?raw=1\" download=\"sched.profile\"\u003e⬇\u003c/a\u003e)\u003c/li\u003e",
+         "matchingRanges": {
+          "lineNumber": "196",
+          "columnRanges": [
+           {
+            "startIndex": 21,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "196",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "length": 111
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 21,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\u003c/ul\u003e",
+         "matchingRanges": {
+          "lineNumber": "197"
+         },
+         "lineNumber": "197",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CCQSAggBOM6dvsqOmdvBEUAASCQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/crypto/tls/cache_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t\t}",
+         "matchingRanges": {
+          "lineNumber": "48"
+         },
+         "lineNumber": "48"
+        },
+        {
+         "lineText": "\t\t\t// Explicitly yield to the scheduler.",
+         "matchingRanges": {
+          "lineNumber": "49",
+          "columnRanges": [
+           {
+            "startIndex": 30,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "49",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 3,
+            "length": 37
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 30,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t//",
+         "matchingRanges": {
+          "lineNumber": "50"
+         },
+         "lineNumber": "50",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 3,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t// On single-threaded platforms like js/wasm a busy-loop might",
+         "matchingRanges": {
+          "lineNumber": "51"
+         },
+         "lineNumber": "51",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 3,
+            "length": 62
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t// never call into the scheduler for the full timeout, meaning",
+         "matchingRanges": {
+          "lineNumber": "52",
+          "columnRanges": [
+           {
+            "startIndex": 26,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "52",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 3,
+            "length": 62
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 26,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t// that if we arrive here and the cleanup hasn't already run,",
+         "matchingRanges": {
+          "lineNumber": "53"
+         },
+         "lineNumber": "53",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 3,
+            "length": 61
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t// we'll simply loop until the timeout. Busy-loops put us at the",
+         "matchingRanges": {
+          "lineNumber": "54"
+         },
+         "lineNumber": "54",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 3,
+            "length": 64
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t// mercy of the Go scheduler, making this test fragile on some",
+         "matchingRanges": {
+          "lineNumber": "55",
+          "columnRanges": [
+           {
+            "startIndex": 22,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "55",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 3,
+            "length": 62
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 22,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t// platforms.",
+         "matchingRanges": {
+          "lineNumber": "56"
+         },
+         "lineNumber": "56",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 3,
+            "length": 13
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CCUSAggBOMbhy4nxmNab3wFAAEgl"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/internal/trace/order.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// ordering emulates Go scheduler state for both validation and",
+         "matchingRanges": {
+          "lineNumber": "16",
+          "columnRanges": [
+           {
+            "startIndex": 24,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "16",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 63
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 24,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "// for putting events in the right order.",
+         "matchingRanges": {
+          "lineNumber": "17"
+         },
+         "lineNumber": "17",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 41
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// reference a non-running goroutine. Don't check anything about the",
+         "matchingRanges": {
+          "lineNumber": "1049"
+         },
+         "lineNumber": "1049",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 68
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t// current scheduler context.",
+         "matchingRanges": {
+          "lineNumber": "1050",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "1050",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 29
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\tgState, ok := o.gStates[gid]",
+         "matchingRanges": {
+          "lineNumber": "1051"
+         },
+         "lineNumber": "1051"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CCYSAggBOPrijdra9p_1_QFAAEgm"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/compile/internal/ssa/_gen/386Ops.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t{name: \"LoweredGetG\", argLength: 1, reg: gp01}, // arg0=mem",
+         "matchingRanges": {
+          "lineNumber": "508"
+         },
+         "lineNumber": "508",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 9,
+            "length": 13
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 35,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 50,
+            "length": 11
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t// Scheduler ensures LoweredGetClosurePtr occurs only in entry block,",
+         "matchingRanges": {
+          "lineNumber": "509",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "509",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 69
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t// and sorts it to the very beginning of the block to prevent other",
+         "matchingRanges": {
+          "lineNumber": "510"
+         },
+         "lineNumber": "510",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 67
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CCcSAggBOKKFiOr8y9SRJEAASCc"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/compile/internal/ssa/_gen/ARMOps.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t// Scheduler ensures LoweredGetClosurePtr occurs only in entry block,",
+         "matchingRanges": {
+          "lineNumber": "532",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "532",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 69
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t// and sorts it to the very beginning of the block to prevent other",
+         "matchingRanges": {
+          "lineNumber": "533"
+         },
+         "lineNumber": "533",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 67
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CCgSAggBOLyirIOG-ZWtTEAASCg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/compile/internal/ssa/_gen/MIPSOps.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t// Scheduler ensures LoweredGetClosurePtr occurs only in entry block,",
+         "matchingRanges": {
+          "lineNumber": "387",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "387",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 69
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t// and sorts it to the very beginning of the block to prevent other",
+         "matchingRanges": {
+          "lineNumber": "388"
+         },
+         "lineNumber": "388",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 67
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CCkSAggBON7f3aCSpeyU9AFAAEgp"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/compile/internal/ssa/_gen/ARM64Ops.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t// Scheduler ensures LoweredGetClosurePtr occurs only in entry block,",
+         "matchingRanges": {
+          "lineNumber": "644",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "644",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 69
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t// and sorts it to the very beginning of the block to prevent other",
+         "matchingRanges": {
+          "lineNumber": "645"
+         },
+         "lineNumber": "645",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 67
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CCoSAggBOPCokITmnoeqC0AASCo"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/compile/internal/ssa/_gen/AMD64Ops.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t{name: \"LoweredGetG\", argLength: 1, reg: gp01}, // arg0=mem",
+         "matchingRanges": {
+          "lineNumber": "1103"
+         },
+         "lineNumber": "1103",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 9,
+            "length": 13
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 35,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 50,
+            "length": 11
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t// Scheduler ensures LoweredGetClosurePtr occurs only in entry block,",
+         "matchingRanges": {
+          "lineNumber": "1104",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "1104",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 69
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t// and sorts it to the very beginning of the block to prevent other",
+         "matchingRanges": {
+          "lineNumber": "1105"
+         },
+         "lineNumber": "1105",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 67
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CCsSAggBOPj838ONl7yUEkAASCs"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/compile/internal/ssa/_gen/PPC64Ops.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t// Scheduler ensures LoweredGetClosurePtr occurs only in entry block,",
+         "matchingRanges": {
+          "lineNumber": "448",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "448",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 69
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t// and sorts it to the very beginning of the block to prevent other",
+         "matchingRanges": {
+          "lineNumber": "449"
+         },
+         "lineNumber": "449",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 67
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CCwSAggBOJr9nOycrffMMEAASCw"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/compile/internal/ssa/_gen/S390XOps.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t{name: \"LoweredGetG\", argLength: 1, reg: gp01}, // arg0=mem",
+         "matchingRanges": {
+          "lineNumber": "498"
+         },
+         "lineNumber": "498",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 9,
+            "length": 13
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 35,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 50,
+            "length": 11
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t// Scheduler ensures LoweredGetClosurePtr occurs only in entry block,",
+         "matchingRanges": {
+          "lineNumber": "499",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "499",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 69
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t// and sorts it to the very beginning of the block to prevent other",
+         "matchingRanges": {
+          "lineNumber": "500"
+         },
+         "lineNumber": "500",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 67
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CC0SAggBOOS3qtvM1fKDQUAASC0"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/compile/internal/liveness/mergelocals.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t//",
+         "matchingRanges": {
+          "lineNumber": "945"
+         },
+         "lineNumber": "945",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t// Note the SPanchored: this ensures that the scheduler won't",
+         "matchingRanges": {
+          "lineNumber": "946",
+          "columnRanges": [
+           {
+            "startIndex": 48,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "946",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 61
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 48,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t// move the MOVDaddr earlier than the vardef. With a variable",
+         "matchingRanges": {
+          "lineNumber": "947"
+         },
+         "lineNumber": "947",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 61
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t// however that change will have to be carefully evaluated,",
+         "matchingRanges": {
+          "lineNumber": "970"
+         },
+         "lineNumber": "970",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 59
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t// since it would constrain the scheduler for _all_ LocalAddr",
+         "matchingRanges": {
+          "lineNumber": "971",
+          "columnRanges": [
+           {
+            "startIndex": 34,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "971",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 61
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 34,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t// ops for potential merge candidates, even if we don't",
+         "matchingRanges": {
+          "lineNumber": "972"
+         },
+         "lineNumber": "972",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 55
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CC4SAggBONDqh-q7xfbZ-wFAAEgu"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/compile/internal/ssa/_gen/MIPS64Ops.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t// Scheduler ensures LoweredGetClosurePtr occurs only in entry block,",
+         "matchingRanges": {
+          "lineNumber": "444",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "444",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 69
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t// and sorts it to the very beginning of the block to prevent other",
+         "matchingRanges": {
+          "lineNumber": "445"
+         },
+         "lineNumber": "445",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 67
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CC8SAggBONSx--v5gJfNjwFAAEgv"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/compile/internal/ssa/_gen/LOONG64Ops.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t// Scheduler ensures LoweredGetClosurePtr occurs only in entry block,",
+         "matchingRanges": {
+          "lineNumber": "538",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "538",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 69
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t// and sorts it to the very beginning of the block to prevent other",
+         "matchingRanges": {
+          "lineNumber": "539"
+         },
+         "lineNumber": "539",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 67
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CDASAggBOPDcwMyP6sDxTkAASDA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/vendor/golang.org/x/sys/unix/zsysnum_linux_mipsle.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tSYS_SCHED_GETPARAM               = 4159",
+         "matchingRanges": {
+          "lineNumber": "168"
+         },
+         "lineNumber": "168",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 36,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tSYS_SCHED_SETSCHEDULER           = 4160",
+         "matchingRanges": {
+          "lineNumber": "169",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "169",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 36,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\tSYS_SCHED_GETSCHEDULER           = 4161",
+         "matchingRanges": {
+          "lineNumber": "170",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "170",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 36,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\tSYS_SCHED_YIELD                  = 4162",
+         "matchingRanges": {
+          "lineNumber": "171"
+         },
+         "lineNumber": "171",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 36,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CDESBAgBIAE41riK7oTVs-hvQABIMQ"
+   }
+  ],
+  "estimatedResultCount": "174",
+  "nextPageToken": "CKbXiNjb5a7qAgi+kOCIvPep0AYI8KiQhOaeh6oLCM6dvsqOmdvBEQis8+HdhLXawxEI+Pzfw42XvJQSCP7G4aTM+NHaFAiM7v+u+piwsBcIooWI6vzL1JEkCJiM78bngJXsJwia/ZzsnK33zDAIjqGxzMry2Mg5CJ7hm9y6tqqSPgjkt6rbzNXyg0EItv6s8pHh54RBCKqw0MDfgYL9SAi8oqyDhvmVrUwI4unV9OvKpbBMCPDcwMyP6sDxTgiyh/W+x/ONl08I1IDwmb2O46RPCLS82P7erdiTUQiwuKy2/I25iloIoOTHqYXZuPxoCNa4iu6E1bPobwjOssbd2avs4HIIroiJleWoyf55CPylt6if/IqpegjW6dvLsKa1rXsI2rCDseWJ3YSCAQia4tLbr9f52IQBCOaRndafvbWniQEImKDVp6S14PWLAQjW27P+4P3Gto8BCNSx++v5gJfNjwEImMy05M3gqPqPAQjev+yrrYunyZoBCOyrgu3r1ZzPpQEIttyu9uf3hompAQjW3bi6292hsrABCPiMm7H/z8fMugEI9uvg+eWfr6TDAQiW1YGaw8Dt8dABCMbhy4nxmNab3wEIwvH+mueIvKLvAQiU6aWW55vjtu8BCN7f3aCSpeyU9AEIhuDFzoiX5Ln5AQjQ6ofqu8X22fsBCPrijdra9p/1/QE=",
+  "exhaustive": true,
+  "requestToken": "CglzY2hlZHVsZXISHSggZ2l0OmdvL2dvQG1hc3RlciBjYXNlOnllcyApGgwIiLyo0QYQ69DLuAIgDCoAMgBIAQ"
+ }
+}

@@ -1,0 +1,839 @@
+{
+ "query": "SymlinkTreeHelper",
+ "oss_project": "bazel",
+ "repo_name": "bazel",
+ "page_size": 50,
+ "fetched_at": "2026-06-11T22:27:39Z",
+ "response": {
+  "searchResults": [
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/exec/SymlinkTreeHelper.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": " */",
+         "matchingRanges": {
+          "lineNumber": "41"
+         },
+         "lineNumber": "41",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "public final class SymlinkTreeHelper {",
+         "matchingRanges": {
+          "lineNumber": "42",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "42",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 13,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "43"
+         },
+         "lineNumber": "43"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  /**",
+         "matchingRanges": {
+          "lineNumber": "49"
+         },
+         "lineNumber": "49",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "   * Creates SymlinkTreeHelper instance. Can be used independently of SymlinkTreeAction.",
+         "matchingRanges": {
+          "lineNumber": "50",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "50",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 88
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 88
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "   *",
+         "matchingRanges": {
+          "lineNumber": "51"
+         },
+         "lineNumber": "51",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "   */",
+         "matchingRanges": {
+          "lineNumber": "56"
+         },
+         "lineNumber": "56",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  public SymlinkTreeHelper(",
+         "matchingRanges": {
+          "lineNumber": "57",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "57",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "      Path inputManifest, Path outputManifest, Path symlinkTreeRoot, String workspaceName) {",
+         "matchingRanges": {
+          "lineNumber": "58"
+         },
+         "lineNumber": "58"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CAASBAgBIAE4soXQ_Z7B2u2lAUAASAA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/exec/SymlinkTreeHelperTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "/** Unit tests for {@link SymlinkTreeHelper}. */",
+         "matchingRanges": {
+          "lineNumber": "42",
+          "columnRanges": [
+           {
+            "startIndex": 26,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "42",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 48
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 26,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "@RunWith(TestParameterInjector.class)",
+         "matchingRanges": {
+          "lineNumber": "43"
+         },
+         "lineNumber": "43",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 31,
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "public final class SymlinkTreeHelperTest {",
+         "matchingRanges": {
+          "lineNumber": "44",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "44",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 13,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "45"
+         },
+         "lineNumber": "45"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    Map\u003cPathFragment, PathFragment\u003e symlinks =",
+         "matchingRanges": {
+          "lineNumber": "72"
+         },
+         "lineNumber": "72"
+        },
+        {
+         "lineText": "        SymlinkTreeHelper.processFilesetLinks(ImmutableList.of(link1, link2), \"workspace\");",
+         "matchingRanges": {
+          "lineNumber": "73",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "73",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 78,
+            "length": 11
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "    assertThat(symlinks)",
+         "matchingRanges": {
+          "lineNumber": "74"
+         },
+         "lineNumber": "74"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    Path outputManifestPath = execRoot.getRelative(\"foo.runfiles/MANIFEST\");",
+         "matchingRanges": {
+          "lineNumber": "87"
+         },
+         "lineNumber": "87",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 51,
+            "length": 23
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    SymlinkTreeHelper helper =",
+         "matchingRanges": {
+          "lineNumber": "88",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "88",
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "        new SymlinkTreeHelper(inputManifestPath, outputManifestPath, treeRoot, WORKSPACE_NAME);",
+         "matchingRanges": {
+          "lineNumber": "89",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "89",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "90"
+         },
+         "lineNumber": "90"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 5
+    },
+    "resultToken": "CAESBAgBIAE40rDH9qWHgbGAAUAASAE"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/exec/SymlinkTreeStrategy.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "        GoogleAutoProfilerUtils.logged(\"running \" + action.prettyPrint(), MIN_LOGGING)) {",
+         "matchingRanges": {
+          "lineNumber": "62"
+         },
+         "lineNumber": "62",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 39,
+            "length": 10
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "      SymlinkTreeHelper helper = createSymlinkTreeHelper(action, actionExecutionContext);",
+         "matchingRanges": {
+          "lineNumber": "63",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 17
+           },
+           {
+            "startIndex": 39,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "63",
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 17
+          },
+          {
+           "startIndex": 39,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "      // TODO(tjgq): Respect RunfileSymlinksMode.SKIP even in the presence of an OutputService.",
+         "matchingRanges": {
+          "lineNumber": "64"
+         },
+         "lineNumber": "64",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 6,
+            "length": 89
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "            .symlinks();",
+         "matchingRanges": {
+          "lineNumber": "107"
+         },
+         "lineNumber": "107"
+        },
+        {
+         "lineText": "    return SymlinkTreeHelper.processFilesetLinks(filesetLinks, action.getWorkspaceNameForFileset());",
+         "matchingRanges": {
+          "lineNumber": "108",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "108",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "  }",
+         "matchingRanges": {
+          "lineNumber": "109"
+         },
+         "lineNumber": "109"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  private SymlinkTreeHelper createSymlinkTreeHelper(",
+         "matchingRanges": {
+          "lineNumber": "117",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 17
+           },
+           {
+            "startIndex": 34,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "117",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 17
+          },
+          {
+           "startIndex": 34,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "      SymlinkTreeAction action, ActionExecutionContext actionExecutionContext) {",
+         "matchingRanges": {
+          "lineNumber": "118"
+         },
+         "lineNumber": "118"
+        },
+        {
+         "lineText": "    return new SymlinkTreeHelper(",
+         "matchingRanges": {
+          "lineNumber": "119",
+          "columnRanges": [
+           {
+            "startIndex": 15,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "119",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 11,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 15,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "        actionExecutionContext.getInputPath(action.getInputManifest()),",
+         "matchingRanges": {
+          "lineNumber": "120"
+         },
+         "lineNumber": "120"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 4
+    },
+    "resultToken": "CAISBAgBIAE4tPbmvODVhPPgAUAASAI"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/exec/RunfilesTreeUpdater.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    SymlinkTreeHelper helper =",
+         "matchingRanges": {
+          "lineNumber": "145",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "145",
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "        new SymlinkTreeHelper(inputManifest, outputManifest, runfilesDir, tree.getWorkspaceName());",
+         "matchingRanges": {
+          "lineNumber": "146",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "146",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "147"
+         },
+         "lineNumber": "147"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAMSAggBOP7uyZ-3mo2RDUAASAM"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/exec/BUILD",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    name = \"symlink_tree_helper\",",
+         "matchingRanges": {
+          "lineNumber": "447"
+         },
+         "lineNumber": "447",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 21
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    srcs = [\"SymlinkTreeHelper.java\"],",
+         "matchingRanges": {
+          "lineNumber": "448",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "448",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 12,
+            "length": 24
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "    deps = [",
+         "matchingRanges": {
+          "lineNumber": "449"
+         },
+         "lineNumber": "449"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAQSAggBOKDD-ZnTrceMZkAASAQ"
+   }
+  ],
+  "estimatedResultCount": "6",
+  "exhaustive": true,
+  "requestToken": "ChFTeW1saW5rVHJlZUhlbHBlchIjKCBnaXQ6YmF6ZWwvYmF6ZWxAbWFzdGVyIGNhc2U6eWVzICkaDAjb7KzRBhCwk_T4AiAMKgAyAEgB"
+ }
+}

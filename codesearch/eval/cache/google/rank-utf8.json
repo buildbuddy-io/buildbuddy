@@ -1,0 +1,6643 @@
+{
+ "query": "utf8",
+ "oss_project": "go",
+ "repo_name": "go",
+ "page_size": 50,
+ "fetched_at": "2026-06-11T02:32:08Z",
+ "response": {
+  "searchResults": [
+   {
+    "directorySearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/unicode/utf8/",
+      "type": "DIRECTORY"
+     },
+     "childEntries": [
+      {
+       "path": "src/unicode/utf8/example_test.go",
+       "type": "FILE"
+      },
+      {
+       "path": "src/unicode/utf8/utf8.go",
+       "type": "FILE"
+      },
+      {
+       "path": "src/unicode/utf8/utf8_test.go",
+       "type": "FILE"
+      }
+     ]
+    },
+    "resultToken": "CAASADiwzsmuo7zLgjRAAEgA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/unicode/utf8/utf8_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\"unicode\"",
+         "matchingRanges": {
+          "lineNumber": "11"
+         },
+         "lineNumber": "11",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 1,
+            "length": 9
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t. \"unicode/utf8\"",
+         "matchingRanges": {
+          "lineNumber": "12",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "12",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 3,
+            "length": 14
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": ")",
+         "matchingRanges": {
+          "lineNumber": "13"
+         },
+         "lineNumber": "13"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "type Utf8Map struct {",
+         "matchingRanges": {
+          "lineNumber": "25",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "25",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 13,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\tr   rune",
+         "matchingRanges": {
+          "lineNumber": "26"
+         },
+         "lineNumber": "26"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "var utf8map = []Utf8Map{",
+         "matchingRanges": {
+          "lineNumber": "30",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 4
+           },
+           {
+            "startIndex": 16,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "30",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 4
+          },
+          {
+           "startIndex": 16,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\t{0x0000, \"\\x00\"},",
+         "matchingRanges": {
+          "lineNumber": "31"
+         },
+         "lineNumber": "31",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 10,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "var surrogateMap = []Utf8Map{",
+         "matchingRanges": {
+          "lineNumber": "65",
+          "columnRanges": [
+           {
+            "startIndex": 21,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "65",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 21,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\t{0xd800, \"\\xed\\xa0\\x80\"}, // surrogate min decodes to (RuneError, 1)",
+         "matchingRanges": {
+          "lineNumber": "66"
+         },
+         "lineNumber": "66",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 10,
+            "length": 14
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 27,
+            "length": 42
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 12
+    },
+    "resultToken": "CAESBAgBIAE48tn4q7a-taYXQABIAQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/unicode/utf8/utf8.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// Package utf8 implements functions and constants to support text encoded in",
+         "matchingRanges": {
+          "lineNumber": "5",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "5",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 77
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "// UTF-8. It includes functions to translate between runes and UTF-8 byte sequences.",
+         "matchingRanges": {
+          "lineNumber": "6"
+         },
+         "lineNumber": "6",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 84
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "// See https://en.wikipedia.org/wiki/UTF-8",
+         "matchingRanges": {
+          "lineNumber": "7"
+         },
+         "lineNumber": "7",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 42
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "package utf8",
+         "matchingRanges": {
+          "lineNumber": "8",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "8",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "9"
+         },
+         "lineNumber": "9"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAISAggBOOyJnp3ujLDS2QFAAEgC"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/utf8.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// Copyright 2016 The Go Authors. All rights reserved.",
+         "matchingRanges": {
+          "lineNumber": "1"
+         },
+         "lineNumber": "1",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 54
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "// Use of this source code is governed by a BSD-style",
+         "matchingRanges": {
+          "lineNumber": "2"
+         },
+         "lineNumber": "2",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 53
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "// license that can be found in the LICENSE file.",
+         "matchingRanges": {
+          "lineNumber": "3"
+         },
+         "lineNumber": "3",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 49
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    },
+    "resultToken": "CAMSADjSlPbc2r7KiM8BQABIAw"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/unicode/utf8/example_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\"fmt\"",
+         "matchingRanges": {
+          "lineNumber": "8"
+         },
+         "lineNumber": "8",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 1,
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\"unicode/utf8\"",
+         "matchingRanges": {
+          "lineNumber": "9",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "9",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 1,
+            "length": 14
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": ")",
+         "matchingRanges": {
+          "lineNumber": "10"
+         },
+         "lineNumber": "10"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tfor len(b) \u003e 0 {",
+         "matchingRanges": {
+          "lineNumber": "15"
+         },
+         "lineNumber": "15",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 14,
+            "length": 1
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tr, size := utf8.DecodeLastRune(b)",
+         "matchingRanges": {
+          "lineNumber": "16",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "16",
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tfmt.Printf(\"%c %v\\n\", r, size)",
+         "matchingRanges": {
+          "lineNumber": "17"
+         },
+         "lineNumber": "17",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 13,
+            "length": 9
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tfor len(str) \u003e 0 {",
+         "matchingRanges": {
+          "lineNumber": "36"
+         },
+         "lineNumber": "36",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 16,
+            "length": 1
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tr, size := utf8.DecodeLastRuneInString(str)",
+         "matchingRanges": {
+          "lineNumber": "37",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "37",
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tfmt.Printf(\"%c %v\\n\", r, size)",
+         "matchingRanges": {
+          "lineNumber": "38"
+         },
+         "lineNumber": "38",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 13,
+            "length": 9
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 28
+    },
+    "resultToken": "CAQSAggBONCO5tzG8_vuhAFAAEgE"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/archive/tar/testdata/gnu-utf8.tar",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "~BINARY~ ...",
+         "matchingRanges": {
+          "lineNumber": "1"
+         },
+         "lineNumber": "1"
+        }
+       ]
+      }
+     ]
+    },
+    "resultToken": "CAUSADjCgIW17NucpYYBQABIBQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/archive/zip/testdata/utf8-osx.zip",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "~BINARY~ ...",
+         "matchingRanges": {
+          "lineNumber": "1"
+         },
+         "lineNumber": "1"
+        }
+       ]
+      }
+     ]
+    },
+    "resultToken": "CAYSADiQ0Zvc-vfQvcgBQABIBg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/archive/zip/testdata/utf8-7zip.zip",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "~BINARY~ ...",
+         "matchingRanges": {
+          "lineNumber": "1"
+         },
+         "lineNumber": "1"
+        }
+       ]
+      }
+     ]
+    },
+    "resultToken": "CAcSADiSvJPRvebc59gBQABIBw"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/archive/zip/testdata/utf8-winrar.zip",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "~BINARY~ ...",
+         "matchingRanges": {
+          "lineNumber": "1"
+         },
+         "lineNumber": "1"
+        }
+       ]
+      }
+     ]
+    },
+    "resultToken": "CAgSADicrLbEybzUzbUBQABICA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/archive/zip/testdata/utf8-winzip.zip",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "~BINARY~ ...",
+         "matchingRanges": {
+          "lineNumber": "1"
+         },
+         "lineNumber": "1"
+        }
+       ]
+      }
+     ]
+    },
+    "resultToken": "CAkSADi2sum5js-Xjv8BQABICQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/archive/tar/testdata/gnu-not-utf8.tar",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "~BINARY~ ...",
+         "matchingRanges": {
+          "lineNumber": "1"
+         },
+         "lineNumber": "1"
+        }
+       ]
+      }
+     ]
+    },
+    "resultToken": "CAoSADic_v_y7rDAlCJAAEgK"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/archive/zip/testdata/utf8-infozip.zip",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "~BINARY~ ...",
+         "matchingRanges": {
+          "lineNumber": "1"
+         },
+         "lineNumber": "1"
+        }
+       ]
+      }
+     ]
+    },
+    "resultToken": "CAsSADiKg9vVg7yl7d4BQABICw"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "test/utf.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import \"unicode/utf8\"",
+         "matchingRanges": {
+          "lineNumber": "11",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "11",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 7,
+            "length": 14
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "12"
+         },
+         "lineNumber": "12"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\tvar r rune",
+         "matchingRanges": {
+          "lineNumber": "27"
+         },
+         "lineNumber": "27",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tr, w = utf8.DecodeRuneInString(s[i:len(s)])",
+         "matchingRanges": {
+          "lineNumber": "28",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "28",
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tif w == 0 {",
+         "matchingRanges": {
+          "lineNumber": "29"
+         },
+         "lineNumber": "29",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 10,
+            "length": 1
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\tvar r rune",
+         "matchingRanges": {
+          "lineNumber": "56"
+         },
+         "lineNumber": "56",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tr, w = utf8.DecodeRune(a[i:L])",
+         "matchingRanges": {
+          "lineNumber": "57",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "57",
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tif w == 0 {",
+         "matchingRanges": {
+          "lineNumber": "58"
+         },
+         "lineNumber": "58",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 10,
+            "length": 1
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CAwSAggBOPqjz6rVoLS6_AFAAEgM"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/syscall/wtf8_windows.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\"unicode/utf16\"",
+         "matchingRanges": {
+          "lineNumber": "24"
+         },
+         "lineNumber": "24",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 1,
+            "length": 15
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\"unicode/utf8\"",
+         "matchingRanges": {
+          "lineNumber": "25",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "25",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 1,
+            "length": 14
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": ")",
+         "matchingRanges": {
+          "lineNumber": "26"
+         },
+         "lineNumber": "26"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t// UTF-8 runes.",
+         "matchingRanges": {
+          "lineNumber": "47"
+         },
+         "lineNumber": "47",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 15
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tr, size := utf8.DecodeRuneInString(s[i:])",
+         "matchingRanges": {
+          "lineNumber": "48",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "48",
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tif r == utf8.RuneError {",
+         "matchingRanges": {
+          "lineNumber": "49",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "49",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t// Check if s[i:] contains a valid WTF-8 encoded surrogate.",
+         "matchingRanges": {
+          "lineNumber": "50"
+         },
+         "lineNumber": "50",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 3,
+            "length": 59
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t\t// WTF-8 fallback.",
+         "matchingRanges": {
+          "lineNumber": "79"
+         },
+         "lineNumber": "79",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 3,
+            "length": 18
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t// This only handles the 3-byte case of utf8.AppendRune,",
+         "matchingRanges": {
+          "lineNumber": "80",
+          "columnRanges": [
+           {
+            "startIndex": 43,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "80",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 3,
+            "length": 56
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 43,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t// as surrogates always fall in that case.",
+         "matchingRanges": {
+          "lineNumber": "81"
+         },
+         "lineNumber": "81",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 3,
+            "length": 42
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 7
+    },
+    "resultToken": "CA0SAggBOJrv_tru6OminwFAAEgN"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/syscall/wtf8_windows_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\"unicode/utf16\"",
+         "matchingRanges": {
+          "lineNumber": "12"
+         },
+         "lineNumber": "12",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 1,
+            "length": 15
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\"unicode/utf8\"",
+         "matchingRanges": {
+          "lineNumber": "13",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "13",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 1,
+            "length": 14
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\t\"unsafe\"",
+         "matchingRanges": {
+          "lineNumber": "14"
+         },
+         "lineNumber": "14",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 1,
+            "length": 8
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\tsyscall.DecodeWTF16(got, nil)",
+         "matchingRanges": {
+          "lineNumber": "164"
+         },
+         "lineNumber": "164"
+        },
+        {
+         "lineText": "\t\tif utf8.ValidString(b) {",
+         "matchingRanges": {
+          "lineNumber": "165",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "165",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t// if the input is a valid UTF-8 string, then",
+         "matchingRanges": {
+          "lineNumber": "166"
+         },
+         "lineNumber": "166",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 3,
+            "length": 45
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\tgot := syscall.DecodeWTF16(u16, nil)",
+         "matchingRanges": {
+          "lineNumber": "184"
+         },
+         "lineNumber": "184"
+        },
+        {
+         "lineText": "\t\tif utf8.Valid(got) {",
+         "matchingRanges": {
+          "lineNumber": "185",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "185",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t// if the input is a valid UTF-8 string, then",
+         "matchingRanges": {
+          "lineNumber": "186"
+         },
+         "lineNumber": "186",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 3,
+            "length": 45
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CA4SAggBOKqpt_rsxoToxQFAAEgO"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/bytes/bytes.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\"unicode\"",
+         "matchingRanges": {
+          "lineNumber": "12"
+         },
+         "lineNumber": "12",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 1,
+            "length": 9
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\"unicode/utf8\"",
+         "matchingRanges": {
+          "lineNumber": "13",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "13",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 1,
+            "length": 14
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\t_ \"unsafe\" // for linkname",
+         "matchingRanges": {
+          "lineNumber": "14"
+         },
+         "lineNumber": "14",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 3,
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 12,
+            "length": 15
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t}",
+         "matchingRanges": {
+          "lineNumber": "46"
+         },
+         "lineNumber": "46"
+        },
+        {
+         "lineText": "\t\t_, size = utf8.DecodeRune(s)",
+         "matchingRanges": {
+          "lineNumber": "47",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "47",
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\t\ta[na] = s[0:size:size]",
+         "matchingRanges": {
+          "lineNumber": "48"
+         },
+         "lineNumber": "48",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 12,
+            "length": 1
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// ToValidUTF8 treats s as UTF-8-encoded bytes and returns a copy with each run of bytes",
+         "matchingRanges": {
+          "lineNumber": "759",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "759",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 88
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "// representing invalid UTF-8 replaced with the bytes in replacement, which may be empty.",
+         "matchingRanges": {
+          "lineNumber": "760"
+         },
+         "lineNumber": "760",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 89
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "func ToValidUTF8(s, replacement []byte) []byte {",
+         "matchingRanges": {
+          "lineNumber": "761",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "761",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\tb := make([]byte, 0, len(s)+len(replacement))",
+         "matchingRanges": {
+          "lineNumber": "762"
+         },
+         "lineNumber": "762",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 19,
+            "length": 1
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 40
+    },
+    "resultToken": "CA8SBAgBIAE4nsjIrqaxz_TnAUAASA8"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/mime/encodedword.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// splitting the encoded-word.",
+         "matchingRanges": {
+          "lineNumber": "85"
+         },
+         "lineNumber": "85",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 30
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tif !isUTF8(charset) || base64.StdEncoding.EncodedLen(len(s)) \u003c= maxContentLen {",
+         "matchingRanges": {
+          "lineNumber": "86",
+          "columnRanges": [
+           {
+            "startIndex": 7,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "86",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 7,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tio.WriteString(w, s)",
+         "matchingRanges": {
+          "lineNumber": "87"
+         },
+         "lineNumber": "87"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// We only split encoded-words when the charset is UTF-8.",
+         "matchingRanges": {
+          "lineNumber": "115"
+         },
+         "lineNumber": "115",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 57
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tif !isUTF8(charset) {",
+         "matchingRanges": {
+          "lineNumber": "116",
+          "columnRanges": [
+           {
+            "startIndex": 7,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "116",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 7,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\t\twriteQString(buf, s)",
+         "matchingRanges": {
+          "lineNumber": "117"
+         },
+         "lineNumber": "117"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func isUTF8(charset string) bool {",
+         "matchingRanges": {
+          "lineNumber": "180",
+          "columnRanges": [
+           {
+            "startIndex": 7,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "180",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 7,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\treturn strings.EqualFold(charset, \"UTF-8\")",
+         "matchingRanges": {
+          "lineNumber": "181"
+         },
+         "lineNumber": "181",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 35,
+            "length": 7
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 7
+    },
+    "resultToken": "CBASBAgBIAE4hriTp9j_j7FcQABIEA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/strings/strings.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\"unicode\"",
+         "matchingRanges": {
+          "lineNumber": "14"
+         },
+         "lineNumber": "14",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 1,
+            "length": 9
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\"unicode/utf8\"",
+         "matchingRanges": {
+          "lineNumber": "15",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "15",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 1,
+            "length": 14
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": ")",
+         "matchingRanges": {
+          "lineNumber": "16"
+         },
+         "lineNumber": "16"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func explode(s string, n int) []string {",
+         "matchingRanges": {
+          "lineNumber": "23"
+         },
+         "lineNumber": "23",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tl := utf8.RuneCountInString(s)",
+         "matchingRanges": {
+          "lineNumber": "24",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "24",
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\tif n \u003c 0 || n \u003e l {",
+         "matchingRanges": {
+          "lineNumber": "25"
+         },
+         "lineNumber": "25",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 1
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// ToValidUTF8 returns a copy of the string s with each run of invalid UTF-8 byte sequences",
+         "matchingRanges": {
+          "lineNumber": "769",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "769",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 91
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "// replaced by the replacement string, which may be empty.",
+         "matchingRanges": {
+          "lineNumber": "770"
+         },
+         "lineNumber": "770",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 58
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "func ToValidUTF8(s, replacement string) string {",
+         "matchingRanges": {
+          "lineNumber": "771",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "771",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\tvar b Builder",
+         "matchingRanges": {
+          "lineNumber": "772"
+         },
+         "lineNumber": "772",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 40
+    },
+    "resultToken": "CBESBAgBIAE41rHQ74Wf-sH7AUAASBE"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/bytes/bytes_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "var toValidUTF8Tests = []struct {",
+         "matchingRanges": {
+          "lineNumber": "1319",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "1319",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 25,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\tin   string",
+         "matchingRanges": {
+          "lineNumber": "1320"
+         },
+         "lineNumber": "1320"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func TestToValidUTF8(t *testing.T) {",
+         "matchingRanges": {
+          "lineNumber": "1340",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "1340",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\tfor _, tc := range toValidUTF8Tests {",
+         "matchingRanges": {
+          "lineNumber": "1341",
+          "columnRanges": [
+           {
+            "startIndex": 27,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "1341",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 14,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 27,
+           "length": 4
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func BenchmarkToValidUTF8(b *testing.B) {",
+         "matchingRanges": {
+          "lineNumber": "2249",
+          "columnRanges": [
+           {
+            "startIndex": 21,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "2249",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 21,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\ttests := []struct {",
+         "matchingRanges": {
+          "lineNumber": "2250"
+         },
+         "lineNumber": "2250",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func BenchmarkIndexAnyUTF8(b *testing.B) {",
+         "matchingRanges": {
+          "lineNumber": "2422",
+          "columnRanges": [
+           {
+            "startIndex": 22,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "2422",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 22,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\tx := Repeat([]byte{'#'}, 2048) // Never matches set",
+         "matchingRanges": {
+          "lineNumber": "2423"
+         },
+         "lineNumber": "2423",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 26,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 32,
+            "length": 20
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func BenchmarkLastIndexAnyUTF8(b *testing.B) {",
+         "matchingRanges": {
+          "lineNumber": "2450",
+          "columnRanges": [
+           {
+            "startIndex": 26,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "2450",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 26,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\tx := Repeat([]byte{'#'}, 2048) // Never matches set",
+         "matchingRanges": {
+          "lineNumber": "2451"
+         },
+         "lineNumber": "2451",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 26,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 32,
+            "length": 20
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 20
+    },
+    "resultToken": "CBISBAgBIAE4lIeUi-DSy-GFAUAASBI"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/archive/zip/writer.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// detectUTF8 reports whether s is a valid UTF-8 string, and whether the string",
+         "matchingRanges": {
+          "lineNumber": "247",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "247",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 79
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "// must be considered UTF-8 encoding (i.e., not compatible with CP-437, ASCII,",
+         "matchingRanges": {
+          "lineNumber": "248"
+         },
+         "lineNumber": "248",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 78
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "// or any other common encoding).",
+         "matchingRanges": {
+          "lineNumber": "249"
+         },
+         "lineNumber": "249",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 33
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "func detectUTF8(s string) (valid, require bool) {",
+         "matchingRanges": {
+          "lineNumber": "250",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "250",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\tfor i := 0; i \u003c len(s); {",
+         "matchingRanges": {
+          "lineNumber": "251"
+         },
+         "lineNumber": "251",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 10,
+            "length": 1
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tr, size := utf8.DecodeRuneInString(s[i:])",
+         "matchingRanges": {
+          "lineNumber": "252",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "252",
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 4
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tutf8Valid1, utf8Require1 := detectUTF8(fh.Name)",
+         "matchingRanges": {
+          "lineNumber": "313",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 4
+           },
+           {
+            "startIndex": 13,
+            "length": 4
+           },
+           {
+            "startIndex": 35,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "313",
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 4
+          },
+          {
+           "startIndex": 13,
+           "length": 4
+          },
+          {
+           "startIndex": 35,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\tutf8Valid2, utf8Require2 := detectUTF8(fh.Comment)",
+         "matchingRanges": {
+          "lineNumber": "314",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 4
+           },
+           {
+            "startIndex": 13,
+            "length": 4
+           },
+           {
+            "startIndex": 35,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "314",
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 4
+          },
+          {
+           "startIndex": 13,
+           "length": 4
+          },
+          {
+           "startIndex": 35,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\tswitch {",
+         "matchingRanges": {
+          "lineNumber": "315"
+         },
+         "lineNumber": "315",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tcase fh.NonUTF8:",
+         "matchingRanges": {
+          "lineNumber": "316",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "316",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 4
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 9
+    },
+    "resultToken": "CBMSBAgBIAE4oOaE2_OI35X1AUAASBM"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/regexp/syntax/parse.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tErrInvalidRepeatSize     ErrorCode = \"invalid repeat count\"",
+         "matchingRanges": {
+          "lineNumber": "40"
+         },
+         "lineNumber": "40",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 38,
+            "length": 22
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tErrInvalidUTF8           ErrorCode = \"invalid UTF-8\"",
+         "matchingRanges": {
+          "lineNumber": "41",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "41",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 38,
+            "length": 15
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\tErrMissingBracket        ErrorCode = \"missing closing ]\"",
+         "matchingRanges": {
+          "lineNumber": "42"
+         },
+         "lineNumber": "42",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 38,
+            "length": 19
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t// Trivial parser for literal string.",
+         "matchingRanges": {
+          "lineNumber": "906"
+         },
+         "lineNumber": "906",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 37
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tif err := checkUTF8(s); err != nil {",
+         "matchingRanges": {
+          "lineNumber": "907",
+          "columnRanges": [
+           {
+            "startIndex": 17,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "907",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 17,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\treturn nil, err",
+         "matchingRanges": {
+          "lineNumber": "908"
+         },
+         "lineNumber": "908",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 3,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func checkUTF8(s string) error {",
+         "matchingRanges": {
+          "lineNumber": "2202",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "2202",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\tfor s != \"\" {",
+         "matchingRanges": {
+          "lineNumber": "2203"
+         },
+         "lineNumber": "2203",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 10,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 16
+    },
+    "resultToken": "CBQSBAgBIAE49v2miI2g4b-vAUAASBQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/archive/zip/struct.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// NonUTF8 indicates that Name and Comment are not encoded in UTF-8.",
+         "matchingRanges": {
+          "lineNumber": "97",
+          "columnRanges": [
+           {
+            "startIndex": 7,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "97",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 68
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 7,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\t//",
+         "matchingRanges": {
+          "lineNumber": "98"
+         },
+         "lineNumber": "98",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// automatically sets the ZIP format's UTF-8 flag for valid UTF-8 strings.",
+         "matchingRanges": {
+          "lineNumber": "105"
+         },
+         "lineNumber": "105",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 74
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tNonUTF8 bool",
+         "matchingRanges": {
+          "lineNumber": "106",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "106",
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "107"
+         },
+         "lineNumber": "107"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CBUSBAgBIAE4qOP_kOed-rJZQABIFQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/debug/dwarf/const.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tAttrEntrypc       Attr = 0x52",
+         "matchingRanges": {
+          "lineNumber": "79"
+         },
+         "lineNumber": "79",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 26,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tAttrUseUTF8       Attr = 0x53",
+         "matchingRanges": {
+          "lineNumber": "80",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "80",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 26,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\tAttrExtension     Attr = 0x54",
+         "matchingRanges": {
+          "lineNumber": "81"
+         },
+         "lineNumber": "81",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 26,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBYSBAgBIAE40LDY1qvO75OLAUAASBY"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/bytes/example_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "func ExampleToValidUTF8() {",
+         "matchingRanges": {
+          "lineNumber": "521",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "521",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\tfmt.Printf(\"%s\\n\", bytes.ToValidUTF8([]byte(\"abc\"), []byte(\"\\uFFFD\")))",
+         "matchingRanges": {
+          "lineNumber": "522",
+          "columnRanges": [
+           {
+            "startIndex": 33,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "522",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 12,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 45,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 60,
+            "length": 8
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 33,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\tfmt.Printf(\"%s\\n\", bytes.ToValidUTF8([]byte(\"a\\xffb\\xC0\\xAFc\\xff\"), []byte(\"\")))",
+         "matchingRanges": {
+          "lineNumber": "523",
+          "columnRanges": [
+           {
+            "startIndex": 33,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "523",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 12,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 45,
+            "length": 21
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 76,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 33,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\tfmt.Printf(\"%s\\n\", bytes.ToValidUTF8([]byte(\"\\xed\\xa0\\x80\"), []byte(\"abc\")))",
+         "matchingRanges": {
+          "lineNumber": "524",
+          "columnRanges": [
+           {
+            "startIndex": 33,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "524",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 12,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 45,
+            "length": 14
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 69,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 33,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\t// Output:",
+         "matchingRanges": {
+          "lineNumber": "525"
+         },
+         "lineNumber": "525",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 10
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 4
+    },
+    "resultToken": "CBcSBAgBIAE4gIuRn46vn_FXQABIFw"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/strconv/quote_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// Issue 23685: invalid UTF-8 should not go through the fast path.",
+         "matchingRanges": {
+          "lineNumber": "326"
+         },
+         "lineNumber": "326",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 66
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "func TestUnquoteInvalidUTF8(t *testing.T) {",
+         "matchingRanges": {
+          "lineNumber": "327",
+          "columnRanges": [
+           {
+            "startIndex": 23,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "327",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 23,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\ttests := []struct {",
+         "matchingRanges": {
+          "lineNumber": "328"
+         },
+         "lineNumber": "328",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBgSBAgBIAE4isvcnJzSlonuAUAASBg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/strings/strings_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "var toValidUTF8Tests = []struct {",
+         "matchingRanges": {
+          "lineNumber": "802",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "802",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 25,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\tin   string",
+         "matchingRanges": {
+          "lineNumber": "803"
+         },
+         "lineNumber": "803"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func TestToValidUTF8(t *testing.T) {",
+         "matchingRanges": {
+          "lineNumber": "823",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "823",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\tfor _, tc := range toValidUTF8Tests {",
+         "matchingRanges": {
+          "lineNumber": "824",
+          "columnRanges": [
+           {
+            "startIndex": 27,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "824",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 14,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 27,
+           "length": 4
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func BenchmarkToValidUTF8(b *testing.B) {",
+         "matchingRanges": {
+          "lineNumber": "980",
+          "columnRanges": [
+           {
+            "startIndex": 21,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "980",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 21,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\ttests := []struct {",
+         "matchingRanges": {
+          "lineNumber": "981"
+         },
+         "lineNumber": "981",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func BenchmarkIndexAnyUTF8(b *testing.B) {",
+         "matchingRanges": {
+          "lineNumber": "2143",
+          "columnRanges": [
+           {
+            "startIndex": 22,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "2143",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 22,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\tx := Repeat(\"#\", 2048) // Never matches set",
+         "matchingRanges": {
+          "lineNumber": "2144"
+         },
+         "lineNumber": "2144",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 13,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 18,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 24,
+            "length": 20
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func BenchmarkLastIndexAnyUTF8(b *testing.B) {",
+         "matchingRanges": {
+          "lineNumber": "2171",
+          "columnRanges": [
+           {
+            "startIndex": 26,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "2171",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 26,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\tx := Repeat(\"#\", 2048) // Never matches set",
+         "matchingRanges": {
+          "lineNumber": "2172"
+         },
+         "lineNumber": "2172",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 13,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 18,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 24,
+            "length": 20
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 25
+    },
+    "resultToken": "CBkSBAgBIAE4wOqtxu25toriAUAASBk"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/strings/example_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "func ExampleToValidUTF8() {",
+         "matchingRanges": {
+          "lineNumber": "452",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "452",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\tfmt.Printf(\"%s\\n\", strings.ToValidUTF8(\"abc\", \"\\uFFFD\"))",
+         "matchingRanges": {
+          "lineNumber": "453",
+          "columnRanges": [
+           {
+            "startIndex": 35,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "453",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 12,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 40,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 47,
+            "length": 8
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 35,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\tfmt.Printf(\"%s\\n\", strings.ToValidUTF8(\"a\\xffb\\xC0\\xAFc\\xff\", \"\"))",
+         "matchingRanges": {
+          "lineNumber": "454",
+          "columnRanges": [
+           {
+            "startIndex": 35,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "454",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 12,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 40,
+            "length": 21
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 63,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 35,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\tfmt.Printf(\"%s\\n\", strings.ToValidUTF8(\"\\xed\\xa0\\x80\", \"abc\"))",
+         "matchingRanges": {
+          "lineNumber": "455",
+          "columnRanges": [
+           {
+            "startIndex": 35,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "455",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 12,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 40,
+            "length": 14
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 56,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 35,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\t// Output:",
+         "matchingRanges": {
+          "lineNumber": "456"
+         },
+         "lineNumber": "456",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 10
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 4
+    },
+    "resultToken": "CBoSBAgBIAE44IOfkZWJx7WfAUAASBo"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/archive/zip/reader_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tMode     fs.FileMode",
+         "matchingRanges": {
+          "lineNumber": "37"
+         },
+         "lineNumber": "37"
+        },
+        {
+         "lineText": "\tNonUTF8  bool",
+         "matchingRanges": {
+          "lineNumber": "38",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "38",
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\tModTime  time.Time",
+         "matchingRanges": {
+          "lineNumber": "39"
+         },
+         "lineNumber": "39"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t\t\t// Format says encoding is not UTF-8, so we trust it.",
+         "matchingRanges": {
+          "lineNumber": "409"
+         },
+         "lineNumber": "409",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 53
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t\tNonUTF8:  true,",
+         "matchingRanges": {
+          "lineNumber": "410",
+          "columnRanges": [
+           {
+            "startIndex": 7,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "410",
+         "ranges": [
+          {
+           "startIndex": 7,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t\tModified: time.Date(2017, 11, 6, 13, 9, 27, 0, timeZone(-8*time.Hour)),",
+         "matchingRanges": {
+          "lineNumber": "411"
+         },
+         "lineNumber": "411",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 24,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 30,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 34,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 37,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 41,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 44,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 48,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 61,
+            "length": 1
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t\t\t// Name is valid UTF-8, but format does not have UTF-8 set.",
+         "matchingRanges": {
+          "lineNumber": "422"
+         },
+         "lineNumber": "422",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 59
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t\tNonUTF8:  true,",
+         "matchingRanges": {
+          "lineNumber": "423",
+          "columnRanges": [
+           {
+            "startIndex": 7,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "423",
+         "ranges": [
+          {
+           "startIndex": 7,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t\tModified: time.Date(2017, 11, 6, 13, 9, 27, 0, timeZone(-8*time.Hour)),",
+         "matchingRanges": {
+          "lineNumber": "424"
+         },
+         "lineNumber": "424",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 24,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 30,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 34,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 37,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 41,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 44,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 48,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 61,
+            "length": 1
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 8
+    },
+    "resultToken": "CBsSBAgBIAE4tLzMrYPTrf2NAUAASBs"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/syscall/ztypes_linux_386.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tIMAXBEL  = 0x2000",
+         "matchingRanges": {
+          "lineNumber": "630"
+         },
+         "lineNumber": "630",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 12,
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tIUTF8    = 0x4000",
+         "matchingRanges": {
+          "lineNumber": "631",
+          "columnRanges": [
+           {
+            "startIndex": 2,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "631",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 12,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 2,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\tOPOST    = 0x1",
+         "matchingRanges": {
+          "lineNumber": "632"
+         },
+         "lineNumber": "632",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 12,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBwSBAgBIAE49uCrra7S6rwrQABIHA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/syscall/ztypes_linux_arm.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tIMAXBEL  = 0x2000",
+         "matchingRanges": {
+          "lineNumber": "619"
+         },
+         "lineNumber": "619",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 12,
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tIUTF8    = 0x4000",
+         "matchingRanges": {
+          "lineNumber": "620",
+          "columnRanges": [
+           {
+            "startIndex": 2,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "620",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 12,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 2,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\tOPOST    = 0x1",
+         "matchingRanges": {
+          "lineNumber": "621"
+         },
+         "lineNumber": "621",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 12,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CB0SBAgBIAE40oSL6IGm1r3iAUAASB0"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/archive/zip/writer_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "func TestWriterUTF8(t *testing.T) {",
+         "matchingRanges": {
+          "lineNumber": "160",
+          "columnRanges": [
+           {
+            "startIndex": 15,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "160",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 15,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\tutf8Tests := []struct {",
+         "matchingRanges": {
+          "lineNumber": "161",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "161",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 16,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tname    string",
+         "matchingRanges": {
+          "lineNumber": "162"
+         },
+         "lineNumber": "162"
+        },
+        {
+         "lineText": "\t\tcomment string",
+         "matchingRanges": {
+          "lineNumber": "163"
+         },
+         "lineNumber": "163"
+        },
+        {
+         "lineText": "\t\tnonUTF8 bool",
+         "matchingRanges": {
+          "lineNumber": "164",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "164",
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tflags   uint16",
+         "matchingRanges": {
+          "lineNumber": "165"
+         },
+         "lineNumber": "165"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t\tcomment: \"in the world\",",
+         "matchingRanges": {
+          "lineNumber": "179"
+         },
+         "lineNumber": "179",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 12,
+            "length": 14
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\tnonUTF8: true,",
+         "matchingRanges": {
+          "lineNumber": "180",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "180",
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\tflags:   0x8,",
+         "matchingRanges": {
+          "lineNumber": "181"
+         },
+         "lineNumber": "181",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 12,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 8
+    },
+    "resultToken": "CB4SBAgBIAE4zsfb0vXw2swZQABIHg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/syscall/ztypes_linux_amd64.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tIMAXBEL  = 0x2000",
+         "matchingRanges": {
+          "lineNumber": "648"
+         },
+         "lineNumber": "648",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 12,
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tIUTF8    = 0x4000",
+         "matchingRanges": {
+          "lineNumber": "649",
+          "columnRanges": [
+           {
+            "startIndex": 2,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "649",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 12,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 2,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\tOPOST    = 0x1",
+         "matchingRanges": {
+          "lineNumber": "650"
+         },
+         "lineNumber": "650",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 12,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CB8SBAgBIAE4pP3rr6iQqDJAAEgf"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/syscall/zerrors_linux_mips.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tISTRIP                           = 0x20",
+         "matchingRanges": {
+          "lineNumber": "587"
+         },
+         "lineNumber": "587",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 36,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tIUTF8                            = 0x4000",
+         "matchingRanges": {
+          "lineNumber": "588",
+          "columnRanges": [
+           {
+            "startIndex": 2,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "588",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 36,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 2,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\tIXANY                            = 0x800",
+         "matchingRanges": {
+          "lineNumber": "589"
+         },
+         "lineNumber": "589",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 36,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CCASBAgBIAE4lOnV45fisMxxQABIIA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/encoding/asn1/asn1_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "type invalidUTF8Test struct {",
+         "matchingRanges": {
+          "lineNumber": "990",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "990",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 21,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\tStr string `asn1:\"utf8\"`",
+         "matchingRanges": {
+          "lineNumber": "991",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "991",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 12,
+            "length": 13
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 4
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func TestUnmarshalInvalidUTF8(t *testing.T) {",
+         "matchingRanges": {
+          "lineNumber": "994",
+          "columnRanges": [
+           {
+            "startIndex": 25,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "994",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 25,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\tdata := []byte(\"0\\x05\\f\\x03a\\xc9c\")",
+         "matchingRanges": {
+          "lineNumber": "995"
+         },
+         "lineNumber": "995",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 16,
+            "length": 19
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\tPrintable   string    `asn1:\"tag:2,printable\"`",
+         "matchingRanges": {
+          "lineNumber": "1194"
+         },
+         "lineNumber": "1194",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 24,
+            "length": 24
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tUTF8        string    `asn1:\"tag:3,utf8\"`",
+         "matchingRanges": {
+          "lineNumber": "1195",
+          "columnRanges": [
+           {
+            "startIndex": 2,
+            "length": 4
+           },
+           {
+            "startIndex": 37,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "1195",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 24,
+            "length": 19
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 2,
+           "length": 4
+          },
+          {
+           "startIndex": 37,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tNumeric     string    `asn1:\"tag:4,numeric\"`",
+         "matchingRanges": {
+          "lineNumber": "1196"
+         },
+         "lineNumber": "1196",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 24,
+            "length": 22
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\tPrintable:   \"printable\",",
+         "matchingRanges": {
+          "lineNumber": "1202"
+         },
+         "lineNumber": "1202",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 15,
+            "length": 11
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tUTF8:        \"utf8\",",
+         "matchingRanges": {
+          "lineNumber": "1203",
+          "columnRanges": [
+           {
+            "startIndex": 2,
+            "length": 4
+           },
+           {
+            "startIndex": 16,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "1203",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 15,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 2,
+           "length": 4
+          },
+          {
+           "startIndex": 16,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tNumeric:     \"123 456\",",
+         "matchingRanges": {
+          "lineNumber": "1204"
+         },
+         "lineNumber": "1204",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 15,
+            "length": 9
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 7
+    },
+    "resultToken": "CCESBAgBIAE47tm35cuj3tyyAUAASCE"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/syscall/zerrors_linux_arm64.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tISTRIP                           = 0x20",
+         "matchingRanges": {
+          "lineNumber": "604"
+         },
+         "lineNumber": "604",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 36,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tIUTF8                            = 0x4000",
+         "matchingRanges": {
+          "lineNumber": "605",
+          "columnRanges": [
+           {
+            "startIndex": 2,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "605",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 36,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 2,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\tIXANY                            = 0x800",
+         "matchingRanges": {
+          "lineNumber": "606"
+         },
+         "lineNumber": "606",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 36,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CCISBAgBIAE49P-Zs474-LQzQABIIg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/syscall/zerrors_linux_ppc64.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tISTRIP                           = 0x20",
+         "matchingRanges": {
+          "lineNumber": "602"
+         },
+         "lineNumber": "602",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 36,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tIUTF8                            = 0x4000",
+         "matchingRanges": {
+          "lineNumber": "603",
+          "columnRanges": [
+           {
+            "startIndex": 2,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "603",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 36,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 2,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\tIXANY                            = 0x800",
+         "matchingRanges": {
+          "lineNumber": "604"
+         },
+         "lineNumber": "604",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 36,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CCMSBAgBIAE4qLWXmLGP54idAUAASCM"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/syscall/zerrors_linux_s390x.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tISTRIP                           = 0x20",
+         "matchingRanges": {
+          "lineNumber": "601"
+         },
+         "lineNumber": "601",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 36,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tIUTF8                            = 0x4000",
+         "matchingRanges": {
+          "lineNumber": "602",
+          "columnRanges": [
+           {
+            "startIndex": 2,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "602",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 36,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 2,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\tIXANY                            = 0x800",
+         "matchingRanges": {
+          "lineNumber": "603"
+         },
+         "lineNumber": "603",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 36,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CCQSBAgBIAE4zu3G7t-Y1b_aAUAASCQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/encoding/json/v2/arshal.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// invalid UTF-8 checks in the current JSON object namespace.",
+         "matchingRanges": {
+          "lineNumber": "55"
+         },
+         "lineNumber": "55",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 61
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\terrChangingInvalidUTF8 = errors.New(\"cannot change UTF-8 checks after a JSON object has already begun processing\")",
+         "matchingRanges": {
+          "lineNumber": "56",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "56",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 37,
+            "length": 77
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "57"
+         },
+         "lineNumber": "57"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t\t}",
+         "matchingRanges": {
+          "lineNumber": "207"
+         },
+         "lineNumber": "207"
+        },
+        {
+         "lineText": "\t\t\tif optsOriginal.Flags.Get(jsonflags.AllowInvalidUTF8) != xe.Struct.Flags.Get(jsonflags.AllowInvalidUTF8) {",
+         "matchingRanges": {
+          "lineNumber": "208",
+          "columnRanges": [
+           {
+            "startIndex": 51,
+            "length": 4
+           },
+           {
+            "startIndex": 102,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "208",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 3,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 51,
+           "length": 4
+          },
+          {
+           "startIndex": 102,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t\treturn newMarshalErrorBefore(out, reflect.TypeOf(in), errChangingInvalidUTF8)",
+         "matchingRanges": {
+          "lineNumber": "209",
+          "columnRanges": [
+           {
+            "startIndex": 76,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "209",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 76,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t}",
+         "matchingRanges": {
+          "lineNumber": "210"
+         },
+         "lineNumber": "210"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t\tif optsOriginal.Flags.Get(jsonflags.AllowInvalidUTF8) != xd.Struct.Flags.Get(jsonflags.AllowInvalidUTF8) {",
+         "matchingRanges": {
+          "lineNumber": "431",
+          "columnRanges": [
+           {
+            "startIndex": 51,
+            "length": 4
+           },
+           {
+            "startIndex": 102,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "431",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 3,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 51,
+           "length": 4
+          },
+          {
+           "startIndex": 102,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t\treturn newUnmarshalErrorBefore(in, reflect.TypeOf(out), errChangingInvalidUTF8)",
+         "matchingRanges": {
+          "lineNumber": "432",
+          "columnRanges": [
+           {
+            "startIndex": 78,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "432",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 78,
+           "length": 4
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 5
+    },
+    "resultToken": "CCUSBAgBIAE4rLGygK361eIPQABIJQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/encoding/asn1/marshal_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "func TestInvalidUTF8(t *testing.T) {",
+         "matchingRanges": {
+          "lineNumber": "251",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "251",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\t_, err := Marshal(string([]byte{0xff, 0xff}))",
+         "matchingRanges": {
+          "lineNumber": "252"
+         },
+         "lineNumber": "252",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 33,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 39,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tif err == nil {",
+         "matchingRanges": {
+          "lineNumber": "253"
+         },
+         "lineNumber": "253",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tt.Errorf(\"invalid UTF8 string was accepted\")",
+         "matchingRanges": {
+          "lineNumber": "254",
+          "columnRanges": [
+           {
+            "startIndex": 20,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "254",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 34
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 20,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\t}",
+         "matchingRanges": {
+          "lineNumber": "255"
+         },
+         "lineNumber": "255"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CCYSBAgBIAE4hvbRyY_ToqIRQABIJg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/encoding/json/v2_diff_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "//",
+         "matchingRanges": {
+          "lineNumber": "739"
+         },
+         "lineNumber": "739",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "// Users of v2 can opt into the v1 behavior by setting [AllowInvalidUTF8].",
+         "matchingRanges": {
+          "lineNumber": "740",
+          "columnRanges": [
+           {
+            "startIndex": 68,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "740",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 74
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 68,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "//",
+         "matchingRanges": {
+          "lineNumber": "741"
+         },
+         "lineNumber": "741",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// See https://www.tbray.org/ongoing/When/201x/2017/12/14/RFC-8259-STD-90",
+         "matchingRanges": {
+          "lineNumber": "751"
+         },
+         "lineNumber": "751",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 73
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "func TestInvalidUTF8(t *testing.T) {",
+         "matchingRanges": {
+          "lineNumber": "752",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "752",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\tfor _, json := range jsonPackages {",
+         "matchingRanges": {
+          "lineNumber": "753"
+         },
+         "lineNumber": "753",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 16,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CCcSBAgBIAE4iOrZyP6z05OaAUAASCc"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/syscall/zerrors_darwin_arm64.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tISTRIP                            = 0x20",
+         "matchingRanges": {
+          "lineNumber": "617"
+         },
+         "lineNumber": "617",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 37,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tIUTF8                             = 0x4000",
+         "matchingRanges": {
+          "lineNumber": "618",
+          "columnRanges": [
+           {
+            "startIndex": 2,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "618",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 37,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 2,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\tIXANY                             = 0x800",
+         "matchingRanges": {
+          "lineNumber": "619"
+         },
+         "lineNumber": "619",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 37,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CCgSBAgBIAE4lqWE7tubtJUTQABIKA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/syscall/zerrors_darwin_amd64.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tISTRIP                            = 0x20",
+         "matchingRanges": {
+          "lineNumber": "613"
+         },
+         "lineNumber": "613",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 37,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tIUTF8                             = 0x4000",
+         "matchingRanges": {
+          "lineNumber": "614",
+          "columnRanges": [
+           {
+            "startIndex": 2,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "614",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 37,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 2,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\tIXANY                             = 0x800",
+         "matchingRanges": {
+          "lineNumber": "615"
+         },
+         "lineNumber": "615",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 37,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CCkSBAgBIAE4wtSGs-SKw7snQABIKQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/syscall/zerrors_linux_mipsle.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tISTRIP                           = 0x20",
+         "matchingRanges": {
+          "lineNumber": "587"
+         },
+         "lineNumber": "587",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 36,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tIUTF8                            = 0x4000",
+         "matchingRanges": {
+          "lineNumber": "588",
+          "columnRanges": [
+           {
+            "startIndex": 2,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "588",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 36,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 2,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\tIXANY                            = 0x800",
+         "matchingRanges": {
+          "lineNumber": "589"
+         },
+         "lineNumber": "589",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 36,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CCoSBAgBIAE4rIHY-5_A7LmhAUAASCo"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/syscall/zerrors_linux_mips64.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tISTRIP                           = 0x20",
+         "matchingRanges": {
+          "lineNumber": "600"
+         },
+         "lineNumber": "600",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 36,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tIUTF8                            = 0x4000",
+         "matchingRanges": {
+          "lineNumber": "601",
+          "columnRanges": [
+           {
+            "startIndex": 2,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "601",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 36,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 2,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\tIXANY                            = 0x800",
+         "matchingRanges": {
+          "lineNumber": "602"
+         },
+         "lineNumber": "602",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 36,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CCsSBAgBIAE44K-h2Omag7nYAUAASCs"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/encoding/json/decode_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "func TestMarshalInvalidUTF8(t *testing.T) {",
+         "matchingRanges": {
+          "lineNumber": "1324",
+          "columnRanges": [
+           {
+            "startIndex": 23,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "1324",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 23,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\ttests := []struct {",
+         "matchingRanges": {
+          "lineNumber": "1325"
+         },
+         "lineNumber": "1325",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\tcase",
+         "matchingRanges": {
+          "lineNumber": "1404"
+         },
+         "lineNumber": "1404",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t*InvalidUTF8Error,",
+         "matchingRanges": {
+          "lineNumber": "1405",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "1405",
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t*InvalidUnmarshalError,",
+         "matchingRanges": {
+          "lineNumber": "1406"
+         },
+         "lineNumber": "1406"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CCwSBAgBIAE4uIaH_-CmvI4zQABILA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/internal/test2json/test2json.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "//",
+         "matchingRanges": {
+          "lineNumber": "86"
+         },
+         "lineNumber": "86",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "// The output buffer must be \u003e= utf8.UTFMax, so that it can",
+         "matchingRanges": {
+          "lineNumber": "87",
+          "columnRanges": [
+           {
+            "startIndex": 32,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "87",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 59
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 32,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "// accumulate any single UTF8 sequence. Lines that fit entirely",
+         "matchingRanges": {
+          "lineNumber": "88",
+          "columnRanges": [
+           {
+            "startIndex": 25,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "88",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 63
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 25,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "// within the output buffer are emitted in single output events.",
+         "matchingRanges": {
+          "lineNumber": "89"
+         },
+         "lineNumber": "89",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 64
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// that fits entirely in cap(b). It will handle input lines longer than cap(b) by",
+         "matchingRanges": {
+          "lineNumber": "541"
+         },
+         "lineNumber": "541",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 81
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "// calling part(x) for sections of the line. The line will be split at UTF8 boundaries,",
+         "matchingRanges": {
+          "lineNumber": "542",
+          "columnRanges": [
+           {
+            "startIndex": 71,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "542",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 87
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 71,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "// and the final call to part for a long line includes the final newline.",
+         "matchingRanges": {
+          "lineNumber": "543"
+         },
+         "lineNumber": "543",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 73
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func trimUTF8(b []byte) int {",
+         "matchingRanges": {
+          "lineNumber": "666",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "666",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\t// Scan backward to find non-continuation byte.",
+         "matchingRanges": {
+          "lineNumber": "667"
+         },
+         "lineNumber": "667",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 47
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tfor i := 1; i \u003c utf8.UTFMax \u0026\u0026 i \u003c= len(b); i++ {",
+         "matchingRanges": {
+          "lineNumber": "668",
+          "columnRanges": [
+           {
+            "startIndex": 17,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "668",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 10,
+            "length": 1
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 17,
+           "length": 4
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 9
+    },
+    "resultToken": "CC0SBAgBIAE4oPX8nKKn0PPyAUAASC0"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/syscall/zerrors_linux_loong64.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tISTRIP                            = 0x20",
+         "matchingRanges": {
+          "lineNumber": "668"
+         },
+         "lineNumber": "668",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 37,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tIUTF8                             = 0x4000",
+         "matchingRanges": {
+          "lineNumber": "669",
+          "columnRanges": [
+           {
+            "startIndex": 2,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "669",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 37,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 2,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\tIXANY                             = 0x800",
+         "matchingRanges": {
+          "lineNumber": "670"
+         },
+         "lineNumber": "670",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 37,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CC4SBAgBIAE4_pOw6PqY1bAyQABILg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/syscall/zerrors_linux_riscv64.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tISTRIP                           = 0x20",
+         "matchingRanges": {
+          "lineNumber": "611"
+         },
+         "lineNumber": "611",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 36,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tIUTF8                            = 0x4000",
+         "matchingRanges": {
+          "lineNumber": "612",
+          "columnRanges": [
+           {
+            "startIndex": 2,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "612",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 36,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 2,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\tIXANY                            = 0x800",
+         "matchingRanges": {
+          "lineNumber": "613"
+         },
+         "lineNumber": "613",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 36,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CC8SBAgBIAE4soPkqPT60MR5QABILw"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/syscall/zerrors_linux_ppc64le.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tISTRIP                           = 0x20",
+         "matchingRanges": {
+          "lineNumber": "604"
+         },
+         "lineNumber": "604",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 36,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tIUTF8                            = 0x4000",
+         "matchingRanges": {
+          "lineNumber": "605",
+          "columnRanges": [
+           {
+            "startIndex": 2,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "605",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 36,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 2,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\tIXANY                            = 0x800",
+         "matchingRanges": {
+          "lineNumber": "606"
+         },
+         "lineNumber": "606",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 36,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CDASBAgBIAE4ivLaofjtvLHWAUAASDA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/syscall/zerrors_linux_mips64le.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tISTRIP                           = 0x20",
+         "matchingRanges": {
+          "lineNumber": "600"
+         },
+         "lineNumber": "600",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 36,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tIUTF8                            = 0x4000",
+         "matchingRanges": {
+          "lineNumber": "601",
+          "columnRanges": [
+           {
+            "startIndex": 2,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "601",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 36,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 2,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\tIXANY                            = 0x800",
+         "matchingRanges": {
+          "lineNumber": "602"
+         },
+         "lineNumber": "602",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 36,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CDESBAgBIAE45t35vu6aw6WeAUAASDE"
+   }
+  ],
+  "estimatedResultCount": "312",
+  "nextPageToken": "CKT966+okKgyCKyxsoCt+tXiDwiG9tHJj9OiohEIlqWE7tubtJUTCPLZ+Ku2vrWmFwjOx9vS9fDazBkInP7/8u6wwJQiCMLUhrPkisO7Jwj24KutrtLqvCsI/pOw6PqY1bAyCLiGh//gpryOMwj0/5mzjvj4tDMIsM7JrqO8y4I0CICLkZ+Or5/xVwio4/+Q5536slkIhriTp9j/j7FcCJTp1eOX4rDMcQiyg+So9PrQxHkI0I7m3Mbz++6EAQiUh5SL4NLL4YUBCMKAhbXs25ylhgEI0LDY1qvO75OLAQi0vMytg9Ot/Y0BCIjq2cj+s9OTmgEIqLWXmLGP54idAQjm3fm+7prDpZ4BCJrv/tru6OminwEI4IOfkZWJx7WfAQisgdj7n8DsuaEBCPb9poiNoOG/rwEI7tm35cuj3tyyAQicrLbEybzUzbUBCKqpt/rsxoToxQEIkNGb3Pr30L3IAQjSlPbc2r7KiM8BCIry2qH47byx1gEI4K+h2Omag7nYAQiSvJPRvebc59gBCOyJnp3ujLDS2QEIzu3G7t+Y1b/aAQiKg9vVg7yl7d4BCMDqrcbtubaK4gEI0oSL6IGm1r3iAQieyMiuprHP9OcBCIrL3Jyc0paJ7gEIoPX8nKKn0PPyAQig5oTb84jflfUBCNax0O+Fn/rB+wEI+qPPqtWgtLr8AQi2sum5js+Xjv8B",
+  "exhaustive": true,
+  "requestToken": "CgR1dGY4Eh0oIGdpdDpnby9nb0BtYXN0ZXIgY2FzZTp5ZXMgKRoMCKi8qNEGEOLdn_ICIAwqADIASAE"
+ }
+}

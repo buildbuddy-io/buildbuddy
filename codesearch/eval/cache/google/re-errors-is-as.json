@@ -1,0 +1,6930 @@
+{
+ "query": "errors\\.(Is|As)\\(",
+ "oss_project": "go",
+ "repo_name": "go",
+ "page_size": 50,
+ "fetched_at": "2026-06-11T02:30:18Z",
+ "response": {
+  "searchResults": [
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/errors/errors.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "//",
+         "matchingRanges": {
+          "lineNumber": "35"
+         },
+         "lineNumber": "35",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "//\tif errors.Is(err, fs.ErrExist)",
+         "matchingRanges": {
+          "lineNumber": "36",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "36",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 33
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "//",
+         "matchingRanges": {
+          "lineNumber": "37"
+         },
+         "lineNumber": "37",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "//",
+         "matchingRanges": {
+          "lineNumber": "83"
+         },
+         "lineNumber": "83",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "//\terrors.Is(err, errors.ErrUnsupported)",
+         "matchingRanges": {
+          "lineNumber": "84",
+          "columnRanges": [
+           {
+            "startIndex": 3,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "84",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 40
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 3,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "//",
+         "matchingRanges": {
+          "lineNumber": "85"
+         },
+         "lineNumber": "85",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAASAggBOMyw287h-OaF2gFAAEgA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/os/error.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// This function predates [errors.Is]. It only supports errors returned by",
+         "matchingRanges": {
+          "lineNumber": "78"
+         },
+         "lineNumber": "78",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 74
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "// the os package. New code should use errors.Is(err, fs.ErrExist).",
+         "matchingRanges": {
+          "lineNumber": "79",
+          "columnRanges": [
+           {
+            "startIndex": 39,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "79",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 67
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 39,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "func IsExist(err error) bool {",
+         "matchingRanges": {
+          "lineNumber": "80"
+         },
+         "lineNumber": "80",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// This function predates [errors.Is]. It only supports errors returned by",
+         "matchingRanges": {
+          "lineNumber": "88"
+         },
+         "lineNumber": "88",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 74
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "// the os package. New code should use errors.Is(err, fs.ErrNotExist).",
+         "matchingRanges": {
+          "lineNumber": "89",
+          "columnRanges": [
+           {
+            "startIndex": 39,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "89",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 70
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 39,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "func IsNotExist(err error) bool {",
+         "matchingRanges": {
+          "lineNumber": "90"
+         },
+         "lineNumber": "90",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// This function predates [errors.Is]. It only supports errors returned by",
+         "matchingRanges": {
+          "lineNumber": "98"
+         },
+         "lineNumber": "98",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 74
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "// the os package. New code should use errors.Is(err, fs.ErrPermission).",
+         "matchingRanges": {
+          "lineNumber": "99",
+          "columnRanges": [
+           {
+            "startIndex": 39,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "99",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 72
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 39,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "func IsPermission(err error) bool {",
+         "matchingRanges": {
+          "lineNumber": "100"
+         },
+         "lineNumber": "100",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CAESAggBOOat7PGU2PizGkAASAE"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/errors/wrap_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\tt.Run(\"\", func(t *testing.T) {",
+         "matchingRanges": {
+          "lineNumber": "64"
+         },
+         "lineNumber": "64",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\tif got := errors.Is(tc.err, tc.target); got != tc.match {",
+         "matchingRanges": {
+          "lineNumber": "65",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "65",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 3,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t\tt.Errorf(\"Is(%v, %v) = %v, want %v\", tc.err, tc.target, got, tc.match)",
+         "matchingRanges": {
+          "lineNumber": "66"
+         },
+         "lineNumber": "66",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 13,
+            "length": 26
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\tt.Run(name, func(t *testing.T) {",
+         "matchingRanges": {
+          "lineNumber": "204"
+         },
+         "lineNumber": "204",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 14,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\tmatch := errors.As(tc.err, tc.target)",
+         "matchingRanges": {
+          "lineNumber": "205",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "205",
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\tif match != tc.match {",
+         "matchingRanges": {
+          "lineNumber": "206"
+         },
+         "lineNumber": "206",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 3,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t\t}()",
+         "matchingRanges": {
+          "lineNumber": "232"
+         },
+         "lineNumber": "232"
+        },
+        {
+         "lineText": "\t\t\tif errors.As(err, tc) {",
+         "matchingRanges": {
+          "lineNumber": "233",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "233",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 3,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t\tt.Errorf(\"As(err, %T(%v)) = true, want false\", tc, tc)",
+         "matchingRanges": {
+          "lineNumber": "234"
+         },
+         "lineNumber": "234",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 13,
+            "length": 36
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 5
+    },
+    "resultToken": "CAISAggBOJTiu5Cz8rryQ0AASAI"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/os/error_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t}",
+         "matchingRanges": {
+          "lineNumber": "80"
+         },
+         "lineNumber": "80"
+        },
+        {
+         "lineText": "\tif !errors.Is(err, target) {",
+         "matchingRanges": {
+          "lineNumber": "81",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "81",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t\treturn fmt.Sprintf(\"errors.Is(%#v, %#v) = false, want true\", err, target)",
+         "matchingRanges": {
+          "lineNumber": "82",
+          "columnRanges": [
+           {
+            "startIndex": 22,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "82",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 21,
+            "length": 40
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 22,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t}",
+         "matchingRanges": {
+          "lineNumber": "83"
+         },
+         "lineNumber": "83"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\tif is := errors.Is(tt.err, fs.ErrExist); is != tt.is {",
+         "matchingRanges": {
+          "lineNumber": "114",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "114",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\tt.Errorf(\"errors.Is(%T %v, fs.ErrExist) = %v, want %v\", tt.err, tt.err, is, tt.is)",
+         "matchingRanges": {
+          "lineNumber": "115",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "115",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 12,
+            "length": 45
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 10
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t}",
+         "matchingRanges": {
+          "lineNumber": "119"
+         },
+         "lineNumber": "119"
+        },
+        {
+         "lineText": "\t\tif isnot := errors.Is(tt.err, fs.ErrNotExist); isnot != tt.isnot {",
+         "matchingRanges": {
+          "lineNumber": "120",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "120",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\tt.Errorf(\"errors.Is(%T %v, fs.ErrNotExist) = %v, want %v\", tt.err, tt.err, isnot, tt.isnot)",
+         "matchingRanges": {
+          "lineNumber": "121",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "121",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 12,
+            "length": 48
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t}",
+         "matchingRanges": {
+          "lineNumber": "122"
+         },
+         "lineNumber": "122"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 9
+    },
+    "resultToken": "CAMSAggBOPyCofCzpfPHKEAASAM"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/errors/example_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tfmt.Println(\"Errors using distinct errors.New calls:\")",
+         "matchingRanges": {
+          "lineNumber": "63"
+         },
+         "lineNumber": "63",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 13,
+            "length": 41
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tfmt.Printf(\"Is(%q, %q) = %v\\n\", err1, err2, errors.Is(err1, err2))",
+         "matchingRanges": {
+          "lineNumber": "64",
+          "columnRanges": [
+           {
+            "startIndex": 45,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "64",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 12,
+            "length": 19
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 45,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "65"
+         },
+         "lineNumber": "65"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tfmt.Println(\"Errors using a sentinel error:\")",
+         "matchingRanges": {
+          "lineNumber": "69"
+         },
+         "lineNumber": "69",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 13,
+            "length": 32
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tfmt.Printf(\"Is(%q, %q) = %v\\n\", err3, err4, errors.Is(err3, err4))",
+         "matchingRanges": {
+          "lineNumber": "70",
+          "columnRanges": [
+           {
+            "startIndex": 45,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "70",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 12,
+            "length": 19
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 45,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "71"
+         },
+         "lineNumber": "71"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tif errors.Is(err, err1) {",
+         "matchingRanges": {
+          "lineNumber": "96",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "96",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tfmt.Println(\"err is err1\")",
+         "matchingRanges": {
+          "lineNumber": "97"
+         },
+         "lineNumber": "97",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 14,
+            "length": 13
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t}",
+         "matchingRanges": {
+          "lineNumber": "98"
+         },
+         "lineNumber": "98"
+        },
+        {
+         "lineText": "\tif errors.Is(err, err2) {",
+         "matchingRanges": {
+          "lineNumber": "99",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "99",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 10
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 8
+    },
+    "resultToken": "CAQSAggBOOLfkMrFmtmfQUAASAQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/error_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tif !isShutdown \u0026\u0026 !errors.Is(nestedErr, ErrClosed) {",
+         "matchingRanges": {
+          "lineNumber": "521",
+          "columnRanges": [
+           {
+            "startIndex": 20,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "521",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 20,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t\treturn fmt.Errorf(\"errors.Is(%v, errClosed) returns false, want true\", nestedErr)",
+         "matchingRanges": {
+          "lineNumber": "522",
+          "columnRanges": [
+           {
+            "startIndex": 21,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "522",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 51
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 21,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t}",
+         "matchingRanges": {
+          "lineNumber": "523"
+         },
+         "lineNumber": "523"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func TestContextError(t *testing.T) {",
+         "matchingRanges": {
+          "lineNumber": "811"
+         },
+         "lineNumber": "811",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tif !errors.Is(errCanceled, context.Canceled) {",
+         "matchingRanges": {
+          "lineNumber": "812",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "812",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tt.Error(\"errCanceled is not context.Canceled\")",
+         "matchingRanges": {
+          "lineNumber": "813"
+         },
+         "lineNumber": "813",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 10,
+            "length": 37
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t}",
+         "matchingRanges": {
+          "lineNumber": "814"
+         },
+         "lineNumber": "814"
+        },
+        {
+         "lineText": "\tif !errors.Is(errTimeout, context.DeadlineExceeded) {",
+         "matchingRanges": {
+          "lineNumber": "815",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "815",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tt.Error(\"errTimeout is not context.DeadlineExceeded\")",
+         "matchingRanges": {
+          "lineNumber": "816"
+         },
+         "lineNumber": "816",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 10,
+            "length": 44
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 4
+    },
+    "resultToken": "CAUSAggBOMTI7dOW-429-gFAAEgF"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/vendor/golang.org/x/tools/go/analysis/passes/errorsas/errorsas.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tvar unwrappedErr net.DNSError",
+         "matchingRanges": {
+          "lineNumber": "25"
+         },
+         "lineNumber": "25",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "length": 30
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\terrors.As(err, unwrappedErr) // should use \u0026unwrappedErr, DNSError.Error has a pointer receiver",
+         "matchingRanges": {
+          "lineNumber": "26",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "26",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "length": 96
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "`",
+         "matchingRanges": {
+          "lineNumber": "27"
+         },
+         "lineNumber": "27",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "length": 1
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\tif len(call.Args) \u003c 2 {",
+         "matchingRanges": {
+          "lineNumber": "52"
+         },
+         "lineNumber": "52",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 22,
+            "length": 1
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\tcontinue // spread call: errors.As(pair())",
+         "matchingRanges": {
+          "lineNumber": "53",
+          "columnRanges": [
+           {
+            "startIndex": 28,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "53",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 3,
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 12,
+            "length": 33
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 28,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t}",
+         "matchingRanges": {
+          "lineNumber": "54"
+         },
+         "lineNumber": "54"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAYSAggBOKD27NzYwZXx8wFAAEgG"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/encoding/json/v2/errors.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "func wrapErrUnsupported(err error, what string) error {",
+         "matchingRanges": {
+          "lineNumber": "311"
+         },
+         "lineNumber": "311",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tif errors.Is(err, errors.ErrUnsupported) {",
+         "matchingRanges": {
+          "lineNumber": "312",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "312",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t\treturn errors.New(what + \" may not return errors.ErrUnsupported\")",
+         "matchingRanges": {
+          "lineNumber": "313"
+         },
+         "lineNumber": "313",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 27,
+            "length": 39
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAcSAggBOPDd8sqVptqb7QFAAEgH"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/error_unix_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "func isENOBUFS(err error) bool {",
+         "matchingRanges": {
+          "lineNumber": "36"
+         },
+         "lineNumber": "36",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\treturn errors.Is(err, syscall.ENOBUFS)",
+         "matchingRanges": {
+          "lineNumber": "37",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "37",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "}",
+         "matchingRanges": {
+          "lineNumber": "38"
+         },
+         "lineNumber": "38"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAgSAggBOOy10qzhi4roN0AASAg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/error_windows_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// defined in the syscall package we may as well check for it.",
+         "matchingRanges": {
+          "lineNumber": "26"
+         },
+         "lineNumber": "26",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 62
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\treturn errors.Is(err, syscall.ENOBUFS)",
+         "matchingRanges": {
+          "lineNumber": "27",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "27",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "}",
+         "matchingRanges": {
+          "lineNumber": "28"
+         },
+         "lineNumber": "28"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAkSAggBONLNtbHz99DpMkAASAk"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/go/internal/base/error_unix.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "func IsETXTBSY(err error) bool {",
+         "matchingRanges": {
+          "lineNumber": "14"
+         },
+         "lineNumber": "14",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\treturn errors.Is(err, syscall.ETXTBSY)",
+         "matchingRanges": {
+          "lineNumber": "15",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "15",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "}",
+         "matchingRanges": {
+          "lineNumber": "16"
+         },
+         "lineNumber": "16"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAoSAggBOOz3rdHhmoyMrwFAAEgK"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/vendor/golang.org/x/tools/go/analysis/passes/modernize/errorsastype.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "//\tvar myerr *MyErr",
+         "matchingRanges": {
+          "lineNumber": "38"
+         },
+         "lineNumber": "38",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 19
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "//\tif errors.As(err, \u0026myerr) { ... }",
+         "matchingRanges": {
+          "lineNumber": "39",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "39",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 36
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "//",
+         "matchingRanges": {
+          "lineNumber": "40"
+         },
+         "lineNumber": "40",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "//\tswitch {",
+         "matchingRanges": {
+          "lineNumber": "52"
+         },
+         "lineNumber": "52",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 11
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "//\tcase errors.As(err, \u0026myerr):",
+         "matchingRanges": {
+          "lineNumber": "53",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "53",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 31
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "//\t}",
+         "matchingRanges": {
+          "lineNumber": "54"
+         },
+         "lineNumber": "54",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// TODO(adonovan): support more cases:",
+         "matchingRanges": {
+          "lineNumber": "65"
+         },
+         "lineNumber": "65",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 38
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "// - if myerr := new(E); errors.As(err, myerr); { ... }",
+         "matchingRanges": {
+          "lineNumber": "66",
+          "columnRanges": [
+           {
+            "startIndex": 25,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "66",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 55
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 25,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "// - if errors.As(err, myerr) \u0026\u0026 othercond { ... }",
+         "matchingRanges": {
+          "lineNumber": "67",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "67",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 50
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "func errorsastype(pass *analysis.Pass) (any, error) {",
+         "matchingRanges": {
+          "lineNumber": "68"
+         },
+         "lineNumber": "68",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 8
+    },
+    "resultToken": "CAsSAggBOPCZ1LLzqb2VNUAASAs"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/http/httputil/reverseproxy.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tconn, brw, hijackErr := rc.Hijack()",
+         "matchingRanges": {
+          "lineNumber": "839"
+         },
+         "lineNumber": "839"
+        },
+        {
+         "lineText": "\tif errors.Is(hijackErr, http.ErrNotSupported) {",
+         "matchingRanges": {
+          "lineNumber": "840",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "840",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tp.getErrorHandler()(rw, req, fmt.Errorf(\"can't switch protocols using non-Hijacker ResponseWriter type %T\", rw))",
+         "matchingRanges": {
+          "lineNumber": "841"
+         },
+         "lineNumber": "841",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 42,
+            "length": 66
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAwSAggBOMCD27Ha6o3O-gFAAEgM"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/http/internal/http2/server.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tif errors.Is(err, net.ErrClosed) {",
+         "matchingRanges": {
+          "lineNumber": "615",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "615",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t\treturn true",
+         "matchingRanges": {
+          "lineNumber": "616"
+         },
+         "lineNumber": "616",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CA0SAggBOJTppZbnm-O27wFAAEgN"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/http/httputil/reverseproxy_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\tb := make([]byte, 1)",
+         "matchingRanges": {
+          "lineNumber": "1581"
+         },
+         "lineNumber": "1581",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 1
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tif _, err := conn.Read(b); !errors.Is(err, e) {",
+         "matchingRanges": {
+          "lineNumber": "1582",
+          "columnRanges": [
+           {
+            "startIndex": 30,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "1582",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 30,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\tt.Errorf(\"failed to read error: %v\", err)",
+         "matchingRanges": {
+          "lineNumber": "1583"
+         },
+         "lineNumber": "1583",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 12,
+            "length": 26
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CA4SAggBOJ6rl73j9dysmgFAAEgO"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/internal/pgo/pprof.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tp, err := profile.Parse(r)",
+         "matchingRanges": {
+          "lineNumber": "20"
+         },
+         "lineNumber": "20"
+        },
+        {
+         "lineText": "\tif errors.Is(err, profile.ErrNoData) {",
+         "matchingRanges": {
+          "lineNumber": "21",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "21",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t// Treat a completely empty file the same as a profile with no",
+         "matchingRanges": {
+          "lineNumber": "22"
+         },
+         "lineNumber": "22",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 62
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CA8SAggBOML30ZLYtszk3AFAAEgP"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/internal/robustio/robustio_flaky.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t// increase in robustness is probably not worth the extra latency.",
+         "matchingRanges": {
+          "lineNumber": "79"
+         },
+         "lineNumber": "79",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 66
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\treturn err, isEphemeralError(err) \u0026\u0026 !errors.Is(err, errFileNotFound)",
+         "matchingRanges": {
+          "lineNumber": "80",
+          "columnRanges": [
+           {
+            "startIndex": 40,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "80",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 40,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t})",
+         "matchingRanges": {
+          "lineNumber": "81"
+         },
+         "lineNumber": "81"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBASAggBOMKwhNGPxLP7LUAASBA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/os/root_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t\t_, err = os.Lstat(target)",
+         "matchingRanges": {
+          "lineNumber": "647"
+         },
+         "lineNumber": "647"
+        },
+        {
+         "lineText": "\t\t\tif !errors.Is(err, os.ErrNotExist) {",
+         "matchingRanges": {
+          "lineNumber": "648",
+          "columnRanges": [
+           {
+            "startIndex": 7,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "648",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 3,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 7,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t\tt.Fatalf(`stat file removed with Root.Remove(%q): %v, want ErrNotExist`, test.open, err)",
+         "matchingRanges": {
+          "lineNumber": "649"
+         },
+         "lineNumber": "649",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 13,
+            "length": 62
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t\t_, err = os.Lstat(target)",
+         "matchingRanges": {
+          "lineNumber": "674"
+         },
+         "lineNumber": "674"
+        },
+        {
+         "lineText": "\t\t\tif !errors.Is(err, os.ErrNotExist) {",
+         "matchingRanges": {
+          "lineNumber": "675",
+          "columnRanges": [
+           {
+            "startIndex": 7,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "675",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 3,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 7,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t\tt.Fatalf(`stat file removed with Root.Remove(%q): %v, want ErrNotExist`, test.open, err)",
+         "matchingRanges": {
+          "lineNumber": "676"
+         },
+         "lineNumber": "676",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 13,
+            "length": 62
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t\ttargetExists := true",
+         "matchingRanges": {
+          "lineNumber": "699"
+         },
+         "lineNumber": "699"
+        },
+        {
+         "lineText": "\t\t\tif _, err := root.Lstat(test.open); errors.Is(err, os.ErrNotExist) {",
+         "matchingRanges": {
+          "lineNumber": "700",
+          "columnRanges": [
+           {
+            "startIndex": 39,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "700",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 3,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 39,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t\t// If the target doesn't exist, RemoveAll succeeds rather",
+         "matchingRanges": {
+          "lineNumber": "701"
+         },
+         "lineNumber": "701",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 57
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 7
+    },
+    "resultToken": "CBESAggBOPDu2NvxoKzRkAFAAEgR"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/pprof/proto_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\terr := Lookup(\"heap\").WriteTo(\u0026errWriter{}, 0)",
+         "matchingRanges": {
+          "lineNumber": "487"
+         },
+         "lineNumber": "487",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 15,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 45,
+            "length": 1
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tif !errors.Is(err, errWrite) {",
+         "matchingRanges": {
+          "lineNumber": "488",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "488",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tt.Fatalf(\"want error from writer, got: %v\", err)",
+         "matchingRanges": {
+          "lineNumber": "489"
+         },
+         "lineNumber": "489",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 33
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBISAggBOPLE-9qXpbeqB0AASBI"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/cgo/internal/testsanitizers/cc_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tif err != nil {",
+         "matchingRanges": {
+          "lineNumber": "524"
+         },
+         "lineNumber": "524",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tif errors.Is(compileCtx.Err(), context.DeadlineExceeded) {",
+         "matchingRanges": {
+          "lineNumber": "525",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "525",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\treturn true, fmt.Errorf(\"%#q timed out after %v\", cmd, probeTimeout)",
+         "matchingRanges": {
+          "lineNumber": "526"
+         },
+         "lineNumber": "526",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 3,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 27,
+            "length": 24
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tif out, err := cmd.CombinedOutput(); err != nil {",
+         "matchingRanges": {
+          "lineNumber": "551"
+         },
+         "lineNumber": "551",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tif errors.Is(runCtx.Err(), context.DeadlineExceeded) {",
+         "matchingRanges": {
+          "lineNumber": "552",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "552",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\treturn true, fmt.Errorf(\"%#q timed out after %v\", cmd, probeTimeout)",
+         "matchingRanges": {
+          "lineNumber": "553"
+         },
+         "lineNumber": "553",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 3,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 27,
+            "length": 24
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CBMSAggBON6Q_IunxKen3QFAAEgT"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/os/user/user_windows_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\terr = windows.NetUserAdd(nil, 1, (*byte)(unsafe.Pointer(\u0026userInfo)), nil)",
+         "matchingRanges": {
+          "lineNumber": "81"
+         },
+         "lineNumber": "81",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 32,
+            "length": 1
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tif errors.Is(err, syscall.ERROR_ACCESS_DENIED) {",
+         "matchingRanges": {
+          "lineNumber": "82",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "82",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\tt.Skip(\"skipping test; don't have permission to create user\")",
+         "matchingRanges": {
+          "lineNumber": "83"
+         },
+         "lineNumber": "83",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 10,
+            "length": 53
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t// If the user already exists, try again with a different name.",
+         "matchingRanges": {
+          "lineNumber": "85"
+         },
+         "lineNumber": "85",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 63
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tif errors.Is(err, windows.NERR_UserExists) {",
+         "matchingRanges": {
+          "lineNumber": "86",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "86",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\tif try++; try \u003c 1000 {",
+         "matchingRanges": {
+          "lineNumber": "87"
+         },
+         "lineNumber": "87",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 3,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 19,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t\tif err := windows.NetUserDel(nil, name16); err != nil {",
+         "matchingRanges": {
+          "lineNumber": "97"
+         },
+         "lineNumber": "97",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 3,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t\tif !errors.Is(err, windows.NERR_UserNotFound) {",
+         "matchingRanges": {
+          "lineNumber": "98",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "98",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t\t\tt.Fatal(err)",
+         "matchingRanges": {
+          "lineNumber": "99"
+         },
+         "lineNumber": "99"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CBQSAggBOKSNgdiDjJmOAkAASBQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/go/internal/cache/prog.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t_, err = c.send(c.ctx, \u0026cacheprog.Request{Command: cacheprog.CmdClose})",
+         "matchingRanges": {
+          "lineNumber": "358"
+         },
+         "lineNumber": "358"
+        },
+        {
+         "lineText": "\t\tif errors.Is(err, errCacheprogClosed) {",
+         "matchingRanges": {
+          "lineNumber": "359",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "359",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t// Allow the child to quit without responding to close.",
+         "matchingRanges": {
+          "lineNumber": "360"
+         },
+         "lineNumber": "360",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 3,
+            "length": 55
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBUSAggBOIzyobq4nNPqY0AASBU"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/internal/syscall/windows/version_windows.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\terr := syscall.SetsockoptInt(s, syscall.IPPROTO_TCP, opt, 1)",
+         "matchingRanges": {
+          "lineNumber": "79"
+         },
+         "lineNumber": "79",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 60,
+            "length": 1
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\treturn !errors.Is(err, syscall.WSAENOPROTOOPT)",
+         "matchingRanges": {
+          "lineNumber": "80",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "80",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t}",
+         "matchingRanges": {
+          "lineNumber": "81"
+         },
+         "lineNumber": "81"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBYSAggBOPSd-K-1kJaKDkAASBY"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/compile/internal/amd64/versions_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\tif err := cmd.Start(); err != nil {",
+         "matchingRanges": {
+          "lineNumber": "132"
+         },
+         "lineNumber": "132",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\tif errors.Is(err, exec.ErrNotFound) {",
+         "matchingRanges": {
+          "lineNumber": "133",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "133",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 3,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t\tt.Skipf(\"can't run test due to missing objdump: %s\", err)",
+         "matchingRanges": {
+          "lineNumber": "134"
+         },
+         "lineNumber": "134",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 12,
+            "length": 43
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBcSAggBOJC4lYuG3fzkQEAASBc"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/os/dir.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// already exists in the destination, CopyFS will return an error",
+         "matchingRanges": {
+          "lineNumber": "136"
+         },
+         "lineNumber": "136",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 65
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "// such that errors.Is(err, fs.ErrExist) will be true.",
+         "matchingRanges": {
+          "lineNumber": "137",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "137",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 54
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "//",
+         "matchingRanges": {
+          "lineNumber": "138"
+         },
+         "lineNumber": "138",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBgSAggBOOKX69-VmPCpOkAASBg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/net.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// I/O methods will return an error that wraps os.ErrDeadlineExceeded.",
+         "matchingRanges": {
+          "lineNumber": "158"
+         },
+         "lineNumber": "158",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 70
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t// This can be tested using errors.Is(err, os.ErrDeadlineExceeded).",
+         "matchingRanges": {
+          "lineNumber": "159",
+          "columnRanges": [
+           {
+            "startIndex": 29,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "159",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 67
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 29,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t// The error's Timeout method will return true, but note that there",
+         "matchingRanges": {
+          "lineNumber": "160"
+         },
+         "lineNumber": "160",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 67
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// I/O methods will return an error that wraps os.ErrDeadlineExceeded.",
+         "matchingRanges": {
+          "lineNumber": "361"
+         },
+         "lineNumber": "361",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 70
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t// This can be tested using errors.Is(err, os.ErrDeadlineExceeded).",
+         "matchingRanges": {
+          "lineNumber": "362",
+          "columnRanges": [
+           {
+            "startIndex": 29,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "362",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 67
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 29,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t// The error's Timeout method will return true, but note that there",
+         "matchingRanges": {
+          "lineNumber": "363"
+         },
+         "lineNumber": "363",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 67
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "//",
+         "matchingRanges": {
+          "lineNumber": "620"
+         },
+         "lineNumber": "620",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "//\terrors.Is(os.ErrDeadlineExceeded, context.DeadlineExceeded)",
+         "matchingRanges": {
+          "lineNumber": "621",
+          "columnRanges": [
+           {
+            "startIndex": 3,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "621",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 62
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 3,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "//",
+         "matchingRanges": {
+          "lineNumber": "622"
+         },
+         "lineNumber": "622",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 5
+    },
+    "resultToken": "CBkSAggBONig7pWj3N2w-wFAAEgZ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/os/file.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\terr = ErrClosed",
+         "matchingRanges": {
+          "lineNumber": "471"
+         },
+         "lineNumber": "471"
+        },
+        {
+         "lineText": "\t} else if checkWrapErr \u0026\u0026 errors.Is(err, poll.ErrFileClosing) {",
+         "matchingRanges": {
+          "lineNumber": "472",
+          "columnRanges": [
+           {
+            "startIndex": 27,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "472",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 3,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 27,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tpanic(\"unexpected error wrapping poll.ErrFileClosing: \" + err.Error())",
+         "matchingRanges": {
+          "lineNumber": "473"
+         },
+         "lineNumber": "473",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 49
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// methods will return an error that wraps ErrDeadlineExceeded.",
+         "matchingRanges": {
+          "lineNumber": "664"
+         },
+         "lineNumber": "664",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 63
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "// This can be tested using errors.Is(err, os.ErrDeadlineExceeded).",
+         "matchingRanges": {
+          "lineNumber": "665",
+          "columnRanges": [
+           {
+            "startIndex": 28,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "665",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 67
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 28,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "// That error implements the Timeout method, and calling the Timeout",
+         "matchingRanges": {
+          "lineNumber": "666"
+         },
+         "lineNumber": "666",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 68
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CBoSAggBOO6Shvys8Y6HpgFAAEga"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/go/internal/modcmd/vendor.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tif err != nil {",
+         "matchingRanges": {
+          "lineNumber": "315"
+         },
+         "lineNumber": "315",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tif errors.As(err, \u0026noGoError) {",
+         "matchingRanges": {
+          "lineNumber": "316",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "316",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\treturn // No source files in this package are built. Skip embeds in ignored files.",
+         "matchingRanges": {
+          "lineNumber": "317"
+         },
+         "lineNumber": "317",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 3,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 10,
+            "length": 75
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t} else if !errors.As(err, \u0026multiplePackageError) { // multiplePackageErrors are OK, but others are not.",
+         "matchingRanges": {
+          "lineNumber": "318",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "318",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 53,
+            "length": 52
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\tbase.Fatalf(\"internal error: failed to find embedded files of %s: %v\\n\", pkg, err)",
+         "matchingRanges": {
+          "lineNumber": "319"
+         },
+         "lineNumber": "319",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 15,
+            "length": 59
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CBsSAggBONS3-9LanrSgR0AASBs"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/go/internal/modload/query.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t\t\tinfo, err = repo.Stat(ctx, canonicalQuery)",
+         "matchingRanges": {
+          "lineNumber": "262"
+         },
+         "lineNumber": "262"
+        },
+        {
+         "lineText": "\t\t\t\tif err != nil \u0026\u0026 !errors.Is(err, fs.ErrNotExist) {",
+         "matchingRanges": {
+          "lineNumber": "263",
+          "columnRanges": [
+           {
+            "startIndex": 22,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "263",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 22,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t\t\treturn info, err",
+         "matchingRanges": {
+          "lineNumber": "264"
+         },
+         "lineNumber": "264",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 5,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t}",
+         "matchingRanges": {
+          "lineNumber": "270"
+         },
+         "lineNumber": "270"
+        },
+        {
+         "lineText": "\t\tif err := allowed(ctx, module.Version{Path: path, Version: info.Version}); errors.Is(err, ErrDisallowed) {",
+         "matchingRanges": {
+          "lineNumber": "271",
+          "columnRanges": [
+           {
+            "startIndex": 77,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "271",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 77,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\treturn nil, err",
+         "matchingRanges": {
+          "lineNumber": "272"
+         },
+         "lineNumber": "272",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 3,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t\tif err == nil \u0026\u0026 rev.Time.Before(currentTime) {",
+         "matchingRanges": {
+          "lineNumber": "335"
+         },
+         "lineNumber": "335",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 3,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t\tif err := allowed(ctx, module.Version{Path: path, Version: current}); errors.Is(err, ErrDisallowed) {",
+         "matchingRanges": {
+          "lineNumber": "336",
+          "columnRanges": [
+           {
+            "startIndex": 74,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "336",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 74,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t\t\treturn revWithOrigin(nil), err",
+         "matchingRanges": {
+          "lineNumber": "337"
+         },
+         "lineNumber": "337",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 5,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 9
+    },
+    "resultToken": "CBwSAggBOLyE2LiV05axfEAASBw"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/go/internal/modcmd/verify.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tif err != nil {",
+         "matchingRanges": {
+          "lineNumber": "108"
+         },
+         "lineNumber": "108",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tif zipErr != nil \u0026\u0026 errors.Is(zipErr, fs.ErrNotExist) \u0026\u0026",
+         "matchingRanges": {
+          "lineNumber": "109",
+          "columnRanges": [
+           {
+            "startIndex": 22,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "109",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 22,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\tdirErr != nil \u0026\u0026 errors.Is(dirErr, fs.ErrNotExist) {",
+         "matchingRanges": {
+          "lineNumber": "110",
+          "columnRanges": [
+           {
+            "startIndex": 20,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "110",
+         "ranges": [
+          {
+           "startIndex": 20,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t// Nothing downloaded yet. Nothing to verify.",
+         "matchingRanges": {
+          "lineNumber": "111"
+         },
+         "lineNumber": "111",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 3,
+            "length": 45
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tif zipErr != nil \u0026\u0026 errors.Is(zipErr, fs.ErrNotExist) {",
+         "matchingRanges": {
+          "lineNumber": "119",
+          "columnRanges": [
+           {
+            "startIndex": 21,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "119",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 21,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t// ok",
+         "matchingRanges": {
+          "lineNumber": "120"
+         },
+         "lineNumber": "120",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t}",
+         "matchingRanges": {
+          "lineNumber": "129"
+         },
+         "lineNumber": "129"
+        },
+        {
+         "lineText": "\tif dirErr != nil \u0026\u0026 errors.Is(dirErr, fs.ErrNotExist) {",
+         "matchingRanges": {
+          "lineNumber": "130",
+          "columnRanges": [
+           {
+            "startIndex": 21,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "130",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 21,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t// ok",
+         "matchingRanges": {
+          "lineNumber": "131"
+         },
+         "lineNumber": "131",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 4
+    },
+    "resultToken": "CB0SAggBOKKD9MrBgfWWxAFAAEgd"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/internal/syscall/windows/version_windows_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t}",
+         "matchingRanges": {
+          "lineNumber": "26"
+         },
+         "lineNumber": "26"
+        },
+        {
+         "lineText": "\twant := !errors.Is(err, windows.WSAEAFNOSUPPORT) \u0026\u0026 !errors.Is(err, windows.WSAEINVAL)",
+         "matchingRanges": {
+          "lineNumber": "27",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 10
+           },
+           {
+            "startIndex": 54,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "27",
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 10
+          },
+          {
+           "startIndex": 54,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\tif want != got {",
+         "matchingRanges": {
+          "lineNumber": "28"
+         },
+         "lineNumber": "28",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CB4SAggBOO6z8_Ce8JjSrwFAAEge"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/go/internal/modload/import.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t}",
+         "matchingRanges": {
+          "lineNumber": "70"
+         },
+         "lineNumber": "70"
+        },
+        {
+         "lineText": "\t\tif e.QueryErr != nil \u0026\u0026 !errors.Is(e.QueryErr, ErrNoModRoot) {",
+         "matchingRanges": {
+          "lineNumber": "71",
+          "columnRanges": [
+           {
+            "startIndex": 27,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "71",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 27,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\treturn fmt.Sprintf(\"cannot find module providing package %s: %v\", e.Path, e.QueryErr)",
+         "matchingRanges": {
+          "lineNumber": "72"
+         },
+         "lineNumber": "72",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 3,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 22,
+            "length": 45
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tif err != nil {",
+         "matchingRanges": {
+          "lineNumber": "646"
+         },
+         "lineNumber": "646",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tif errors.Is(err, fs.ErrNotExist) {",
+         "matchingRanges": {
+          "lineNumber": "647",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "647",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t// Return \"cannot find module providing package […]\" instead of whatever",
+         "matchingRanges": {
+          "lineNumber": "648"
+         },
+         "lineNumber": "648",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 3,
+            "length": 72
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t\treturn ip.IsGoDir()",
+         "matchingRanges": {
+          "lineNumber": "772"
+         },
+         "lineNumber": "772",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 3,
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t} else if !errors.Is(err, modindex.ErrNotIndexed) {",
+         "matchingRanges": {
+          "lineNumber": "773",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "773",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\treturn false, err",
+         "matchingRanges": {
+          "lineNumber": "774"
+         },
+         "lineNumber": "774",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 3,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CB8SAggBOPCi9uT9182OV0AASB8"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/go/internal/modfetch/proxy.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t}",
+         "matchingRanges": {
+          "lineNumber": "166"
+         },
+         "lineNumber": "166"
+        },
+        {
+         "lineText": "\t\tisNotExistErr := errors.Is(err, fs.ErrNotExist)",
+         "matchingRanges": {
+          "lineNumber": "167",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "167",
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "168"
+         },
+         "lineNumber": "168"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\tvar iv *module.InvalidVersionError",
+         "matchingRanges": {
+          "lineNumber": "241"
+         },
+         "lineNumber": "241",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tif !errors.As(err, \u0026iv) {",
+         "matchingRanges": {
+          "lineNumber": "242",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "242",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\tiv = \u0026module.InvalidVersionError{",
+         "matchingRanges": {
+          "lineNumber": "243"
+         },
+         "lineNumber": "243"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tif err != nil {",
+         "matchingRanges": {
+          "lineNumber": "393"
+         },
+         "lineNumber": "393",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tif !errors.Is(err, fs.ErrNotExist) {",
+         "matchingRanges": {
+          "lineNumber": "394",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "394",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\treturn nil, p.versionError(\"\", err)",
+         "matchingRanges": {
+          "lineNumber": "395"
+         },
+         "lineNumber": "395",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 3,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 30,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CCASAggBOLzHnYS30bjZhgFAAEgg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/go/internal/modload/vendor.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\tif err != nil {",
+         "matchingRanges": {
+          "lineNumber": "48"
+         },
+         "lineNumber": "48",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\tif !errors.Is(err, fs.ErrNotExist) {",
+         "matchingRanges": {
+          "lineNumber": "49",
+          "columnRanges": [
+           {
+            "startIndex": 7,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "49",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 3,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 7,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t\tbase.Fatalf(\"go: %s\", err)",
+         "matchingRanges": {
+          "lineNumber": "50"
+         },
+         "lineNumber": "50",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 16,
+            "length": 8
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CCESAggBOMC9pK-Q0ZulL0AASCE"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/conf.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tif canUseCgo \u0026\u0026 dnsConf.err != nil \u0026\u0026 !errors.Is(dnsConf.err, fs.ErrNotExist) \u0026\u0026 !errors.Is(dnsConf.err, fs.ErrPermission) {",
+         "matchingRanges": {
+          "lineNumber": "287",
+          "columnRanges": [
+           {
+            "startIndex": 40,
+            "length": 10
+           },
+           {
+            "startIndex": 83,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "287",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 40,
+           "length": 10
+          },
+          {
+           "startIndex": 83,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t// We can't read the resolv.conf file, so use cgo if we can.",
+         "matchingRanges": {
+          "lineNumber": "288"
+         },
+         "lineNumber": "288",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 60
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t// to only \"files\", without DNS lookups.",
+         "matchingRanges": {
+          "lineNumber": "303"
+         },
+         "lineNumber": "303",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 40
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tif errors.Is(dnsConf.err, fs.ErrNotExist) {",
+         "matchingRanges": {
+          "lineNumber": "304",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "304",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\treturn hostLookupFiles, dnsConf",
+         "matchingRanges": {
+          "lineNumber": "305"
+         },
+         "lineNumber": "305",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 3,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// sources for \"hosts\", assume Go's DNS will work fine.",
+         "matchingRanges": {
+          "lineNumber": "354"
+         },
+         "lineNumber": "354",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 55
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tif errors.Is(nss.err, fs.ErrNotExist) || (nss.err == nil \u0026\u0026 len(srcs) == 0) {",
+         "matchingRanges": {
+          "lineNumber": "355",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "355",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 74,
+            "length": 1
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tif canUseCgo \u0026\u0026 c.goos == \"solaris\" {",
+         "matchingRanges": {
+          "lineNumber": "356"
+         },
+         "lineNumber": "356",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 28,
+            "length": 9
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 4
+    },
+    "resultToken": "CCISAggBOIDC1vaUwMivCkAASCI"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/io/fs/fs.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// or from the time of the call to Info. If the file has been removed or renamed",
+         "matchingRanges": {
+          "lineNumber": "118"
+         },
+         "lineNumber": "118",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 80
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t// since the directory read, Info may return an error satisfying errors.Is(err, ErrNotExist).",
+         "matchingRanges": {
+          "lineNumber": "119",
+          "columnRanges": [
+           {
+            "startIndex": 66,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "119",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 93
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 66,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t// If the entry denotes a symbolic link, Info reports the information about the link itself,",
+         "matchingRanges": {
+          "lineNumber": "120"
+         },
+         "lineNumber": "120",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 92
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CCMSAggBOKDEwMTg_tSR5QFAAEgj"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/internal/nettest/listener_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\tsynctest.Wait()",
+         "matchingRanges": {
+          "lineNumber": "76"
+         },
+         "lineNumber": "76"
+        },
+        {
+         "lineText": "\t\tif !errors.Is(acceptErr, net.ErrClosed) {",
+         "matchingRanges": {
+          "lineNumber": "77",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "77",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\tt.Fatalf(\"li.Accept() = %v, want ErrClosed\", acceptErr)",
+         "matchingRanges": {
+          "lineNumber": "78"
+         },
+         "lineNumber": "78",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 12,
+            "length": 34
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\tgot, err := li.Accept()",
+         "matchingRanges": {
+          "lineNumber": "150"
+         },
+         "lineNumber": "150"
+        },
+        {
+         "lineText": "\t\tif got != nil || !errors.Is(err, cancelErr) {",
+         "matchingRanges": {
+          "lineNumber": "151",
+          "columnRanges": [
+           {
+            "startIndex": 20,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "151",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 20,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\tt.Errorf(\"li.Accept = %p, %v; want nil, cancelErr\", got, err)",
+         "matchingRanges": {
+          "lineNumber": "152"
+         },
+         "lineNumber": "152",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 12,
+            "length": 41
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CCQSAggBOJi35srvp-7oN0AASCQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/go/proxy_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t}",
+         "matchingRanges": {
+          "lineNumber": "353"
+         },
+         "lineNumber": "353"
+        },
+        {
+         "lineText": "\t\tif errors.Is(err, fs.ErrNotExist) {",
+         "matchingRanges": {
+          "lineNumber": "354",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "354",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\thttp.NotFound(w, r)",
+         "matchingRanges": {
+          "lineNumber": "355"
+         },
+         "lineNumber": "355"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CCUSAggBOM6Wos-5jJn1vAFAAEgl"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/http/httptest/recorder_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t_, err := rw.Write([]byte(\"hello \"))",
+         "matchingRanges": {
+          "lineNumber": "319"
+         },
+         "lineNumber": "319",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 27,
+            "length": 8
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tif !errors.Is(err, http.ErrBodyNotAllowed) {",
+         "matchingRanges": {
+          "lineNumber": "320",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "320",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tt.Errorf(\"expected BodyNotAllowed for Write after 204, got: %v\", err)",
+         "matchingRanges": {
+          "lineNumber": "321"
+         },
+         "lineNumber": "321",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 54
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t_, err = rw.WriteString(\"world\")",
+         "matchingRanges": {
+          "lineNumber": "324"
+         },
+         "lineNumber": "324",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 25,
+            "length": 7
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tif !errors.Is(err, http.ErrBodyNotAllowed) {",
+         "matchingRanges": {
+          "lineNumber": "325",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "325",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tt.Errorf(\"expected BodyNotAllowed for WriteString after 204, got: %v\", err)",
+         "matchingRanges": {
+          "lineNumber": "326"
+         },
+         "lineNumber": "326",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 60
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CCYSAggBOMDVnZu-4vn6VkAASCY"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/http/responsecontroller_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\terr = \u003c-errc // io.Copy error",
+         "matchingRanges": {
+          "lineNumber": "152"
+         },
+         "lineNumber": "152",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 14,
+            "length": 16
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tif !errors.Is(err, os.ErrDeadlineExceeded) {",
+         "matchingRanges": {
+          "lineNumber": "153",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "153",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tt.Errorf(\"server timed out writing request body: got err %v; want os.ErrDeadlineExceeded\", err)",
+         "matchingRanges": {
+          "lineNumber": "154"
+         },
+         "lineNumber": "154",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 80
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t_, err := io.Copy(io.Discard, req.Body)",
+         "matchingRanges": {
+          "lineNumber": "232"
+         },
+         "lineNumber": "232"
+        },
+        {
+         "lineText": "\t\tif !errors.Is(err, os.ErrDeadlineExceeded) {",
+         "matchingRanges": {
+          "lineNumber": "233",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "233",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\tt.Errorf(\"server timed out reading request body: got err %v; want os.ErrDeadlineExceeded\", err)",
+         "matchingRanges": {
+          "lineNumber": "234"
+         },
+         "lineNumber": "234",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 12,
+            "length": 80
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CCcSAggBONKEw-jE3KDJIkAASCc"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/hosts.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tif err != nil {",
+         "matchingRanges": {
+          "lineNumber": "69"
+         },
+         "lineNumber": "69",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tif !errors.Is(err, fs.ErrNotExist) \u0026\u0026 !errors.Is(err, fs.ErrPermission) {",
+         "matchingRanges": {
+          "lineNumber": "70",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 10
+           },
+           {
+            "startIndex": 41,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "70",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 10
+          },
+          {
+           "startIndex": 41,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\treturn",
+         "matchingRanges": {
+          "lineNumber": "71"
+         },
+         "lineNumber": "71",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 3,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CCgSAggBOPSQ6PvSgYXdG0AASCg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/http/internal/http2/transport.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t}",
+         "matchingRanges": {
+          "lineNumber": "2019"
+         },
+         "lineNumber": "2019"
+        },
+        {
+         "lineText": "\tif errors.Is(err, io.EOF) {",
+         "matchingRanges": {
+          "lineNumber": "2020",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "2020",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tf(\"read_frame_eof\")",
+         "matchingRanges": {
+          "lineNumber": "2021"
+         },
+         "lineNumber": "2021",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 4,
+            "length": 16
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t}",
+         "matchingRanges": {
+          "lineNumber": "2023"
+         },
+         "lineNumber": "2023"
+        },
+        {
+         "lineText": "\tif errors.Is(err, io.ErrUnexpectedEOF) {",
+         "matchingRanges": {
+          "lineNumber": "2024",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "2024",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tf(\"read_frame_unexpected_eof\")",
+         "matchingRanges": {
+          "lineNumber": "2025"
+         },
+         "lineNumber": "2025",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 4,
+            "length": 27
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t}",
+         "matchingRanges": {
+          "lineNumber": "2027"
+         },
+         "lineNumber": "2027"
+        },
+        {
+         "lineText": "\tif errors.Is(err, ErrFrameTooLarge) {",
+         "matchingRanges": {
+          "lineNumber": "2028",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "2028",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tf(\"read_frame_too_large\")",
+         "matchingRanges": {
+          "lineNumber": "2029"
+         },
+         "lineNumber": "2029",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 4,
+            "length": 22
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CCkSAggBOLLSj6f3jIL_b0AASCk"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/go/internal/modfetch/coderepo.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\ttag, err := r.code.RecentTag(ctx, info.Name, tagPrefix, tagAllowed)",
+         "matchingRanges": {
+          "lineNumber": "657"
+         },
+         "lineNumber": "657"
+        },
+        {
+         "lineText": "\t\tif err != nil \u0026\u0026 !errors.Is(err, errors.ErrUnsupported) {",
+         "matchingRanges": {
+          "lineNumber": "658",
+          "columnRanges": [
+           {
+            "startIndex": 20,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "658",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 20,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\treturn nil, err",
+         "matchingRanges": {
+          "lineNumber": "659"
+         },
+         "lineNumber": "659",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 3,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t}",
+         "matchingRanges": {
+          "lineNumber": "1096"
+         },
+         "lineNumber": "1096"
+        },
+        {
+         "lineText": "\t} else if !errors.Is(err, fs.ErrNotExist) {",
+         "matchingRanges": {
+          "lineNumber": "1097",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "1097",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 3,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t\treturn err",
+         "matchingRanges": {
+          "lineNumber": "1098"
+         },
+         "lineNumber": "1098",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CCoSAggBOPj41vSwwae83gFAAEgq"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/http/serve_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t\t_, err := io.Copy(io.Discard, req.Body)",
+         "matchingRanges": {
+          "lineNumber": "823"
+         },
+         "lineNumber": "823"
+        },
+        {
+         "lineText": "\t\t\tif !errors.Is(err, os.ErrDeadlineExceeded) {",
+         "matchingRanges": {
+          "lineNumber": "824",
+          "columnRanges": [
+           {
+            "startIndex": 7,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "824",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 3,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 7,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t\tt.Errorf(\"server timed out reading request body: got err %v; want os.ErrDeadlineExceeded\", err)",
+         "matchingRanges": {
+          "lineNumber": "825"
+         },
+         "lineNumber": "825",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 13,
+            "length": 80
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t\terr = \u003c-errc // io.Copy error",
+         "matchingRanges": {
+          "lineNumber": "958"
+         },
+         "lineNumber": "958",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 16,
+            "length": 16
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\tif !errors.Is(err, os.ErrDeadlineExceeded) {",
+         "matchingRanges": {
+          "lineNumber": "959",
+          "columnRanges": [
+           {
+            "startIndex": 7,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "959",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 3,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 7,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t\tt.Errorf(\"server timed out writing request body: got err %v; want os.ErrDeadlineExceeded\", err)",
+         "matchingRanges": {
+          "lineNumber": "960"
+         },
+         "lineNumber": "960",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 13,
+            "length": 80
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t\t\tn, err := w.(io.ReaderFrom).ReadFrom(tc.reader)",
+         "matchingRanges": {
+          "lineNumber": "1658"
+         },
+         "lineNumber": "1658"
+        },
+        {
+         "lineText": "\t\t\t\tif int(n) != contentLen || !errors.Is(err, tc.wantHandlerErr) {",
+         "matchingRanges": {
+          "lineNumber": "1659",
+          "columnRanges": [
+           {
+            "startIndex": 32,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "1659",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 32,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t\t\tt.Errorf(\"got %v, %v from w.ReadFrom; want %v, %v\", n, err, contentLen, tc.wantHandlerErr)",
+         "matchingRanges": {
+          "lineNumber": "1660"
+         },
+         "lineNumber": "1660",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 14,
+            "length": 41
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 4
+    },
+    "resultToken": "CCsSAggBOL7d1bbArPSgzwFAAEgr"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/strconv/number_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\terr := \u0026NumError{Err: ErrSyntax}",
+         "matchingRanges": {
+          "lineNumber": "782"
+         },
+         "lineNumber": "782"
+        },
+        {
+         "lineText": "\tif !errors.Is(err, ErrSyntax) {",
+         "matchingRanges": {
+          "lineNumber": "783",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "783",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tt.Error(\"errors.Is failed, wanted success\")",
+         "matchingRanges": {
+          "lineNumber": "784"
+         },
+         "lineNumber": "784",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 10,
+            "length": 34
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CCwSAggBOObordSX88_i6gFAAEgs"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/os/os_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tt.Cleanup(func() {",
+         "matchingRanges": {
+          "lineNumber": "167"
+         },
+         "lineNumber": "167",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 11,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tif err := f.Close(); err != nil \u0026\u0026 !errors.Is(err, ErrClosed) {",
+         "matchingRanges": {
+          "lineNumber": "168",
+          "columnRanges": [
+           {
+            "startIndex": 38,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "168",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 38,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\tt.Fatal(err)",
+         "matchingRanges": {
+          "lineNumber": "169"
+         },
+         "lineNumber": "169"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tif err != nil {",
+         "matchingRanges": {
+          "lineNumber": "1966"
+         },
+         "lineNumber": "1966",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tif errors.Is(err, exec.ErrNotFound) {",
+         "matchingRanges": {
+          "lineNumber": "1967",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "1967",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\tt.Skip(\"skipping test; test requires hostname but it does not exist\")",
+         "matchingRanges": {
+          "lineNumber": "1968"
+         },
+         "lineNumber": "1968",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 10,
+            "length": 61
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t}",
+         "matchingRanges": {
+          "lineNumber": "2363"
+         },
+         "lineNumber": "2363"
+        },
+        {
+         "lineText": "\t\tif !errors.Is(err, ErrExist) {",
+         "matchingRanges": {
+          "lineNumber": "2364",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "2364",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\tt.Errorf(\"OpenFile of a dangling symlink with O_CREATE|O_EXCL = %v, want ErrExist\", err)",
+         "matchingRanges": {
+          "lineNumber": "2365"
+         },
+         "lineNumber": "2365",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 12,
+            "length": 73
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 10
+    },
+    "resultToken": "CC0SAggBOPLnroX5mpvszQFAAEgt"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/os/root_windows_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t}",
+         "matchingRanges": {
+          "lineNumber": "55"
+         },
+         "lineNumber": "55"
+        },
+        {
+         "lineText": "\tif _, err := os.Stat(filepath.Join(dir, \"file\")); !errors.Is(err, os.ErrNotExist) {",
+         "matchingRanges": {
+          "lineNumber": "56",
+          "columnRanges": [
+           {
+            "startIndex": 52,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "56",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 41,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 52,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tt.Fatalf(\"os.Stat(file) after deletion: %v, want ErrNotFound\", err)",
+         "matchingRanges": {
+          "lineNumber": "57"
+         },
+         "lineNumber": "57",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 52
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// The file should be deleted after closing.",
+         "matchingRanges": {
+          "lineNumber": "319"
+         },
+         "lineNumber": "319",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 44
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tif _, err := os.Stat(filepath.Join(dir, name)); !errors.Is(err, os.ErrNotExist) {",
+         "matchingRanges": {
+          "lineNumber": "320",
+          "columnRanges": [
+           {
+            "startIndex": 50,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "320",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 50,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tt.Errorf(\"expected file to be deleted, got %v\", err)",
+         "matchingRanges": {
+          "lineNumber": "321"
+         },
+         "lineNumber": "321",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 37
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tf, err := root.OpenFile(\"test.txt\", syscall.O_RDWR|syscall.O_CREAT|invalidFileFlag, 0666)",
+         "matchingRanges": {
+          "lineNumber": "336"
+         },
+         "lineNumber": "336",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 25,
+            "length": 10
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 85,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tif !errors.Is(err, os.ErrInvalid) {",
+         "matchingRanges": {
+          "lineNumber": "337",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "337",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tt.Fatalf(\"expected os.ErrInvalid, got %v\", err)",
+         "matchingRanges": {
+          "lineNumber": "338"
+         },
+         "lineNumber": "338",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 32
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CC4SAggBOJq13KahrZ2tugFAAEgu"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/go/terminal_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\tr, processTTY, err := testpty.Open()",
+         "matchingRanges": {
+          "lineNumber": "51"
+         },
+         "lineNumber": "51"
+        },
+        {
+         "lineText": "\t\tif errors.Is(err, testpty.ErrNotSupported) {",
+         "matchingRanges": {
+          "lineNumber": "52",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "52",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\tt.Skipf(\"%s\", err)",
+         "matchingRanges": {
+          "lineNumber": "53"
+         },
+         "lineNumber": "53",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CC8SAggBOMrsn7in_5KskQFAAEgv"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/http/fs.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "func mapOpenError(originalErr error, name string, sep rune, stat func(string) (fs.FileInfo, error)) error {",
+         "matchingRanges": {
+          "lineNumber": "50"
+         },
+         "lineNumber": "50",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 65,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tif errors.Is(originalErr, fs.ErrNotExist) || errors.Is(originalErr, fs.ErrPermission) {",
+         "matchingRanges": {
+          "lineNumber": "51",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 10
+           },
+           {
+            "startIndex": 46,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "51",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 10
+          },
+          {
+           "startIndex": 46,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t\treturn originalErr",
+         "matchingRanges": {
+          "lineNumber": "52"
+         },
+         "lineNumber": "52",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tif errors.Is(err, fs.ErrNotExist) {",
+         "matchingRanges": {
+          "lineNumber": "771",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "771",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t\treturn \"404 page not found\", StatusNotFound",
+         "matchingRanges": {
+          "lineNumber": "772"
+         },
+         "lineNumber": "772",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 9,
+            "length": 20
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t}",
+         "matchingRanges": {
+          "lineNumber": "773"
+         },
+         "lineNumber": "773"
+        },
+        {
+         "lineText": "\tif errors.Is(err, fs.ErrPermission) {",
+         "matchingRanges": {
+          "lineNumber": "774",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "774",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "\t\treturn \"403 Forbidden\", StatusForbidden",
+         "matchingRanges": {
+          "lineNumber": "775"
+         },
+         "lineNumber": "775",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 9,
+            "length": 15
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t}",
+         "matchingRanges": {
+          "lineNumber": "776"
+         },
+         "lineNumber": "776"
+        },
+        {
+         "lineText": "\tif errors.Is(err, errInvalidUnsafePath) {",
+         "matchingRanges": {
+          "lineNumber": "777",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "777",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 10
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 4
+    },
+    "resultToken": "CDASAggBOJjToeO9ofOgJUAASDA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/os/example_other_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "func isOSSymlinkUnsupportedError(err error) bool {",
+         "matchingRanges": {
+          "lineNumber": "15"
+         },
+         "lineNumber": "15",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\treturn errors.Is(err, errors.ErrUnsupported)",
+         "matchingRanges": {
+          "lineNumber": "16",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "16",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "}",
+         "matchingRanges": {
+          "lineNumber": "17"
+         },
+         "lineNumber": "17"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CDESAggBONrJiLXKofzKGEAASDE"
+   }
+  ],
+  "estimatedResultCount": "181",
+  "nextPageToken": "CKSNgdiDjJmOAgjyxPval6W3qgcIgMLW9pTAyK8KCPSd+K+1kJaKDgjayYi1yqH8yhgI5q3s8ZTY+LMaCPSQ6PvSgYXdGwjShMPoxNygySIImNOh472h86AlCPyCofCzpfPHKAjCsITRj8Sz+y0IwL2kr5DRm6UvCNLNtbHz99DpMgjwmdSy86m9lTUI7LXSrOGLiug3CJi35srvp+7oNwjil+vflZjwqToIkLiVi4bd/ORACOLfkMrFmtmfQQiU4ruQs/K68kMI1Lf70tqetKBHCMDVnZu+4vn6Vgjwovbk/dfNjlcIjPKhuric0+pjCLLSj6f3jIL/bwi8hNi4ldOWsXwIvMedhLfRuNmGAQjw7tjb8aCs0ZABCMrsn7in/5KskQEInquXveP13KyaAQjukob8rPGOh6YBCOz3rdHhmoyMrwEI7rPz8J7wmNKvAQiatdymoa2drboBCM6Wos+5jJn1vAEIooP0ysGB9ZbEAQjy566F+Zqb7M0BCL7d1bbArPSgzwEIzLDbzuH45oXaAQjC99GS2LbM5NwBCN6Q/IunxKen3QEI+PjW9LDBp7zeAQigxMDE4P7UkeUBCObordSX88/i6gEI8N3yypWm2pvtAQiU6aWW55vjtu8BCKD27NzYwZXx8wEIxMjt05b7jb36AQjAg9ux2uqNzvoBCNig7pWj3N2w+wE=",
+  "exhaustive": true,
+  "requestToken": "ChFlcnJvcnNcLihJc3xBcylcKBIdKCBnaXQ6Z28vZ29AbWFzdGVyIGNhc2U6eWVzICkaDAi6u6jRBhCUnO2BAiAMKgAyAEgB"
+ }
+}

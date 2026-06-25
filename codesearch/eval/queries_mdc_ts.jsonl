@@ -1,0 +1,22 @@
+{"id":"ts_ripple","category":"symbol","query":"MDCRipple","targets":["packages/mdc-ripple/component.ts"]}
+{"id":"ts_textfield","category":"symbol","query":"MDCTextField","targets":["packages/mdc-textfield/component.ts"]}
+{"id":"ts_dialog","category":"symbol","query":"MDCDialog","targets":["packages/mdc-dialog/component.ts"]}
+{"id":"ts_chipset","category":"symbol","query":"MDCChipSet","targets":["packages/mdc-chips/chip-set/component.ts"]}
+{"id":"ts_slider","category":"symbol","query":"MDCSlider","targets":["packages/mdc-slider/component.ts"]}
+{"id":"ts_menu","category":"symbol","query":"MDCMenu","targets":["packages/mdc-menu/component.ts"]}
+{"id":"ts_snackbar","category":"symbol","query":"MDCSnackbar","targets":["packages/mdc-snackbar/component.ts"]}
+{"id":"ts_tooltip","category":"symbol","query":"MDCTooltip","targets":["packages/mdc-tooltip/component.ts"]}
+{"id":"ts_datatable","category":"symbol","query":"MDCDataTable","targets":["packages/mdc-data-table/component.ts"]}
+{"id":"ts_select","category":"symbol","query":"MDCSelect","targets":["packages/mdc-select/component.ts"]}
+{"id":"tsb_kw_csvars","category":"keyword","query":"supportscssvariables","targets":["packages/mdc-ripple/util.ts"]}
+{"id":"tsb_kw_thumbknob","category":"keyword","query":"mdc-slider__thumb-knob","targets":["packages/mdc-slider/constants.ts"]}
+{"id":"tsb_kw_domannounce","category":"keyword","query":"data-mdc-dom-announce","targets":["packages/mdc-dom/announce.ts"]}
+{"id":"tsb_kw_movetopappbar","category":"keyword","query":"movetopappbar","targets":["packages/mdc-top-app-bar/standard/foundation.ts"]}
+{"id":"tsb_kw_bufferbar","category":"keyword","query":"setbufferbarprogress","targets":["packages/mdc-linear-progress/foundation.ts"]}
+{"id":"tsb_ph_normcoords","category":"phrase","query":"\"Gets the normalized events coordinates\"","targets":["packages/mdc-ripple/util.ts"]}
+{"id":"tsb_ph_ponyfill","category":"phrase","query":"\"is a polyfill that\"","targets":["packages/mdc-dom/ponyfill.ts"]}
+{"id":"tsb_ph_cornerbits","category":"phrase","query":"\"bits in the\"","targets":["packages/mdc-menu-surface/constants.ts"]}
+{"id":"tsb_ph_switchsel","category":"phrase","query":"\"Query selectors used for switch\"","targets":["packages/mdc-switch/constants.ts"]}
+{"id":"tsb_rx_csvarscache","category":"regex","query":"let supportsCssVariablesCache","targets":["packages/mdc-ripple/util.ts"]}
+{"id":"tsb_rx_liveregions","category":"regex","query":"liveRegions:\\s*Map","targets":["packages/mdc-dom/announce.ts"]}
+{"id":"tsb_rx_incrscroll","category":"regex","query":"incrementScrollImmediate\\(","targets":["packages/mdc-tab-scroller/foundation.ts"]}

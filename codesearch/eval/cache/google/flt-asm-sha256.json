@@ -1,0 +1,1540 @@
+{
+ "query": "file:\\.s$ sha256",
+ "oss_project": "go",
+ "repo_name": "go",
+ "page_size": 50,
+ "fetched_at": "2026-06-11T02:31:15Z",
+ "response": {
+  "searchResults": [
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/crypto/internal/fips140/sha256/sha256block_386.s",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// SHA256 block routine. See sha256block.go for Go equivalent.",
+         "matchingRanges": {
+          "lineNumber": "7",
+          "columnRanges": [
+           {
+            "startIndex": 3,
+            "length": 6
+           },
+           {
+            "startIndex": 29,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "7",
+         "ranges": [
+          {
+           "startIndex": 3,
+           "length": 6
+          },
+          {
+           "startIndex": 29,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "//",
+         "matchingRanges": {
+          "lineNumber": "8"
+         },
+         "lineNumber": "8"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "//     Ch(x, y, z) = (x AND y) XOR (NOT x AND z)",
+         "matchingRanges": {
+          "lineNumber": "82"
+         },
+         "lineNumber": "82"
+        },
+        {
+         "lineText": "#define SHA256T1(const, e, f, g, h) \\",
+         "matchingRanges": {
+          "lineNumber": "83",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "83",
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tMOVL\t(h*4)(DI), BX; \\",
+         "matchingRanges": {
+          "lineNumber": "84"
+         },
+         "lineNumber": "84"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "//     Maj(x, y, z) = (x AND y) XOR (x AND z) XOR (y AND z)",
+         "matchingRanges": {
+          "lineNumber": "107"
+         },
+         "lineNumber": "107"
+        },
+        {
+         "lineText": "#define SHA256T2(a, b, c) \\",
+         "matchingRanges": {
+          "lineNumber": "108",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "108",
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tMOVL\t(a*4)(DI), AX; \\",
+         "matchingRanges": {
+          "lineNumber": "109"
+         },
+         "lineNumber": "109"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "#define SHA256ROUND0(index, const, a, b, c, d, e, f, g, h) \\",
+         "matchingRanges": {
+          "lineNumber": "138",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "138",
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tMSGSCHEDULE0(index); \\",
+         "matchingRanges": {
+          "lineNumber": "139"
+         },
+         "lineNumber": "139"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 39
+    },
+    "resultToken": "CAASAggBON6px4iSx6DztwFAAEgA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/crypto/internal/fips140/sha256/sha256block_ppc64x.s",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// SHA256 block routine. See sha256block.go for Go equivalent.",
+         "matchingRanges": {
+          "lineNumber": "17",
+          "columnRanges": [
+           {
+            "startIndex": 3,
+            "length": 6
+           },
+           {
+            "startIndex": 29,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "17",
+         "ranges": [
+          {
+           "startIndex": 3,
+           "length": 6
+          },
+          {
+           "startIndex": 29,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "//",
+         "matchingRanges": {
+          "lineNumber": "18"
+         },
+         "lineNumber": "18"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "#define SHA256ROUND0(a, b, c, d, e, f, g, h, xi, idx) \\",
+         "matchingRanges": {
+          "lineNumber": "246",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "246",
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tVSEL\t\tg, f, e, FUNC; \\",
+         "matchingRanges": {
+          "lineNumber": "247"
+         },
+         "lineNumber": "247"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "#define SHA256ROUND1(a, b, c, d, e, f, g, h, xi, xj, xj_1, xj_9, xj_14, idx) \\",
+         "matchingRanges": {
+          "lineNumber": "261",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "261",
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tVSHASIGMAW\t$0, xj_1, $0, s0; \\",
+         "matchingRanges": {
+          "lineNumber": "262"
+         },
+         "lineNumber": "262"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tSHA256ROUND0(V0, V1, V2, V3, V4, V5, V6, V7, V8, R_x020)",
+         "matchingRanges": {
+          "lineNumber": "358",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "358",
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tVSLDOI\t$4, V8, V8, V9",
+         "matchingRanges": {
+          "lineNumber": "359"
+         },
+         "lineNumber": "359"
+        },
+        {
+         "lineText": "\tSHA256ROUND0(V7, V0, V1, V2, V3, V4, V5, V6, V9, R_x030)",
+         "matchingRanges": {
+          "lineNumber": "360",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "360",
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 35
+    },
+    "resultToken": "CAESAggBOIDQ3tT4qJ2yLEAASAE"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/crypto/internal/fips140/sha256/sha256block_riscv64.s",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// SHA256 block routine. See sha256block.go for Go equivalent.",
+         "matchingRanges": {
+          "lineNumber": "9",
+          "columnRanges": [
+           {
+            "startIndex": 3,
+            "length": 6
+           },
+           {
+            "startIndex": 29,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "9",
+         "ranges": [
+          {
+           "startIndex": 3,
+           "length": 6
+          },
+          {
+           "startIndex": 29,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "//",
+         "matchingRanges": {
+          "lineNumber": "10"
+         },
+         "lineNumber": "10"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "//                 = ((y XOR z) AND x) XOR z",
+         "matchingRanges": {
+          "lineNumber": "91"
+         },
+         "lineNumber": "91"
+        },
+        {
+         "lineText": "#define SHA256T1(index, e, f, g, h) \\",
+         "matchingRanges": {
+          "lineNumber": "92",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "92",
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tMOVWU\t(index*4)(X18), X8; \\",
+         "matchingRanges": {
+          "lineNumber": "93"
+         },
+         "lineNumber": "93"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "//                  = ((y XOR z) AND x) XOR (y AND z)",
+         "matchingRanges": {
+          "lineNumber": "111"
+         },
+         "lineNumber": "111"
+        },
+        {
+         "lineText": "#define SHA256T2(a, b, c) \\",
+         "matchingRanges": {
+          "lineNumber": "112",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "112",
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tRORW\t$2, a, X6; \\",
+         "matchingRanges": {
+          "lineNumber": "113"
+         },
+         "lineNumber": "113"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "#define SHA256ROUND0(index, a, b, c, d, e, f, g, h) \\",
+         "matchingRanges": {
+          "lineNumber": "132",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "132",
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tMSGSCHEDULE0(index); \\",
+         "matchingRanges": {
+          "lineNumber": "133"
+         },
+         "lineNumber": "133"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 39
+    },
+    "resultToken": "CAISAggBOPSy4tuHx-KuhAFAAEgC"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/crypto/internal/fips140/sha256/sha256block_loong64.s",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// SHA256 block routine. See sha256block.go for Go equivalent.",
+         "matchingRanges": {
+          "lineNumber": "9",
+          "columnRanges": [
+           {
+            "startIndex": 3,
+            "length": 6
+           },
+           {
+            "startIndex": 29,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "9",
+         "ranges": [
+          {
+           "startIndex": 3,
+           "length": 6
+          },
+          {
+           "startIndex": 29,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "//",
+         "matchingRanges": {
+          "lineNumber": "10"
+         },
+         "lineNumber": "10"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// Calculate T1 in REGTMP4",
+         "matchingRanges": {
+          "lineNumber": "92"
+         },
+         "lineNumber": "92"
+        },
+        {
+         "lineText": "#define SHA256T1(index, e, f, g, h) \\",
+         "matchingRanges": {
+          "lineNumber": "93",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "93",
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tMOVW\t(index*4)(REG_KT), REGTMP5; \\",
+         "matchingRanges": {
+          "lineNumber": "94"
+         },
+         "lineNumber": "94"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// Calculate T2 in REGTMP1",
+         "matchingRanges": {
+          "lineNumber": "112"
+         },
+         "lineNumber": "112"
+        },
+        {
+         "lineText": "#define SHA256T2(a, b, c) \\",
+         "matchingRanges": {
+          "lineNumber": "113",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "113",
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tROTR\t$2, a, REGTMP5; \\",
+         "matchingRanges": {
+          "lineNumber": "114"
+         },
+         "lineNumber": "114"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "#define SHA256ROUND0(index, a, b, c, d, e, f, g, h) \\",
+         "matchingRanges": {
+          "lineNumber": "133",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "133",
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tLOAD0(index); \\",
+         "matchingRanges": {
+          "lineNumber": "134"
+         },
+         "lineNumber": "134"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 39
+    },
+    "resultToken": "CAMSAggBONy64oaA2vW5qQFAAEgD"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/crypto/internal/fips140/sha256/sha256block_amd64.s",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tPADDD       (AX), X0",
+         "matchingRanges": {
+          "lineNumber": "1319"
+         },
+         "lineNumber": "1319"
+        },
+        {
+         "lineText": "\tSHA256RNDS2 X0, X1, X2",
+         "matchingRanges": {
+          "lineNumber": "1320",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "1320",
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tPSHUFD      $0x0e, X0, X0",
+         "matchingRanges": {
+          "lineNumber": "1321"
+         },
+         "lineNumber": "1321"
+        },
+        {
+         "lineText": "\tSHA256RNDS2 X0, X2, X1",
+         "matchingRanges": {
+          "lineNumber": "1322",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "1322",
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tVMOVDQU     16(SI), X0",
+         "matchingRanges": {
+          "lineNumber": "1323"
+         },
+         "lineNumber": "1323"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tSHA256RNDS2 X0, X1, X2",
+         "matchingRanges": {
+          "lineNumber": "1327",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "1327",
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tPSHUFD      $0x0e, X0, X0",
+         "matchingRanges": {
+          "lineNumber": "1328"
+         },
+         "lineNumber": "1328"
+        },
+        {
+         "lineText": "\tSHA256RNDS2 X0, X2, X1",
+         "matchingRanges": {
+          "lineNumber": "1329",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "1329",
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tSHA256MSG1  X4, X3",
+         "matchingRanges": {
+          "lineNumber": "1330",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "1330",
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 39
+    },
+    "resultToken": "CAQSAggBOPznmLyTqKnuO0AASAQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/crypto/internal/fips140/sha256/sha256block_arm64.s",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "#define HASHUPDATE \\",
+         "matchingRanges": {
+          "lineNumber": "9"
+         },
+         "lineNumber": "9"
+        },
+        {
+         "lineText": "\tSHA256H\tV9.S4, V3, V2 \\",
+         "matchingRanges": {
+          "lineNumber": "10",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "10",
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tSHA256H2\tV9.S4, V8, V3 \\",
+         "matchingRanges": {
+          "lineNumber": "11",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "11",
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tVMOV\tV2.B16, V8.B16",
+         "matchingRanges": {
+          "lineNumber": "12"
+         },
+         "lineNumber": "12"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tVADD\tV16.S4, V4.S4, V9.S4                        // V18(W0+K0...W3+K3)",
+         "matchingRanges": {
+          "lineNumber": "40"
+         },
+         "lineNumber": "40"
+        },
+        {
+         "lineText": "\tSHA256SU0\tV5.S4, V4.S4                        // V4: (su0(W1)+W0,...,su0(W4)+W3)",
+         "matchingRanges": {
+          "lineNumber": "41",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "41",
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tHASHUPDATE                                          // H4",
+         "matchingRanges": {
+          "lineNumber": "42"
+         },
+         "lineNumber": "42"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tSHA256SU0\tV6.S4, V5.S4                        // V5: (su0(W5)+W4,...,su0(W8)+W7)",
+         "matchingRanges": {
+          "lineNumber": "45",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "45",
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tSHA256SU1\tV7.S4, V6.S4, V4.S4                 // V4: W16-W19",
+         "matchingRanges": {
+          "lineNumber": "46",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "46",
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 27
+    },
+    "resultToken": "CAUSAggBONLS2oC56dTJaUAASAU"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/crypto/internal/fips140/sha256/sha256block_s390x.s",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// Copyright 2016 The Go Authors. All rights reserved.",
+         "matchingRanges": {
+          "lineNumber": "1"
+         },
+         "lineNumber": "1"
+        },
+        {
+         "lineText": "// Use of this source code is governed by a BSD-style",
+         "matchingRanges": {
+          "lineNumber": "2"
+         },
+         "lineNumber": "2"
+        },
+        {
+         "lineText": "// license that can be found in the LICENSE file.",
+         "matchingRanges": {
+          "lineNumber": "3"
+         },
+         "lineNumber": "3"
+        }
+       ]
+      }
+     ]
+    },
+    "resultToken": "CAYSADiux5Du5_ayrDRAAEgG"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/asm/internal/asm/testdata/arm64.s",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// encryption",
+         "matchingRanges": {
+          "lineNumber": "470"
+         },
+         "lineNumber": "470"
+        },
+        {
+         "lineText": "\tSHA256H\tV9.S4, V3, V2                   // 6240095e",
+         "matchingRanges": {
+          "lineNumber": "471",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "471",
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tSHA256H2\tV9.S4, V4, V3           // 8350095e",
+         "matchingRanges": {
+          "lineNumber": "472",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "472",
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tSHA256SU0\tV8.S4, V7.S4            // 0729285e",
+         "matchingRanges": {
+          "lineNumber": "473",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "473",
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tSHA256SU1\tV6.S4, V5.S4, V7.S4     // a760065e",
+         "matchingRanges": {
+          "lineNumber": "474",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "474",
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tSHA1SU0\tV11.S4, V8.S4, V6.S4            // 06310b5e",
+         "matchingRanges": {
+          "lineNumber": "475"
+         },
+         "lineNumber": "475"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 4
+    },
+    "resultToken": "CAcSAggBOJzMmYCYpbK2J0AASAc"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/asm/internal/asm/testdata/arm64enc.s",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tSHA1SU1 V24.S4, V23.S4                                      // 171b285e",
+         "matchingRanges": {
+          "lineNumber": "729"
+         },
+         "lineNumber": "729"
+        },
+        {
+         "lineText": "\tSHA256H2 V6.S4, V16, V11                                    // 0b52065e",
+         "matchingRanges": {
+          "lineNumber": "730",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "730",
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tSHA256H V4.S4, V2, V11                                      // 4b40045e",
+         "matchingRanges": {
+          "lineNumber": "731",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "731",
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tSHA256SU0 V0.S4, V16.S4                                     // 1028285e",
+         "matchingRanges": {
+          "lineNumber": "732",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "732",
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tSHA256SU1 V31.S4, V3.S4, V15.S4                             // 6f601f5e",
+         "matchingRanges": {
+          "lineNumber": "733",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "733",
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tVSHL $7, V22.D2, V25.D2                                     // d956474f",
+         "matchingRanges": {
+          "lineNumber": "734"
+         },
+         "lineNumber": "734"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 4
+    },
+    "resultToken": "CAgSAggBOMaOjsKi0K68C0AASAg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/asm/internal/asm/testdata/arm64error.s",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tSHA1SU1\tV1.B16, V2.B16                                   // ERROR \"invalid arrangement\"",
+         "matchingRanges": {
+          "lineNumber": "450"
+         },
+         "lineNumber": "450"
+        },
+        {
+         "lineText": "\tSHA256SU1\tV1.B16, V2.B16, V3.B16                   // ERROR \"invalid arrangement\"",
+         "matchingRanges": {
+          "lineNumber": "451",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "451",
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tSHA512SU1\tV1.S4, V2.S4, V3.S4                      // ERROR \"invalid arrangement\"",
+         "matchingRanges": {
+          "lineNumber": "452"
+         },
+         "lineNumber": "452"
+        },
+        {
+         "lineText": "\tSHA256H\tV1.D2, V2, V3                                    // ERROR \"invalid arrangement\"",
+         "matchingRanges": {
+          "lineNumber": "453",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "453",
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tSHA512H\tV1.S4, V2, V3                                    // ERROR \"invalid arrangement\"",
+         "matchingRanges": {
+          "lineNumber": "454"
+         },
+         "lineNumber": "454"
+        },
+        {
+         "lineText": "\tAESE\tV1.B16, V2.B8                                    // ERROR \"invalid arrangement\"",
+         "matchingRanges": {
+          "lineNumber": "455"
+         },
+         "lineNumber": "455"
+        },
+        {
+         "lineText": "\tSHA256SU1\tV1.S4, V2.B16, V3.S4                     // ERROR \"invalid arrangement\"",
+         "matchingRanges": {
+          "lineNumber": "456",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "456",
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tSHA1H\tV1.B16, V2.B16                                   // ERROR \"invalid operands\"",
+         "matchingRanges": {
+          "lineNumber": "457"
+         },
+         "lineNumber": "457"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CAkSAggBON7ts6_32v3VNEAASAk"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/asm/internal/asm/testdata/amd64enc_extra.s",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// \u003cXMM0\u003e/Yxr0 tests.",
+         "matchingRanges": {
+          "lineNumber": "238"
+         },
+         "lineNumber": "238"
+        },
+        {
+         "lineText": "\tSHA256RNDS2 X0, (BX), X2   // 0f38cb13",
+         "matchingRanges": {
+          "lineNumber": "239",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "239",
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tSHA256RNDS2 X0, (R11), X2  // 410f38cb13",
+         "matchingRanges": {
+          "lineNumber": "240",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "240",
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tSHA256RNDS2 X0, X2, X2     // 0f38cbd2",
+         "matchingRanges": {
+          "lineNumber": "241",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "241",
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tSHA256RNDS2 X0, X11, X2    // 410f38cbd3",
+         "matchingRanges": {
+          "lineNumber": "242",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "242",
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tSHA256RNDS2 X0, (BX), X11  // 440f38cb1b",
+         "matchingRanges": {
+          "lineNumber": "243",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "243",
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tSHA256RNDS2 X0, (R11), X11 // 450f38cb1b",
+         "matchingRanges": {
+          "lineNumber": "244",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "244",
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tSHA256RNDS2 X0, X2, X11    // 440f38cbda",
+         "matchingRanges": {
+          "lineNumber": "245",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "245",
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tSHA256RNDS2 X0, X11, X11   // 450f38cbdb",
+         "matchingRanges": {
+          "lineNumber": "246",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "246",
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t// Rest SHA instructions tests.",
+         "matchingRanges": {
+          "lineNumber": "247"
+         },
+         "lineNumber": "247"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 24
+    },
+    "resultToken": "CAoSAggBOJSZ9JqL7ubsMEAASAo"
+   }
+  ],
+  "estimatedResultCount": "11",
+  "exhaustive": true,
+  "requestToken": "ChBmaWxlOlwucyQgc2hhMjU2Eh0oIGdpdDpnby9nb0BtYXN0ZXIgY2FzZTp5ZXMgKRoLCPO7qNEGEJ6M9QsgDCoAMgBIAQ"
+ }
+}

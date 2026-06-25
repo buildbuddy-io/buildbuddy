@@ -1,0 +1,3600 @@
+{
+ "query": "WorkerPool",
+ "oss_project": "bazel",
+ "repo_name": "bazel",
+ "page_size": 50,
+ "fetched_at": "2026-06-11T22:27:21Z",
+ "response": {
+  "searchResults": [
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/worker/WorkerPool.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": " */",
+         "matchingRanges": {
+          "lineNumber": "28"
+         },
+         "lineNumber": "28",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "public interface WorkerPool {",
+         "matchingRanges": {
+          "lineNumber": "29",
+          "columnRanges": [
+           {
+            "startIndex": 17,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "29",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 9
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 17,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "30"
+         },
+         "lineNumber": "30"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAASBAgBIAE4uujPgqXxlaKeAUAASAA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/worker/WorkerPoolTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "/** Tests WorkerPool. */",
+         "matchingRanges": {
+          "lineNumber": "42",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "42",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 24
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "@RunWith(JUnit4.class)",
+         "matchingRanges": {
+          "lineNumber": "43"
+         },
+         "lineNumber": "43",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 16,
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "public class WorkerPoolTest {",
+         "matchingRanges": {
+          "lineNumber": "44",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "44",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "45"
+         },
+         "lineNumber": "45"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  private WorkerPool workerPool;",
+         "matchingRanges": {
+          "lineNumber": "51",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 10
+           },
+           {
+            "startIndex": 21,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "51",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 10
+          },
+          {
+           "startIndex": 21,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "  private WorkerFactory factoryMock;",
+         "matchingRanges": {
+          "lineNumber": "52"
+         },
+         "lineNumber": "52",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    workerPool =",
+         "matchingRanges": {
+          "lineNumber": "66",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "66",
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "        new WorkerPoolImpl(",
+         "matchingRanges": {
+          "lineNumber": "67",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "67",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "            factoryMock,",
+         "matchingRanges": {
+          "lineNumber": "68"
+         },
+         "lineNumber": "68"
+        },
+        {
+         "lineText": "            new WorkerPoolConfig(",
+         "matchingRanges": {
+          "lineNumber": "69",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "69",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 10
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 39
+    },
+    "resultToken": "CAESBAgBIAE47oDalcGqqNjwAUAASAE"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/worker/WorkerPoolImpl.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "/**",
+         "matchingRanges": {
+          "lineNumber": "37"
+         },
+         "lineNumber": "37",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": " * Implementation of the WorkerPool.",
+         "matchingRanges": {
+          "lineNumber": "38",
+          "columnRanges": [
+           {
+            "startIndex": 25,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "38",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 36
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 36
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 25,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": " *",
+         "matchingRanges": {
+          "lineNumber": "39"
+         },
+         "lineNumber": "39",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": " */",
+         "matchingRanges": {
+          "lineNumber": "46"
+         },
+         "lineNumber": "46",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "public class WorkerPoolImpl implements WorkerPool {",
+         "matchingRanges": {
+          "lineNumber": "47",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 10
+           },
+           {
+            "startIndex": 39,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "47",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 28,
+            "length": 10
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 10
+          },
+          {
+           "startIndex": 39,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "48"
+         },
+         "lineNumber": "48"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  public WorkerPoolImpl(WorkerFactory factory, WorkerPoolConfig config) {",
+         "matchingRanges": {
+          "lineNumber": "63",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 10
+           },
+           {
+            "startIndex": 47,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "63",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 10
+          },
+          {
+           "startIndex": 47,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "    this.factory = factory;",
+         "matchingRanges": {
+          "lineNumber": "64"
+         },
+         "lineNumber": "64",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CAISBAgBIAE46OPF8IyR-6GqAUAASAI"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/worker/WorkerPoolConfig.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": " */",
+         "matchingRanges": {
+          "lineNumber": "24"
+         },
+         "lineNumber": "24",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "public class WorkerPoolConfig {",
+         "matchingRanges": {
+          "lineNumber": "25",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "25",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "  private final List\u003cEntry\u003cString, Integer\u003e\u003e workerMaxInstances;",
+         "matchingRanges": {
+          "lineNumber": "26"
+         },
+         "lineNumber": "26",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  public WorkerPoolConfig(",
+         "matchingRanges": {
+          "lineNumber": "29",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "29",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "      List\u003cEntry\u003cString, Integer\u003e\u003e workerMaxInstances,",
+         "matchingRanges": {
+          "lineNumber": "30"
+         },
+         "lineNumber": "30"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    }",
+         "matchingRanges": {
+          "lineNumber": "48"
+         },
+         "lineNumber": "48"
+        },
+        {
+         "lineText": "    if (!(o instanceof WorkerPoolConfig that)) {",
+         "matchingRanges": {
+          "lineNumber": "49",
+          "columnRanges": [
+           {
+            "startIndex": 23,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "49",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 10
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 23,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "      return false;",
+         "matchingRanges": {
+          "lineNumber": "50"
+         },
+         "lineNumber": "50",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CAMSBAgBIAE4-unNkPPbtsiwAUAASAM"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/worker/WorkerOptions.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "   * the empty string is used as the key. The default value for unspecified mnemonics is defined in",
+         "matchingRanges": {
+          "lineNumber": "44"
+         },
+         "lineNumber": "44",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 99
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "   * {@link WorkerPoolImpl.createPool}. \"auto\" currently returns the default.",
+         "matchingRanges": {
+          "lineNumber": "45",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "45",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 77
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "   */",
+         "matchingRanges": {
+          "lineNumber": "46"
+         },
+         "lineNumber": "46",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "              + \" only when flag experimental_total_worker_memory_limit_mb is enabled.\")",
+         "matchingRanges": {
+          "lineNumber": "258"
+         },
+         "lineNumber": "258",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 16,
+            "length": 71
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  public abstract boolean getShrinkWorkerPool();",
+         "matchingRanges": {
+          "lineNumber": "259",
+          "columnRanges": [
+           {
+            "startIndex": 35,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "259",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 8
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 35,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "260"
+         },
+         "lineNumber": "260"
+        },
+        {
+         "lineText": "  public abstract void setShrinkWorkerPool(boolean value);",
+         "matchingRanges": {
+          "lineNumber": "261",
+          "columnRanges": [
+           {
+            "startIndex": 32,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "261",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 18,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 32,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "262"
+         },
+         "lineNumber": "262"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CAQSBAgBIAE43saf47Tnl8FbQABIBA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/worker/WorkerTestUtils.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  public static WorkerPool createTestWorkerPool(Worker worker) {",
+         "matchingRanges": {
+          "lineNumber": "325",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 10
+           },
+           {
+            "startIndex": 37,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "325",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 10
+          },
+          {
+           "startIndex": 37,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "    return new WorkerPool() {",
+         "matchingRanges": {
+          "lineNumber": "326",
+          "columnRanges": [
+           {
+            "startIndex": 15,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "326",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 11,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 15,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "      @Override",
+         "matchingRanges": {
+          "lineNumber": "327"
+         },
+         "lineNumber": "327"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAUSBAgBIAE4qt7i6YPM1-ooQABIBQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/worker/WorkerLifecycleManager.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  private boolean emptyEvictionWasLogged = false;",
+         "matchingRanges": {
+          "lineNumber": "42"
+         },
+         "lineNumber": "42",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  private final WorkerPool workerPool;",
+         "matchingRanges": {
+          "lineNumber": "43",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 10
+           },
+           {
+            "startIndex": 27,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "43",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 10
+          },
+          {
+           "startIndex": 27,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "  private final int totalWorkerMemoryLimitKb;",
+         "matchingRanges": {
+          "lineNumber": "44"
+         },
+         "lineNumber": "44",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  private final int workerMemoryLimitKb;",
+         "matchingRanges": {
+          "lineNumber": "45"
+         },
+         "lineNumber": "45",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  private final boolean shrinkWorkerPool;",
+         "matchingRanges": {
+          "lineNumber": "46",
+          "columnRanges": [
+           {
+            "startIndex": 30,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "46",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 30,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "  private final boolean workerVerbose;",
+         "matchingRanges": {
+          "lineNumber": "47"
+         },
+         "lineNumber": "47",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  public WorkerLifecycleManager(WorkerPool workerPool, WorkerOptions options, Reporter reporter) {",
+         "matchingRanges": {
+          "lineNumber": "52",
+          "columnRanges": [
+           {
+            "startIndex": 32,
+            "length": 10
+           },
+           {
+            "startIndex": 43,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "52",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 32,
+           "length": 10
+          },
+          {
+           "startIndex": 43,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "    this.workerPool = workerPool;",
+         "matchingRanges": {
+          "lineNumber": "53",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 10
+           },
+           {
+            "startIndex": 22,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "53",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 10
+          },
+          {
+           "startIndex": 22,
+           "length": 10
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 10
+    },
+    "resultToken": "CAYSBAgBIAE48rShnuiJi_3qAUAASAY"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/worker/WorkerModule.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  WorkerPoolConfig config;",
+         "matchingRanges": {
+          "lineNumber": "57",
+          "columnRanges": [
+           {
+            "startIndex": 2,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "57",
+         "ranges": [
+          {
+           "startIndex": 2,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "  @VisibleForTesting WorkerPool workerPool;",
+         "matchingRanges": {
+          "lineNumber": "58",
+          "columnRanges": [
+           {
+            "startIndex": 21,
+            "length": 10
+           },
+           {
+            "startIndex": 32,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "58",
+         "ranges": [
+          {
+           "startIndex": 21,
+           "length": 10
+          },
+          {
+           "startIndex": 32,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "  @Nullable private WorkerLifecycleManager workerLifecycleManager;",
+         "matchingRanges": {
+          "lineNumber": "59"
+         },
+         "lineNumber": "59",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 7
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    WorkerPoolConfig newConfig =",
+         "matchingRanges": {
+          "lineNumber": "175",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "175",
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "        new WorkerPoolConfig(",
+         "matchingRanges": {
+          "lineNumber": "176",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "176",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "            options.getWorkerMaxInstances(), options.getWorkerMaxMultiplexInstances());",
+         "matchingRanges": {
+          "lineNumber": "177"
+         },
+         "lineNumber": "177"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    if (workerPool == null) {",
+         "matchingRanges": {
+          "lineNumber": "187",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "187",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "      workerPool = new WorkerPoolImpl(workerFactory, newConfig);",
+         "matchingRanges": {
+          "lineNumber": "188",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 10
+           },
+           {
+            "startIndex": 23,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "188",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 19,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 10
+          },
+          {
+           "startIndex": 23,
+           "length": 10
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  public WorkerPoolConfig getWorkerPoolConfig() {",
+         "matchingRanges": {
+          "lineNumber": "297",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 10
+           },
+           {
+            "startIndex": 29,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "297",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 10
+          },
+          {
+           "startIndex": 29,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "    return config;",
+         "matchingRanges": {
+          "lineNumber": "298"
+         },
+         "lineNumber": "298",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 17
+    },
+    "resultToken": "CAcSBAgBIAE4vtXsg9vqzoiWAUAASAc"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/worker/WorkerSpawnRunner.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "      Path execRoot,",
+         "matchingRanges": {
+          "lineNumber": "108"
+         },
+         "lineNumber": "108"
+        },
+        {
+         "lineText": "      WorkerPool workers,",
+         "matchingRanges": {
+          "lineNumber": "109",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "109",
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "      ExtendedEventHandler reporter,",
+         "matchingRanges": {
+          "lineNumber": "110"
+         },
+         "lineNumber": "110"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    this.workerOptions = workerOptions;",
+         "matchingRanges": {
+          "lineNumber": "123"
+         },
+         "lineNumber": "123",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    this.resourceManager.setWorkerPool(workers);",
+         "matchingRanges": {
+          "lineNumber": "124",
+          "columnRanges": [
+           {
+            "startIndex": 28,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "124",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 28,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "    this.metricsCollector = workerProcessMetricsCollector;",
+         "matchingRanges": {
+          "lineNumber": "125"
+         },
+         "lineNumber": "125",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAgSAggBOMKChcOlrb_3iwFAAEgI"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/buildeventstream/proto/build_event_stream.proto",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  // Information about worker pool actions.",
+         "matchingRanges": {
+          "lineNumber": "1373"
+         },
+         "lineNumber": "1373",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 41
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  message WorkerPoolMetrics {",
+         "matchingRanges": {
+          "lineNumber": "1374",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "1374",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "    // Statistics of worker pool per worker pool hash. Basically it's a map from",
+         "matchingRanges": {
+          "lineNumber": "1375"
+         },
+         "lineNumber": "1375",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 76
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    // worker pool hash to statistics.",
+         "matchingRanges": {
+          "lineNumber": "1376"
+         },
+         "lineNumber": "1376",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 34
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    repeated WorkerPoolStats worker_pool_stats = 1;",
+         "matchingRanges": {
+          "lineNumber": "1377",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "1377",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 49,
+            "length": 1
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "1378"
+         },
+         "lineNumber": "1378"
+        },
+        {
+         "lineText": "    message WorkerPoolStats {",
+         "matchingRanges": {
+          "lineNumber": "1379",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "1379",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "      // Hash of worker pool these stats are for. Contains information about",
+         "matchingRanges": {
+          "lineNumber": "1380"
+         },
+         "lineNumber": "1380",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 6,
+            "length": 70
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  WorkerPoolMetrics worker_pool_metrics = 11;",
+         "matchingRanges": {
+          "lineNumber": "1406",
+          "columnRanges": [
+           {
+            "startIndex": 2,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "1406",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 42,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 2,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "1407"
+         },
+         "lineNumber": "1407"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 4
+    },
+    "resultToken": "CAkSBAgBIAE4hsqFsoadvdhRQABICQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/worker/WorkerModuleTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    aLog.createSymbolicLink(PathFragment.EMPTY_FRAGMENT);",
+         "matchingRanges": {
+          "lineNumber": "106"
+         },
+         "lineNumber": "106"
+        },
+        {
+         "lineText": "    WorkerPool oldPool = module.workerPool;",
+         "matchingRanges": {
+          "lineNumber": "107",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 10
+           },
+           {
+            "startIndex": 32,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "107",
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 10
+          },
+          {
+           "startIndex": 32,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "    options.setWorkerSandboxing(!options.getWorkerSandboxing());",
+         "matchingRanges": {
+          "lineNumber": "108"
+         },
+         "lineNumber": "108"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    WorkerPool oldPool = module.workerPool;",
+         "matchingRanges": {
+          "lineNumber": "133",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 10
+           },
+           {
+            "startIndex": 32,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "133",
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 10
+          },
+          {
+           "startIndex": 32,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "    setupEnvironment(\"/otherRootDir\");",
+         "matchingRanges": {
+          "lineNumber": "134"
+         },
+         "lineNumber": "134",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 21,
+            "length": 15
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    WorkerPool oldPool = module.workerPool;",
+         "matchingRanges": {
+          "lineNumber": "162",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 10
+           },
+           {
+            "startIndex": 32,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "162",
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 10
+          },
+          {
+           "startIndex": 32,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "    WorkerOptions newOptions =",
+         "matchingRanges": {
+          "lineNumber": "163"
+         },
+         "lineNumber": "163"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    WorkerPool oldPool = module.workerPool;",
+         "matchingRanges": {
+          "lineNumber": "209",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 10
+           },
+           {
+            "startIndex": 32,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "209",
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 10
+          },
+          {
+           "startIndex": 32,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "    options.setWorkerMaxMultiplexInstances(Lists.newArrayList(Maps.immutableEntry(\"foo\", 42)));",
+         "matchingRanges": {
+          "lineNumber": "210"
+         },
+         "lineNumber": "210",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 82,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 89,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 13
+    },
+    "resultToken": "CAoSAggBONiBpY2N8rCFSUAASAo"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/worker/WorkerKey.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": " * Data container that uniquely identifies a kind of worker process and is used as the key for the",
+         "matchingRanges": {
+          "lineNumber": "29"
+         },
+         "lineNumber": "29",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 98
+           }
+          }
+         ]
+        },
+        {
+         "lineText": " * {@link WorkerPoolImpl}.",
+         "matchingRanges": {
+          "lineNumber": "30",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "30",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 26
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": " *",
+         "matchingRanges": {
+          "lineNumber": "31"
+         },
+         "lineNumber": "31",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAsSAggBOIri3M388tWtEEAASAs"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/worker/WorkerSpawnRunnerTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "            execRoot,",
+         "matchingRanges": {
+          "lineNumber": "150"
+         },
+         "lineNumber": "150"
+        },
+        {
+         "lineText": "            WorkerTestUtils.createTestWorkerPool(worker),",
+         "matchingRanges": {
+          "lineNumber": "151",
+          "columnRanges": [
+           {
+            "startIndex": 38,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "151",
+         "ranges": [
+          {
+           "startIndex": 38,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "            reporter,",
+         "matchingRanges": {
+          "lineNumber": "152"
+         },
+         "lineNumber": "152"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "        fs.getPath(\"/execRoot\"),",
+         "matchingRanges": {
+          "lineNumber": "542"
+         },
+         "lineNumber": "542",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 19,
+            "length": 11
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "        WorkerTestUtils.createTestWorkerPool(worker),",
+         "matchingRanges": {
+          "lineNumber": "543",
+          "columnRanges": [
+           {
+            "startIndex": 34,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "543",
+         "ranges": [
+          {
+           "startIndex": 34,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "        reporter,",
+         "matchingRanges": {
+          "lineNumber": "544"
+         },
+         "lineNumber": "544"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAwSAggBOKDrytaAuaf4dEAASAw"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/worker/WorkerLifecycleManagerTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  public void testEvictWorkers_doNothing_lowMemoryUsage() throws Exception {",
+         "matchingRanges": {
+          "lineNumber": "65"
+         },
+         "lineNumber": "65",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 58,
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    WorkerPoolImpl workerPool =",
+         "matchingRanges": {
+          "lineNumber": "66",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 10
+           },
+           {
+            "startIndex": 19,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "66",
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 10
+          },
+          {
+           "startIndex": 19,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "        new WorkerPoolImpl(",
+         "matchingRanges": {
+          "lineNumber": "67",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "67",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "            factoryMock, new WorkerPoolConfig(entryList(DUMMY_MNEMONIC, 1), emptyEntryList()));",
+         "matchingRanges": {
+          "lineNumber": "68",
+          "columnRanges": [
+           {
+            "startIndex": 29,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "68",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 25,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 72,
+            "length": 1
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 29,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "    WorkerKey key = createWorkerKey(DUMMY_MNEMONIC, fileSystem);",
+         "matchingRanges": {
+          "lineNumber": "69"
+         },
+         "lineNumber": "69"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  public void testEvictWorkers_doNothing_zeroThreshold() throws Exception {",
+         "matchingRanges": {
+          "lineNumber": "93"
+         },
+         "lineNumber": "93",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 57,
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    WorkerPoolImpl workerPool =",
+         "matchingRanges": {
+          "lineNumber": "94",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 10
+           },
+           {
+            "startIndex": 19,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "94",
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 10
+          },
+          {
+           "startIndex": 19,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "        new WorkerPoolImpl(",
+         "matchingRanges": {
+          "lineNumber": "95",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "95",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "            factoryMock, new WorkerPoolConfig(entryList(DUMMY_MNEMONIC, 1), emptyEntryList()));",
+         "matchingRanges": {
+          "lineNumber": "96",
+          "columnRanges": [
+           {
+            "startIndex": 29,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "96",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 25,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 72,
+            "length": 1
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 29,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "    WorkerKey key = createWorkerKey(DUMMY_MNEMONIC, fileSystem);",
+         "matchingRanges": {
+          "lineNumber": "97"
+         },
+         "lineNumber": "97"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 36
+    },
+    "resultToken": "CA0SAggBONC4yI2ylKuD0QFAAEgN"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/worker/BUILD",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    srcs = [",
+         "matchingRanges": {
+          "lineNumber": "214"
+         },
+         "lineNumber": "214"
+        },
+        {
+         "lineText": "        \"WorkerPool.java\",",
+         "matchingRanges": {
+          "lineNumber": "215",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "215",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 17
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "    ],",
+         "matchingRanges": {
+          "lineNumber": "216"
+         },
+         "lineNumber": "216"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    srcs = [",
+         "matchingRanges": {
+          "lineNumber": "226"
+         },
+         "lineNumber": "226"
+        },
+        {
+         "lineText": "        \"WorkerPoolConfig.java\",",
+         "matchingRanges": {
+          "lineNumber": "227",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "227",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 23
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "    ],",
+         "matchingRanges": {
+          "lineNumber": "228"
+         },
+         "lineNumber": "228"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    srcs = [",
+         "matchingRanges": {
+          "lineNumber": "233"
+         },
+         "lineNumber": "233"
+        },
+        {
+         "lineText": "        \"WorkerPoolImpl.java\",",
+         "matchingRanges": {
+          "lineNumber": "234",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "234",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 21
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "    ],",
+         "matchingRanges": {
+          "lineNumber": "235"
+         },
+         "lineNumber": "235"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CA4SAggBOO6lk7yg06XY_gFAAEgO"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/metrics/MetricsCollector.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildMetrics.WorkerMetrics;",
+         "matchingRanges": {
+          "lineNumber": "54"
+         },
+         "lineNumber": "54",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildMetrics.WorkerPoolMetrics;",
+         "matchingRanges": {
+          "lineNumber": "55",
+          "columnRanges": [
+           {
+            "startIndex": 90,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "55",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 90,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.buildtool.CommandPrecompleteEvent;",
+         "matchingRanges": {
+          "lineNumber": "56"
+         },
+         "lineNumber": "56",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  /** Creates the WorkerPoolMetrics by aggregating the collected WorkerProcessMetrics. */",
+         "matchingRanges": {
+          "lineNumber": "654",
+          "columnRanges": [
+           {
+            "startIndex": 18,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "654",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 87
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 18,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "  static WorkerPoolMetrics createWorkerPoolMetrics(",
+         "matchingRanges": {
+          "lineNumber": "655",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 10
+           },
+           {
+            "startIndex": 33,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "655",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 10
+          },
+          {
+           "startIndex": 33,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "      ImmutableList\u003cWorkerProcessMetrics\u003e collectedWorkerProcessMetrics) {",
+         "matchingRanges": {
+          "lineNumber": "656"
+         },
+         "lineNumber": "656"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  private static class WorkerPoolStats {",
+         "matchingRanges": {
+          "lineNumber": "672",
+          "columnRanges": [
+           {
+            "startIndex": 23,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "672",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 17,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 23,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "    private int createdCount;",
+         "matchingRanges": {
+          "lineNumber": "673"
+         },
+         "lineNumber": "673",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 7
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    WorkerPoolStats(String mnemonic, int hash) {",
+         "matchingRanges": {
+          "lineNumber": "685",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "685",
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "      this.mnemonic = mnemonic;",
+         "matchingRanges": {
+          "lineNumber": "686"
+         },
+         "lineNumber": "686",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 14
+    },
+    "resultToken": "CA8SBAgBIAE4ytv7kILvp_f9AUAASA8"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/actions/ResourceManager.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import com.google.devtools.build.lib.worker.WorkerKey;",
+         "matchingRanges": {
+          "lineNumber": "31"
+         },
+         "lineNumber": "31",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.worker.WorkerPool;",
+         "matchingRanges": {
+          "lineNumber": "32",
+          "columnRanges": [
+           {
+            "startIndex": 44,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "32",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 44,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.worker.WorkerProcessStatus.Status;",
+         "matchingRanges": {
+          "lineNumber": "33"
+         },
+         "lineNumber": "33",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "      manager.workerPool.invalidateWorker(worker);",
+         "matchingRanges": {
+          "lineNumber": "147",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "147",
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "      worker = null;",
+         "matchingRanges": {
+          "lineNumber": "148"
+         },
+         "lineNumber": "148"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  private WorkerPool workerPool;",
+         "matchingRanges": {
+          "lineNumber": "218",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 10
+           },
+           {
+            "startIndex": 21,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "218",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 10
+          },
+          {
+           "startIndex": 21,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "219"
+         },
+         "lineNumber": "219"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  public void setWorkerPool(WorkerPool workerPool) {",
+         "matchingRanges": {
+          "lineNumber": "347",
+          "columnRanges": [
+           {
+            "startIndex": 17,
+            "length": 10
+           },
+           {
+            "startIndex": 28,
+            "length": 10
+           },
+           {
+            "startIndex": 39,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "347",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 17,
+           "length": 10
+          },
+          {
+           "startIndex": 28,
+           "length": 10
+          },
+          {
+           "startIndex": 39,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "    this.workerPool = workerPool;",
+         "matchingRanges": {
+          "lineNumber": "348",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 10
+           },
+           {
+            "startIndex": 22,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "348",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 10
+          },
+          {
+           "startIndex": 22,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "  }",
+         "matchingRanges": {
+          "lineNumber": "349"
+         },
+         "lineNumber": "349"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 9
+    },
+    "resultToken": "CBASBAgBIAE46oPRmZbS0am2AUAASBA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/metrics/MetricsCollectorTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildMetrics.CumulativeMetrics;",
+         "matchingRanges": {
+          "lineNumber": "31"
+         },
+         "lineNumber": "31",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildMetrics.WorkerPoolMetrics.WorkerPoolStats;",
+         "matchingRanges": {
+          "lineNumber": "32",
+          "columnRanges": [
+           {
+            "startIndex": 90,
+            "length": 10
+           },
+           {
+            "startIndex": 108,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "32",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 90,
+           "length": 10
+          },
+          {
+           "startIndex": 108,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.buildtool.util.BuildIntegrationTestCase;",
+         "matchingRanges": {
+          "lineNumber": "33"
+         },
+         "lineNumber": "33",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  @Test",
+         "matchingRanges": {
+          "lineNumber": "866"
+         },
+         "lineNumber": "866"
+        },
+        {
+         "lineText": "  public void testCreateWorkerPoolMetrics() {",
+         "matchingRanges": {
+          "lineNumber": "867",
+          "columnRanges": [
+           {
+            "startIndex": 24,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "867",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 24,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "    // Given a list of WorkerProcessMetric(s), it should correctly aggregate the counts and create",
+         "matchingRanges": {
+          "lineNumber": "868"
+         },
+         "lineNumber": "868",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 94
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    // the WorkerPoolMetrics proto.",
+         "matchingRanges": {
+          "lineNumber": "869",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "869",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 31
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "    ImmutableList\u003cWorkerProcessMetrics\u003e allProcessMetrics =",
+         "matchingRanges": {
+          "lineNumber": "870"
+         },
+         "lineNumber": "870"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 6
+    },
+    "resultToken": "CBESBAgBIAE4xoGN-ODexellQABIEQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/bazel/rules/BazelRulesModule.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "        help = \"No-op\")",
+         "matchingRanges": {
+          "lineNumber": "504"
+         },
+         "lineNumber": "504",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 15,
+            "length": 7
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    public abstract boolean getUseNewWorkerPool();",
+         "matchingRanges": {
+          "lineNumber": "505",
+          "columnRanges": [
+           {
+            "startIndex": 37,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "505",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 11,
+            "length": 8
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 37,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "506"
+         },
+         "lineNumber": "506"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBISBAgBIAE4zLjPlrGU94k5QABIEg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/actions/ResourceManagerTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    when(worker.getStatus()).thenReturn(workerStatus);",
+         "matchingRanges": {
+          "lineNumber": "93"
+         },
+         "lineNumber": "93"
+        },
+        {
+         "lineText": "    manager.setWorkerPool(WorkerTestUtils.createTestWorkerPool(worker));",
+         "matchingRanges": {
+          "lineNumber": "94",
+          "columnRanges": [
+           {
+            "startIndex": 15,
+            "length": 10
+           },
+           {
+            "startIndex": 52,
+            "length": 10
+           }
+          ]
+         },
+         "lineNumber": "94",
+         "ranges": [
+          {
+           "startIndex": 15,
+           "length": 10
+          },
+          {
+           "startIndex": 52,
+           "length": 10
+          }
+         ]
+        },
+        {
+         "lineText": "  }",
+         "matchingRanges": {
+          "lineNumber": "95"
+         },
+         "lineNumber": "95"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBMSAggBOLzGptePyoaIrAFAAEgT"
+   }
+  ],
+  "estimatedResultCount": "21",
+  "exhaustive": true,
+  "requestToken": "CgpXb3JrZXJQb29sEiMoIGdpdDpiYXplbC9iYXplbEBtYXN0ZXIgY2FzZTp5ZXMgKRoMCMjsrNEGENSNhfgCIAwqADIASAE"
+ }
+}

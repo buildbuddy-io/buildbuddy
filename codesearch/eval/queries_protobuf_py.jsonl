@@ -1,0 +1,22 @@
+{"id":"py_descriptorpool","category":"symbol","query":"DescriptorPool","targets":["python/google/protobuf/descriptor_pool.py"]}
+{"id":"py_messagetojson","category":"symbol","query":"MessageToJson","targets":["python/google/protobuf/json_format.py"]}
+{"id":"py_messagetostring","category":"symbol","query":"MessageToString","targets":["python/google/protobuf/text_format.py"]}
+{"id":"py_fielddescriptor","category":"symbol","query":"FieldDescriptor","targets":["python/google/protobuf/descriptor.py"]}
+{"id":"py_symboldatabase","category":"symbol","query":"SymbolDatabase","targets":["python/google/protobuf/symbol_database.py"]}
+{"id":"py_descriptordatabase","category":"symbol","query":"DescriptorDatabase","targets":["python/google/protobuf/descriptor_database.py"]}
+{"id":"py_getmessageclass","category":"symbol","query":"GetMessageClass","targets":["python/google/protobuf/message_factory.py"]}
+{"id":"py_enumtypewrapper","category":"symbol","query":"EnumTypeWrapper","targets":["python/google/protobuf/internal/enum_type_wrapper.py"]}
+{"id":"py_makesimpleprotoclass","category":"symbol","query":"MakeSimpleProtoClass","targets":["python/google/protobuf/proto_builder.py"]}
+{"id":"py_message","category":"symbol","query":"Message","targets":["python/google/protobuf/message.py"]}
+{"id":"pyb_tag_type_bits","category":"keyword","query":"tag_type_bits","targets":["python/google/protobuf/internal/wire_format.py"]}
+{"id":"pyb_nanos_per_second","category":"keyword","query":"_nanos_per_second","targets":["python/google/protobuf/internal/well_known_types.py"]}
+{"id":"pyb_type_to_deserialize_method","category":"keyword","query":"type_to_deserialize_method","targets":["python/google/protobuf/internal/type_checkers.py"]}
+{"id":"pyb_upb_default","category":"keyword","query":"_google3_python_upb_default","targets":["python/google/protobuf/internal/api_implementation.py"]}
+{"id":"pyb_byte_escapes","category":"keyword","query":"_byte_escapes","targets":["python/google/protobuf/text_encoding.py"]}
+{"id":"pyb_push_interpreter","category":"phrase","query":"\"push the Python interpreter\"","targets":["python/google/protobuf/internal/encoder.py"]}
+{"id":"pyb_protojson_spec","category":"phrase","query":"\"according to ProtoJSON spec\"","targets":["python/google/protobuf/internal/field_mask.py"]}
+{"id":"pyb_unknown_fields_apis","category":"phrase","query":"\"Contains Unknown Fields APIs\"","targets":["python/google/protobuf/unknown_fields.py"]}
+{"id":"pyb_metaclasses_service","category":"phrase","query":"\"metaclasses used to create\"","targets":["python/google/protobuf/service_reflection.py"]}
+{"id":"pyb_sizer_def","category":"regex","query":"def \\w+Sizer","targets":["python/google/protobuf/internal/encoder.py"]}
+{"id":"pyb_valuechecker_class","category":"regex","query":"class \\w+ValueChecker","targets":["python/google/protobuf/internal/type_checkers.py"]}
+{"id":"pyb_wiretype_const","category":"regex","query":"^WIRETYPE_\\w+ = \\d+$","targets":["python/google/protobuf/internal/wire_format.py"]}

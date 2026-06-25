@@ -1,0 +1,7770 @@
+{
+ "query": "Goexit",
+ "oss_project": "go",
+ "repo_name": "go",
+ "page_size": 50,
+ "fetched_at": "2026-06-11T02:27:39Z",
+ "response": {
+  "searchResults": [
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/panic.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// the appropriate defer calls based on the bitmask and fn/arg information stored",
+         "matchingRanges": {
+          "lineNumber": "46"
+         },
+         "lineNumber": "46",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 81
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "// on the stack. During panic/Goexit processing, the appropriate defer calls are",
+         "matchingRanges": {
+          "lineNumber": "47",
+          "columnRanges": [
+           {
+            "startIndex": 30,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "47",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 80
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 30,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "// made using extra funcdata info that indicates the exact stack slots that",
+         "matchingRanges": {
+          "lineNumber": "48"
+         },
+         "lineNumber": "48",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 75
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// Goexit terminates the goroutine that calls it. No other goroutine is affected.",
+         "matchingRanges": {
+          "lineNumber": "672",
+          "columnRanges": [
+           {
+            "startIndex": 3,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "672",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 81
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 3,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "// Goexit runs all deferred calls before terminating the goroutine. Because Goexit",
+         "matchingRanges": {
+          "lineNumber": "673",
+          "columnRanges": [
+           {
+            "startIndex": 3,
+            "length": 6
+           },
+           {
+            "startIndex": 76,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "673",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 82
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 3,
+           "length": 6
+          },
+          {
+           "startIndex": 76,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "// is not a panic, any recover calls in those deferred functions will return nil.",
+         "matchingRanges": {
+          "lineNumber": "674"
+         },
+         "lineNumber": "674",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 81
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// It crashes if called from a thread not created by the Go runtime.",
+         "matchingRanges": {
+          "lineNumber": "681"
+         },
+         "lineNumber": "681",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 68
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "func Goexit() {",
+         "matchingRanges": {
+          "lineNumber": "682",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "682",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t// Create a panic object for Goexit, so we can recognize when it might be",
+         "matchingRanges": {
+          "lineNumber": "683",
+          "columnRanges": [
+           {
+            "startIndex": 30,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "683",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 73
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 30,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t// bypassed by a recover().",
+         "matchingRanges": {
+          "lineNumber": "684"
+         },
+         "lineNumber": "684",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 27
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 21
+    },
+    "resultToken": "CAASBAgBIAE48NTOnY2r39cgQABIAA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/go/testdata/script/test_example_goexit.txt",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "! go test -v examplegoexit",
+         "matchingRanges": {
+          "lineNumber": "4",
+          "columnRanges": [
+           {
+            "startIndex": 20,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "4",
+         "ranges": [
+          {
+           "startIndex": 20,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "stdout '(?s)--- PASS.*--- FAIL.*'",
+         "matchingRanges": {
+          "lineNumber": "5"
+         },
+         "lineNumber": "5"
+        },
+        {
+         "lineText": "stdout 'panic: test executed panic\\(nil\\) or runtime\\.Goexit'",
+         "matchingRanges": {
+          "lineNumber": "6",
+          "columnRanges": [
+           {
+            "startIndex": 54,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "6",
+         "ranges": [
+          {
+           "startIndex": 54,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "7"
+         },
+         "lineNumber": "7"
+        },
+        {
+         "lineText": "-- go.mod --",
+         "matchingRanges": {
+          "lineNumber": "8"
+         },
+         "lineNumber": "8"
+        },
+        {
+         "lineText": "module examplegoexit",
+         "matchingRanges": {
+          "lineNumber": "9",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "9",
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "10"
+         },
+         "lineNumber": "10"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func Example_goexit() {",
+         "matchingRanges": {
+          "lineNumber": "26",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "26",
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\truntime.Goexit()",
+         "matchingRanges": {
+          "lineNumber": "27",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "27",
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t// Output:",
+         "matchingRanges": {
+          "lineNumber": "28"
+         },
+         "lineNumber": "28"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 5
+    },
+    "resultToken": "CAESAggBOIKI9-qq4Ym3S0AASAE"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/iter/iter.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\tyieldNext  bool",
+         "matchingRanges": {
+          "lineNumber": "266"
+         },
+         "lineNumber": "266"
+        },
+        {
+         "lineText": "\t\tseqDone    bool // to detect Goexit",
+         "matchingRanges": {
+          "lineNumber": "267",
+          "columnRanges": [
+           {
+            "startIndex": 31,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "267",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 18,
+            "length": 19
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 31,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tracer      int",
+         "matchingRanges": {
+          "lineNumber": "268"
+         },
+         "lineNumber": "268"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t\tif pull.panicValue == goexitPanicValue {",
+         "matchingRanges": {
+          "lineNumber": "322",
+          "columnRanges": [
+           {
+            "startIndex": 25,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "322",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 3,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 25,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t\t// Propagate runtime.Goexit from seq.",
+         "matchingRanges": {
+          "lineNumber": "323",
+          "columnRanges": [
+           {
+            "startIndex": 25,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "323",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 37
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 25,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t\truntime.Goexit()",
+         "matchingRanges": {
+          "lineNumber": "324",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "324",
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t} else {",
+         "matchingRanges": {
+          "lineNumber": "325"
+         },
+         "lineNumber": "325",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 5,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t\t\t\t// Propagate runtime.Goexit from seq.",
+         "matchingRanges": {
+          "lineNumber": "343",
+          "columnRanges": [
+           {
+            "startIndex": 26,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "343",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 5,
+            "length": 37
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 26,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t\t\truntime.Goexit()",
+         "matchingRanges": {
+          "lineNumber": "344",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "344",
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 22
+    },
+    "resultToken": "CAISBAgBIAE4tKqr_8fuv4wPQABIAg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/iter/pull_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "func TestPullGoexit(t *testing.T) {",
+         "matchingRanges": {
+          "lineNumber": "360",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "360",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tt.Run(\"next\", func(t *testing.T) {",
+         "matchingRanges": {
+          "lineNumber": "361"
+         },
+         "lineNumber": "361",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 7,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 15,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t}) {",
+         "matchingRanges": {
+          "lineNumber": "367"
+         },
+         "lineNumber": "367"
+        },
+        {
+         "lineText": "\t\t\tt.Fatal(\"failed to Goexit from next\")",
+         "matchingRanges": {
+          "lineNumber": "368",
+          "columnRanges": [
+           {
+            "startIndex": 22,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "368",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 28
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 22,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t}",
+         "matchingRanges": {
+          "lineNumber": "369"
+         },
+         "lineNumber": "369"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t}) {",
+         "matchingRanges": {
+          "lineNumber": "383"
+         },
+         "lineNumber": "383"
+        },
+        {
+         "lineText": "\t\t\tt.Fatal(\"failed to Goexit from stop\")",
+         "matchingRanges": {
+          "lineNumber": "384",
+          "columnRanges": [
+           {
+            "startIndex": 22,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "384",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 28
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 22,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t}",
+         "matchingRanges": {
+          "lineNumber": "385"
+         },
+         "lineNumber": "385"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func TestPull2Goexit(t *testing.T) {",
+         "matchingRanges": {
+          "lineNumber": "411",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "411",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tt.Run(\"next\", func(t *testing.T) {",
+         "matchingRanges": {
+          "lineNumber": "412"
+         },
+         "lineNumber": "412",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 7,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 15,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 27
+    },
+    "resultToken": "CAMSBAgBIAE4xri3vd_Du8_2AUAASAM"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/stubs.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// goexit is the return stub at the top of every goroutine call stack.",
+         "matchingRanges": {
+          "lineNumber": "298",
+          "columnRanges": [
+           {
+            "startIndex": 3,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "298",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 70
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 3,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "// Each goroutine stack is constructed as if goexit called the",
+         "matchingRanges": {
+          "lineNumber": "299",
+          "columnRanges": [
+           {
+            "startIndex": 45,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "299",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 62
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 45,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "// goroutine's entry point function, so that when the entry point",
+         "matchingRanges": {
+          "lineNumber": "300"
+         },
+         "lineNumber": "300",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 65
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "// function returns, it will return to goexit, which will call goexit1",
+         "matchingRanges": {
+          "lineNumber": "301",
+          "columnRanges": [
+           {
+            "startIndex": 39,
+            "length": 6
+           },
+           {
+            "startIndex": 63,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "301",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 70
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 39,
+           "length": 6
+          },
+          {
+           "startIndex": 63,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "// to perform the actual exit.",
+         "matchingRanges": {
+          "lineNumber": "302"
+         },
+         "lineNumber": "302",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 30
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// gentraceback assumes that goexit terminates the stack. A direct",
+         "matchingRanges": {
+          "lineNumber": "305",
+          "columnRanges": [
+           {
+            "startIndex": 29,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "305",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 66
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 29,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "// call on the stack will cause gentraceback to stop walking the stack",
+         "matchingRanges": {
+          "lineNumber": "306"
+         },
+         "lineNumber": "306",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 70
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "// prematurely and if there is leftover state it may panic.",
+         "matchingRanges": {
+          "lineNumber": "307"
+         },
+         "lineNumber": "307",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 59
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "func goexit(neverCallThisFunction)",
+         "matchingRanges": {
+          "lineNumber": "308",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "308",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 6
+    },
+    "resultToken": "CAQSBAgBIAE47Lzfk67Krc8tQABIBA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/testing/testing.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// FailNow marks the function as having failed and stops its execution",
+         "matchingRanges": {
+          "lineNumber": "1072"
+         },
+         "lineNumber": "1072",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 70
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "// by calling [runtime.Goexit] (which then runs all deferred calls in the",
+         "matchingRanges": {
+          "lineNumber": "1073",
+          "columnRanges": [
+           {
+            "startIndex": 23,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "1073",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 73
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 23,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "// current goroutine).",
+         "matchingRanges": {
+          "lineNumber": "1074"
+         },
+         "lineNumber": "1074",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 22
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// Calling runtime.Goexit will exit the goroutine, which",
+         "matchingRanges": {
+          "lineNumber": "1084",
+          "columnRanges": [
+           {
+            "startIndex": 20,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "1084",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 56
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 20,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t// will run the deferred functions in this goroutine,",
+         "matchingRanges": {
+          "lineNumber": "1085"
+         },
+         "lineNumber": "1085",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 53
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t//\tc.signal \u003c- c.self",
+         "matchingRanges": {
+          "lineNumber": "1092"
+         },
+         "lineNumber": "1092",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 21
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t//\truntime.Goexit()",
+         "matchingRanges": {
+          "lineNumber": "1093",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "1093",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 19
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t//",
+         "matchingRanges": {
+          "lineNumber": "1094"
+         },
+         "lineNumber": "1094",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "var errNilPanicOrGoexit = errors.New(\"test executed panic(nil) or runtime.Goexit\")",
+         "matchingRanges": {
+          "lineNumber": "2028",
+          "columnRanges": [
+           {
+            "startIndex": 17,
+            "length": 6
+           },
+           {
+            "startIndex": 74,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "2028",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 37,
+            "length": 44
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 17,
+           "length": 6
+          },
+          {
+           "startIndex": 74,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "2029"
+         },
+         "lineNumber": "2029"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 14
+    },
+    "resultToken": "CAUSBAgBIAE4go_X55v086S5AUAASAU"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/sync/oncefunc_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "func TestOnceFuncGoexit(t *testing.T) {",
+         "matchingRanges": {
+          "lineNumber": "164",
+          "columnRanges": [
+           {
+            "startIndex": 17,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "164",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 17,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t// If f calls Goexit, the results are unspecified. But check that f doesn't",
+         "matchingRanges": {
+          "lineNumber": "165",
+          "columnRanges": [
+           {
+            "startIndex": 15,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "165",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 75
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 15,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t// get called twice.",
+         "matchingRanges": {
+          "lineNumber": "166"
+         },
+         "lineNumber": "166",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 20
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\tcalls++",
+         "matchingRanges": {
+          "lineNumber": "169"
+         },
+         "lineNumber": "169"
+        },
+        {
+         "lineText": "\t\truntime.Goexit()",
+         "matchingRanges": {
+          "lineNumber": "170",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "170",
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t})",
+         "matchingRanges": {
+          "lineNumber": "171"
+         },
+         "lineNumber": "171"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CAYSBAgBIAE4tKqzo4Go2rHoAUAASAY"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/stack_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// TestDeferPtrsGoexit is like TestDeferPtrs but exercises the possibility that the",
+         "matchingRanges": {
+          "lineNumber": "258",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "258",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 83
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "// stack grows as part of starting the deferred function. It calls Goexit at various",
+         "matchingRanges": {
+          "lineNumber": "259",
+          "columnRanges": [
+           {
+            "startIndex": 67,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "259",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 84
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 67,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "// stack depths, forcing the deferred function (with \u003e4kB of args) to be run at",
+         "matchingRanges": {
+          "lineNumber": "260"
+         },
+         "lineNumber": "260",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 79
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func TestDeferPtrsGoexit(t *testing.T) {",
+         "matchingRanges": {
+          "lineNumber": "264",
+          "columnRanges": [
+           {
+            "startIndex": 18,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "264",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 18,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tfor i := 0; i \u003c 100; i++ {",
+         "matchingRanges": {
+          "lineNumber": "265"
+         },
+         "lineNumber": "265",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 10,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 17,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tc := make(chan int, 1)",
+         "matchingRanges": {
+          "lineNumber": "266"
+         },
+         "lineNumber": "266",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 22,
+            "length": 1
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tgo testDeferPtrsGoexit(c, i)",
+         "matchingRanges": {
+          "lineNumber": "267",
+          "columnRanges": [
+           {
+            "startIndex": 18,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "267",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 18,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func testDeferPtrsGoexit(c chan int, i int) {",
+         "matchingRanges": {
+          "lineNumber": "274",
+          "columnRanges": [
+           {
+            "startIndex": 18,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "274",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 27,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 18,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tvar y int",
+         "matchingRanges": {
+          "lineNumber": "275"
+         },
+         "lineNumber": "275",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 8
+    },
+    "resultToken": "CAcSBAgBIAE40PbJq4PB2YUWQABIBw"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/crash_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "func TestGoexitCrash(t *testing.T) {",
+         "matchingRanges": {
+          "lineNumber": "419",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "419",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t// External linking brings in cgo, causing deadlock detection not working.",
+         "matchingRanges": {
+          "lineNumber": "420"
+         },
+         "lineNumber": "420",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 74
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func TestGoexitDefer(t *testing.T) {",
+         "matchingRanges": {
+          "lineNumber": "430",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "430",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tc := make(chan struct{})",
+         "matchingRanges": {
+          "lineNumber": "431"
+         },
+         "lineNumber": "431",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 11,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 16,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func TestPanicAfterGoexit(t *testing.T) {",
+         "matchingRanges": {
+          "lineNumber": "538",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "538",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t// an uncaught panic should still work after goexit",
+         "matchingRanges": {
+          "lineNumber": "539",
+          "columnRanges": [
+           {
+            "startIndex": 46,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "539",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 51
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 46,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func TestRecoveredPanicAfterGoexit(t *testing.T) {",
+         "matchingRanges": {
+          "lineNumber": "547",
+          "columnRanges": [
+           {
+            "startIndex": 28,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "547",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 28,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t// External linking brings in cgo, causing deadlock detection not working.",
+         "matchingRanges": {
+          "lineNumber": "548"
+         },
+         "lineNumber": "548",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 74
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func TestRecoverBeforePanicAfterGoexit(t *testing.T) {",
+         "matchingRanges": {
+          "lineNumber": "558",
+          "columnRanges": [
+           {
+            "startIndex": 32,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "558",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 32,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t// External linking brings in cgo, causing deadlock detection not working.",
+         "matchingRanges": {
+          "lineNumber": "559"
+         },
+         "lineNumber": "559",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 74
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 24
+    },
+    "resultToken": "CAgSBAgBIAE4pNvUoouvrf0TQABICA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/testing/sub_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    --- FAIL: subtest calls fatal on parent/#00 (N.NNs)",
+         "matchingRanges": {
+          "lineNumber": "376"
+         },
+         "lineNumber": "376",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "length": 55
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "        testing.go:NNN: test executed panic(nil) or runtime.Goexit: subtest may have called FailNow on a parent test`,",
+         "matchingRanges": {
+          "lineNumber": "377",
+          "columnRanges": [
+           {
+            "startIndex": 60,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "377",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "length": 117
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 60,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tmaxPar: 1,",
+         "matchingRanges": {
+          "lineNumber": "378"
+         },
+         "lineNumber": "378",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 10,
+            "length": 1
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func TestCleanupCalledEvenAfterGoexit(t *T) {",
+         "matchingRanges": {
+          "lineNumber": "1028",
+          "columnRanges": [
+           {
+            "startIndex": 31,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "1028",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 31,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tcleanups := 0",
+         "matchingRanges": {
+          "lineNumber": "1029"
+         },
+         "lineNumber": "1029",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 13,
+            "length": 1
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\tt.Cleanup(func() {",
+         "matchingRanges": {
+          "lineNumber": "1034"
+         },
+         "lineNumber": "1034",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\truntime.Goexit()",
+         "matchingRanges": {
+          "lineNumber": "1035",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "1035",
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t})",
+         "matchingRanges": {
+          "lineNumber": "1036"
+         },
+         "lineNumber": "1036"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CAkSBAgBIAE42LTZpq-68arIAUAASAk"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/crash_cgo_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "func TestCgoToGoCallGoexit(t *testing.T) {",
+         "matchingRanges": {
+          "lineNumber": "1025",
+          "columnRanges": [
+           {
+            "startIndex": 20,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "1025",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 20,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tif runtime.GOOS == \"plan9\" || runtime.GOOS == \"windows\" {",
+         "matchingRanges": {
+          "lineNumber": "1026"
+         },
+         "lineNumber": "1026",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 47,
+            "length": 9
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t}",
+         "matchingRanges": {
+          "lineNumber": "1031"
+         },
+         "lineNumber": "1031"
+        },
+        {
+         "lineText": "\toutput := runTestProg(t, \"testprogcgo\", \"CgoToGoCallGoexit\")",
+         "matchingRanges": {
+          "lineNumber": "1032",
+          "columnRanges": [
+           {
+            "startIndex": 53,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "1032",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 26,
+            "length": 13
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 41,
+            "length": 19
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 53,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tif !strings.Contains(output, \"runtime.Goexit called in a thread that was not created by the Go runtime\") {",
+         "matchingRanges": {
+          "lineNumber": "1033",
+          "columnRanges": [
+           {
+            "startIndex": 39,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "1033",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 30,
+            "length": 74
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 39,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tt.Fatalf(\"output should contain %s, got %s\", \"runtime.Goexit called in a thread that was not created by the Go runtime\", output)",
+         "matchingRanges": {
+          "lineNumber": "1034",
+          "columnRanges": [
+           {
+            "startIndex": 56,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "1034",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 34
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 47,
+            "length": 74
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 56,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t}",
+         "matchingRanges": {
+          "lineNumber": "1035"
+         },
+         "lineNumber": "1035"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 4
+    },
+    "resultToken": "CAoSBAgBIAE4orH9ysqUk8sgQABICg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/testdata/testprog/deadlock.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "func GoexitDeadlock() {",
+         "matchingRanges": {
+          "lineNumber": "68",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "68",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tF := func() {",
+         "matchingRanges": {
+          "lineNumber": "69"
+         },
+         "lineNumber": "69",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func GoexitExit() {",
+         "matchingRanges": {
+          "lineNumber": "202",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "202",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tprintln(\"t1\")",
+         "matchingRanges": {
+          "lineNumber": "203"
+         },
+         "lineNumber": "203",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 9,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func GoexitInPanic() {",
+         "matchingRanges": {
+          "lineNumber": "240",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "240",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tgo func() {",
+         "matchingRanges": {
+          "lineNumber": "241"
+         },
+         "lineNumber": "241",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func PanicAfterGoexit() {",
+         "matchingRanges": {
+          "lineNumber": "273",
+          "columnRanges": [
+           {
+            "startIndex": 15,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "273",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 15,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tdefer func() {",
+         "matchingRanges": {
+          "lineNumber": "274"
+         },
+         "lineNumber": "274",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func RecoveredPanicAfterGoexit() {",
+         "matchingRanges": {
+          "lineNumber": "280",
+          "columnRanges": [
+           {
+            "startIndex": 24,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "280",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 24,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tdefer func() {",
+         "matchingRanges": {
+          "lineNumber": "281"
+         },
+         "lineNumber": "281",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 32
+    },
+    "resultToken": "CAsSBAgBIAE44vzm8t69t8RJQABICw"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/testing/example.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// If recovered is non-nil, it'll panic with that value.",
+         "matchingRanges": {
+          "lineNumber": "55"
+         },
+         "lineNumber": "55",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 56
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "// If the test panicked with nil, or invoked runtime.Goexit, it'll be",
+         "matchingRanges": {
+          "lineNumber": "56",
+          "columnRanges": [
+           {
+            "startIndex": 53,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "56",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 69
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 53,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "// made to fail and panic with errNilPanicOrGoexit",
+         "matchingRanges": {
+          "lineNumber": "57",
+          "columnRanges": [
+           {
+            "startIndex": 44,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "57",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 50
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 44,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "func (eg *InternalExample) processRunResult(stdout string, timeSpent time.Duration, finished bool, recovered any) (passed bool) {",
+         "matchingRanges": {
+          "lineNumber": "58"
+         },
+         "lineNumber": "58",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t} else if !finished {",
+         "matchingRanges": {
+          "lineNumber": "93"
+         },
+         "lineNumber": "93",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 3,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tpanic(errNilPanicOrGoexit)",
+         "matchingRanges": {
+          "lineNumber": "94",
+          "columnRanges": [
+           {
+            "startIndex": 21,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "94",
+         "ranges": [
+          {
+           "startIndex": 21,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t}",
+         "matchingRanges": {
+          "lineNumber": "95"
+         },
+         "lineNumber": "95"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CAwSAggBOOaipq_Co-zDDkAASAw"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/testdata/testprogcgo/callback.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tregister(\"CgoCallbackGC\", CgoCallbackGC)",
+         "matchingRanges": {
+          "lineNumber": "40"
+         },
+         "lineNumber": "40",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 10,
+            "length": 15
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tregister(\"CgoToGoCallGoexit\", CgoToGoCallGoexit)",
+         "matchingRanges": {
+          "lineNumber": "41",
+          "columnRanges": [
+           {
+            "startIndex": 22,
+            "length": 6
+           },
+           {
+            "startIndex": 42,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "41",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 10,
+            "length": 19
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 22,
+           "length": 6
+          },
+          {
+           "startIndex": 42,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "}",
+         "matchingRanges": {
+          "lineNumber": "42"
+         },
+         "lineNumber": "42"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func CgoToGoCallGoexit() {",
+         "matchingRanges": {
+          "lineNumber": "44",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "44",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tgoexit = true",
+         "matchingRanges": {
+          "lineNumber": "45",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "45",
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "var goexit = false",
+         "matchingRanges": {
+          "lineNumber": "49",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "49",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "50"
+         },
+         "lineNumber": "50"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tif goexit {",
+         "matchingRanges": {
+          "lineNumber": "53",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "53",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t\truntime.Goexit()",
+         "matchingRanges": {
+          "lineNumber": "54",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "54",
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 6
+    },
+    "resultToken": "CA0SBAgBIAE4wpWrpqjKhooFQABIDQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/testing/panic_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t{",
+         "matchingRanges": {
+          "lineNumber": "239"
+         },
+         "lineNumber": "239"
+        },
+        {
+         "lineText": "\t\t\tdesc:  \"Issue 48502: call runtime.Goexit in t.Cleanup after panic\",",
+         "matchingRanges": {
+          "lineNumber": "240",
+          "columnRanges": [
+           {
+            "startIndex": 37,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "240",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 10,
+            "length": 59
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 37,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\tflags: []string{\"-test.run=^TestGoexitInCleanupAfterPanicHelper$\"},",
+         "matchingRanges": {
+          "lineNumber": "241",
+          "columnRanges": [
+           {
+            "startIndex": 35,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "241",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 19,
+            "length": 49
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 35,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\twant: `panic: die",
+         "matchingRanges": {
+          "lineNumber": "242"
+         },
+         "lineNumber": "242",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 9,
+            "length": 11
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tpanic: test executed panic(nil) or runtime.Goexit`,",
+         "matchingRanges": {
+          "lineNumber": "243",
+          "columnRanges": [
+           {
+            "startIndex": 44,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "243",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "length": 51
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 44,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t},",
+         "matchingRanges": {
+          "lineNumber": "244"
+         },
+         "lineNumber": "244"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func TestGoexitInCleanupAfterPanicHelper(t *testing.T) {",
+         "matchingRanges": {
+          "lineNumber": "277",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "277",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tif os.Getenv(\"GO_WANT_HELPER_PROCESS\") != \"1\" {",
+         "matchingRanges": {
+          "lineNumber": "278"
+         },
+         "lineNumber": "278",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 14,
+            "length": 24
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 43,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tt.Cleanup(func() { runtime.Goexit() })",
+         "matchingRanges": {
+          "lineNumber": "282",
+          "columnRanges": [
+           {
+            "startIndex": 28,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "282",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 11,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 28,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tt.Parallel()",
+         "matchingRanges": {
+          "lineNumber": "283"
+         },
+         "lineNumber": "283"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 5
+    },
+    "resultToken": "CA4SBAgBIAE4_tKKgobKo5oaQABIDg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/runtime2.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t_SigDefault              // if the signal isn't explicitly requested, don't monitor it",
+         "matchingRanges": {
+          "lineNumber": "1063"
+         },
+         "lineNumber": "1063",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 26,
+            "length": 61
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t_SigGoExit               // cause all runtime procs to exit (only used on Plan 9).",
+         "matchingRanges": {
+          "lineNumber": "1064",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "1064",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 26,
+            "length": 57
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t_SigSetStack             // Don't explicitly install handler, but add SA_ONSTACK to existing libc handler",
+         "matchingRanges": {
+          "lineNumber": "1065"
+         },
+         "lineNumber": "1065",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 26,
+            "length": 80
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\trepanicked  bool // whether this panic repanicked",
+         "matchingRanges": {
+          "lineNumber": "1198"
+         },
+         "lineNumber": "1198",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 18,
+            "length": 32
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tgoexit      bool",
+         "matchingRanges": {
+          "lineNumber": "1199",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "1199",
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tdeferreturn bool",
+         "matchingRanges": {
+          "lineNumber": "1200"
+         },
+         "lineNumber": "1200"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CA8SBAgBIAE46u6uqMjyqIg-QABIDw"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/proc.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// Defer unlock so that runtime.Goexit during init does the unlock too.",
+         "matchingRanges": {
+          "lineNumber": "209",
+          "columnRanges": [
+           {
+            "startIndex": 33,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "209",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 71
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 33,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tneedUnlock := true",
+         "matchingRanges": {
+          "lineNumber": "210"
+         },
+         "lineNumber": "210"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func goexit0(gp *g) {",
+         "matchingRanges": {
+          "lineNumber": "4499",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "4499",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tif goexperiment.RuntimeSecret \u0026\u0026 gp.secret \u003e 0 {",
+         "matchingRanges": {
+          "lineNumber": "4500"
+         },
+         "lineNumber": "4500",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 46,
+            "length": 1
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t// Erase the whole stack. This path only occurs when",
+         "matchingRanges": {
+          "lineNumber": "4501"
+         },
+         "lineNumber": "4501",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 52
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t// runtime.Goexit is called from within a runtime/secret.Do call.",
+         "matchingRanges": {
+          "lineNumber": "4502",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "4502",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 65
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tgp._defer = nil // should be true already but just in case.",
+         "matchingRanges": {
+          "lineNumber": "4526"
+         },
+         "lineNumber": "4526",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 17,
+            "length": 43
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tgp._panic = nil // non-nil for Goexit during panic. points at stack-allocated data.",
+         "matchingRanges": {
+          "lineNumber": "4527",
+          "columnRanges": [
+           {
+            "startIndex": 32,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "4527",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 17,
+            "length": 67
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 32,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tgp.writebuf = nil",
+         "matchingRanges": {
+          "lineNumber": "4528"
+         },
+         "lineNumber": "4528"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 18
+    },
+    "resultToken": "CBASBAgBIAE4sListvyNuYpaQABIEA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/testing/fuzz.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "func fRunner(f *F, fn func(*F)) {",
+         "matchingRanges": {
+          "lineNumber": "641"
+         },
+         "lineNumber": "641",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 22,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t// When this goroutine is done, either because runtime.Goexit was called, a",
+         "matchingRanges": {
+          "lineNumber": "642",
+          "columnRanges": [
+           {
+            "startIndex": 56,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "642",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 75
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 56,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t// panic started, or fn returned normally, record the duration and send",
+         "matchingRanges": {
+          "lineNumber": "643"
+         },
+         "lineNumber": "643",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 71
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tdefer func() {",
+         "matchingRanges": {
+          "lineNumber": "645"
+         },
+         "lineNumber": "645",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t// Detect whether the fuzz test panicked or called runtime.Goexit",
+         "matchingRanges": {
+          "lineNumber": "646",
+          "columnRanges": [
+           {
+            "startIndex": 61,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "646",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 65
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 61,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t// without calling F.Fuzz, F.Fail, or F.Skip. If it did, panic (possibly",
+         "matchingRanges": {
+          "lineNumber": "647"
+         },
+         "lineNumber": "647",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 72
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t// If we recovered a panic or inappropriate runtime.Goexit, fail the test,",
+         "matchingRanges": {
+          "lineNumber": "682",
+          "columnRanges": [
+           {
+            "startIndex": 54,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "682",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 74
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 54,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t// flush the output log up to the root, then panic.",
+         "matchingRanges": {
+          "lineNumber": "683"
+         },
+         "lineNumber": "683",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 51
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t// No panic or inappropriate Goexit.",
+         "matchingRanges": {
+          "lineNumber": "703",
+          "columnRanges": [
+           {
+            "startIndex": 31,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "703",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 36
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 31,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tf.duration += highPrecisionTimeSince(f.start)",
+         "matchingRanges": {
+          "lineNumber": "704"
+         },
+         "lineNumber": "704"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 5
+    },
+    "resultToken": "CBESAggBOKLZxM3Vj9yNf0AASBE"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/testing/benchmark.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t// Signal that we're done whether we return normally",
+         "matchingRanges": {
+          "lineNumber": "239"
+         },
+         "lineNumber": "239",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 52
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t// or by FailNow's runtime.Goexit.",
+         "matchingRanges": {
+          "lineNumber": "240",
+          "columnRanges": [
+           {
+            "startIndex": 29,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "240",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 34
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 29,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tdefer func() {",
+         "matchingRanges": {
+          "lineNumber": "241"
+         },
+         "lineNumber": "241",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// Signal that we're done whether we return normally",
+         "matchingRanges": {
+          "lineNumber": "332"
+         },
+         "lineNumber": "332",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 52
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t// or by FailNow's runtime.Goexit.",
+         "matchingRanges": {
+          "lineNumber": "333",
+          "columnRanges": [
+           {
+            "startIndex": 28,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "333",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 34
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 28,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tdefer func() {",
+         "matchingRanges": {
+          "lineNumber": "334"
+         },
+         "lineNumber": "334",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CBISAggBOMC-jtaD5bv7pQFAAEgS"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "test/fixedbugs/issue5963.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t}()",
+         "matchingRanges": {
+          "lineNumber": "24"
+         },
+         "lineNumber": "24"
+        },
+        {
+         "lineText": "\truntime.Goexit()",
+         "matchingRanges": {
+          "lineNumber": "25",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "25",
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "}",
+         "matchingRanges": {
+          "lineNumber": "26"
+         },
+         "lineNumber": "26"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t/Users/rsc/g/go/src/pkg/runtime/mheap.c:438",
+         "matchingRanges": {
+          "lineNumber": "38"
+         },
+         "lineNumber": "38",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 44
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "runtime.goexit()",
+         "matchingRanges": {
+          "lineNumber": "39",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "39",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 16
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t/Users/rsc/g/go/src/pkg/runtime/proc.c:1313",
+         "matchingRanges": {
+          "lineNumber": "40"
+         },
+         "lineNumber": "40",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 44
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CBMSAggBOLTwgLSKrb-vBUAASBM"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "test/fixedbugs/issue8158.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\tdone \u003c- true",
+         "matchingRanges": {
+          "lineNumber": "26"
+         },
+         "lineNumber": "26"
+        },
+        {
+         "lineText": "\t\truntime.Goexit() // left stack-allocated Panic struct on gp-\u003epanic stack",
+         "matchingRanges": {
+          "lineNumber": "27",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "27",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 19,
+            "length": 55
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t}()",
+         "matchingRanges": {
+          "lineNumber": "28"
+         },
+         "lineNumber": "28"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\tdone \u003c- true",
+         "matchingRanges": {
+          "lineNumber": "35"
+         },
+         "lineNumber": "35"
+        },
+        {
+         "lineText": "\t\truntime.Goexit()",
+         "matchingRanges": {
+          "lineNumber": "36",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "36",
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t}()",
+         "matchingRanges": {
+          "lineNumber": "37"
+         },
+         "lineNumber": "37"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CBQSAggBOMST7cTx66KIugFAAEgU"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/secret/secret.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "//     collector realizes that all allocated values are no longer reachable.",
+         "matchingRanges": {
+          "lineNumber": "22"
+         },
+         "lineNumber": "22",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 76
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "//   - Do works even if f panics or calls runtime.Goexit.  As part of",
+         "matchingRanges": {
+          "lineNumber": "23",
+          "columnRanges": [
+           {
+            "startIndex": 50,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "23",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 69
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 50,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "//     that, any panic raised by f will appear as if it originates from",
+         "matchingRanges": {
+          "lineNumber": "24"
+         },
+         "lineNumber": "24",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 71
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "//   - Protection does not extend to any global variables written by f.",
+         "matchingRanges": {
+          "lineNumber": "44"
+         },
+         "lineNumber": "44",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 71
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "//   - If f calls runtime.Goexit, erasure can be delayed by defers",
+         "matchingRanges": {
+          "lineNumber": "45",
+          "columnRanges": [
+           {
+            "startIndex": 26,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "45",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 66
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 26,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "//     higher up on the call stack.",
+         "matchingRanges": {
+          "lineNumber": "46"
+         },
+         "lineNumber": "46",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 35
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// Note: if f calls runtime.Goexit, step 3 and above will not",
+         "matchingRanges": {
+          "lineNumber": "101",
+          "columnRanges": [
+           {
+            "startIndex": 29,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "101",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 61
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 29,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t// happen, as Goexit is unrecoverable. We handle that case in",
+         "matchingRanges": {
+          "lineNumber": "102",
+          "columnRanges": [
+           {
+            "startIndex": 15,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "102",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 61
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 15,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t// runtime/proc.go:goexit0.",
+         "matchingRanges": {
+          "lineNumber": "103",
+          "columnRanges": [
+           {
+            "startIndex": 20,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "103",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 27
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 20,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "}",
+         "matchingRanges": {
+          "lineNumber": "104"
+         },
+         "lineNumber": "104"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 5
+    },
+    "resultToken": "CBUSAggBOMapheaJzqT9FEAASBU"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "test/fixedbugs/issue11256.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t\t// Exit without unwinding stack barriers.",
+         "matchingRanges": {
+          "lineNumber": "39"
+         },
+         "lineNumber": "39",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 3,
+            "length": 41
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\truntime.Goexit()",
+         "matchingRanges": {
+          "lineNumber": "40",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "40",
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t}()",
+         "matchingRanges": {
+          "lineNumber": "41"
+         },
+         "lineNumber": "41"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBYSAggBOP7klaq9nZ6KEEAASBY"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/os/user/lookup_windows.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t\tprintln(\"os/user: failed to revert to previous token:\", impersonationRollbackErr.Error())",
+         "matchingRanges": {
+          "lineNumber": "315"
+         },
+         "lineNumber": "315",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 46
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\truntime.Goexit()",
+         "matchingRanges": {
+          "lineNumber": "316",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "316",
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t} else {",
+         "matchingRanges": {
+          "lineNumber": "317"
+         },
+         "lineNumber": "317",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBcSAggBOM6kxMC_kqe7tQFAAEgX"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/go/doc/testdata/testing.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// Calling runtime.Goexit will exit the goroutine, which",
+         "matchingRanges": {
+          "lineNumber": "141",
+          "columnRanges": [
+           {
+            "startIndex": 20,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "141",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 56
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 20,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t// will run the deferred functions in this goroutine,",
+         "matchingRanges": {
+          "lineNumber": "142"
+         },
+         "lineNumber": "142",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 53
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t//\tc.signal \u003c- c.self",
+         "matchingRanges": {
+          "lineNumber": "149"
+         },
+         "lineNumber": "149",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 21
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t//\truntime.Goexit()",
+         "matchingRanges": {
+          "lineNumber": "150",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "150",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 19
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t//",
+         "matchingRanges": {
+          "lineNumber": "151"
+         },
+         "lineNumber": "151",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// tRunner no matter what), but worse the goroutine teardown",
+         "matchingRanges": {
+          "lineNumber": "153"
+         },
+         "lineNumber": "153",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 60
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t// implicit in runtime.Goexit was not guaranteed to complete",
+         "matchingRanges": {
+          "lineNumber": "154",
+          "columnRanges": [
+           {
+            "startIndex": 24,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "154",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 60
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 24,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t// before the test exited. If a test deferred an important cleanup",
+         "matchingRanges": {
+          "lineNumber": "155"
+         },
+         "lineNumber": "155",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 66
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 5
+    },
+    "resultToken": "CBgSAggBOOKmtJGIrcrwoAFAAEgY"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "api/go1.txt",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "pkg runtime, func GOROOT() string",
+         "matchingRanges": {
+          "lineNumber": "5677"
+         },
+         "lineNumber": "5677"
+        },
+        {
+         "lineText": "pkg runtime, func Goexit()",
+         "matchingRanges": {
+          "lineNumber": "5678",
+          "columnRanges": [
+           {
+            "startIndex": 18,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "5678",
+         "ranges": [
+          {
+           "startIndex": 18,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "pkg runtime, func GoroutineProfile([]StackRecord) (int, bool)",
+         "matchingRanges": {
+          "lineNumber": "5679"
+         },
+         "lineNumber": "5679"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBkSAggBOOjf65ehl6OAuQFAAEgZ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/go/doc/testdata/benchmark.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// Signal that we're done whether we return normally",
+         "matchingRanges": {
+          "lineNumber": "146"
+         },
+         "lineNumber": "146",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 52
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t// or by FailNow's runtime.Goexit.",
+         "matchingRanges": {
+          "lineNumber": "147",
+          "columnRanges": [
+           {
+            "startIndex": 28,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "147",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 34
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 28,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tdefer func() {",
+         "matchingRanges": {
+          "lineNumber": "148"
+         },
+         "lineNumber": "148",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBoSAggBOJK_8q7V04avzQFAAEga"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/secret/secret_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "func TestGoExit(t *testing.T) {",
+         "matchingRanges": {
+          "lineNumber": "190",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "190",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tcheckStackForSecret(t) // if this fails, something is wrong with the test",
+         "matchingRanges": {
+          "lineNumber": "191"
+         },
+         "lineNumber": "191",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 24,
+            "length": 50
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t\tloadRegisters(unsafe.Pointer(\u0026s))",
+         "matchingRanges": {
+          "lineNumber": "210"
+         },
+         "lineNumber": "210"
+        },
+        {
+         "lineText": "\t\t\truntime.Goexit()",
+         "matchingRanges": {
+          "lineNumber": "211",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "211",
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t})",
+         "matchingRanges": {
+          "lineNumber": "212"
+         },
+         "lineNumber": "212"
+        },
+        {
+         "lineText": "\t\tt.Errorf(\"goexit didn't happen\")",
+         "matchingRanges": {
+          "lineNumber": "213",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "213",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 22
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t}()",
+         "matchingRanges": {
+          "lineNumber": "214"
+         },
+         "lineNumber": "214"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\thi := \u003c-c",
+         "matchingRanges": {
+          "lineNumber": "216"
+         },
+         "lineNumber": "216"
+        },
+        {
+         "lineText": "\t// We want to wait until the other goroutine has finished Goexiting and",
+         "matchingRanges": {
+          "lineNumber": "217",
+          "columnRanges": [
+           {
+            "startIndex": 59,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "217",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 71
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 59,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t// cleared its stack. There's no signal for that, so just wait a bit.",
+         "matchingRanges": {
+          "lineNumber": "218"
+         },
+         "lineNumber": "218",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 69
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 4
+    },
+    "resultToken": "CBsSBAgBIAE4zNaR55Cv5rGsAUAASBs"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "test/interface/fake.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tmainstart()",
+         "matchingRanges": {
+          "lineNumber": "94"
+         },
+         "lineNumber": "94",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 12
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "sys·Goexit /Users/rsc/goX/src/runtime/proc.c:124",
+         "matchingRanges": {
+          "lineNumber": "95",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "95",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 48
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tsys·Goexit()",
+         "matchingRanges": {
+          "lineNumber": "96",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "96",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 13
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "*/",
+         "matchingRanges": {
+          "lineNumber": "97"
+         },
+         "lineNumber": "97",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CBwSAggBOMbvn4eLybSgS0AASBw"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "test/fixedbugs/bug142.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tmainstart()",
+         "matchingRanges": {
+          "lineNumber": "27"
+         },
+         "lineNumber": "27",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 12
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "sys·Goexit /Users/rsc/goX/src/runtime/proc.c:124",
+         "matchingRanges": {
+          "lineNumber": "28",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "28",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 48
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tsys·Goexit()",
+         "matchingRanges": {
+          "lineNumber": "29",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "29",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 13
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "; ",
+         "matchingRanges": {
+          "lineNumber": "30"
+         },
+         "lineNumber": "30",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CB0SAggBOO79_ryG6uu_9QFAAEgd"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/internal/fuzztest/testdata/script/test_fuzz.txt",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "# Test that runtime.Goexit within the fuzz function is an error.",
+         "matchingRanges": {
+          "lineNumber": "98",
+          "columnRanges": [
+           {
+            "startIndex": 20,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "98",
+         "ranges": [
+          {
+           "startIndex": 20,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "! go test -vet=off goexit_fuzz_fn_fuzz_test.go",
+         "matchingRanges": {
+          "lineNumber": "99",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "99",
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "! stdout ^ok",
+         "matchingRanges": {
+          "lineNumber": "100"
+         },
+         "lineNumber": "100"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "-- goexit_fuzz_fn_fuzz_test.go --",
+         "matchingRanges": {
+          "lineNumber": "319",
+          "columnRanges": [
+           {
+            "startIndex": 3,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "319",
+         "ranges": [
+          {
+           "startIndex": 3,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "package goexit_fuzz_fn_fuzz",
+         "matchingRanges": {
+          "lineNumber": "320",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "320",
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "321"
+         },
+         "lineNumber": "321"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    f.Fuzz(func(t *testing.T, b []byte) {",
+         "matchingRanges": {
+          "lineNumber": "326"
+         },
+         "lineNumber": "326"
+        },
+        {
+         "lineText": "        runtime.Goexit()",
+         "matchingRanges": {
+          "lineNumber": "327",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "327",
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "    })",
+         "matchingRanges": {
+          "lineNumber": "328"
+         },
+         "lineNumber": "328"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 5
+    },
+    "resultToken": "CB4SAggBOLiBroqluNfewgFAAEge"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/vendor/golang.org/x/tools/internal/stdlib/manifest.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t{\"GOROOT\", Func, 0, \"func() string\"},",
+         "matchingRanges": {
+          "lineNumber": "10442"
+         },
+         "lineNumber": "10442",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 3,
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 19,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 22,
+            "length": 15
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t{\"Goexit\", Func, 0, \"func()\"},",
+         "matchingRanges": {
+          "lineNumber": "10443",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "10443",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 3,
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 19,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 22,
+            "length": 8
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t{\"GoroutineProfile\", Func, 0, \"func(p []StackRecord) (n int, ok bool)\"},",
+         "matchingRanges": {
+          "lineNumber": "10444"
+         },
+         "lineNumber": "10444",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 3,
+            "length": 18
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 29,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 32,
+            "length": 40
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CB8SAggBOJrA-rfNvvHiBUAASB8"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/internal/fuzztest/testdata/script/test_fuzz_mutate_crash.txt",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "stdout 'testdata[/\\\\]fuzz[/\\\\]FuzzWithNilPanic[/\\\\]'",
+         "matchingRanges": {
+          "lineNumber": "28"
+         },
+         "lineNumber": "28"
+        },
+        {
+         "lineText": "stdout 'panic called with nil argument|test executed panic.nil. or runtime.Goexit'",
+         "matchingRanges": {
+          "lineNumber": "29",
+          "columnRanges": [
+           {
+            "startIndex": 75,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "29",
+         "ranges": [
+          {
+           "startIndex": 75,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "go run check_testdata.go FuzzWithNilPanic",
+         "matchingRanges": {
+          "lineNumber": "30"
+         },
+         "lineNumber": "30"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "! go test -run=FuzzWithGoexit -fuzz=FuzzWithGoexit -fuzztime=100x -fuzzminimizetime=1000x",
+         "matchingRanges": {
+          "lineNumber": "32",
+          "columnRanges": [
+           {
+            "startIndex": 23,
+            "length": 6
+           },
+           {
+            "startIndex": 44,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "32",
+         "ranges": [
+          {
+           "startIndex": 23,
+           "length": 6
+          },
+          {
+           "startIndex": 44,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "stdout 'testdata[/\\\\]fuzz[/\\\\]FuzzWithGoexit[/\\\\]'",
+         "matchingRanges": {
+          "lineNumber": "33",
+          "columnRanges": [
+           {
+            "startIndex": 38,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "33",
+         "ranges": [
+          {
+           "startIndex": 38,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "stdout 'runtime.Goexit'",
+         "matchingRanges": {
+          "lineNumber": "34",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "34",
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "go run check_testdata.go FuzzWithGoexit",
+         "matchingRanges": {
+          "lineNumber": "35",
+          "columnRanges": [
+           {
+            "startIndex": 33,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "35",
+         "ranges": [
+          {
+           "startIndex": 33,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\tif string(b) != \"aa\" {",
+         "matchingRanges": {
+          "lineNumber": "147"
+         },
+         "lineNumber": "147"
+        },
+        {
+         "lineText": "\t\t\truntime.Goexit()",
+         "matchingRanges": {
+          "lineNumber": "148",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "148",
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t}",
+         "matchingRanges": {
+          "lineNumber": "149"
+         },
+         "lineNumber": "149"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 7
+    },
+    "resultToken": "CCASAggBOOyUhIK0s6Wn5QFAAEgg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/vendor/golang.org/x/tools/go/analysis/passes/ctrlflow/ctrlflow.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tif typesinternal.IsFunctionNamed(fn, \"syscall\", \"Exit\", \"ExitProcess\", \"ExitThread\") ||",
+         "matchingRanges": {
+          "lineNumber": "246"
+         },
+         "lineNumber": "246",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 38,
+            "length": 9
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 49,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 57,
+            "length": 13
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 72,
+            "length": 12
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\ttypesinternal.IsFunctionNamed(fn, \"runtime\", \"Goexit\", \"fatalthrow\", \"fatalpanic\", \"exit\") ||",
+         "matchingRanges": {
+          "lineNumber": "247",
+          "columnRanges": [
+           {
+            "startIndex": 48,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "247",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 36,
+            "length": 9
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 47,
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 57,
+            "length": 12
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 71,
+            "length": 12
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 85,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 48,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t// Following staticcheck (see go/ir/exits.go) we include functions",
+         "matchingRanges": {
+          "lineNumber": "248"
+         },
+         "lineNumber": "248",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 66
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CCESAggBONLm5-iemumfXEAASCE"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/os_plan9.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "var goexits = []byte(\"go: exit \")",
+         "matchingRanges": {
+          "lineNumber": "400",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "400",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 21,
+            "length": 11
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "var emptystatus = []byte(\"\\x00\")",
+         "matchingRanges": {
+          "lineNumber": "401"
+         },
+         "lineNumber": "401",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 25,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func goexitsall(status *byte) {",
+         "matchingRanges": {
+          "lineNumber": "404",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "404",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tvar buf [_ERRMAX]byte",
+         "matchingRanges": {
+          "lineNumber": "405"
+         },
+         "lineNumber": "405",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tgetg().m.locks++",
+         "matchingRanges": {
+          "lineNumber": "409"
+         },
+         "lineNumber": "409"
+        },
+        {
+         "lineText": "\tn := copy(buf[:], goexits)",
+         "matchingRanges": {
+          "lineNumber": "410",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "410",
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tn = copy(buf[n:], gostringnocopy(status))",
+         "matchingRanges": {
+          "lineNumber": "411"
+         },
+         "lineNumber": "411"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t}",
+         "matchingRanges": {
+          "lineNumber": "454"
+         },
+         "lineNumber": "454"
+        },
+        {
+         "lineText": "\tgoexitsall(\u0026status[0])",
+         "matchingRanges": {
+          "lineNumber": "455",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "455",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 1
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\texits(\u0026status[0])",
+         "matchingRanges": {
+          "lineNumber": "456"
+         },
+         "lineNumber": "456",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 15,
+            "length": 1
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 4
+    },
+    "resultToken": "CCISBAgBIAE4gubtmtb6udCxAUAASCI"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/internal/fuzztest/testdata/script/test_fuzz_cleanup.txt",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "# Cleanup should run after an unexpected runtime.Goexit.",
+         "matchingRanges": {
+          "lineNumber": "13",
+          "columnRanges": [
+           {
+            "startIndex": 49,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "13",
+         "ranges": [
+          {
+           "startIndex": 49,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "! go test -run=FuzzTargetGoexit",
+         "matchingRanges": {
+          "lineNumber": "14",
+          "columnRanges": [
+           {
+            "startIndex": 25,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "14",
+         "ranges": [
+          {
+           "startIndex": 25,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "stdout cleanup",
+         "matchingRanges": {
+          "lineNumber": "15"
+         },
+         "lineNumber": "15"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func FuzzTargetGoexit(f *testing.F) {",
+         "matchingRanges": {
+          "lineNumber": "51",
+          "columnRanges": [
+           {
+            "startIndex": 15,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "51",
+         "ranges": [
+          {
+           "startIndex": 15,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tf.Cleanup(func() { f.Log(\"cleanup\") })",
+         "matchingRanges": {
+          "lineNumber": "52"
+         },
+         "lineNumber": "52"
+        },
+        {
+         "lineText": "\truntime.Goexit()",
+         "matchingRanges": {
+          "lineNumber": "53",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "53",
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "}",
+         "matchingRanges": {
+          "lineNumber": "54"
+         },
+         "lineNumber": "54"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 4
+    },
+    "resultToken": "CCMSAggBOLas0a7gj7r92gFAAEgj"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/sync/waitgroup.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t\t// f completed normally, or abruptly using goexit.",
+         "matchingRanges": {
+          "lineNumber": "254",
+          "columnRanges": [
+           {
+            "startIndex": 46,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "254",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 3,
+            "length": 50
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 46,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t// Either way, decrement the semaphore.",
+         "matchingRanges": {
+          "lineNumber": "255"
+         },
+         "lineNumber": "255",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 3,
+            "length": 39
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CCQSAggBOJ625qe2k8PmdUAASCQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/internal/fuzztest/testdata/script/test_fuzz_mutate_fail.txt",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "! go test -fuzz=FuzzGoexit",
+         "matchingRanges": {
+          "lineNumber": "24",
+          "columnRanges": [
+           {
+            "startIndex": 20,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "24",
+         "ranges": [
+          {
+           "startIndex": 20,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "! exists testdata",
+         "matchingRanges": {
+          "lineNumber": "25"
+         },
+         "lineNumber": "25"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func FuzzGoexit(f *testing.F) {",
+         "matchingRanges": {
+          "lineNumber": "91",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "91",
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tif isWorker() {",
+         "matchingRanges": {
+          "lineNumber": "92"
+         },
+         "lineNumber": "92"
+        },
+        {
+         "lineText": "\t\truntime.Goexit()",
+         "matchingRanges": {
+          "lineNumber": "93",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "93",
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t}",
+         "matchingRanges": {
+          "lineNumber": "94"
+         },
+         "lineNumber": "94"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CCUSAggBOIyLn63q2ajJdkAASCU"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/internal/abi/symtab.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// successful, complete traversal of the stack.",
+         "matchingRanges": {
+          "lineNumber": "43"
+         },
+         "lineNumber": "43",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 47
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t// Examples of TopFrame functions include goexit, which appears",
+         "matchingRanges": {
+          "lineNumber": "44",
+          "columnRanges": [
+           {
+            "startIndex": 43,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "44",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 63
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 43,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t// at the top of a user goroutine stack, and mstart, which appears",
+         "matchingRanges": {
+          "lineNumber": "45"
+         },
+         "lineNumber": "45",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 66
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tFuncID_gcBgMarkWorker",
+         "matchingRanges": {
+          "lineNumber": "79"
+         },
+         "lineNumber": "79"
+        },
+        {
+         "lineText": "\tFuncID_goexit",
+         "matchingRanges": {
+          "lineNumber": "80",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "80",
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tFuncID_gogo",
+         "matchingRanges": {
+          "lineNumber": "81"
+         },
+         "lineNumber": "81"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CCYSBAgBIAE4lqSllLP_ncPfAUAASCY"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/sys_ppc64x.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "func prepGoExitFrame(sp uintptr)",
+         "matchingRanges": {
+          "lineNumber": "22",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "22",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CCcSBAgBIAE4wN2s9cy48KBYQABIJw"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/sys_nonppc64x.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "func prepGoExitFrame(sp uintptr) {",
+         "matchingRanges": {
+          "lineNumber": "9",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "9",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "}",
+         "matchingRanges": {
+          "lineNumber": "10"
+         },
+         "lineNumber": "10"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CCgSBAgBIAE4srqN6er4ir-6AUAASCg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/asm_arm.s",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// The top-most function running on a goroutine",
+         "matchingRanges": {
+          "lineNumber": "840"
+         },
+         "lineNumber": "840"
+        },
+        {
+         "lineText": "// returns to goexit+PCQuantum.",
+         "matchingRanges": {
+          "lineNumber": "841",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "841",
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "TEXT runtime·goexit(SB),NOSPLIT|NOFRAME|TOPFRAME,$0-0",
+         "matchingRanges": {
+          "lineNumber": "842",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "842",
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tMOVW\tR0, R0\t// NOP",
+         "matchingRanges": {
+          "lineNumber": "843"
+         },
+         "lineNumber": "843"
+        },
+        {
+         "lineText": "\tBL\truntime·goexit1(SB)\t// does not return",
+         "matchingRanges": {
+          "lineNumber": "844",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "844",
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t// traceback from goexit1 must hit code range of goexit",
+         "matchingRanges": {
+          "lineNumber": "845",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 6
+           },
+           {
+            "startIndex": 50,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "845",
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 6
+          },
+          {
+           "startIndex": 50,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tMOVW\tR0, R0\t// NOP",
+         "matchingRanges": {
+          "lineNumber": "846"
+         },
+         "lineNumber": "846"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 4
+    },
+    "resultToken": "CCkSAggBOIjHuZmYhYjmlgFAAEgp"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/asm_386.s",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// The top-most function running on a goroutine",
+         "matchingRanges": {
+          "lineNumber": "936"
+         },
+         "lineNumber": "936"
+        },
+        {
+         "lineText": "// returns to goexit+PCQuantum.",
+         "matchingRanges": {
+          "lineNumber": "937",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "937",
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "TEXT runtime·goexit(SB),NOSPLIT|TOPFRAME,$0-0",
+         "matchingRanges": {
+          "lineNumber": "938",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "938",
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tBYTE\t$0x90\t// NOP",
+         "matchingRanges": {
+          "lineNumber": "939"
+         },
+         "lineNumber": "939"
+        },
+        {
+         "lineText": "\tCALL\truntime·goexit1(SB)\t// does not return",
+         "matchingRanges": {
+          "lineNumber": "940",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "940",
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t// traceback from goexit1 must hit code range of goexit",
+         "matchingRanges": {
+          "lineNumber": "941",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 6
+           },
+           {
+            "startIndex": 50,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "941",
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 6
+          },
+          {
+           "startIndex": 50,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tBYTE\t$0x90\t// NOP",
+         "matchingRanges": {
+          "lineNumber": "942"
+         },
+         "lineNumber": "942"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 4
+    },
+    "resultToken": "CCoSAggBOLKnhcmInNOAoQFAAEgq"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "test/inline_caller.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t5: {\"runtime.main\", -1},",
+         "matchingRanges": {
+          "lineNumber": "62"
+         },
+         "lineNumber": "62",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 1,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 5,
+            "length": 14
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 22,
+            "length": 1
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t6: {\"runtime.goexit\", -1},",
+         "matchingRanges": {
+          "lineNumber": "63",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "63",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 1,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 5,
+            "length": 16
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 24,
+            "length": 1
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "}",
+         "matchingRanges": {
+          "lineNumber": "64"
+         },
+         "lineNumber": "64"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CCsSAggBOOqOteCri6m9E0AASCs"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/asm_wasm.s",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "TEXT runtime·goexit(SB), NOSPLIT|TOPFRAME, $0-0",
+         "matchingRanges": {
+          "lineNumber": "413",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "413",
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tNOP // first PC of goexit is skipped",
+         "matchingRanges": {
+          "lineNumber": "414",
+          "columnRanges": [
+           {
+            "startIndex": 20,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "414",
+         "ranges": [
+          {
+           "startIndex": 20,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tCALL runtime·goexit1(SB) // does not return",
+         "matchingRanges": {
+          "lineNumber": "415",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "415",
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tUNDEF",
+         "matchingRanges": {
+          "lineNumber": "416"
+         },
+         "lineNumber": "416"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CCwSAggBOIaYo-jsncTVyAFAAEgs"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/asm_amd64.s",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// The top-most function running on a goroutine",
+         "matchingRanges": {
+          "lineNumber": "1261"
+         },
+         "lineNumber": "1261"
+        },
+        {
+         "lineText": "// returns to goexit+PCQuantum.",
+         "matchingRanges": {
+          "lineNumber": "1262",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "1262",
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "TEXT runtime·goexit(SB),NOSPLIT|TOPFRAME|NOFRAME,$0-0",
+         "matchingRanges": {
+          "lineNumber": "1263",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "1263",
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tBYTE\t$0x90\t// NOP",
+         "matchingRanges": {
+          "lineNumber": "1264"
+         },
+         "lineNumber": "1264"
+        },
+        {
+         "lineText": "\tCALL\truntime·goexit1(SB)\t// does not return",
+         "matchingRanges": {
+          "lineNumber": "1265",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "1265",
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t// traceback from goexit1 must hit code range of goexit",
+         "matchingRanges": {
+          "lineNumber": "1266",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 6
+           },
+           {
+            "startIndex": 50,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "1266",
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 6
+          },
+          {
+           "startIndex": 50,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tBYTE\t$0x90\t// NOP",
+         "matchingRanges": {
+          "lineNumber": "1267"
+         },
+         "lineNumber": "1267"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 4
+    },
+    "resultToken": "CC0SAggBOKyRnPfR-_HuW0AASC0"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/asm_s390x.s",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// The top-most function running on a goroutine",
+         "matchingRanges": {
+          "lineNumber": "865"
+         },
+         "lineNumber": "865"
+        },
+        {
+         "lineText": "// returns to goexit+PCQuantum.",
+         "matchingRanges": {
+          "lineNumber": "866",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "866",
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "TEXT runtime·goexit(SB),NOSPLIT|NOFRAME|TOPFRAME,$0-0",
+         "matchingRanges": {
+          "lineNumber": "867",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "867",
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tBYTE $0x07; BYTE $0x00; // 2-byte nop",
+         "matchingRanges": {
+          "lineNumber": "868"
+         },
+         "lineNumber": "868"
+        },
+        {
+         "lineText": "\tBL\truntime·goexit1(SB)\t// does not return",
+         "matchingRanges": {
+          "lineNumber": "869",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "869",
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t// traceback from goexit1 must hit code range of goexit",
+         "matchingRanges": {
+          "lineNumber": "870",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 6
+           },
+           {
+            "startIndex": 50,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "870",
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 6
+          },
+          {
+           "startIndex": 50,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tBYTE $0x07; BYTE $0x00; // 2-byte nop",
+         "matchingRanges": {
+          "lineNumber": "871"
+         },
+         "lineNumber": "871"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 4
+    },
+    "resultToken": "CC4SAggBOLjxvYLDkqjBcEAASC4"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/asm_mipsx.s",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// The top-most function running on a goroutine",
+         "matchingRanges": {
+          "lineNumber": "644"
+         },
+         "lineNumber": "644"
+        },
+        {
+         "lineText": "// returns to goexit+PCQuantum.",
+         "matchingRanges": {
+          "lineNumber": "645",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "645",
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "TEXT runtime·goexit(SB),NOSPLIT|NOFRAME|TOPFRAME,$0-0",
+         "matchingRanges": {
+          "lineNumber": "646",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "646",
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tNOR\tR0, R0\t// NOP",
+         "matchingRanges": {
+          "lineNumber": "647"
+         },
+         "lineNumber": "647"
+        },
+        {
+         "lineText": "\tJAL\truntime·goexit1(SB)\t// does not return",
+         "matchingRanges": {
+          "lineNumber": "648",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "648",
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t// traceback from goexit1 must hit code range of goexit",
+         "matchingRanges": {
+          "lineNumber": "649",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 6
+           },
+           {
+            "startIndex": 50,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "649",
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 6
+          },
+          {
+           "startIndex": 50,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tNOR\tR0, R0\t// NOP",
+         "matchingRanges": {
+          "lineNumber": "650"
+         },
+         "lineNumber": "650"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 4
+    },
+    "resultToken": "CC8SAggBOPz26PSf0a7mmgFAAEgv"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/asm_arm64.s",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// The top-most function running on a goroutine",
+         "matchingRanges": {
+          "lineNumber": "1036"
+         },
+         "lineNumber": "1036"
+        },
+        {
+         "lineText": "// returns to goexit+PCQuantum.",
+         "matchingRanges": {
+          "lineNumber": "1037",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "1037",
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "TEXT runtime·goexit(SB),NOSPLIT|NOFRAME|TOPFRAME,$0-0",
+         "matchingRanges": {
+          "lineNumber": "1038",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "1038",
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tMOVD\tR0, R0\t// NOP",
+         "matchingRanges": {
+          "lineNumber": "1039"
+         },
+         "lineNumber": "1039"
+        },
+        {
+         "lineText": "\tBL\truntime·goexit1(SB)\t// does not return",
+         "matchingRanges": {
+          "lineNumber": "1040",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "1040",
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "1041"
+         },
+         "lineNumber": "1041"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CDASAggBONrkrKvOmZeAUkAASDA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/asm_ppc64x.s",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// The top-most function running on a goroutine",
+         "matchingRanges": {
+          "lineNumber": "1046"
+         },
+         "lineNumber": "1046"
+        },
+        {
+         "lineText": "// returns to goexit+PCQuantum.",
+         "matchingRanges": {
+          "lineNumber": "1047",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "1047",
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "//",
+         "matchingRanges": {
+          "lineNumber": "1048"
+         },
+         "lineNumber": "1048"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// frame, newproc1 does in fact allocate one for goexit and saves the TOC",
+         "matchingRanges": {
+          "lineNumber": "1052",
+          "columnRanges": [
+           {
+            "startIndex": 49,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "1052",
+         "ranges": [
+          {
+           "startIndex": 49,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "// pointer in the correct place).",
+         "matchingRanges": {
+          "lineNumber": "1053"
+         },
+         "lineNumber": "1053"
+        },
+        {
+         "lineText": "// goexit+_PCQuantum is halfway through the usual global entry point prologue",
+         "matchingRanges": {
+          "lineNumber": "1054",
+          "columnRanges": [
+           {
+            "startIndex": 3,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "1054",
+         "ranges": [
+          {
+           "startIndex": 3,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "// that derives r2 from r12 which is a bit silly, but not harmful.",
+         "matchingRanges": {
+          "lineNumber": "1055"
+         },
+         "lineNumber": "1055"
+        },
+        {
+         "lineText": "TEXT runtime·goexit(SB),NOSPLIT|NOFRAME|TOPFRAME,$0-0",
+         "matchingRanges": {
+          "lineNumber": "1056",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "1056",
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tMOVD\t24(R1), R2",
+         "matchingRanges": {
+          "lineNumber": "1057"
+         },
+         "lineNumber": "1057"
+        },
+        {
+         "lineText": "\tBL\truntime·goexit1(SB)\t// does not return",
+         "matchingRanges": {
+          "lineNumber": "1058",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "1058",
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 9
+    },
+    "resultToken": "CDESAggBOLio9OKD55juYUAASDE"
+   }
+  ],
+  "estimatedResultCount": "71",
+  "nextPageToken": "CMKVq6aoyoaKBQi08IC0iq2/rwUImsD6t82+8eIFCOaipq/Co+zDDgi0qqv/x+6/jA8I/uSVqr2dnooQCOqOteCri6m9Ewik29Sii6+t/RMIxqmF5onOpP0UCND2yauDwdmFFgj+0oqChsqjmhoIorH9ysqUk8sgCPDUzp2Nq9/XIAjsvN+Trsqtzy0I6u6uqMjyqIg+COL85vLevbfESQjG75+Hi8m0oEsIgoj36qrhibdLCNrkrKvOmZeAUgjA3az1zLjwoFgIsListvyNuYpaCKyRnPfR+/HuWwjS5ufonprpn1wIuKj04oPnmO5hCLjxvYLDkqjBcAietuantpPD5nUIjIufrerZqMl2CKLZxM3Vj9yNfwiIx7mZmIWI5pYBCPz26PSf0a7mmgEI4qa0kYityvCgAQiyp4XJiJzTgKEBCMC+jtaD5bv7pQEIzNaR55Cv5rGsAQiC5u2a1vq50LEBCM6kxMC/kqe7tQEI6N/rl6GXo4C5AQiCj9fnm/TzpLkBCMST7cTx66KIugEIsrqN6er4ir+6AQi4ga6KpbjX3sIBCNi02aavuvGqyAEIhpij6OydxNXIAQiSv/Ku1dOGr80BCLas0a7gj7r92gEIlqSllLP/ncPfAQjslISCtLOlp+UBCLSqs6OBqNqx6AEI7v3+vIbq67/1AQjGuLe938O7z/YB",
+  "exhaustive": true,
+  "requestToken": "CgZHb2V4aXQSHSggZ2l0OmdvL2dvQG1hc3RlciBjYXNlOnllcyApGgwIm7qo0QYQ3tikhAIgDCoAMgBIAQ"
+ }
+}

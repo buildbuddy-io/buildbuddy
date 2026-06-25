@@ -1,0 +1,91 @@
+{
+ "query": "\"Contains Unknown Fields APIs\"",
+ "oss_project": "protobuf",
+ "repo_name": "protobuf",
+ "page_size": 50,
+ "fetched_at": "2026-06-17T23:21:58Z",
+ "response": {
+  "searchResults": [
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "protobuf",
+        "ossProject": "protobuf"
+       },
+       "refSpec": "refs/heads/main"
+      },
+      "path": "python/google/protobuf/unknown_fields.py",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "# https://developers.google.com/open-source/licenses/bsd",
+         "matchingRanges": {
+          "lineNumber": "6"
+         },
+         "lineNumber": "6",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 56
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\"\"\"Contains Unknown Fields APIs.",
+         "matchingRanges": {
+          "lineNumber": "7",
+          "columnRanges": [
+           {
+            "startIndex": 3,
+            "length": 28
+           }
+          ]
+         },
+         "lineNumber": "7",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "length": 32
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 3,
+           "length": 28
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "8"
+         },
+         "lineNumber": "8",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {}
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAASAggBOMShvf7o15-C-AFAAEgA"
+   }
+  ],
+  "estimatedResultCount": "1",
+  "exhaustive": true,
+  "requestToken": "Ch4iQ29udGFpbnMgVW5rbm93biBGaWVsZHMgQVBJcyISNSggZ2l0OmdpdGh1Yi9wcm90b2NvbGJ1ZmZlcnMvcHJvdG9idWZAbWFpbiBjYXNlOnllcyApGgwIltjM0QYQm6rIgAEgDCAPKgAyAEgB"
+ }
+}

@@ -1,0 +1,1840 @@
+{
+ "query": "karatsuba",
+ "oss_project": "go",
+ "repo_name": "go",
+ "page_size": 50,
+ "fetched_at": "2026-06-11T02:29:09Z",
+ "response": {
+  "searchResults": [
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/math/big/natmul.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// \"grade school\" multiplication; for longer operands the Karatsuba algorithm",
+         "matchingRanges": {
+          "lineNumber": "10",
+          "columnRanges": [
+           {
+            "startIndex": 58,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "10",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 77
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 58,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "// is used.",
+         "matchingRanges": {
+          "lineNumber": "11"
+         },
+         "lineNumber": "11",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 11
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "var karatsubaThreshold = 40 // see calibrate_test.go",
+         "matchingRanges": {
+          "lineNumber": "12",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "12",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 25,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 28,
+            "length": 24
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 9
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func karatsuba(stk *stack, z, x, y nat) {",
+         "matchingRanges": {
+          "lineNumber": "164",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "164",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\tn := len(y)",
+         "matchingRanges": {
+          "lineNumber": "165"
+         },
+         "lineNumber": "165"
+        },
+        {
+         "lineText": "\tif len(x) != n || len(z) != 2*n {",
+         "matchingRanges": {
+          "lineNumber": "166"
+         },
+         "lineNumber": "166",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 29,
+            "length": 1
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tpanic(\"bad karatsuba length\")",
+         "matchingRanges": {
+          "lineNumber": "167",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "167",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 22
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 9
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// knowing both multiplicands are the same value.",
+         "matchingRanges": {
+          "lineNumber": "256"
+         },
+         "lineNumber": "256",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 49
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "func karatsubaSqr(stk *stack, z, x nat) {",
+         "matchingRanges": {
+          "lineNumber": "257",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "257",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\tn := len(x)",
+         "matchingRanges": {
+          "lineNumber": "258"
+         },
+         "lineNumber": "258"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 26
+    },
+    "resultToken": "CAASBAgBIAE48qnzgfeL44GeAUAASAA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/math/big/nat_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// x = 10^(99*700) + ... + 10^1400 + 10^700 + 1",
+         "matchingRanges": {
+          "lineNumber": "149"
+         },
+         "lineNumber": "149",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 47
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t// y = 111....1 (700 digits, larger than Karatsuba threshold on 32-bit and 64-bit)",
+         "matchingRanges": {
+          "lineNumber": "150",
+          "columnRanges": [
+           {
+            "startIndex": 42,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "150",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 82
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 42,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\t{",
+         "matchingRanges": {
+          "lineNumber": "151"
+         },
+         "lineNumber": "151"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t})",
+         "matchingRanges": {
+          "lineNumber": "235"
+         },
+         "lineNumber": "235"
+        },
+        {
+         "lineText": "\tt.Run(\"Karatsuba\", func(t *testing.T) {",
+         "matchingRanges": {
+          "lineNumber": "236",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "236",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 7,
+            "length": 11
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 20,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tsetDuringTest(t, \u0026karatsubaThreshold, 2)",
+         "matchingRanges": {
+          "lineNumber": "237",
+          "columnRanges": [
+           {
+            "startIndex": 20,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "237",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 40,
+            "length": 1
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 20,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tfor _, a := range prodNN {",
+         "matchingRanges": {
+          "lineNumber": "238"
+         },
+         "lineNumber": "238",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 14,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tt.Run(\"Karatsuba\", func(t *testing.T) {",
+         "matchingRanges": {
+          "lineNumber": "280",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "280",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 7,
+            "length": 11
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 20,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tsetDuringTest(t, \u0026basicSqrThreshold, 2)",
+         "matchingRanges": {
+          "lineNumber": "281"
+         },
+         "lineNumber": "281",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 39,
+            "length": 1
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tsetDuringTest(t, \u0026karatsubaSqrThreshold, 2)",
+         "matchingRanges": {
+          "lineNumber": "282",
+          "columnRanges": [
+           {
+            "startIndex": 20,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "282",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 43,
+            "length": 1
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 20,
+           "length": 9
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 7
+    },
+    "resultToken": "CAESBAgBIAE46sTIw4iQzOIKQABIAQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/math/big/calibrate_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tt.Run(\"KaratsubaMul\", computeKaratsubaThreshold)",
+         "matchingRanges": {
+          "lineNumber": "36",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 9
+           },
+           {
+            "startIndex": 30,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "36",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 7,
+            "length": 14
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 9
+          },
+          {
+           "startIndex": 30,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\tt.Run(\"BasicSqr\", computeBasicSqrThreshold)",
+         "matchingRanges": {
+          "lineNumber": "37"
+         },
+         "lineNumber": "37",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 7,
+            "length": 10
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tt.Run(\"KaratsubaSqr\", computeKaratsubaSqrThreshold)",
+         "matchingRanges": {
+          "lineNumber": "38",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 9
+           },
+           {
+            "startIndex": 30,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "38",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 7,
+            "length": 14
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 9
+          },
+          {
+           "startIndex": 30,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\tt.Run(\"DivRecursive\", computeDivRecursiveThreshold)",
+         "matchingRanges": {
+          "lineNumber": "39"
+         },
+         "lineNumber": "39",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 7,
+            "length": 14
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func computeKaratsubaThreshold(t *testing.T) {",
+         "matchingRanges": {
+          "lineNumber": "42",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "42",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\tset := func(n int) { karatsubaThreshold = n }",
+         "matchingRanges": {
+          "lineNumber": "43",
+          "columnRanges": [
+           {
+            "startIndex": 22,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "43",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 22,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\tcomputeThreshold(t, \"karatsuba\", set, 0, 4, 200, benchMul, 200, 8, 400)",
+         "matchingRanges": {
+          "lineNumber": "44",
+          "columnRanges": [
+           {
+            "startIndex": 22,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "44",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 21,
+            "length": 11
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 39,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 42,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 45,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 60,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 65,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 68,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 22,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "}",
+         "matchingRanges": {
+          "lineNumber": "45"
+         },
+         "lineNumber": "45"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func computeKaratsubaSqrThreshold(t *testing.T) {",
+         "matchingRanges": {
+          "lineNumber": "74",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "74",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\tset := func(n int) { karatsubaSqrThreshold = n }",
+         "matchingRanges": {
+          "lineNumber": "75",
+          "columnRanges": [
+           {
+            "startIndex": 22,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "75",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 22,
+           "length": 9
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 9
+    },
+    "resultToken": "CAISBAgBIAE4-K7K_7_Yj73DAUAASAI"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/math/big/calibrate.md",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "[Karatsuba's algorithm](https://en.wikipedia.org/wiki/Karatsuba_algorithm)",
+         "matchingRanges": {
+          "lineNumber": "18",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 9
+           },
+           {
+            "startIndex": 54,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "18",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "length": 74
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 9
+          },
+          {
+           "startIndex": 54,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "multiplies two N-digit numbers by splitting them in half, computing",
+         "matchingRanges": {
+          "lineNumber": "19"
+         },
+         "lineNumber": "19"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "The grade school loop runs faster for small inputs,",
+         "matchingRanges": {
+          "lineNumber": "22"
+         },
+         "lineNumber": "22"
+        },
+        {
+         "lineText": "but eventually Karatsuba's smaller asymptotic run time wins.",
+         "matchingRanges": {
+          "lineNumber": "23",
+          "columnRanges": [
+           {
+            "startIndex": 15,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "23",
+         "ranges": [
+          {
+           "startIndex": 15,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "24"
+         },
+         "lineNumber": "24"
+        },
+        {
+         "lineText": "The multiplication implementation must decide which to use.",
+         "matchingRanges": {
+          "lineNumber": "25"
+         },
+         "lineNumber": "25"
+        },
+        {
+         "lineText": "Under the assumption that once Karatsuba is faster for some N,",
+         "matchingRanges": {
+          "lineNumber": "26",
+          "columnRanges": [
+           {
+            "startIndex": 31,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "26",
+         "ranges": [
+          {
+           "startIndex": 31,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "it will be larger for all larger N as well,",
+         "matchingRanges": {
+          "lineNumber": "27"
+         },
+         "lineNumber": "27"
+        },
+        {
+         "lineText": "the rule is to use Karatsuba's algorithm when the input length N ≥ karatsubaThreshold.",
+         "matchingRanges": {
+          "lineNumber": "28",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 9
+           },
+           {
+            "startIndex": 67,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "28",
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 9
+          },
+          {
+           "startIndex": 67,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "29"
+         },
+         "lineNumber": "29"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 27
+    },
+    "resultToken": "CAMSAggBOPCpyYnfnIfBEEAASAM"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/math/big/natdiv.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "When the number of digits n becomes large enough, Karatsuba's algorithm for",
+         "matchingRanges": {
+          "lineNumber": "316",
+          "columnRanges": [
+           {
+            "startIndex": 50,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "316",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 75
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 75
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 75
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 50,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "multiplication can be used instead, which takes O(n^log₂3) = O(n^1.6) time.",
+         "matchingRanges": {
+          "lineNumber": "317"
+         },
+         "lineNumber": "317",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 75
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 75
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 75
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "(Karatsuba multiplication is implemented in func karatsuba in nat.go.)",
+         "matchingRanges": {
+          "lineNumber": "318",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 9
+           },
+           {
+            "startIndex": 49,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "318",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 70
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 70
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 70
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 9
+          },
+          {
+           "startIndex": 49,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "That makes the overall recursive division algorithm take O(n^1.6) time as well,",
+         "matchingRanges": {
+          "lineNumber": "319"
+         },
+         "lineNumber": "319",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 79
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 79
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 79
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "ends up being T(n) = O(n^log₂3). Because the Karatsuba multiplication taking",
+         "matchingRanges": {
+          "lineNumber": "328",
+          "columnRanges": [
+           {
+            "startIndex": 45,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "328",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 76
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 76
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 76
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 45,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "time O(n^log₂3) is itself doing 3 half-sized recursions, doing three for the",
+         "matchingRanges": {
+          "lineNumber": "329"
+         },
+         "lineNumber": "329",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 76
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 76
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 76
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "implementing division by an n-digit divisor using recursive calls to division",
+         "matchingRanges": {
+          "lineNumber": "485"
+         },
+         "lineNumber": "485",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 77
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 77
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 77
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "by an n/2-digit divisor, relying on Karatsuba multiplication to yield a",
+         "matchingRanges": {
+          "lineNumber": "486",
+          "columnRanges": [
+           {
+            "startIndex": 36,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "486",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 71
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 71
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 71
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 36,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "sub-quadratic run time. However, the presentation decisions are made almost",
+         "matchingRanges": {
+          "lineNumber": "487"
+         },
+         "lineNumber": "487",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 75
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 75
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 75
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 4
+    },
+    "resultToken": "CAQSAggBOPKKrIifv4vjnQFAAEgE"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/crypto/internal/fips140/aes/gcm/gcm_arm64.s",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// Karatsuba pre-computation",
+         "matchingRanges": {
+          "lineNumber": "185",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "185",
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\tVEXT\t$8, B0.B16, B0.B16, B1.B16",
+         "matchingRanges": {
+          "lineNumber": "186"
+         },
+         "lineNumber": "186"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tADD\t$14*16, pTbl",
+         "matchingRanges": {
+          "lineNumber": "565"
+         },
+         "lineNumber": "565"
+        },
+        {
+         "lineText": "\t// Preload H and its Karatsuba precomp",
+         "matchingRanges": {
+          "lineNumber": "566",
+          "columnRanges": [
+           {
+            "startIndex": 22,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "566",
+         "ranges": [
+          {
+           "startIndex": 22,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\tVLD1.P\t(pTbl), [T1.B16, T2.B16]",
+         "matchingRanges": {
+          "lineNumber": "567"
+         },
+         "lineNumber": "567"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tADD\t$14*16, pTbl",
+         "matchingRanges": {
+          "lineNumber": "867"
+         },
+         "lineNumber": "867"
+        },
+        {
+         "lineText": "\t// Preload H and its Karatsuba precomp",
+         "matchingRanges": {
+          "lineNumber": "868",
+          "columnRanges": [
+           {
+            "startIndex": 22,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "868",
+         "ranges": [
+          {
+           "startIndex": 22,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\tVLD1.P\t(pTbl), [T1.B16, T2.B16]",
+         "matchingRanges": {
+          "lineNumber": "869"
+         },
+         "lineNumber": "869"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CAUSAggBOMSF-ImU_qnSrwFAAEgF"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/crypto/internal/fips140/aes/gcm/ghash.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t//",
+         "matchingRanges": {
+          "lineNumber": "77"
+         },
+         "lineNumber": "77",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t// We use the Karatsuba algorithm to decompose the 128-bit multiplication",
+         "matchingRanges": {
+          "lineNumber": "78",
+          "columnRanges": [
+           {
+            "startIndex": 15,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "78",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 73
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 15,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\t// into three 64-bit multiplications, which we further decompose into 9",
+         "matchingRanges": {
+          "lineNumber": "79"
+         },
+         "lineNumber": "79",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 71
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAYSAggBOKzu35mAu_yZKUAASAY"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/math/big/escape_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tr := rand.New(rand.NewSource(1234))",
+         "matchingRanges": {
+          "lineNumber": "31"
+         },
+         "lineNumber": "31",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 30,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tsizes := []int{karatsubaThreshold / 2, karatsubaThreshold}",
+         "matchingRanges": {
+          "lineNumber": "32",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 9
+           },
+           {
+            "startIndex": 40,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "32",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 37,
+            "length": 1
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 9
+          },
+          {
+           "startIndex": 40,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\tfor _, size := range sizes {",
+         "matchingRanges": {
+          "lineNumber": "33"
+         },
+         "lineNumber": "33",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 16,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tr := rand.New(rand.NewSource(1234))",
+         "matchingRanges": {
+          "lineNumber": "44"
+         },
+         "lineNumber": "44",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 30,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tsizes := []int{basicSqrThreshold / 2, basicSqrThreshold, karatsubaSqrThreshold}",
+         "matchingRanges": {
+          "lineNumber": "45",
+          "columnRanges": [
+           {
+            "startIndex": 58,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "45",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 36,
+            "length": 1
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 58,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\tfor _, size := range sizes {",
+         "matchingRanges": {
+          "lineNumber": "46"
+         },
+         "lineNumber": "46",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 16,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAcSAggBOKznnrv6uYOBzAFAAEgH"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/crypto/internal/fips140/aes/gcm/gcm_amd64.s",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// Karatsuba pre-computations",
+         "matchingRanges": {
+          "lineNumber": "120",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "120",
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\tMOVOU  X0, 224(DI)",
+         "matchingRanges": {
+          "lineNumber": "121"
+         },
+         "lineNumber": "121"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAgSAggBOIqq5ejq8ZK0AkAASAg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/crypto/internal/fips140/aes/gcm/_asm/gcm/gcm_amd64_asm.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tPXOR(T1, B0)",
+         "matchingRanges": {
+          "lineNumber": "205"
+         },
+         "lineNumber": "205"
+        },
+        {
+         "lineText": "\tComment(\"Karatsuba pre-computations\")",
+         "matchingRanges": {
+          "lineNumber": "206",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "206",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 9,
+            "length": 28
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "\tMOVOU(B0, Mem{Base: dst}.Offset(16*14))",
+         "matchingRanges": {
+          "lineNumber": "207"
+         },
+         "lineNumber": "207",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 33,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 36,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAkSAggBOKrwla6Tye7zL0AASAk"
+   }
+  ],
+  "estimatedResultCount": "10",
+  "exhaustive": true,
+  "requestToken": "CglrYXJhdHN1YmESHSggZ2l0OmdvL2dvQG1hc3RlciBjYXNlOnllcyApGgsI9bqo0QYQyMXMciAMKgAyAEgB"
+ }
+}

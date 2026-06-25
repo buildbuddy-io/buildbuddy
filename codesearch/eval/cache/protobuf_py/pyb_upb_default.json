@@ -1,0 +1,69 @@
+{
+ "query": "_google3_python_upb_default",
+ "oss_project": "protobuf",
+ "repo_name": "protobuf",
+ "page_size": 50,
+ "fetched_at": "2026-06-17T23:21:47Z",
+ "response": {
+  "searchResults": [
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "protobuf",
+        "ossProject": "protobuf"
+       },
+       "refSpec": "refs/heads/main"
+      },
+      "path": "python/google/protobuf/internal/api_implementation.py",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "_GOOGLE3_PYTHON_UPB_DEFAULT = True",
+         "matchingRanges": {
+          "lineNumber": "14",
+          "columnRanges": [
+           {
+            "length": 27
+           }
+          ]
+         },
+         "lineNumber": "14",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 30,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "length": 27
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "15"
+         },
+         "lineNumber": "15"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAASBAgBIAE4xpjY2pe8w9ncAUAASAA"
+   }
+  ],
+  "estimatedResultCount": "1",
+  "exhaustive": true,
+  "requestToken": "ChtfZ29vZ2xlM19weXRob25fdXBiX2RlZmF1bHQSNSggZ2l0OmdpdGh1Yi9wcm90b2NvbGJ1ZmZlcnMvcHJvdG9idWZAbWFpbiBjYXNlOnllcyApGgsIi9jM0QYQh_z3aSAMIA8qADIASAE"
+ }
+}

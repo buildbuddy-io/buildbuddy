@@ -1,0 +1,5871 @@
+{
+ "query": "interface ActionCache",
+ "oss_project": "bazel",
+ "repo_name": "bazel",
+ "page_size": 50,
+ "fetched_at": "2026-06-11T22:27:27Z",
+ "response": {
+  "searchResults": [
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/actions/cache/ActionCache.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "/**",
+         "matchingRanges": {
+          "lineNumber": "49"
+         },
+         "lineNumber": "49",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": " * An interface defining a cache of already-executed Actions.",
+         "matchingRanges": {
+          "lineNumber": "50",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "50",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 61
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": " *",
+         "matchingRanges": {
+          "lineNumber": "51"
+         },
+         "lineNumber": "51",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "public interface ActionCache {",
+         "matchingRanges": {
+          "lineNumber": "60",
+          "columnRanges": [
+           {
+            "startIndex": 7,
+            "length": 9
+           },
+           {
+            "startIndex": 17,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "60",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 9
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 7,
+           "length": 9
+          },
+          {
+           "startIndex": 17,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "61"
+         },
+         "lineNumber": "61"
+        },
+        {
+         "lineText": "  /** Updates the cache entry for the specified key. */",
+         "matchingRanges": {
+          "lineNumber": "62"
+         },
+         "lineNumber": "62",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 53
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  void put(String key, ActionCache.Entry entry);",
+         "matchingRanges": {
+          "lineNumber": "63",
+          "columnRanges": [
+           {
+            "startIndex": 23,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "63",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 23,
+           "length": 11
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "   */",
+         "matchingRanges": {
+          "lineNumber": "504"
+         },
+         "lineNumber": "504",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  void mergeIntoActionCacheStatistics(ActionCacheStatistics.Builder builder);",
+         "matchingRanges": {
+          "lineNumber": "505",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 11
+           },
+           {
+            "startIndex": 38,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "505",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 11
+          },
+          {
+           "startIndex": 38,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "506"
+         },
+         "lineNumber": "506"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 14
+    },
+    "resultToken": "CAASBAgBIAE4yq6Qo9-VkLwDQABIAA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/actions/cache/CompactPersistentActionCache.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "/**",
+         "matchingRanges": {
+          "lineNumber": "64"
+         },
+         "lineNumber": "64",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": " * An implementation of the ActionCache interface that uses a {@link StringIndexer} to reduce memory",
+         "matchingRanges": {
+          "lineNumber": "65",
+          "columnRanges": [
+           {
+            "startIndex": 28,
+            "length": 11
+           },
+           {
+            "startIndex": 40,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "65",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 100
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 28,
+           "length": 11
+          },
+          {
+           "startIndex": 40,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": " * footprint and saves cached actions using the {@link PersistentMap}.",
+         "matchingRanges": {
+          "lineNumber": "66"
+         },
+         "lineNumber": "66",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 70
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "@ConditionallyThreadSafe // condition: each instance must be instantiated with different cache root",
+         "matchingRanges": {
+          "lineNumber": "68"
+         },
+         "lineNumber": "68",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 25,
+            "length": 74
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "public class CompactPersistentActionCache implements ActionCache {",
+         "matchingRanges": {
+          "lineNumber": "69",
+          "columnRanges": [
+           {
+            "startIndex": 30,
+            "length": 11
+           },
+           {
+            "startIndex": 53,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "69",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 42,
+            "length": 10
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 30,
+           "length": 11
+          },
+          {
+           "startIndex": 53,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": "  private static final GoogleLogger logger = GoogleLogger.forEnclosingClass();",
+         "matchingRanges": {
+          "lineNumber": "70"
+         },
+         "lineNumber": "70",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 17,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  private CompactPersistentActionCache(",
+         "matchingRanges": {
+          "lineNumber": "294",
+          "columnRanges": [
+           {
+            "startIndex": 27,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "294",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 27,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": "      Path cacheRoot,",
+         "matchingRanges": {
+          "lineNumber": "295"
+         },
+         "lineNumber": "295"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 33
+    },
+    "resultToken": "CAESBAgBIAE4-NeTt5aUoc-XAUAASAE"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/actions/NotifyOnActionCacheHit.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// TODO(lberki): Maybe merge this with RichDataProducingAction?",
+         "matchingRanges": {
+          "lineNumber": "25"
+         },
+         "lineNumber": "25",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 63
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "public interface NotifyOnActionCacheHit extends Action {",
+         "matchingRanges": {
+          "lineNumber": "26",
+          "columnRanges": [
+           {
+            "startIndex": 7,
+            "length": 9
+           },
+           {
+            "startIndex": 25,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "26",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 9
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 40,
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 7,
+           "length": 9
+          },
+          {
+           "startIndex": 25,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": "  /** A custom interface similar to {@link ActionExecutionContext}, but specific to cache hits. */",
+         "matchingRanges": {
+          "lineNumber": "27",
+          "columnRanges": [
+           {
+            "startIndex": 15,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "27",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 96
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 15,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "  interface ActionCachedContext {",
+         "matchingRanges": {
+          "lineNumber": "28",
+          "columnRanges": [
+           {
+            "startIndex": 2,
+            "length": 9
+           },
+           {
+            "startIndex": 12,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "28",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 9
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 2,
+           "length": 9
+          },
+          {
+           "startIndex": 12,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": "    /**",
+         "matchingRanges": {
+          "lineNumber": "29"
+         },
+         "lineNumber": "29",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "   */",
+         "matchingRanges": {
+          "lineNumber": "52"
+         },
+         "lineNumber": "52",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  boolean actionCacheHit(ActionCachedContext context);",
+         "matchingRanges": {
+          "lineNumber": "53",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 11
+           },
+           {
+            "startIndex": 25,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "53",
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 11
+          },
+          {
+           "startIndex": 25,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": "}",
+         "matchingRanges": {
+          "lineNumber": "54"
+         },
+         "lineNumber": "54"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 5
+    },
+    "resultToken": "CAISBAgBIAE4ypnW8bLN_pcxQABIAg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/actions/RichDataProducingAction.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": " */",
+         "matchingRanges": {
+          "lineNumber": "24"
+         },
+         "lineNumber": "24",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "// TODO(lberki): Maybe merge this with NotifyOnActionCacheHit?",
+         "matchingRanges": {
+          "lineNumber": "25",
+          "columnRanges": [
+           {
+            "startIndex": 47,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "25",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 62
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 47,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": "public interface RichDataProducingAction {",
+         "matchingRanges": {
+          "lineNumber": "26",
+          "columnRanges": [
+           {
+            "startIndex": 7,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "26",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 9
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 7,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "  @Nullable",
+         "matchingRanges": {
+          "lineNumber": "27"
+         },
+         "lineNumber": "27"
+        },
+        {
+         "lineText": "  RichArtifactData reconstructRichDataOnActionCacheHit(InputMetadataProvider inputMetadataProvider)",
+         "matchingRanges": {
+          "lineNumber": "28",
+          "columnRanges": [
+           {
+            "startIndex": 40,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "28",
+         "ranges": [
+          {
+           "startIndex": 40,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": "      throws ActionExecutionException;",
+         "matchingRanges": {
+          "lineNumber": "29"
+         },
+         "lineNumber": "29",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CAMSBAgBIAE4nMXV3uS-xaQzQABIAw"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/actions/Action.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": " */",
+         "matchingRanges": {
+          "lineNumber": "79"
+         },
+         "lineNumber": "79",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "public interface Action extends ActionExecutionMetadata {",
+         "matchingRanges": {
+          "lineNumber": "80",
+          "columnRanges": [
+           {
+            "startIndex": 7,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "80",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 9
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 24,
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 7,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "  /**",
+         "matchingRanges": {
+          "lineNumber": "81"
+         },
+         "lineNumber": "81",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "   * \u003cp\u003eIn addition to being called from action implementations, it is also called by {@link",
+         "matchingRanges": {
+          "lineNumber": "218"
+         },
+         "lineNumber": "218",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 92
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "   * ActionCacheChecker} when an action is loaded from the on-disk action cache.",
+         "matchingRanges": {
+          "lineNumber": "219",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "219",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 80
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": "   */",
+         "matchingRanges": {
+          "lineNumber": "220"
+         },
+         "lineNumber": "220",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAQSAggBOOzE6Z6U0K-oZEAASAQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/skyframe/SkyframeActionExecutor.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "   */",
+         "matchingRanges": {
+          "lineNumber": "295"
+         },
+         "lineNumber": "295",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  static interface ExistingActionLookupValuePeeker {",
+         "matchingRanges": {
+          "lineNumber": "296",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "296",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 9
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "    @Nullable // null if the value is not in Skyframe",
+         "matchingRanges": {
+          "lineNumber": "297"
+         },
+         "lineNumber": "297",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 14,
+            "length": 39
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "   */",
+         "matchingRanges": {
+          "lineNumber": "733"
+         },
+         "lineNumber": "733",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  Token checkActionCache(",
+         "matchingRanges": {
+          "lineNumber": "734",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "734",
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": "      ExtendedEventHandler eventHandler,",
+         "matchingRanges": {
+          "lineNumber": "735"
+         },
+         "lineNumber": "735"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  void updateActionCache(",
+         "matchingRanges": {
+          "lineNumber": "843",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "843",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": "      Action action,",
+         "matchingRanges": {
+          "lineNumber": "844"
+         },
+         "lineNumber": "844"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 37
+    },
+    "resultToken": "CAUSBAgBIAE4ouXLksr4rtP-AUAASAU"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/actions/FileArtifactValue.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "   *",
+         "matchingRanges": {
+          "lineNumber": "95"
+         },
+         "lineNumber": "95",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "   * \u003cp\u003eAll instances of this interface must either have a digest or return a last-modified time.",
+         "matchingRanges": {
+          "lineNumber": "96",
+          "columnRanges": [
+           {
+            "startIndex": 30,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "96",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 97
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 30,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "   * Clients should prefer using the digest for content identification (e.g., for caching), and only",
+         "matchingRanges": {
+          "lineNumber": "97"
+         },
+         "lineNumber": "97",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 100
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  /**",
+         "matchingRanges": {
+          "lineNumber": "267"
+         },
+         "lineNumber": "267",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "   * Marker interface for singleton implementations of this class.",
+         "matchingRanges": {
+          "lineNumber": "268",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "268",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 66
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 66
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "   *",
+         "matchingRanges": {
+          "lineNumber": "269"
+         },
+         "lineNumber": "269",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "   * Creates a FileArtifactValue used as a 'proxy' input for a {@link RunfilesArtifactValue}. These",
+         "matchingRanges": {
+          "lineNumber": "419"
+         },
+         "lineNumber": "419",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 99
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "   * are used in {@link ActionCacheChecker}.",
+         "matchingRanges": {
+          "lineNumber": "420",
+          "columnRanges": [
+           {
+            "startIndex": 24,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "420",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 44
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 24,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": "   */",
+         "matchingRanges": {
+          "lineNumber": "421"
+         },
+         "lineNumber": "421",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 4
+    },
+    "resultToken": "CAYSAggBOLzqsZLGh5HZgwFAAEgG"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "site/en/contribute/codebase.md",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "After a suitable server process is ready, the command that needs to be run is",
+         "matchingRanges": {
+          "lineNumber": "69"
+         },
+         "lineNumber": "69"
+        },
+        {
+         "lineText": "communicated to it over a gRPC interface, then the output of Bazel is piped back",
+         "matchingRanges": {
+          "lineNumber": "70",
+          "columnRanges": [
+           {
+            "startIndex": 31,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "70",
+         "ranges": [
+          {
+           "startIndex": 31,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "to the terminal. Only one command can be running at the same time. This is",
+         "matchingRanges": {
+          "lineNumber": "71"
+         },
+         "lineNumber": "71"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "2.  The right command is found. Each command must implement the interface",
+         "matchingRanges": {
+          "lineNumber": "139",
+          "columnRanges": [
+           {
+            "startIndex": 64,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "139",
+         "ranges": [
+          {
+           "startIndex": 64,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "    `BlazeCommand` and must have the `@Command` annotation (this is a bit of an",
+         "matchingRanges": {
+          "lineNumber": "140"
+         },
+         "lineNumber": "140"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "This cache is checked for hits using the method",
+         "matchingRanges": {
+          "lineNumber": "1033"
+         },
+         "lineNumber": "1033"
+        },
+        {
+         "lineText": "`ActionCacheChecker.getTokenIfNeedToExecute()` .",
+         "matchingRanges": {
+          "lineNumber": "1034",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "1034",
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "1035"
+         },
+         "lineNumber": "1035"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "*   Interfaces to remote execution systems",
+         "matchingRanges": {
+          "lineNumber": "1400",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "1400",
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "*   New commands",
+         "matchingRanges": {
+          "lineNumber": "1401"
+         },
+         "lineNumber": "1401"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 9
+    },
+    "resultToken": "CAcSAggBON6k8vrd8L-0hwFAAEgH"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/buildtool/BuildRequestOptions.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "/**",
+         "matchingRanges": {
+          "lineNumber": "39"
+         },
+         "lineNumber": "39",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": " * Options interface for {@link BuildRequest}: can be used to parse command-line arguments.",
+         "matchingRanges": {
+          "lineNumber": "40",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "40",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 91
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": " *",
+         "matchingRanges": {
+          "lineNumber": "41"
+         },
+         "lineNumber": "41",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "      help = \"Whether to use the action cache\")",
+         "matchingRanges": {
+          "lineNumber": "371"
+         },
+         "lineNumber": "371",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 13,
+            "length": 33
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  public abstract boolean getUseActionCache();",
+         "matchingRanges": {
+          "lineNumber": "372",
+          "columnRanges": [
+           {
+            "startIndex": 32,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "372",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 8
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 32,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "373"
+         },
+         "lineNumber": "373"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAgSBAgBIAE4mIaUrtaq1cllQABICA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/skyframe/TimestampBuilderTestCase.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  /** {@link Builder} that saves its most recent {@link EvaluationResult}. */",
+         "matchingRanges": {
+          "lineNumber": "461"
+         },
+         "lineNumber": "461",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 75
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  protected interface BuilderWithResult extends Builder {",
+         "matchingRanges": {
+          "lineNumber": "462",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "462",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 9
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 9
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 40,
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "    EvaluationResult\u003cSkyValue\u003e getLatestResult();",
+         "matchingRanges": {
+          "lineNumber": "463"
+         },
+         "lineNumber": "463"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  /** In-memory {@link ActionCache} backed by a HashMap */",
+         "matchingRanges": {
+          "lineNumber": "546",
+          "columnRanges": [
+           {
+            "startIndex": 23,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "546",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 56
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 23,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": "  protected static class InMemoryActionCache implements ActionCache {",
+         "matchingRanges": {
+          "lineNumber": "547",
+          "columnRanges": [
+           {
+            "startIndex": 33,
+            "length": 11
+           },
+           {
+            "startIndex": 56,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "547",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 9
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 19,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 45,
+            "length": 10
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 33,
+           "length": 11
+          },
+          {
+           "startIndex": 56,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "548"
+         },
+         "lineNumber": "548"
+        },
+        {
+         "lineText": "    private final Map\u003cString, Entry\u003e actionCache = new HashMap\u003c\u003e();",
+         "matchingRanges": {
+          "lineNumber": "549",
+          "columnRanges": [
+           {
+            "startIndex": 37,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "549",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 51,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 37,
+           "length": 11
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    @Override",
+         "matchingRanges": {
+          "lineNumber": "611"
+         },
+         "lineNumber": "611"
+        },
+        {
+         "lineText": "    public void mergeIntoActionCacheStatistics(ActionCacheStatistics.Builder builder) {",
+         "matchingRanges": {
+          "lineNumber": "612",
+          "columnRanges": [
+           {
+            "startIndex": 25,
+            "length": 11
+           },
+           {
+            "startIndex": 47,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "612",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 11,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 25,
+           "length": 11
+          },
+          {
+           "startIndex": 47,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": "      // Not needed for these tests.",
+         "matchingRanges": {
+          "lineNumber": "613"
+         },
+         "lineNumber": "613",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 6,
+            "length": 30
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 29
+    },
+    "resultToken": "CAkSBAgBIAE46u3ilqvY4cRuQABICQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/actions/ProxyMetadataFactory.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": " *",
+         "matchingRanges": {
+          "lineNumber": "23"
+         },
+         "lineNumber": "23",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": " * \u003cp\u003eUsed by {@link ActionCacheChecker} to re-create proxy metadata for cached actions.",
+         "matchingRanges": {
+          "lineNumber": "24",
+          "columnRanges": [
+           {
+            "startIndex": 21,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "24",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 88
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 21,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": " */",
+         "matchingRanges": {
+          "lineNumber": "25"
+         },
+         "lineNumber": "25",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "public interface ProxyMetadataFactory {",
+         "matchingRanges": {
+          "lineNumber": "26",
+          "columnRanges": [
+           {
+            "startIndex": 7,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "26",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 9
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 7,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "27"
+         },
+         "lineNumber": "27"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAoSAggBOLLH89SMsLuEcEAASAo"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/runtime/commands/DumpCommand.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "            + \"Dumps the internal state of the %{product} server process.  This command is provided\"",
+         "matchingRanges": {
+          "lineNumber": "93"
+         },
+         "lineNumber": "93",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 14,
+            "length": 86
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "            + \" as an aid to debugging, not as a stable interface, so users should not try to parse\"",
+         "matchingRanges": {
+          "lineNumber": "94",
+          "columnRanges": [
+           {
+            "startIndex": 56,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "94",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 14,
+            "length": 86
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 56,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "            + \" the output; instead, use 'query' or 'info' for this purpose.\\n\"",
+         "matchingRanges": {
+          "lineNumber": "95"
+         },
+         "lineNumber": "95",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 14,
+            "length": 65
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "        help = \"Dump action cache content.\")",
+         "matchingRanges": {
+          "lineNumber": "247"
+         },
+         "lineNumber": "247",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 15,
+            "length": 28
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    public abstract boolean getDumpActionCache();",
+         "matchingRanges": {
+          "lineNumber": "248",
+          "columnRanges": [
+           {
+            "startIndex": 35,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "248",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 11,
+            "length": 8
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 35,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "249"
+         },
+         "lineNumber": "249"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "      if (dumpOptions.getDumpActionCache()) {",
+         "matchingRanges": {
+          "lineNumber": "371",
+          "columnRanges": [
+           {
+            "startIndex": 29,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "371",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 29,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": "        if (!dumpActionCache(env, out)) {",
+         "matchingRanges": {
+          "lineNumber": "372",
+          "columnRanges": [
+           {
+            "startIndex": 17,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "372",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 17,
+           "length": 11
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  private static boolean dumpActionCache(CommandEnvironment env, PrintStream out) {",
+         "matchingRanges": {
+          "lineNumber": "445",
+          "columnRanges": [
+           {
+            "startIndex": 29,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "445",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 29,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": "    Reporter reporter = env.getReporter();",
+         "matchingRanges": {
+          "lineNumber": "446"
+         },
+         "lineNumber": "446"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 7
+    },
+    "resultToken": "CAsSBAgBIAE4jM2lvMnBoO5bQABICw"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/remote/GrpcCacheClientTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import build.bazel.remote.execution.v2.Action;",
+         "matchingRanges": {
+          "lineNumber": "28"
+         },
+         "lineNumber": "28",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "import build.bazel.remote.execution.v2.ActionCacheGrpc.ActionCacheImplBase;",
+         "matchingRanges": {
+          "lineNumber": "29",
+          "columnRanges": [
+           {
+            "startIndex": 39,
+            "length": 11
+           },
+           {
+            "startIndex": 55,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "29",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 39,
+           "length": 11
+          },
+          {
+           "startIndex": 55,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": "import build.bazel.remote.execution.v2.ActionResult;",
+         "matchingRanges": {
+          "lineNumber": "30"
+         },
+         "lineNumber": "30",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    Digest emptyDigest = DIGEST_UTIL.compute(new byte[0]);",
+         "matchingRanges": {
+          "lineNumber": "531"
+         },
+         "lineNumber": "531",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 45,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 54,
+            "length": 1
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    // Will not call the mock Bytestream interface at all.",
+         "matchingRanges": {
+          "lineNumber": "532",
+          "columnRanges": [
+           {
+            "startIndex": 41,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "532",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 54
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 41,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "    assertThat(downloadBlob(context, client, emptyDigest)).isEmpty();",
+         "matchingRanges": {
+          "lineNumber": "533"
+         },
+         "lineNumber": "533"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    serviceRegistry.addService(",
+         "matchingRanges": {
+          "lineNumber": "652"
+         },
+         "lineNumber": "652"
+        },
+        {
+         "lineText": "        new ActionCacheImplBase() {",
+         "matchingRanges": {
+          "lineNumber": "653",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "653",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": "          @Override",
+         "matchingRanges": {
+          "lineNumber": "654"
+         },
+         "lineNumber": "654"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 12
+    },
+    "resultToken": "CAwSAggBOJ6lgvvxhunKrQFAAEgM"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/vfs/OutputService.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": " */",
+         "matchingRanges": {
+          "lineNumber": "45"
+         },
+         "lineNumber": "45",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "public interface OutputService {",
+         "matchingRanges": {
+          "lineNumber": "46",
+          "columnRanges": [
+           {
+            "startIndex": 7,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "46",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 9
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 7,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "47"
+         },
+         "lineNumber": "47"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  /** Returns true if remote output metadata should be stored in action cache. */",
+         "matchingRanges": {
+          "lineNumber": "128"
+         },
+         "lineNumber": "128",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 79
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  default boolean shouldStoreRemoteOutputMetadataInActionCache() {",
+         "matchingRanges": {
+          "lineNumber": "129",
+          "columnRanges": [
+           {
+            "startIndex": 51,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "129",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 51,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": "    return false;",
+         "matchingRanges": {
+          "lineNumber": "130"
+         },
+         "lineNumber": "130",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "   * this interface aims to prevent.",
+         "matchingRanges": {
+          "lineNumber": "282",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "282",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 36
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "   */",
+         "matchingRanges": {
+          "lineNumber": "283"
+         },
+         "lineNumber": "283",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  interface RewoundActionSynchronizer {",
+         "matchingRanges": {
+          "lineNumber": "284",
+          "columnRanges": [
+           {
+            "startIndex": 2,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "284",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 9
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 2,
+           "length": 9
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 4
+    },
+    "resultToken": "CA0SBAgBIAE4sq2v9bXo6uSmAUAASA0"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/bazel/coverage/CoverageReportActionBuilder.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import com.google.devtools.build.lib.actions.InputMetadataProvider;",
+         "matchingRanges": {
+          "lineNumber": "41"
+         },
+         "lineNumber": "41",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.actions.NotifyOnActionCacheHit;",
+         "matchingRanges": {
+          "lineNumber": "42",
+          "columnRanges": [
+           {
+            "startIndex": 53,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "42",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 53,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.actions.ResourceSet;",
+         "matchingRanges": {
+          "lineNumber": "43"
+         },
+         "lineNumber": "43",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    @Override",
+         "matchingRanges": {
+          "lineNumber": "184"
+         },
+         "lineNumber": "184"
+        },
+        {
+         "lineText": "    public boolean actionCacheHit(ActionCachedContext context) {",
+         "matchingRanges": {
+          "lineNumber": "185",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 11
+           },
+           {
+            "startIndex": 34,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "185",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 11
+          },
+          {
+           "startIndex": 34,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": "      context.getEventHandler().handle(Event.info(locationMessage));",
+         "matchingRanges": {
+          "lineNumber": "186"
+         },
+         "lineNumber": "186"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  /** A helper interface for product-specific coverage support. */",
+         "matchingRanges": {
+          "lineNumber": "317",
+          "columnRanges": [
+           {
+            "startIndex": 15,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "317",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 64
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 15,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "  public interface CoverageHelper {",
+         "matchingRanges": {
+          "lineNumber": "318",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "318",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 9
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "    /** Returns the arguments for the coverage report generator action. */",
+         "matchingRanges": {
+          "lineNumber": "319"
+         },
+         "lineNumber": "319",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 70
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 5
+    },
+    "resultToken": "CA4SBAgBIAE4sqv3zsTow7VhQABIDg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/8.5.1/contribute/codebase.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "After a suitable server process is ready, the command that needs to be run is",
+         "matchingRanges": {
+          "lineNumber": "66"
+         },
+         "lineNumber": "66"
+        },
+        {
+         "lineText": "communicated to it over a gRPC interface, then the output of Bazel is piped back",
+         "matchingRanges": {
+          "lineNumber": "67",
+          "columnRanges": [
+           {
+            "startIndex": 31,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "67",
+         "ranges": [
+          {
+           "startIndex": 31,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "to the terminal. Only one command can be running at the same time. This is",
+         "matchingRanges": {
+          "lineNumber": "68"
+         },
+         "lineNumber": "68"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "2.  The right command is found. Each command must implement the interface",
+         "matchingRanges": {
+          "lineNumber": "136",
+          "columnRanges": [
+           {
+            "startIndex": 64,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "136",
+         "ranges": [
+          {
+           "startIndex": 64,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "    `BlazeCommand` and must have the `@Command` annotation (this is a bit of an",
+         "matchingRanges": {
+          "lineNumber": "137"
+         },
+         "lineNumber": "137"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "This cache is checked for hits using the method",
+         "matchingRanges": {
+          "lineNumber": "1043"
+         },
+         "lineNumber": "1043"
+        },
+        {
+         "lineText": "`ActionCacheChecker.getTokenIfNeedToExecute()` .",
+         "matchingRanges": {
+          "lineNumber": "1044",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "1044",
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "1045"
+         },
+         "lineNumber": "1045"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "*   Interfaces to remote execution systems",
+         "matchingRanges": {
+          "lineNumber": "1412",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "1412",
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "*   New commands",
+         "matchingRanges": {
+          "lineNumber": "1413"
+         },
+         "lineNumber": "1413"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 9
+    },
+    "resultToken": "CA8SAggBOMDwhtWb1cGgHEAASA8"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/7.7.1/contribute/codebase.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "After a suitable server process is ready, the command that needs to be run is",
+         "matchingRanges": {
+          "lineNumber": "66"
+         },
+         "lineNumber": "66"
+        },
+        {
+         "lineText": "communicated to it over a gRPC interface, then the output of Bazel is piped back",
+         "matchingRanges": {
+          "lineNumber": "67",
+          "columnRanges": [
+           {
+            "startIndex": 31,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "67",
+         "ranges": [
+          {
+           "startIndex": 31,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "to the terminal. Only one command can be running at the same time. This is",
+         "matchingRanges": {
+          "lineNumber": "68"
+         },
+         "lineNumber": "68"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "2.  The right command is found. Each command must implement the interface",
+         "matchingRanges": {
+          "lineNumber": "136",
+          "columnRanges": [
+           {
+            "startIndex": 64,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "136",
+         "ranges": [
+          {
+           "startIndex": 64,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "    `BlazeCommand` and must have the `@Command` annotation (this is a bit of an",
+         "matchingRanges": {
+          "lineNumber": "137"
+         },
+         "lineNumber": "137"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "This cache is checked for hits using the method",
+         "matchingRanges": {
+          "lineNumber": "1037"
+         },
+         "lineNumber": "1037"
+        },
+        {
+         "lineText": "`ActionCacheChecker.getTokenIfNeedToExecute()` .",
+         "matchingRanges": {
+          "lineNumber": "1038",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "1038",
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "1039"
+         },
+         "lineNumber": "1039"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "*   Interfaces to remote execution systems",
+         "matchingRanges": {
+          "lineNumber": "1406",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "1406",
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "*   New commands",
+         "matchingRanges": {
+          "lineNumber": "1407"
+         },
+         "lineNumber": "1407"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 9
+    },
+    "resultToken": "CBASAggBONq4rMyX-bimJEAASBA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/9.0.0/contribute/codebase.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "After a suitable server process is ready, the command that needs to be run is",
+         "matchingRanges": {
+          "lineNumber": "66"
+         },
+         "lineNumber": "66"
+        },
+        {
+         "lineText": "communicated to it over a gRPC interface, then the output of Bazel is piped back",
+         "matchingRanges": {
+          "lineNumber": "67",
+          "columnRanges": [
+           {
+            "startIndex": 31,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "67",
+         "ranges": [
+          {
+           "startIndex": 31,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "to the terminal. Only one command can be running at the same time. This is",
+         "matchingRanges": {
+          "lineNumber": "68"
+         },
+         "lineNumber": "68"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "2.  The right command is found. Each command must implement the interface",
+         "matchingRanges": {
+          "lineNumber": "136",
+          "columnRanges": [
+           {
+            "startIndex": 64,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "136",
+         "ranges": [
+          {
+           "startIndex": 64,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "    `BlazeCommand` and must have the `@Command` annotation (this is a bit of an",
+         "matchingRanges": {
+          "lineNumber": "137"
+         },
+         "lineNumber": "137"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "This cache is checked for hits using the method",
+         "matchingRanges": {
+          "lineNumber": "1039"
+         },
+         "lineNumber": "1039"
+        },
+        {
+         "lineText": "`ActionCacheChecker.getTokenIfNeedToExecute()` .",
+         "matchingRanges": {
+          "lineNumber": "1040",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "1040",
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "1041"
+         },
+         "lineNumber": "1041"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "*   Interfaces to remote execution systems",
+         "matchingRanges": {
+          "lineNumber": "1406",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "1406",
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "*   New commands",
+         "matchingRanges": {
+          "lineNumber": "1407"
+         },
+         "lineNumber": "1407"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 9
+    },
+    "resultToken": "CBESAggBONDtpo7lw72KJkAASBE"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/8.0.1/contribute/codebase.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "After a suitable server process is ready, the command that needs to be run is",
+         "matchingRanges": {
+          "lineNumber": "66"
+         },
+         "lineNumber": "66"
+        },
+        {
+         "lineText": "communicated to it over a gRPC interface, then the output of Bazel is piped back",
+         "matchingRanges": {
+          "lineNumber": "67",
+          "columnRanges": [
+           {
+            "startIndex": 31,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "67",
+         "ranges": [
+          {
+           "startIndex": 31,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "to the terminal. Only one command can be running at the same time. This is",
+         "matchingRanges": {
+          "lineNumber": "68"
+         },
+         "lineNumber": "68"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "2.  The right command is found. Each command must implement the interface",
+         "matchingRanges": {
+          "lineNumber": "136",
+          "columnRanges": [
+           {
+            "startIndex": 64,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "136",
+         "ranges": [
+          {
+           "startIndex": 64,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "    `BlazeCommand` and must have the `@Command` annotation (this is a bit of an",
+         "matchingRanges": {
+          "lineNumber": "137"
+         },
+         "lineNumber": "137"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "This cache is checked for hits using the method",
+         "matchingRanges": {
+          "lineNumber": "1044"
+         },
+         "lineNumber": "1044"
+        },
+        {
+         "lineText": "`ActionCacheChecker.getTokenIfNeedToExecute()` .",
+         "matchingRanges": {
+          "lineNumber": "1045",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "1045",
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "1046"
+         },
+         "lineNumber": "1046"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "*   Interfaces to remote execution systems",
+         "matchingRanges": {
+          "lineNumber": "1413",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "1413",
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "*   New commands",
+         "matchingRanges": {
+          "lineNumber": "1414"
+         },
+         "lineNumber": "1414"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 9
+    },
+    "resultToken": "CBISAggBOJLE4a3I5NfLL0AASBI"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/7.6.1/contribute/codebase.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "After a suitable server process is ready, the command that needs to be run is",
+         "matchingRanges": {
+          "lineNumber": "66"
+         },
+         "lineNumber": "66"
+        },
+        {
+         "lineText": "communicated to it over a gRPC interface, then the output of Bazel is piped back",
+         "matchingRanges": {
+          "lineNumber": "67",
+          "columnRanges": [
+           {
+            "startIndex": 31,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "67",
+         "ranges": [
+          {
+           "startIndex": 31,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "to the terminal. Only one command can be running at the same time. This is",
+         "matchingRanges": {
+          "lineNumber": "68"
+         },
+         "lineNumber": "68"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "2.  The right command is found. Each command must implement the interface",
+         "matchingRanges": {
+          "lineNumber": "136",
+          "columnRanges": [
+           {
+            "startIndex": 64,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "136",
+         "ranges": [
+          {
+           "startIndex": 64,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "    `BlazeCommand` and must have the `@Command` annotation (this is a bit of an",
+         "matchingRanges": {
+          "lineNumber": "137"
+         },
+         "lineNumber": "137"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "This cache is checked for hits using the method",
+         "matchingRanges": {
+          "lineNumber": "1037"
+         },
+         "lineNumber": "1037"
+        },
+        {
+         "lineText": "`ActionCacheChecker.getTokenIfNeedToExecute()` .",
+         "matchingRanges": {
+          "lineNumber": "1038",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "1038",
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "1039"
+         },
+         "lineNumber": "1039"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "*   Interfaces to remote execution systems",
+         "matchingRanges": {
+          "lineNumber": "1406",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "1406",
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "*   New commands",
+         "matchingRanges": {
+          "lineNumber": "1407"
+         },
+         "lineNumber": "1407"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 9
+    },
+    "resultToken": "CBMSAggBOISxhcH-x-iQdUAASBM"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/8.6.0/contribute/codebase.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "After a suitable server process is ready, the command that needs to be run is",
+         "matchingRanges": {
+          "lineNumber": "66"
+         },
+         "lineNumber": "66"
+        },
+        {
+         "lineText": "communicated to it over a gRPC interface, then the output of Bazel is piped back",
+         "matchingRanges": {
+          "lineNumber": "67",
+          "columnRanges": [
+           {
+            "startIndex": 31,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "67",
+         "ranges": [
+          {
+           "startIndex": 31,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "to the terminal. Only one command can be running at the same time. This is",
+         "matchingRanges": {
+          "lineNumber": "68"
+         },
+         "lineNumber": "68"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "2.  The right command is found. Each command must implement the interface",
+         "matchingRanges": {
+          "lineNumber": "136",
+          "columnRanges": [
+           {
+            "startIndex": 64,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "136",
+         "ranges": [
+          {
+           "startIndex": 64,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "    `BlazeCommand` and must have the `@Command` annotation (this is a bit of an",
+         "matchingRanges": {
+          "lineNumber": "137"
+         },
+         "lineNumber": "137"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "This cache is checked for hits using the method",
+         "matchingRanges": {
+          "lineNumber": "1043"
+         },
+         "lineNumber": "1043"
+        },
+        {
+         "lineText": "`ActionCacheChecker.getTokenIfNeedToExecute()` .",
+         "matchingRanges": {
+          "lineNumber": "1044",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "1044",
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "1045"
+         },
+         "lineNumber": "1045"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "*   Interfaces to remote execution systems",
+         "matchingRanges": {
+          "lineNumber": "1412",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "1412",
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "*   New commands",
+         "matchingRanges": {
+          "lineNumber": "1413"
+         },
+         "lineNumber": "1413"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 9
+    },
+    "resultToken": "CBQSAggBOPTC87KJgvTJjAFAAEgU"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/9.1.0/contribute/codebase.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "After a suitable server process is ready, the command that needs to be run is",
+         "matchingRanges": {
+          "lineNumber": "66"
+         },
+         "lineNumber": "66"
+        },
+        {
+         "lineText": "communicated to it over a gRPC interface, then the output of Bazel is piped back",
+         "matchingRanges": {
+          "lineNumber": "67",
+          "columnRanges": [
+           {
+            "startIndex": 31,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "67",
+         "ranges": [
+          {
+           "startIndex": 31,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "to the terminal. Only one command can be running at the same time. This is",
+         "matchingRanges": {
+          "lineNumber": "68"
+         },
+         "lineNumber": "68"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "2.  The right command is found. Each command must implement the interface",
+         "matchingRanges": {
+          "lineNumber": "136",
+          "columnRanges": [
+           {
+            "startIndex": 64,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "136",
+         "ranges": [
+          {
+           "startIndex": 64,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "    `BlazeCommand` and must have the `@Command` annotation (this is a bit of an",
+         "matchingRanges": {
+          "lineNumber": "137"
+         },
+         "lineNumber": "137"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "This cache is checked for hits using the method",
+         "matchingRanges": {
+          "lineNumber": "1040"
+         },
+         "lineNumber": "1040"
+        },
+        {
+         "lineText": "`ActionCacheChecker.getTokenIfNeedToExecute()` .",
+         "matchingRanges": {
+          "lineNumber": "1041",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "1041",
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "1042"
+         },
+         "lineNumber": "1042"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "*   Interfaces to remote execution systems",
+         "matchingRanges": {
+          "lineNumber": "1407",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "1407",
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "*   New commands",
+         "matchingRanges": {
+          "lineNumber": "1408"
+         },
+         "lineNumber": "1408"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 9
+    },
+    "resultToken": "CBUSAggBOKStpaKY9I-nnwFAAEgV"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/8.2.1/contribute/codebase.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "After a suitable server process is ready, the command that needs to be run is",
+         "matchingRanges": {
+          "lineNumber": "66"
+         },
+         "lineNumber": "66"
+        },
+        {
+         "lineText": "communicated to it over a gRPC interface, then the output of Bazel is piped back",
+         "matchingRanges": {
+          "lineNumber": "67",
+          "columnRanges": [
+           {
+            "startIndex": 31,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "67",
+         "ranges": [
+          {
+           "startIndex": 31,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "to the terminal. Only one command can be running at the same time. This is",
+         "matchingRanges": {
+          "lineNumber": "68"
+         },
+         "lineNumber": "68"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "2.  The right command is found. Each command must implement the interface",
+         "matchingRanges": {
+          "lineNumber": "136",
+          "columnRanges": [
+           {
+            "startIndex": 64,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "136",
+         "ranges": [
+          {
+           "startIndex": 64,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "    `BlazeCommand` and must have the `@Command` annotation (this is a bit of an",
+         "matchingRanges": {
+          "lineNumber": "137"
+         },
+         "lineNumber": "137"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "This cache is checked for hits using the method",
+         "matchingRanges": {
+          "lineNumber": "1044"
+         },
+         "lineNumber": "1044"
+        },
+        {
+         "lineText": "`ActionCacheChecker.getTokenIfNeedToExecute()` .",
+         "matchingRanges": {
+          "lineNumber": "1045",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "1045",
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "1046"
+         },
+         "lineNumber": "1046"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "*   Interfaces to remote execution systems",
+         "matchingRanges": {
+          "lineNumber": "1413",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "1413",
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "*   New commands",
+         "matchingRanges": {
+          "lineNumber": "1414"
+         },
+         "lineNumber": "1414"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 9
+    },
+    "resultToken": "CBYSAggBOPL5tLKv7azhrwFAAEgW"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/8.4.2/contribute/codebase.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "After a suitable server process is ready, the command that needs to be run is",
+         "matchingRanges": {
+          "lineNumber": "66"
+         },
+         "lineNumber": "66"
+        },
+        {
+         "lineText": "communicated to it over a gRPC interface, then the output of Bazel is piped back",
+         "matchingRanges": {
+          "lineNumber": "67",
+          "columnRanges": [
+           {
+            "startIndex": 31,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "67",
+         "ranges": [
+          {
+           "startIndex": 31,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "to the terminal. Only one command can be running at the same time. This is",
+         "matchingRanges": {
+          "lineNumber": "68"
+         },
+         "lineNumber": "68"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "2.  The right command is found. Each command must implement the interface",
+         "matchingRanges": {
+          "lineNumber": "136",
+          "columnRanges": [
+           {
+            "startIndex": 64,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "136",
+         "ranges": [
+          {
+           "startIndex": 64,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "    `BlazeCommand` and must have the `@Command` annotation (this is a bit of an",
+         "matchingRanges": {
+          "lineNumber": "137"
+         },
+         "lineNumber": "137"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "This cache is checked for hits using the method",
+         "matchingRanges": {
+          "lineNumber": "1044"
+         },
+         "lineNumber": "1044"
+        },
+        {
+         "lineText": "`ActionCacheChecker.getTokenIfNeedToExecute()` .",
+         "matchingRanges": {
+          "lineNumber": "1045",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "1045",
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "1046"
+         },
+         "lineNumber": "1046"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "*   Interfaces to remote execution systems",
+         "matchingRanges": {
+          "lineNumber": "1413",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "1413",
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "*   New commands",
+         "matchingRanges": {
+          "lineNumber": "1414"
+         },
+         "lineNumber": "1414"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 9
+    },
+    "resultToken": "CBcSAggBOJKDqY6p3-jZsAFAAEgX"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/8.3.1/contribute/codebase.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "After a suitable server process is ready, the command that needs to be run is",
+         "matchingRanges": {
+          "lineNumber": "66"
+         },
+         "lineNumber": "66"
+        },
+        {
+         "lineText": "communicated to it over a gRPC interface, then the output of Bazel is piped back",
+         "matchingRanges": {
+          "lineNumber": "67",
+          "columnRanges": [
+           {
+            "startIndex": 31,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "67",
+         "ranges": [
+          {
+           "startIndex": 31,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "to the terminal. Only one command can be running at the same time. This is",
+         "matchingRanges": {
+          "lineNumber": "68"
+         },
+         "lineNumber": "68"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "2.  The right command is found. Each command must implement the interface",
+         "matchingRanges": {
+          "lineNumber": "136",
+          "columnRanges": [
+           {
+            "startIndex": 64,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "136",
+         "ranges": [
+          {
+           "startIndex": 64,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "    `BlazeCommand` and must have the `@Command` annotation (this is a bit of an",
+         "matchingRanges": {
+          "lineNumber": "137"
+         },
+         "lineNumber": "137"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "This cache is checked for hits using the method",
+         "matchingRanges": {
+          "lineNumber": "1044"
+         },
+         "lineNumber": "1044"
+        },
+        {
+         "lineText": "`ActionCacheChecker.getTokenIfNeedToExecute()` .",
+         "matchingRanges": {
+          "lineNumber": "1045",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "1045",
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "1046"
+         },
+         "lineNumber": "1046"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "*   Interfaces to remote execution systems",
+         "matchingRanges": {
+          "lineNumber": "1413",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "1413",
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "*   New commands",
+         "matchingRanges": {
+          "lineNumber": "1414"
+         },
+         "lineNumber": "1414"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 9
+    },
+    "resultToken": "CBgSAggBOLzd_t7g-IrzsQFAAEgY"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/8.1.1/contribute/codebase.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "After a suitable server process is ready, the command that needs to be run is",
+         "matchingRanges": {
+          "lineNumber": "66"
+         },
+         "lineNumber": "66"
+        },
+        {
+         "lineText": "communicated to it over a gRPC interface, then the output of Bazel is piped back",
+         "matchingRanges": {
+          "lineNumber": "67",
+          "columnRanges": [
+           {
+            "startIndex": 31,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "67",
+         "ranges": [
+          {
+           "startIndex": 31,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "to the terminal. Only one command can be running at the same time. This is",
+         "matchingRanges": {
+          "lineNumber": "68"
+         },
+         "lineNumber": "68"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "2.  The right command is found. Each command must implement the interface",
+         "matchingRanges": {
+          "lineNumber": "136",
+          "columnRanges": [
+           {
+            "startIndex": 64,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "136",
+         "ranges": [
+          {
+           "startIndex": 64,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "    `BlazeCommand` and must have the `@Command` annotation (this is a bit of an",
+         "matchingRanges": {
+          "lineNumber": "137"
+         },
+         "lineNumber": "137"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "This cache is checked for hits using the method",
+         "matchingRanges": {
+          "lineNumber": "1044"
+         },
+         "lineNumber": "1044"
+        },
+        {
+         "lineText": "`ActionCacheChecker.getTokenIfNeedToExecute()` .",
+         "matchingRanges": {
+          "lineNumber": "1045",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "1045",
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "1046"
+         },
+         "lineNumber": "1046"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "*   Interfaces to remote execution systems",
+         "matchingRanges": {
+          "lineNumber": "1413",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "1413",
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "*   New commands",
+         "matchingRanges": {
+          "lineNumber": "1414"
+         },
+         "lineNumber": "1414"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 9
+    },
+    "resultToken": "CBkSAggBOKCK_Pnlpb6x8gFAAEgZ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "CHANGELOG.md",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "+ Update java_tools to v12.5 (#18868)",
+         "matchingRanges": {
+          "lineNumber": "3566"
+         },
+         "lineNumber": "3566"
+        },
+        {
+         "lineText": "+ Add ActionCacheStatistics to BEP (#18914)",
+         "matchingRanges": {
+          "lineNumber": "3567",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "3567",
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": "+ Adjust --top_level_targets_for_symlinks (#18916)",
+         "matchingRanges": {
+          "lineNumber": "3568"
+         },
+         "lineNumber": "3568"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "   + 186decab01ee247c7453baf19dac778545ec4937:",
+         "matchingRanges": {
+          "lineNumber": "5775"
+         },
+         "lineNumber": "5775"
+        },
+        {
+         "lineText": "     Interface and flag specification for worker cancellation.",
+         "matchingRanges": {
+          "lineNumber": "5776",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "5776",
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "   + 5894a8544d51c99f1356130b8b487bc93299fedd:",
+         "matchingRanges": {
+          "lineNumber": "5777"
+         },
+         "lineNumber": "5777"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "   + 186decab01ee247c7453baf19dac778545ec4937:",
+         "matchingRanges": {
+          "lineNumber": "11893"
+         },
+         "lineNumber": "11893"
+        },
+        {
+         "lineText": "     Interface and flag specification for worker cancellation.",
+         "matchingRanges": {
+          "lineNumber": "11894",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "11894",
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "   + 5894a8544d51c99f1356130b8b487bc93299fedd:",
+         "matchingRanges": {
+          "lineNumber": "11895"
+         },
+         "lineNumber": "11895"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 41
+    },
+    "resultToken": "CBoSAggBOM6Q6oHo3avs2AFAAEga"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/remote/LeaseService.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import com.google.devtools.build.lib.actions.FileArtifactValue;",
+         "matchingRanges": {
+          "lineNumber": "18"
+         },
+         "lineNumber": "18",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.actions.cache.ActionCache;",
+         "matchingRanges": {
+          "lineNumber": "19",
+          "columnRanges": [
+           {
+            "startIndex": 51,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "19",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 51,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.remote.common.LostInputsEvent;",
+         "matchingRanges": {
+          "lineNumber": "20"
+         },
+         "lineNumber": "20",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  private final MemoizingEvaluator memoizingEvaluator;",
+         "matchingRanges": {
+          "lineNumber": "31"
+         },
+         "lineNumber": "31",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  private final Supplier\u003cActionCache\u003e actionCacheSupplier;",
+         "matchingRanges": {
+          "lineNumber": "32",
+          "columnRanges": [
+           {
+            "startIndex": 25,
+            "length": 11
+           },
+           {
+            "startIndex": 38,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "32",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 25,
+           "length": 11
+          },
+          {
+           "startIndex": 38,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": "  private final AtomicBoolean leaseExtensionStarted = new AtomicBoolean(false);",
+         "matchingRanges": {
+          "lineNumber": "33"
+         },
+         "lineNumber": "33",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 54,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "   * An interface whose implementations extend the leases of remote outputs referenced by skyframe.",
+         "matchingRanges": {
+          "lineNumber": "71",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "71",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 99
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "   */",
+         "matchingRanges": {
+          "lineNumber": "72"
+         },
+         "lineNumber": "72",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  public interface LeaseExtension {",
+         "matchingRanges": {
+          "lineNumber": "73",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "73",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 9
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 9
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 9
+    },
+    "resultToken": "CBsSBAgBIAE4sJKujaz5sZL4AUAASBs"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/contribute/codebase.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "After a suitable server process is ready, the command that needs to be run is",
+         "matchingRanges": {
+          "lineNumber": "68"
+         },
+         "lineNumber": "68"
+        },
+        {
+         "lineText": "communicated to it over a gRPC interface, then the output of Bazel is piped back",
+         "matchingRanges": {
+          "lineNumber": "69",
+          "columnRanges": [
+           {
+            "startIndex": 31,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "69",
+         "ranges": [
+          {
+           "startIndex": 31,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "to the terminal. Only one command can be running at the same time. This is",
+         "matchingRanges": {
+          "lineNumber": "70"
+         },
+         "lineNumber": "70"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "2.  The right command is found. Each command must implement the interface",
+         "matchingRanges": {
+          "lineNumber": "138",
+          "columnRanges": [
+           {
+            "startIndex": 64,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "138",
+         "ranges": [
+          {
+           "startIndex": 64,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "    `BlazeCommand` and must have the `@Command` annotation (this is a bit of an",
+         "matchingRanges": {
+          "lineNumber": "139"
+         },
+         "lineNumber": "139"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "This cache is checked for hits using the method",
+         "matchingRanges": {
+          "lineNumber": "1041"
+         },
+         "lineNumber": "1041"
+        },
+        {
+         "lineText": "`ActionCacheChecker.getTokenIfNeedToExecute()` .",
+         "matchingRanges": {
+          "lineNumber": "1042",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "1042",
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "1043"
+         },
+         "lineNumber": "1043"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "*   Interfaces to remote execution systems",
+         "matchingRanges": {
+          "lineNumber": "1408",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "1408",
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "*   New commands",
+         "matchingRanges": {
+          "lineNumber": "1409"
+         },
+         "lineNumber": "1409"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 9
+    },
+    "resultToken": "CBwSAggBOKTCjMDE1NjFQ0AASBw"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/skyframe/SkyframeExecutor.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import com.google.devtools.build.lib.actions.ThreadStateReceiver;",
+         "matchingRanges": {
+          "lineNumber": "86"
+         },
+         "lineNumber": "86",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.actions.cache.ActionCache;",
+         "matchingRanges": {
+          "lineNumber": "87",
+          "columnRanges": [
+           {
+            "startIndex": 51,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "87",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 51,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.analysis.AnalysisOptions;",
+         "matchingRanges": {
+          "lineNumber": "88"
+         },
+         "lineNumber": "88",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  private final FilesMetricConsumer outputArtifactsSeen = new FilesMetricConsumer();",
+         "matchingRanges": {
+          "lineNumber": "369"
+         },
+         "lineNumber": "369",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 58,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  private final FilesMetricConsumer outputArtifactsFromActionCache = new FilesMetricConsumer();",
+         "matchingRanges": {
+          "lineNumber": "370",
+          "columnRanges": [
+           {
+            "startIndex": 55,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "370",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 69,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 55,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": "  private final FilesMetricConsumer topLevelArtifactsMetric = new FilesMetricConsumer();",
+         "matchingRanges": {
+          "lineNumber": "371"
+         },
+         "lineNumber": "371",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 62,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  /** Receiver for successfully evaluated/doing computation {@link SkyKey}s. */",
+         "matchingRanges": {
+          "lineNumber": "4358"
+         },
+         "lineNumber": "4358",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 77
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  public interface SkyKeyStateReceiver {",
+         "matchingRanges": {
+          "lineNumber": "4359",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "4359",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 9
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "    SkyKeyStateReceiver NULL_INSTANCE = new SkyKeyStateReceiver() {};",
+         "matchingRanges": {
+          "lineNumber": "4360"
+         },
+         "lineNumber": "4360",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 40,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 23
+    },
+    "resultToken": "CB0SBAgBIAE4nsWrmaelgJ1zQABIHQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/runtime/BlazeRuntime.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": " */",
+         "matchingRanges": {
+          "lineNumber": "164"
+         },
+         "lineNumber": "164",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "public final class BlazeRuntime implements BugReport.BlazeRuntimeInterface {",
+         "matchingRanges": {
+          "lineNumber": "165",
+          "columnRanges": [
+           {
+            "startIndex": 65,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "165",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 13,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 32,
+            "length": 10
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 65,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "166"
+         },
+         "lineNumber": "166"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "   * Returns the first {@link BlazeModule} that is an instance of a given class or interface.",
+         "matchingRanges": {
+          "lineNumber": "604",
+          "columnRanges": [
+           {
+            "startIndex": 83,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "604",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 93
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 83,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "   *",
+         "matchingRanges": {
+          "lineNumber": "605"
+         },
+         "lineNumber": "605",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "   * @param moduleClass a class or interface that we want to match to a module",
+         "matchingRanges": {
+          "lineNumber": "606",
+          "columnRanges": [
+           {
+            "startIndex": 35,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "606",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 78
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 35,
+           "length": 9
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    if (options.getActionCacheGcMaxAge() != null \u0026\u0026 !options.getActionCacheGcMaxAge().isZero()) {",
+         "matchingRanges": {
+          "lineNumber": "690",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 11
+           },
+           {
+            "startIndex": 64,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "690",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 11
+          },
+          {
+           "startIndex": 64,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": "      env.addIdleTask(",
+         "matchingRanges": {
+          "lineNumber": "691"
+         },
+         "lineNumber": "691"
+        },
+        {
+         "lineText": "          workspace.getActionCacheGcIdleTask(",
+         "matchingRanges": {
+          "lineNumber": "692",
+          "columnRanges": [
+           {
+            "startIndex": 23,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "692",
+         "ranges": [
+          {
+           "startIndex": 23,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": "              options.getActionCacheGcIdleDelay(),",
+         "matchingRanges": {
+          "lineNumber": "693",
+          "columnRanges": [
+           {
+            "startIndex": 25,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "693",
+         "ranges": [
+          {
+           "startIndex": 25,
+           "length": 11
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 12
+    },
+    "resultToken": "CB4SAggBOOCfs_jH5ZXEakAASB4"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/buildtool/BuildTool.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  /** Hook for inserting extra post-analysis-phase processing. Used for implementing {a,c}query. */",
+         "matchingRanges": {
+          "lineNumber": "161"
+         },
+         "lineNumber": "161",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 97
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  public interface AnalysisPostProcessor {",
+         "matchingRanges": {
+          "lineNumber": "162",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "162",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 9
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "    void process(",
+         "matchingRanges": {
+          "lineNumber": "163"
+         },
+         "lineNumber": "163",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "                env.getReporter(),",
+         "matchingRanges": {
+          "lineNumber": "416"
+         },
+         "lineNumber": "416"
+        },
+        {
+         "lineText": "                env.getBlazeWorkspace().getPersistentActionCache(),",
+         "matchingRanges": {
+          "lineNumber": "417",
+          "columnRanges": [
+           {
+            "startIndex": 53,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "417",
+         "ranges": [
+          {
+           "startIndex": 53,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": "                env.getOptions());",
+         "matchingRanges": {
+          "lineNumber": "418"
+         },
+         "lineNumber": "418"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "            result,",
+         "matchingRanges": {
+          "lineNumber": "698"
+         },
+         "lineNumber": "698"
+        },
+        {
+         "lineText": "            env.getBlazeWorkspace().getPersistentActionCache(),",
+         "matchingRanges": {
+          "lineNumber": "699",
+          "columnRanges": [
+           {
+            "startIndex": 49,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "699",
+         "ranges": [
+          {
+           "startIndex": 49,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": "            /* explanationHandler= */ null,",
+         "matchingRanges": {
+          "lineNumber": "700"
+         },
+         "lineNumber": "700",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 12,
+            "length": 25
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CB8SAggBOL7k8cqLu6PNYkAASB8"
+   }
+  ],
+  "estimatedResultCount": "34",
+  "exhaustive": true,
+  "requestToken": "ChVpbnRlcmZhY2UgQWN0aW9uQ2FjaGUSIyggZ2l0OmJhemVsL2JhemVsQG1hc3RlciBjYXNlOnllcyApGgwIz-ys0QYQkKLuwgEgDCoAMgBIAQ"
+ }
+}

@@ -1,0 +1,403 @@
+{
+ "query": "lang:markdown garbage collector",
+ "oss_project": "go",
+ "repo_name": "go",
+ "page_size": 50,
+ "fetched_at": "2026-06-11T02:31:20Z",
+ "response": {
+  "searchResults": [
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/compile/abi-internal.md",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "As defined, the ABI does not use callee-save registers.",
+         "matchingRanges": {
+          "lineNumber": "920"
+         },
+         "lineNumber": "920"
+        },
+        {
+         "lineText": "This significantly simplifies the garbage collector and the compiler's",
+         "matchingRanges": {
+          "lineNumber": "921",
+          "columnRanges": [
+           {
+            "startIndex": 34,
+            "length": 7
+           },
+           {
+            "startIndex": 42,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "921",
+         "ranges": [
+          {
+           "startIndex": 34,
+           "length": 7
+          },
+          {
+           "startIndex": 42,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "register allocator, but at some performance cost.",
+         "matchingRanges": {
+          "lineNumber": "922"
+         },
+         "lineNumber": "922"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "across package boundaries.",
+         "matchingRanges": {
+          "lineNumber": "931"
+         },
+         "lineNumber": "931"
+        },
+        {
+         "lineText": "Clobber sets would require relatively little change to the garbage",
+         "matchingRanges": {
+          "lineNumber": "932",
+          "columnRanges": [
+           {
+            "startIndex": 59,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "932",
+         "ranges": [
+          {
+           "startIndex": 59,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "collector, unlike general callee-save registers.",
+         "matchingRanges": {
+          "lineNumber": "933",
+          "columnRanges": [
+           {
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "933",
+         "ranges": [
+          {
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "One disadvantage of clobber sets over callee-save registers is that",
+         "matchingRanges": {
+          "lineNumber": "934"
+         },
+         "lineNumber": "934"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CAASAggBOP67kviW5ZKD4QFAAEgA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/HACKING.md",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "goroutines. Code running on the system stack is implicitly",
+         "matchingRanges": {
+          "lineNumber": "81"
+         },
+         "lineNumber": "81"
+        },
+        {
+         "lineText": "non-preemptible and the garbage collector does not scan system stacks.",
+         "matchingRanges": {
+          "lineNumber": "82",
+          "columnRanges": [
+           {
+            "startIndex": 24,
+            "length": 7
+           },
+           {
+            "startIndex": 32,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "82",
+         "ranges": [
+          {
+           "startIndex": 24,
+           "length": 7
+          },
+          {
+           "startIndex": 32,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "While running on the system stack, the current user stack is not used",
+         "matchingRanges": {
+          "lineNumber": "83"
+         },
+         "lineNumber": "83"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "In general, the runtime tries to use regular heap allocation. However,",
+         "matchingRanges": {
+          "lineNumber": "225"
+         },
+         "lineNumber": "225"
+        },
+        {
+         "lineText": "in some cases the runtime must allocate objects outside of the garbage",
+         "matchingRanges": {
+          "lineNumber": "226",
+          "columnRanges": [
+           {
+            "startIndex": 63,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "226",
+         "ranges": [
+          {
+           "startIndex": 63,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "collected heap, in *unmanaged memory*. This is necessary if the",
+         "matchingRanges": {
+          "lineNumber": "227"
+         },
+         "lineNumber": "227"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "1. Any pointers from unmanaged memory to the heap must be garbage",
+         "matchingRanges": {
+          "lineNumber": "251",
+          "columnRanges": [
+           {
+            "startIndex": 58,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "251",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 58,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "   collection roots. More specifically, any pointer must either be",
+         "matchingRanges": {
+          "lineNumber": "252"
+         },
+         "lineNumber": "252"
+        },
+        {
+         "lineText": "   accessible through a global variable or be added as an explicit",
+         "matchingRanges": {
+          "lineNumber": "253"
+         },
+         "lineNumber": "253"
+        },
+        {
+         "lineText": "   garbage collection root in `runtime.markroot`.",
+         "matchingRanges": {
+          "lineNumber": "254",
+          "columnRanges": [
+           {
+            "startIndex": 3,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "254",
+         "ranges": [
+          {
+           "startIndex": 3,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "255"
+         },
+         "lineNumber": "255"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "If memory is not in a type-safe state, meaning it potentially contains",
+         "matchingRanges": {
+          "lineNumber": "267"
+         },
+         "lineNumber": "267"
+        },
+        {
+         "lineText": "\"garbage\" because it was just allocated and it is being initialized",
+         "matchingRanges": {
+          "lineNumber": "268",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "268",
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "for first use, then it must be *zero-initialized* using",
+         "matchingRanges": {
+          "lineNumber": "269"
+         },
+         "lineNumber": "269"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "doing. They contain all goroutine scheduling actions, data about time spent in",
+         "matchingRanges": {
+          "lineNumber": "510"
+         },
+         "lineNumber": "510"
+        },
+        {
+         "lineText": "the scheduler (P running without a G), data about time spent in the garbage",
+         "matchingRanges": {
+          "lineNumber": "511",
+          "columnRanges": [
+           {
+            "startIndex": 68,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "511",
+         "ranges": [
+          {
+           "startIndex": 68,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "collector, and more. Use `go tool trace` or [gotraceui](https://gotraceui.dev)",
+         "matchingRanges": {
+          "lineNumber": "512",
+          "columnRanges": [
+           {
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "512",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 44,
+            "length": 34
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "to inspect traces.",
+         "matchingRanges": {
+          "lineNumber": "513"
+         },
+         "lineNumber": "513"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 7
+    },
+    "resultToken": "CAESAggBOMDunqKxz6b8H0AASAE"
+   }
+  ],
+  "estimatedResultCount": "2",
+  "exhaustive": true,
+  "requestToken": "Ch9sYW5nOm1hcmtkb3duIGdhcmJhZ2UgY29sbGVjdG9yEh0oIGdpdDpnby9nb0BtYXN0ZXIgY2FzZTp5ZXMgKRoMCPi7qNEGEPXhxY0DIAwqADIASAE"
+ }
+}

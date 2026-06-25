@@ -1,0 +1,1843 @@
+{
+ "query": "work stealing",
+ "oss_project": "go",
+ "repo_name": "go",
+ "page_size": 50,
+ "fetched_at": "2026-06-11T02:28:59Z",
+ "response": {
+  "searchResults": [
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/mgc.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "var work workType",
+         "matchingRanges": {
+          "lineNumber": "325",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "325",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "326"
+         },
+         "lineNumber": "326"
+        },
+        {
+         "lineText": "type workType struct {",
+         "matchingRanges": {
+          "lineNumber": "327",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "327",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 14,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\tfull  lfstack          // lock-free list of full blocks workbuf",
+         "matchingRanges": {
+          "lineNumber": "328"
+         },
+         "lineNumber": "328",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 24,
+            "length": 40
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// spanqMask is a bitmap indicating which Ps have local work worth stealing.",
+         "matchingRanges": {
+          "lineNumber": "344",
+          "columnRanges": [
+           {
+            "startIndex": 68,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "344",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 76
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 68,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t// Set or cleared by the owning P, cleared by stealing Ps.",
+         "matchingRanges": {
+          "lineNumber": "345",
+          "columnRanges": [
+           {
+            "startIndex": 47,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "345",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 58
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 47,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t//",
+         "matchingRanges": {
+          "lineNumber": "346"
+         },
+         "lineNumber": "346",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// to do. If it returns true, the caller must call gcMarkDone.",
+         "matchingRanges": {
+          "lineNumber": "1959"
+         },
+         "lineNumber": "1959",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 62
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "func gcEndWork() (last bool) {",
+         "matchingRanges": {
+          "lineNumber": "1960",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "1960",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\tincnwait := atomic.Xadd(\u0026work.nwait, +1)",
+         "matchingRanges": {
+          "lineNumber": "1961"
+         },
+         "lineNumber": "1961",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 39,
+            "length": 1
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 49
+    },
+    "resultToken": "CAASBAgBIAE4oObljLSzqIoTQABIAA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/proc_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t\t// spin a bit more to ensure they are all running on separate CPUs.",
+         "matchingRanges": {
+          "lineNumber": "728"
+         },
+         "lineNumber": "728",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 3,
+            "length": 67
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\tdoWork(time.Millisecond)",
+         "matchingRanges": {
+          "lineNumber": "729",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "729",
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\twg.Done()",
+         "matchingRanges": {
+          "lineNumber": "730"
+         },
+         "lineNumber": "730"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func doWork(dur time.Duration) {",
+         "matchingRanges": {
+          "lineNumber": "736",
+          "columnRanges": [
+           {
+            "startIndex": 7,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "736",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 7,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\tstart := time.Now()",
+         "matchingRanges": {
+          "lineNumber": "737"
+         },
+         "lineNumber": "737"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// scheduler because Ms are much more likely to need to steal work from the",
+         "matchingRanges": {
+          "lineNumber": "746",
+          "columnRanges": [
+           {
+            "startIndex": 62,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "746",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 75
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 62,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "// main P rather than having work in the local run queue.",
+         "matchingRanges": {
+          "lineNumber": "747",
+          "columnRanges": [
+           {
+            "startIndex": 29,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "747",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 57
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 29,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "func BenchmarkCreateGoroutinesSingle(b *testing.B) {",
+         "matchingRanges": {
+          "lineNumber": "748"
+         },
+         "lineNumber": "748",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t// Since we are interested in stealing behavior, warm the scheduler to",
+         "matchingRanges": {
+          "lineNumber": "749",
+          "columnRanges": [
+           {
+            "startIndex": 31,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "749",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 70
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 31,
+           "length": 8
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 11
+    },
+    "resultToken": "CAESBAgBIAE4ttyu9uf3hompAUAASAE"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/mgcmark_greenteagc.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// points to a small object span (gcUsesSpanQueue size).",
+         "matchingRanges": {
+          "lineNumber": "263"
+         },
+         "lineNumber": "263",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 56
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "func tryDeferToSpanScan(p uintptr, gcw *gcWork) bool {",
+         "matchingRanges": {
+          "lineNumber": "264",
+          "columnRanges": [
+           {
+            "startIndex": 42,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "264",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 42,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\tif useCheckmark {",
+         "matchingRanges": {
+          "lineNumber": "265"
+         },
+         "lineNumber": "265",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t\t\t// stomped on by a stealing P. See the comment in tryStealSpan",
+         "matchingRanges": {
+          "lineNumber": "303",
+          "columnRanges": [
+           {
+            "startIndex": 23,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "303",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 62
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 23,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t\t// for an explanation as to why this is OK.",
+         "matchingRanges": {
+          "lineNumber": "304"
+         },
+         "lineNumber": "304",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 43
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t\tif !work.spanqMask.read(uint32(gcw.id)) {",
+         "matchingRanges": {
+          "lineNumber": "305",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "305",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t\t\twork.spanqMask.set(gcw.id)",
+         "matchingRanges": {
+          "lineNumber": "306",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "306",
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 4
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// as a hint.",
+         "matchingRanges": {
+          "lineNumber": "1164"
+         },
+         "lineNumber": "1164",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 13
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "func gcMarkWorkAvailable() bool {",
+         "matchingRanges": {
+          "lineNumber": "1165",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "1165",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\tif !work.full.empty() {",
+         "matchingRanges": {
+          "lineNumber": "1166"
+         },
+         "lineNumber": "1166",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 42
+    },
+    "resultToken": "CAISBAgBIAE4hoC659XrzIHLAUAASAI"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/proc.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// Worker thread parking/unparking.",
+         "matchingRanges": {
+          "lineNumber": "37",
+          "columnRanges": [
+           {
+            "startIndex": 3,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "37",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 35
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 3,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "// We need to balance between keeping enough running worker threads to utilize",
+         "matchingRanges": {
+          "lineNumber": "38",
+          "columnRanges": [
+           {
+            "startIndex": 53,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "38",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 78
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 53,
+           "length": 4
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// now and pollUntil are saved for work stealing later,",
+         "matchingRanges": {
+          "lineNumber": "3419",
+          "columnRanges": [
+           {
+            "startIndex": 41,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "3419",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 55
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 41,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t// which may steal timers. It's important that between now",
+         "matchingRanges": {
+          "lineNumber": "3420"
+         },
+         "lineNumber": "3420",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 58
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// conditions checked by the actual scheduler.",
+         "matchingRanges": {
+          "lineNumber": "3811"
+         },
+         "lineNumber": "3811",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 46
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "func pollWork() bool {",
+         "matchingRanges": {
+          "lineNumber": "3812",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "3812",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\tif !sched.runq.empty() {",
+         "matchingRanges": {
+          "lineNumber": "3813"
+         },
+         "lineNumber": "3813",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// the current time if now was passed as 0.",
+         "matchingRanges": {
+          "lineNumber": "3835"
+         },
+         "lineNumber": "3835",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 43
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "func stealWork(now int64) (gp *g, inheritTime bool, rnow, pollUntil int64, newWork bool) {",
+         "matchingRanges": {
+          "lineNumber": "3836",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "3836",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\tpp := getg().m.p.ptr()",
+         "matchingRanges": {
+          "lineNumber": "3837"
+         },
+         "lineNumber": "3837"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 45
+    },
+    "resultToken": "CAMSBAgBIAE4sListvyNuYpaQABIAw"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/runtime2.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// this field must be set to gcMarkWorkerNotWorker.",
+         "matchingRanges": {
+          "lineNumber": "858",
+          "columnRanges": [
+           {
+            "startIndex": 36,
+            "length": 4
+           },
+           {
+            "startIndex": 45,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "858",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 51
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 36,
+           "length": 4
+          },
+          {
+           "startIndex": 45,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\tgcMarkWorkerMode gcMarkWorkerMode",
+         "matchingRanges": {
+          "lineNumber": "859",
+          "columnRanges": [
+           {
+            "startIndex": 7,
+            "length": 4
+           },
+           {
+            "startIndex": 24,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "859",
+         "ranges": [
+          {
+           "startIndex": 7,
+           "length": 4
+          },
+          {
+           "startIndex": 24,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\t// gcMarkWorkerStartTime is the nanotime() at which the most recent",
+         "matchingRanges": {
+          "lineNumber": "860",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "860",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 67
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 4
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// Only accessed by this P or during STW.",
+         "matchingRanges": {
+          "lineNumber": "873"
+         },
+         "lineNumber": "873",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 41
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tnextGCMarkWorker *gcBgMarkWorkerNode",
+         "matchingRanges": {
+          "lineNumber": "874",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 4
+           },
+           {
+            "startIndex": 27,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "874",
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 4
+          },
+          {
+           "startIndex": 27,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "875"
+         },
+         "lineNumber": "875"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// Thus, we get the following effects on timer-stealing in findRunnable:",
+         "matchingRanges": {
+          "lineNumber": "1446",
+          "columnRanges": [
+           {
+            "startIndex": 48,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "1446",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 72
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 48,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t//",
+         "matchingRanges": {
+          "lineNumber": "1447"
+         },
+         "lineNumber": "1447",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t//   - Idle Ps with no timers when they go idle are never checked in findRunnable",
+         "matchingRanges": {
+          "lineNumber": "1448"
+         },
+         "lineNumber": "1448",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 81
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t//     (for work- or timer-stealing; this is the ideal case).",
+         "matchingRanges": {
+          "lineNumber": "1449",
+          "columnRanges": [
+           {
+            "startIndex": 28,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "1449",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 61
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 28,
+           "length": 8
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 36
+    },
+    "resultToken": "CAQSBAgBIAE46u6uqMjyqIg-QABIBA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/trace.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "//",
+         "matchingRanges": {
+          "lineNumber": "145"
+         },
+         "lineNumber": "145",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "// CGO calls and system calls are mostly straightforward, except for P stealing. For historical",
+         "matchingRanges": {
+          "lineNumber": "146",
+          "columnRanges": [
+           {
+            "startIndex": 71,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "146",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 95
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 71,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "// reasons, this introduces a new trace-level P state called ProcSyscall which used to model",
+         "matchingRanges": {
+          "lineNumber": "147"
+         },
+         "lineNumber": "147",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 92
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "// _Psyscall (now _Psyscall_unused). This state is used to indicate in the trace that a P",
+         "matchingRanges": {
+          "lineNumber": "148"
+         },
+         "lineNumber": "148",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 89
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "// is eligible for stealing as part of the parser's ordering logic.",
+         "matchingRanges": {
+          "lineNumber": "149",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "149",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 67
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "//",
+         "matchingRanges": {
+          "lineNumber": "150"
+         },
+         "lineNumber": "150",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t//",
+         "matchingRanges": {
+          "lineNumber": "1038"
+         },
+         "lineNumber": "1038",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t// Before we drop the lock, clear the workAvailable flag. Work can",
+         "matchingRanges": {
+          "lineNumber": "1039",
+          "columnRanges": [
+           {
+            "startIndex": 40,
+            "length": 4
+           },
+           {
+            "startIndex": 60,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "1039",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 66
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 40,
+           "length": 4
+          },
+          {
+           "startIndex": 60,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t// only be queued with trace.lock held, so this is at least true until",
+         "matchingRanges": {
+          "lineNumber": "1040"
+         },
+         "lineNumber": "1040",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 70
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 14
+    },
+    "resultToken": "CAUSAggBOIC32PGNqoOTiwFAAEgF"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/traceruntime.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\ttraceBlockChanRecv:           \"chan receive\",",
+         "matchingRanges": {
+          "lineNumber": "118"
+         },
+         "lineNumber": "118",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 31,
+            "length": 14
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\ttraceBlockGCMarkAssist:       \"GC mark assist wait for work\",",
+         "matchingRanges": {
+          "lineNumber": "119",
+          "columnRanges": [
+           {
+            "startIndex": 56,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "119",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 31,
+            "length": 30
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 56,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\ttraceBlockGCSweep:            \"GC background sweeper wait\",",
+         "matchingRanges": {
+          "lineNumber": "120"
+         },
+         "lineNumber": "120",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 31,
+            "length": 28
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tif pp.ptr().gcMarkWorkerMode != gcMarkWorkerNotWorker {",
+         "matchingRanges": {
+          "lineNumber": "431",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 4
+           },
+           {
+            "startIndex": 39,
+            "length": 4
+           },
+           {
+            "startIndex": 48,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "431",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 4
+          },
+          {
+           "startIndex": 39,
+           "length": 4
+          },
+          {
+           "startIndex": 48,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tw.event(tracev2.EvGoLabel, trace.markWorkerLabels[tl.gen%2][pp.ptr().gcMarkWorkerMode])",
+         "matchingRanges": {
+          "lineNumber": "432",
+          "columnRanges": [
+           {
+            "startIndex": 39,
+            "length": 4
+           },
+           {
+            "startIndex": 77,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "432",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 59,
+            "length": 1
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 39,
+           "length": 4
+          },
+          {
+           "startIndex": 77,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\t}",
+         "matchingRanges": {
+          "lineNumber": "433"
+         },
+         "lineNumber": "433"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// Emit the status of the P we're stealing. We may be just about to do this when creating the event",
+         "matchingRanges": {
+          "lineNumber": "536",
+          "columnRanges": [
+           {
+            "startIndex": 35,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "536",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 99
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 35,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t// writer but it's not guaranteed, even if we're stealing from a syscall. Although it might seem like",
+         "matchingRanges": {
+          "lineNumber": "537",
+          "columnRanges": [
+           {
+            "startIndex": 50,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "537",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 101
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 50,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t// from a syscall context we're always stealing a P for ourselves, we may have not wired it up yet (so",
+         "matchingRanges": {
+          "lineNumber": "538",
+          "columnRanges": [
+           {
+            "startIndex": 40,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "538",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 102
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 40,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t// it wouldn't be visible to eventWriter) or we may not even intend to wire it up to ourselves",
+         "matchingRanges": {
+          "lineNumber": "539"
+         },
+         "lineNumber": "539",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 94
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 7
+    },
+    "resultToken": "CAYSAggBOPDDgZbuor31mwFAAEgG"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/mcache.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t// NOTE(rsc,rlh): If gcworkbuffree comes back, we need to coordinate",
+         "matchingRanges": {
+          "lineNumber": "124",
+          "columnRanges": [
+           {
+            "startIndex": 25,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "124",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 68
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 25,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t// with the stealing of gcworkbufs during garbage collection to avoid",
+         "matchingRanges": {
+          "lineNumber": "125",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 8
+           },
+           {
+            "startIndex": 28,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "125",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 69
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 8
+          },
+          {
+           "startIndex": 28,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t// a race where the workbuf is double-freed.",
+         "matchingRanges": {
+          "lineNumber": "126",
+          "columnRanges": [
+           {
+            "startIndex": 22,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "126",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 44
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 22,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t// gcworkbuffree(c.gcworkbuf)",
+         "matchingRanges": {
+          "lineNumber": "127",
+          "columnRanges": [
+           {
+            "startIndex": 7,
+            "length": 4
+           },
+           {
+            "startIndex": 23,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "127",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 29
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 7,
+           "length": 4
+          },
+          {
+           "startIndex": 23,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "128"
+         },
+         "lineNumber": "128"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 4
+    },
+    "resultToken": "CAcSAggBOLb284z_kKzQggFAAEgH"
+   }
+  ],
+  "estimatedResultCount": "8",
+  "exhaustive": true,
+  "requestToken": "Cg13b3JrIHN0ZWFsaW5nEh0oIGdpdDpnby9nb0BtYXN0ZXIgY2FzZTp5ZXMgKRoMCOu6qNEGEPbPnfECIAwqADIASAE"
+ }
+}

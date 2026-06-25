@@ -1,0 +1,8548 @@
+{
+ "query": "http client redirect",
+ "oss_project": "go",
+ "repo_name": "go",
+ "page_size": 50,
+ "fetched_at": "2026-06-11T02:28:56Z",
+ "response": {
+  "searchResults": [
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/http/client.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// HTTP client. See RFC 7230 through 7235.",
+         "matchingRanges": {
+          "lineNumber": "5",
+          "columnRanges": [
+           {
+            "startIndex": 3,
+            "length": 4
+           },
+           {
+            "startIndex": 8,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "5",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 42
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 3,
+           "length": 4
+          },
+          {
+           "startIndex": 8,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "//",
+         "matchingRanges": {
+          "lineNumber": "6"
+         },
+         "lineNumber": "6",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// A Client is an HTTP client. Its zero value ([DefaultClient]) is a",
+         "matchingRanges": {
+          "lineNumber": "32",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 6
+           },
+           {
+            "startIndex": 18,
+            "length": 4
+           },
+           {
+            "startIndex": 23,
+            "length": 6
+           },
+           {
+            "startIndex": 55,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "32",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 68
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 6
+          },
+          {
+           "startIndex": 18,
+           "length": 4
+          },
+          {
+           "startIndex": 23,
+           "length": 6
+          },
+          {
+           "startIndex": 55,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "// usable client that uses [DefaultTransport].",
+         "matchingRanges": {
+          "lineNumber": "33",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "33",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 46
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "//     If Jar is nil, the initial cookies are forwarded without change.",
+         "matchingRanges": {
+          "lineNumber": "58"
+         },
+         "lineNumber": "58",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 71
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "type Client struct {",
+         "matchingRanges": {
+          "lineNumber": "59",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "59",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t// Transport specifies the mechanism by which individual",
+         "matchingRanges": {
+          "lineNumber": "60"
+         },
+         "lineNumber": "60",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 56
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// function, or the default.",
+         "matchingRanges": {
+          "lineNumber": "503"
+         },
+         "lineNumber": "503",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 28
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "func (c *Client) checkRedirect(req *Request, via []*Request) error {",
+         "matchingRanges": {
+          "lineNumber": "504",
+          "columnRanges": [
+           {
+            "startIndex": 22,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "504",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 22,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\tfn := c.CheckRedirect",
+         "matchingRanges": {
+          "lineNumber": "505",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "505",
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 8
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 94
+    },
+    "resultToken": "CAASBAgBIAE4nqWbt76x6v-XAUAASAA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/http/client_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "func TestClient(t *testing.T) {",
+         "matchingRanges": {
+          "lineNumber": "63",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "63",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\trun(t, testClient, []testMode{http1Mode, https1Mode, http2UnencryptedMode, http2Mode})",
+         "matchingRanges": {
+          "lineNumber": "64",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 6
+           },
+           {
+            "startIndex": 31,
+            "length": 4
+           },
+           {
+            "startIndex": 42,
+            "length": 4
+           },
+           {
+            "startIndex": 54,
+            "length": 4
+           },
+           {
+            "startIndex": 76,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "64",
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 6
+          },
+          {
+           "startIndex": 31,
+           "length": 4
+          },
+          {
+           "startIndex": 42,
+           "length": 4
+          },
+          {
+           "startIndex": 54,
+           "length": 4
+          },
+          {
+           "startIndex": 76,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "}",
+         "matchingRanges": {
+          "lineNumber": "65"
+         },
+         "lineNumber": "65"
+        },
+        {
+         "lineText": "func testClient(t *testing.T, mode testMode) {",
+         "matchingRanges": {
+          "lineNumber": "66",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "66",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tts := newClientServerTest(t, mode, robotsTxtHandler).ts",
+         "matchingRanges": {
+          "lineNumber": "67",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "67",
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "type redirectTest struct {",
+         "matchingRanges": {
+          "lineNumber": "316",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "316",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 18,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\tsuffix       string",
+         "matchingRanges": {
+          "lineNumber": "317"
+         },
+         "lineNumber": "317"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// See golang.org/issue/11111.",
+         "matchingRanges": {
+          "lineNumber": "1007"
+         },
+         "lineNumber": "1007",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 30
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "func TestHTTPSClientDetectsHTTPServer(t *testing.T) {",
+         "matchingRanges": {
+          "lineNumber": "1008",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 4
+           },
+           {
+            "startIndex": 14,
+            "length": 6
+           },
+           {
+            "startIndex": 27,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "1008",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 4
+          },
+          {
+           "startIndex": 14,
+           "length": 6
+          },
+          {
+           "startIndex": 27,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\trun(t, testHTTPSClientDetectsHTTPServer, []testMode{http1Mode})",
+         "matchingRanges": {
+          "lineNumber": "1009"
+         },
+         "lineNumber": "1009"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 136
+    },
+    "resultToken": "CAESBAgBIAE4jvTT9bXh9b0TQABIAQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/http/server.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// disables that behavior.",
+         "matchingRanges": {
+          "lineNumber": "2421"
+         },
+         "lineNumber": "2421",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 26
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "func Redirect(w ResponseWriter, r *Request, url string, code int) {",
+         "matchingRanges": {
+          "lineNumber": "2422",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "2422",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\tif u, err := urlpkg.Parse(url); err == nil {",
+         "matchingRanges": {
+          "lineNumber": "2423"
+         },
+         "lineNumber": "2423",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// HTTP2 configures HTTP/2 connections.",
+         "matchingRanges": {
+          "lineNumber": "3119"
+         },
+         "lineNumber": "3119",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 39
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tHTTP2 *HTTP2Config",
+         "matchingRanges": {
+          "lineNumber": "3120",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "3120",
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "3121"
+         },
+         "lineNumber": "3121"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// prioritization.",
+         "matchingRanges": {
+          "lineNumber": "3141"
+         },
+         "lineNumber": "3141",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 18
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tDisableClientPriority bool",
+         "matchingRanges": {
+          "lineNumber": "3142",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "3142",
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "3143"
+         },
+         "lineNumber": "3143"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 125
+    },
+    "resultToken": "CAISBAgBIAE4qrDQwN-Bgv1IQABIAg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/http/http_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// Test that cmd/go doesn't link in the HTTP server.",
+         "matchingRanges": {
+          "lineNumber": "50",
+          "columnRanges": [
+           {
+            "startIndex": 40,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "50",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 52
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 40,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "//",
+         "matchingRanges": {
+          "lineNumber": "51"
+         },
+         "lineNumber": "51",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "// This catches accidental dependencies between the HTTP transport and",
+         "matchingRanges": {
+          "lineNumber": "52",
+          "columnRanges": [
+           {
+            "startIndex": 52,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "52",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 70
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 52,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "// server code.",
+         "matchingRanges": {
+          "lineNumber": "53"
+         },
+         "lineNumber": "53",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 15
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "func TestCmdGoNoHTTPServer(t *testing.T) {",
+         "matchingRanges": {
+          "lineNumber": "54",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "54",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 4
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t// Verify these exist: (sanity checking this test)",
+         "matchingRanges": {
+          "lineNumber": "62"
+         },
+         "lineNumber": "62",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 50
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\"net/http.(*Client).do\":           true,",
+         "matchingRanges": {
+          "lineNumber": "63",
+          "columnRanges": [
+           {
+            "startIndex": 7,
+            "length": 4
+           },
+           {
+            "startIndex": 14,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "63",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 23
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 7,
+           "length": 4
+          },
+          {
+           "startIndex": 14,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\"net/http.(*Transport).RoundTrip\": true,",
+         "matchingRanges": {
+          "lineNumber": "64",
+          "columnRanges": [
+           {
+            "startIndex": 7,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "64",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 33
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 7,
+           "length": 4
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "const redirectURL = \"/thisaredirect细雪withasciilettersのけぶabcdefghijk.html\"",
+         "matchingRanges": {
+          "lineNumber": "188",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 8
+           },
+           {
+            "startIndex": 27,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "188",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 53
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 8
+          },
+          {
+           "startIndex": 27,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "189"
+         },
+         "lineNumber": "189"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 30
+    },
+    "resultToken": "CAMSBAgBIAE42qHy2fjMvLdaQABIAw"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/http/fs.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t// itself, so this is probably an attack, or a",
+         "matchingRanges": {
+          "lineNumber": "342"
+         },
+         "lineNumber": "342",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 46
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t// dumb client. Ignore the range request.",
+         "matchingRanges": {
+          "lineNumber": "343",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "343",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 41
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tranges = nil",
+         "matchingRanges": {
+          "lineNumber": "344"
+         },
+         "lineNumber": "344"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// localRedirect gives a Moved Permanently response.",
+         "matchingRanges": {
+          "lineNumber": "784",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "784",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 52
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "// It does not convert relative paths to absolute paths like Redirect does.",
+         "matchingRanges": {
+          "lineNumber": "785",
+          "columnRanges": [
+           {
+            "startIndex": 61,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "785",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 75
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 61,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "func localRedirect(w ResponseWriter, r *Request, newPath string) {",
+         "matchingRanges": {
+          "lineNumber": "786",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "786",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\tif q := r.URL.RawQuery; q != \"\" {",
+         "matchingRanges": {
+          "lineNumber": "787"
+         },
+         "lineNumber": "787",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 30,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func (f *fileHandler) ServeHTTP(w ResponseWriter, r *Request) {",
+         "matchingRanges": {
+          "lineNumber": "989",
+          "columnRanges": [
+           {
+            "startIndex": 27,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "989",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 27,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\tupath := r.URL.Path",
+         "matchingRanges": {
+          "lineNumber": "990"
+         },
+         "lineNumber": "990"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 56
+    },
+    "resultToken": "CAQSBAgBIAE4mNOh472h86AlQABIBA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/http/httptrace/trace.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// Package httptrace provides mechanisms to trace the events within",
+         "matchingRanges": {
+          "lineNumber": "5",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "5",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 67
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "// HTTP client requests.",
+         "matchingRanges": {
+          "lineNumber": "6",
+          "columnRanges": [
+           {
+            "startIndex": 3,
+            "length": 4
+           },
+           {
+            "startIndex": 8,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "6",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 24
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 3,
+           "length": 4
+          },
+          {
+           "startIndex": 8,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "package httptrace",
+         "matchingRanges": {
+          "lineNumber": "7",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "7",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 4
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// ClientTrace currently traces a single HTTP request \u0026 response",
+         "matchingRanges": {
+          "lineNumber": "74",
+          "columnRanges": [
+           {
+            "startIndex": 3,
+            "length": 6
+           },
+           {
+            "startIndex": 41,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "74",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 64
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 3,
+           "length": 6
+          },
+          {
+           "startIndex": 41,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "// during a single round trip and has no hooks that span a series",
+         "matchingRanges": {
+          "lineNumber": "75"
+         },
+         "lineNumber": "75",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 65
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "// of redirected requests.",
+         "matchingRanges": {
+          "lineNumber": "76",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "76",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 26
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "//",
+         "matchingRanges": {
+          "lineNumber": "77"
+         },
+         "lineNumber": "77",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "// See https://go.dev/blog/http-tracing for more.",
+         "matchingRanges": {
+          "lineNumber": "78",
+          "columnRanges": [
+           {
+            "startIndex": 7,
+            "length": 4
+           },
+           {
+            "startIndex": 27,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "78",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 49
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 7,
+           "length": 4
+          },
+          {
+           "startIndex": 27,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "type ClientTrace struct {",
+         "matchingRanges": {
+          "lineNumber": "79",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "79",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 17,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 27
+    },
+    "resultToken": "CAUSBAgBIAE4xNOqybqVmqt_QABIBQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/go/internal/web/http.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// or might be using self-signed certificates.",
+         "matchingRanges": {
+          "lineNumber": "38"
+         },
+         "lineNumber": "38",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 46
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "var impatientInsecureHTTPClient = \u0026http.Client{",
+         "matchingRanges": {
+          "lineNumber": "39",
+          "columnRanges": [
+           {
+            "startIndex": 21,
+            "length": 10
+           },
+           {
+            "startIndex": 35,
+            "length": 4
+           },
+           {
+            "startIndex": 40,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "39",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 21,
+           "length": 10
+          },
+          {
+           "startIndex": 35,
+           "length": 4
+          },
+          {
+           "startIndex": 40,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tCheckRedirect: checkRedirect,",
+         "matchingRanges": {
+          "lineNumber": "40",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 8
+           },
+           {
+            "startIndex": 21,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "40",
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 8
+          },
+          {
+           "startIndex": 21,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\tTimeout:       5 * time.Second,",
+         "matchingRanges": {
+          "lineNumber": "41"
+         },
+         "lineNumber": "41",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 16,
+            "length": 1
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// securityPreservingHTTPClient returns a client that is like the original",
+         "matchingRanges": {
+          "lineNumber": "52",
+          "columnRanges": [
+           {
+            "startIndex": 21,
+            "length": 10
+           },
+           {
+            "startIndex": 42,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "52",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 74
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 21,
+           "length": 10
+          },
+          {
+           "startIndex": 42,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "// but rejects redirects to plain-HTTP URLs if the original URL was secure.",
+         "matchingRanges": {
+          "lineNumber": "53",
+          "columnRanges": [
+           {
+            "startIndex": 15,
+            "length": 8
+           },
+           {
+            "startIndex": 34,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "53",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 75
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 15,
+           "length": 8
+          },
+          {
+           "startIndex": 34,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "func securityPreservingHTTPClient(original *http.Client) *http.Client {",
+         "matchingRanges": {
+          "lineNumber": "54",
+          "columnRanges": [
+           {
+            "startIndex": 23,
+            "length": 10
+           },
+           {
+            "startIndex": 44,
+            "length": 4
+           },
+           {
+            "startIndex": 49,
+            "length": 6
+           },
+           {
+            "startIndex": 58,
+            "length": 4
+           },
+           {
+            "startIndex": 63,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "54",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 23,
+           "length": 10
+          },
+          {
+           "startIndex": 44,
+           "length": 4
+          },
+          {
+           "startIndex": 49,
+           "length": 6
+          },
+          {
+           "startIndex": 58,
+           "length": 4
+          },
+          {
+           "startIndex": 63,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tc := new(http.Client)",
+         "matchingRanges": {
+          "lineNumber": "55",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 4
+           },
+           {
+            "startIndex": 15,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "55",
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 4
+          },
+          {
+           "startIndex": 15,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func checkRedirect(req *http.Request, via []*http.Request) error {",
+         "matchingRanges": {
+          "lineNumber": "67",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 8
+           },
+           {
+            "startIndex": 24,
+            "length": 4
+           },
+           {
+            "startIndex": 45,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "67",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 8
+          },
+          {
+           "startIndex": 24,
+           "length": 4
+          },
+          {
+           "startIndex": 45,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\t// Go's http.DefaultClient allows 10 redirects before returning an error.",
+         "matchingRanges": {
+          "lineNumber": "68",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 4
+           },
+           {
+            "startIndex": 21,
+            "length": 6
+           },
+           {
+            "startIndex": 38,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "68",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 73
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 4
+          },
+          {
+           "startIndex": 21,
+           "length": 6
+          },
+          {
+           "startIndex": 38,
+           "length": 8
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 46
+    },
+    "resultToken": "CAYSBAgBIAE4sofuyOGNxM9JQABIBg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/http/serve_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "func (s stringHandler) ServeHTTP(w ResponseWriter, r *Request) {",
+         "matchingRanges": {
+          "lineNumber": "225",
+          "columnRanges": [
+           {
+            "startIndex": 28,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "225",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 28,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\tw.Header().Set(\"Result\", string(s))",
+         "matchingRanges": {
+          "lineNumber": "226"
+         },
+         "lineNumber": "226",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 16,
+            "length": 8
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func TestAutomaticHTTP2_ListenAndServe_GetConfigForClient(t *testing.T) {",
+         "matchingRanges": {
+          "lineNumber": "1954",
+          "columnRanges": [
+           {
+            "startIndex": 18,
+            "length": 4
+           },
+           {
+            "startIndex": 51,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "1954",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 18,
+           "length": 4
+          },
+          {
+           "startIndex": 51,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tcert, err := tls.X509KeyPair(testcert.LocalhostCert, testcert.LocalhostKey)",
+         "matchingRanges": {
+          "lineNumber": "1955"
+         },
+         "lineNumber": "1955"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// Test different URL formats and schemes",
+         "matchingRanges": {
+          "lineNumber": "2961"
+         },
+         "lineNumber": "2961",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 41
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "func TestRedirect(t *testing.T) {",
+         "matchingRanges": {
+          "lineNumber": "2962",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "2962",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\treq, _ := NewRequest(\"GET\", \"http://example.com/qux/\", nil)",
+         "matchingRanges": {
+          "lineNumber": "2963"
+         },
+         "lineNumber": "2963",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 22,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 29,
+            "length": 25
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// The server code runs in a subprocess.",
+         "matchingRanges": {
+          "lineNumber": "5448"
+         },
+         "lineNumber": "5448",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 40
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "func BenchmarkClient(b *testing.B) {",
+         "matchingRanges": {
+          "lineNumber": "5449",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "5449",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tvar data = []byte(\"Hello world.\\n\")",
+         "matchingRanges": {
+          "lineNumber": "5450"
+         },
+         "lineNumber": "5450",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 19,
+            "length": 16
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 141
+    },
+    "resultToken": "CAcSBAgBIAE4vt3VtsCs9KDPAUAASAc"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/http/request_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\treq.Header.Set(\"Content-Type\", mw.FormDataContentType())",
+         "matchingRanges": {
+          "lineNumber": "325"
+         },
+         "lineNumber": "325",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 16,
+            "length": 14
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tres, err := cst.Client().Do(req)",
+         "matchingRanges": {
+          "lineNumber": "326",
+          "columnRanges": [
+           {
+            "startIndex": 17,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "326",
+         "ranges": [
+          {
+           "startIndex": 17,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tif err != nil {",
+         "matchingRanges": {
+          "lineNumber": "327"
+         },
+         "lineNumber": "327",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func TestRequestRedirect(t *testing.T) { run(t, testRequestRedirect) }",
+         "matchingRanges": {
+          "lineNumber": "336",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 8
+           },
+           {
+            "startIndex": 59,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "336",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 8
+          },
+          {
+           "startIndex": 59,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "func testRequestRedirect(t *testing.T, mode testMode) {",
+         "matchingRanges": {
+          "lineNumber": "337",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "337",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\tcst := newClientServerTest(t, mode, HandlerFunc(func(w ResponseWriter, r *Request) {",
+         "matchingRanges": {
+          "lineNumber": "338",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "338",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 49,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "var parseHTTPVersionTests = []struct {",
+         "matchingRanges": {
+          "lineNumber": "634",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "634",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 30,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\tvers         string",
+         "matchingRanges": {
+          "lineNumber": "635"
+         },
+         "lineNumber": "635"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func TestParseHTTPVersion(t *testing.T) {",
+         "matchingRanges": {
+          "lineNumber": "659",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "659",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\tfor _, tt := range parseHTTPVersionTests {",
+         "matchingRanges": {
+          "lineNumber": "660"
+         },
+         "lineNumber": "660",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 14,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 56
+    },
+    "resultToken": "CAgSBAgBIAE4tNz6wrOn5uGkAUAASAg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/http/internal/http2/transport_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "func TestTransportFailureErrorForHTTP1Response(t *testing.T) {",
+         "matchingRanges": {
+          "lineNumber": "277",
+          "columnRanges": [
+           {
+            "startIndex": 33,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "277",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 33,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\t// This path test exercises contains a race condition:",
+         "matchingRanges": {
+          "lineNumber": "278"
+         },
+         "lineNumber": "278",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 54
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func TestTransportGetGotConnHooks_HTTP2Transport(t *testing.T) {",
+         "matchingRanges": {
+          "lineNumber": "399",
+          "columnRanges": [
+           {
+            "startIndex": 34,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "399",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 34,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\ttestTransportGetGotConnHooks(t, false)",
+         "matchingRanges": {
+          "lineNumber": "400"
+         },
+         "lineNumber": "400"
+        },
+        {
+         "lineText": "}",
+         "matchingRanges": {
+          "lineNumber": "401"
+         },
+         "lineNumber": "401"
+        },
+        {
+         "lineText": "func TestTransportGetGotConnHooks_Client(t *testing.T) { testTransportGetGotConnHooks(t, true) }",
+         "matchingRanges": {
+          "lineNumber": "402",
+          "columnRanges": [
+           {
+            "startIndex": 34,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "402",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 34,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tresponse := \"redirecting to /elsewhere\"",
+         "matchingRanges": {
+          "lineNumber": "2017",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "2017",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 13,
+            "length": 27
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\ttc := newTestClientConn(t)",
+         "matchingRanges": {
+          "lineNumber": "2018"
+         },
+         "lineNumber": "2018"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func BenchmarkClientGzip(b *testing.B) {",
+         "matchingRanges": {
+          "lineNumber": "3546",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "3546",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tDisableGoroutineTracking(b)",
+         "matchingRanges": {
+          "lineNumber": "3547"
+         },
+         "lineNumber": "3547"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 84
+    },
+    "resultToken": "CAkSBAgBIAE4nPiNw6GzwL5KQABICQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/http/cgi/host.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// If nil, a CGI response with a local URI path is instead sent",
+         "matchingRanges": {
+          "lineNumber": "79"
+         },
+         "lineNumber": "79",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 63
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t// back to the client and not redirected internally.",
+         "matchingRanges": {
+          "lineNumber": "80",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 6
+           },
+           {
+            "startIndex": 31,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "80",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 52
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 6
+          },
+          {
+           "startIndex": 31,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\tPathLocationHandler http.Handler",
+         "matchingRanges": {
+          "lineNumber": "81",
+          "columnRanges": [
+           {
+            "startIndex": 21,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "81",
+         "ranges": [
+          {
+           "startIndex": 21,
+           "length": 4
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func (h *Handler) ServeHTTP(rw http.ResponseWriter, req *http.Request) {",
+         "matchingRanges": {
+          "lineNumber": "117",
+          "columnRanges": [
+           {
+            "startIndex": 23,
+            "length": 4
+           },
+           {
+            "startIndex": 31,
+            "length": 4
+           },
+           {
+            "startIndex": 57,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "117",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 23,
+           "length": 4
+          },
+          {
+           "startIndex": 31,
+           "length": 4
+          },
+          {
+           "startIndex": 57,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\tif len(req.TransferEncoding) \u003e 0 \u0026\u0026 req.TransferEncoding[0] == \"chunked\" {",
+         "matchingRanges": {
+          "lineNumber": "118"
+         },
+         "lineNumber": "118",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 32,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 58,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 64,
+            "length": 9
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t\"SERVER_PROTOCOL=HTTP/1.1\",",
+         "matchingRanges": {
+          "lineNumber": "137",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "137",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 26
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\"HTTP_HOST=\" + req.Host,",
+         "matchingRanges": {
+          "lineNumber": "138",
+          "columnRanges": [
+           {
+            "startIndex": 3,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "138",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 12
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 3,
+           "length": 4
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func (h *Handler) handleInternalRedirect(rw http.ResponseWriter, req *http.Request, path string) {",
+         "matchingRanges": {
+          "lineNumber": "363",
+          "columnRanges": [
+           {
+            "startIndex": 32,
+            "length": 8
+           },
+           {
+            "startIndex": 44,
+            "length": 4
+           },
+           {
+            "startIndex": 70,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "363",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 32,
+           "length": 8
+          },
+          {
+           "startIndex": 44,
+           "length": 4
+          },
+          {
+           "startIndex": 70,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\turl, err := req.URL.Parse(path)",
+         "matchingRanges": {
+          "lineNumber": "364"
+         },
+         "lineNumber": "364"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 33
+    },
+    "resultToken": "CAoSBAgBIAE4kMCe1cebq7l9QABICg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/http/request.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// For client requests, a nil body means the request has no",
+         "matchingRanges": {
+          "lineNumber": "176",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "176",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 59
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t// body, such as a GET request. The HTTP Client's Transport",
+         "matchingRanges": {
+          "lineNumber": "177",
+          "columnRanges": [
+           {
+            "startIndex": 37,
+            "length": 4
+           },
+           {
+            "startIndex": 42,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "177",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 59
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 37,
+           "length": 4
+          },
+          {
+           "startIndex": 42,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t// is responsible for calling the Close method.",
+         "matchingRanges": {
+          "lineNumber": "178"
+         },
+         "lineNumber": "178",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 47
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// GetBody defines an optional func to return a new copy of",
+         "matchingRanges": {
+          "lineNumber": "190"
+         },
+         "lineNumber": "190",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 59
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t// Body. It is used for client requests when a redirect requires",
+         "matchingRanges": {
+          "lineNumber": "191",
+          "columnRanges": [
+           {
+            "startIndex": 25,
+            "length": 6
+           },
+           {
+            "startIndex": 48,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "191",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 64
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 25,
+           "length": 6
+          },
+          {
+           "startIndex": 48,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t// reading the body more than once. Use of GetBody still",
+         "matchingRanges": {
+          "lineNumber": "192"
+         },
+         "lineNumber": "192",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 56
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// an HTTP/1 connection.",
+         "matchingRanges": {
+          "lineNumber": "1587"
+         },
+         "lineNumber": "1587",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 24
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "func (r *Request) requiresHTTP1() bool {",
+         "matchingRanges": {
+          "lineNumber": "1588",
+          "columnRanges": [
+           {
+            "startIndex": 26,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "1588",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 26,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\treturn hasToken(r.Header.Get(\"Connection\"), \"upgrade\") \u0026\u0026",
+         "matchingRanges": {
+          "lineNumber": "1589"
+         },
+         "lineNumber": "1589",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 30,
+            "length": 12
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 45,
+            "length": 9
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 73
+    },
+    "resultToken": "CAsSBAgBIAE46smps5PXy_q2AUAASAs"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/http/fs_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t})).ts",
+         "matchingRanges": {
+          "lineNumber": "79"
+         },
+         "lineNumber": "79"
+        },
+        {
+         "lineText": "\tc := ts.Client()",
+         "matchingRanges": {
+          "lineNumber": "80",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "80",
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "81"
+         },
+         "lineNumber": "81"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tfor _, tt := range tests {",
+         "matchingRanges": {
+          "lineNumber": "223"
+         },
+         "lineNumber": "223",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 14,
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\treq, err := ReadRequest(bufio.NewReader(strings.NewReader(\"GET \" + tt.req + \" HTTP/1.1\\r\\nHost: foo\\r\\n\\r\\n\")))",
+         "matchingRanges": {
+          "lineNumber": "224",
+          "columnRanges": [
+           {
+            "startIndex": 80,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "224",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 60,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 78,
+            "length": 32
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 80,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tif err != nil {",
+         "matchingRanges": {
+          "lineNumber": "225"
+         },
+         "lineNumber": "225",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func TestFSRedirect(t *testing.T) { run(t, testFSRedirect) }",
+         "matchingRanges": {
+          "lineNumber": "278",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 8
+           },
+           {
+            "startIndex": 49,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "278",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 8
+          },
+          {
+           "startIndex": 49,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "func testFSRedirect(t *testing.T, mode testMode) {",
+         "matchingRanges": {
+          "lineNumber": "279",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "279",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\tts := newClientServerTest(t, mode, StripPrefix(\"/test\", FileServer(Dir(\".\")))).ts",
+         "matchingRanges": {
+          "lineNumber": "280",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "280",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 48,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 72,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 82
+    },
+    "resultToken": "CAwSBAgBIAE4zJihmKO365kUQABIDA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/http/transport.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// A Transport is a low-level primitive for making HTTP and HTTPS requests.",
+         "matchingRanges": {
+          "lineNumber": "75",
+          "columnRanges": [
+           {
+            "startIndex": 51,
+            "length": 4
+           },
+           {
+            "startIndex": 60,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "75",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 75
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 51,
+           "length": 4
+          },
+          {
+           "startIndex": 60,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "// For high-level functionality, such as cookies and redirects, see [Client].",
+         "matchingRanges": {
+          "lineNumber": "76",
+          "columnRanges": [
+           {
+            "startIndex": 53,
+            "length": 8
+           },
+           {
+            "startIndex": 69,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "76",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 77
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 53,
+           "length": 8
+          },
+          {
+           "startIndex": 69,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "//",
+         "matchingRanges": {
+          "lineNumber": "77"
+         },
+         "lineNumber": "77",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// HTTP2 configures HTTP/2 connections.",
+         "matchingRanges": {
+          "lineNumber": "308"
+         },
+         "lineNumber": "308",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 39
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tHTTP2 *HTTP2Config",
+         "matchingRanges": {
+          "lineNumber": "309",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "309",
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "310"
+         },
+         "lineNumber": "310"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "type dialClientConner interface {",
+         "matchingRanges": {
+          "lineNumber": "390",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "390",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 22,
+            "length": 9
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t// DialClientConn creates a new client connection to address.",
+         "matchingRanges": {
+          "lineNumber": "391",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 6
+           },
+           {
+            "startIndex": 33,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "391",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 61
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 6
+          },
+          {
+           "startIndex": 33,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "var http2client = godebug.New(\"http2client\")",
+         "matchingRanges": {
+          "lineNumber": "435",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 4
+           },
+           {
+            "startIndex": 9,
+            "length": 6
+           },
+           {
+            "startIndex": 36,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "435",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 30,
+            "length": 13
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 4
+          },
+          {
+           "startIndex": 9,
+           "length": 6
+          },
+          {
+           "startIndex": 36,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "436"
+         },
+         "lineNumber": "436"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 67
+    },
+    "resultToken": "CA0SBAgBIAE40tXMuKvi0YOUAUAASA0"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/http/export_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tExportScanETag                    = scanETag",
+         "matchingRanges": {
+          "lineNumber": "31"
+         },
+         "lineNumber": "31"
+        },
+        {
+         "lineText": "\tExport_shouldCopyHeaderOnRedirect = shouldCopyHeaderOnRedirect",
+         "matchingRanges": {
+          "lineNumber": "32",
+          "columnRanges": [
+           {
+            "startIndex": 26,
+            "length": 8
+           },
+           {
+            "startIndex": 55,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "32",
+         "ranges": [
+          {
+           "startIndex": 26,
+           "length": 8
+          },
+          {
+           "startIndex": 55,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\tExport_writeStatusLine            = writeStatusLine",
+         "matchingRanges": {
+          "lineNumber": "33"
+         },
+         "lineNumber": "33"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t\tif _, ok := err.(*url.Error); !ok {",
+         "matchingRanges": {
+          "lineNumber": "49"
+         },
+         "lineNumber": "49",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 3,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t\tpanic(fmt.Sprintf(\"unexpected Client.Do error of type %T; want *url.Error\", err))",
+         "matchingRanges": {
+          "lineNumber": "50",
+          "columnRanges": [
+           {
+            "startIndex": 34,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "50",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 22,
+            "length": 56
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 34,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t}",
+         "matchingRanges": {
+          "lineNumber": "51"
+         },
+         "lineNumber": "51"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func CondSkipHTTP2(t testing.TB) {",
+         "matchingRanges": {
+          "lineNumber": "63",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "63",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\tif omitBundledHTTP2 {",
+         "matchingRanges": {
+          "lineNumber": "64",
+          "columnRanges": [
+           {
+            "startIndex": 15,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "64",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 15,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tt.Skip(\"skipping HTTP/2 test when nethttpomithttp2 build tag in use\")",
+         "matchingRanges": {
+          "lineNumber": "65",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 4
+           },
+           {
+            "startIndex": 39,
+            "length": 4
+           },
+           {
+            "startIndex": 47,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "65",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 9,
+            "length": 61
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 4
+          },
+          {
+           "startIndex": 39,
+           "length": 4
+          },
+          {
+           "startIndex": 47,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\t}",
+         "matchingRanges": {
+          "lineNumber": "66"
+         },
+         "lineNumber": "66"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 12
+    },
+    "resultToken": "CA4SBAgBIAE44unDi9LT08MUQABIDg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/http/response.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// HTTP Response reading and parsing.",
+         "matchingRanges": {
+          "lineNumber": "5",
+          "columnRanges": [
+           {
+            "startIndex": 3,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "5",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 37
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 3,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "6"
+         },
+         "lineNumber": "6"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// Response represents the response from an HTTP request.",
+         "matchingRanges": {
+          "lineNumber": "30",
+          "columnRanges": [
+           {
+            "startIndex": 44,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "30",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 57
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 44,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "//",
+         "matchingRanges": {
+          "lineNumber": "31"
+         },
+         "lineNumber": "31",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "// The [Client] and [Transport] return Responses from servers once",
+         "matchingRanges": {
+          "lineNumber": "32",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "32",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 66
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "// the response headers have been received. The response body",
+         "matchingRanges": {
+          "lineNumber": "33"
+         },
+         "lineNumber": "33",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 61
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// Location returns the URL of the response's \"Location\" header,",
+         "matchingRanges": {
+          "lineNumber": "136"
+         },
+         "lineNumber": "136",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 64
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "// if present. Relative redirects are resolved relative to",
+         "matchingRanges": {
+          "lineNumber": "137",
+          "columnRanges": [
+           {
+            "startIndex": 24,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "137",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 58
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 24,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "// [Response.Request]. [ErrNoLocation] is returned if no",
+         "matchingRanges": {
+          "lineNumber": "138"
+         },
+         "lineNumber": "138",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 56
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 30
+    },
+    "resultToken": "CA8SAggBOMCZusmfhciexQFAAEgP"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/http/doc.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "Package http provides HTTP client and server implementations.",
+         "matchingRanges": {
+          "lineNumber": "6",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 4
+           },
+           {
+            "startIndex": 22,
+            "length": 4
+           },
+           {
+            "startIndex": 27,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "6",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 61
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 61
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 61
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 61
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 4
+          },
+          {
+           "startIndex": 22,
+           "length": 4
+          },
+          {
+           "startIndex": 27,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "7"
+         },
+         "lineNumber": "7",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {}
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {}
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {}
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {}
+          }
+         ]
+        },
+        {
+         "lineText": "[Get], [Head], [Post], and [PostForm] make HTTP (or HTTPS) requests:",
+         "matchingRanges": {
+          "lineNumber": "8",
+          "columnRanges": [
+           {
+            "startIndex": 43,
+            "length": 4
+           },
+           {
+            "startIndex": 52,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "8",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 68
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 68
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 68
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 68
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 43,
+           "length": 4
+          },
+          {
+           "startIndex": 52,
+           "length": 4
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "For control over HTTP client headers, redirect policy, and other",
+         "matchingRanges": {
+          "lineNumber": "29",
+          "columnRanges": [
+           {
+            "startIndex": 17,
+            "length": 4
+           },
+           {
+            "startIndex": 22,
+            "length": 6
+           },
+           {
+            "startIndex": 38,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "29",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 64
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 64
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 64
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 64
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 17,
+           "length": 4
+          },
+          {
+           "startIndex": 22,
+           "length": 6
+          },
+          {
+           "startIndex": 38,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "settings, create a [Client]:",
+         "matchingRanges": {
+          "lineNumber": "30",
+          "columnRanges": [
+           {
+            "startIndex": 20,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "30",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 28
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 28
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 28
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 28
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 20,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "31"
+         },
+         "lineNumber": "31",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {}
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {}
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {}
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {}
+          }
+         ]
+        },
+        {
+         "lineText": "\tclient := \u0026http.Client{",
+         "matchingRanges": {
+          "lineNumber": "32",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 6
+           },
+           {
+            "startIndex": 12,
+            "length": 4
+           },
+           {
+            "startIndex": 17,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "32",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 24
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 24
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 24
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 24
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 6
+          },
+          {
+           "startIndex": 12,
+           "length": 4
+          },
+          {
+           "startIndex": 17,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tCheckRedirect: redirectPolicyFunc,",
+         "matchingRanges": {
+          "lineNumber": "33",
+          "columnRanges": [
+           {
+            "startIndex": 7,
+            "length": 8
+           },
+           {
+            "startIndex": 17,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "33",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 36
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 36
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 36
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 36
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 7,
+           "length": 8
+          },
+          {
+           "startIndex": 17,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t}",
+         "matchingRanges": {
+          "lineNumber": "34"
+         },
+         "lineNumber": "34",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 31
+    },
+    "resultToken": "CBASAggBOLDx9YCDnpu4PkAASBA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/http/cgi/host_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t}",
+         "matchingRanges": {
+          "lineNumber": "127"
+         },
+         "lineNumber": "127"
+        },
+        {
+         "lineText": "\treplay := runCgiTest(t, h, \"GET /test.cgi?foo=bar\u0026a=b HTTP/1.0\\nHost: example.com:80\\n\\n\", expectedMap)",
+         "matchingRanges": {
+          "lineNumber": "128",
+          "columnRanges": [
+           {
+            "startIndex": 55,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "128",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 28,
+            "length": 62
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 55,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "129"
+         },
+         "lineNumber": "129"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func TestRedirect(t *testing.T) {",
+         "matchingRanges": {
+          "lineNumber": "331",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "331",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\ttestenv.MustHaveExec(t)",
+         "matchingRanges": {
+          "lineNumber": "332"
+         },
+         "lineNumber": "332"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func TestInternalRedirect(t *testing.T) {",
+         "matchingRanges": {
+          "lineNumber": "346",
+          "columnRanges": [
+           {
+            "startIndex": 17,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "346",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 17,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\ttestenv.MustHaveExec(t)",
+         "matchingRanges": {
+          "lineNumber": "347"
+         },
+         "lineNumber": "347"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// TestCopyError tests that we kill the process if there's an error copying",
+         "matchingRanges": {
+          "lineNumber": "364"
+         },
+         "lineNumber": "364",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 75
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "// its output. (for example, from the client having gone away)",
+         "matchingRanges": {
+          "lineNumber": "365",
+          "columnRanges": [
+           {
+            "startIndex": 38,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "365",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 62
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 38,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "//",
+         "matchingRanges": {
+          "lineNumber": "366"
+         },
+         "lineNumber": "366",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 38
+    },
+    "resultToken": "CBESBAgBIAE4lNnI-5vKt5luQABIEQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/http/transport_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tenv      string // HTTP_PROXY",
+         "matchingRanges": {
+          "lineNumber": "3580"
+         },
+         "lineNumber": "3580",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 17,
+            "length": 13
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\thttpsenv string // HTTPS_PROXY",
+         "matchingRanges": {
+          "lineNumber": "3581",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "3581",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 17,
+            "length": 14
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\tnoenv    string // NO_PROXY",
+         "matchingRanges": {
+          "lineNumber": "3582"
+         },
+         "lineNumber": "3582",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 17,
+            "length": 11
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t// because we need to rewind Body between calls.  (GetBody is only used to",
+         "matchingRanges": {
+          "lineNumber": "4052"
+         },
+         "lineNumber": "4052",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 74
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t// rewind Body on failure and redirects, not just because it's done.)",
+         "matchingRanges": {
+          "lineNumber": "4053",
+          "columnRanges": [
+           {
+            "startIndex": 32,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "4053",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 69
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 32,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t\treq       func() *Request",
+         "matchingRanges": {
+          "lineNumber": "4054"
+         },
+         "lineNumber": "4054",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func testTransportAutoHTTP(t *testing.T, tr *Transport, wantH2 bool) {",
+         "matchingRanges": {
+          "lineNumber": "5032",
+          "columnRanges": [
+           {
+            "startIndex": 22,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "5032",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 22,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\tCondSkipHTTP2(t)",
+         "matchingRanges": {
+          "lineNumber": "5033"
+         },
+         "lineNumber": "5033"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func TestValidateClientRequestTrailers(t *testing.T) {",
+         "matchingRanges": {
+          "lineNumber": "7497",
+          "columnRanges": [
+           {
+            "startIndex": 17,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "7497",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 17,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\trun(t, testValidateClientRequestTrailers)",
+         "matchingRanges": {
+          "lineNumber": "7498"
+         },
+         "lineNumber": "7498"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 91
+    },
+    "resultToken": "CBISBAgBIAE4gra1q5DLi8ZXQABIEg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/http/csrf_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// httptestNewRequest works around https://go.dev/issue/73151.",
+         "matchingRanges": {
+          "lineNumber": "15",
+          "columnRanges": [
+           {
+            "startIndex": 3,
+            "length": 4
+           },
+           {
+            "startIndex": 35,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "15",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 62
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 3,
+           "length": 4
+          },
+          {
+           "startIndex": 35,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "func httptestNewRequest(method, target string) *http.Request {",
+         "matchingRanges": {
+          "lineNumber": "16",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 4
+           },
+           {
+            "startIndex": 48,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "16",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 4
+          },
+          {
+           "startIndex": 48,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\treq := httptest.NewRequest(method, target, nil)",
+         "matchingRanges": {
+          "lineNumber": "17",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "17",
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 4
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t{\"redirect to bypass path without ..\", \"/foo/../bypass/bar\", \"\", http.StatusForbidden},",
+         "matchingRanges": {
+          "lineNumber": "134",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "134",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 3,
+            "length": 36
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 41,
+            "length": 20
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 63,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t{\"redirect to bypass path with trailing slash\", \"/bypass\", \"\", http.StatusForbidden},",
+         "matchingRanges": {
+          "lineNumber": "135",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "135",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 3,
+            "length": 45
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 50,
+            "length": 9
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 61,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t{\"redirect to non-bypass path with ..\", \"/foo/../api/bar\", \"\", http.StatusForbidden},",
+         "matchingRanges": {
+          "lineNumber": "136",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "136",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 3,
+            "length": 37
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 42,
+            "length": 17
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 61,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t{\"redirect to non-bypass path with trailing slash\", \"/api\", \"\", http.StatusForbidden},",
+         "matchingRanges": {
+          "lineNumber": "137",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "137",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 3,
+            "length": 49
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 54,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 62,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 8
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t\tclient := \u0026http.Client{}",
+         "matchingRanges": {
+          "lineNumber": "334",
+          "columnRanges": [
+           {
+            "startIndex": 3,
+            "length": 6
+           },
+           {
+            "startIndex": 19,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "334",
+         "ranges": [
+          {
+           "startIndex": 3,
+           "length": 6
+          },
+          {
+           "startIndex": 19,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\tresp, err := client.Do(req)",
+         "matchingRanges": {
+          "lineNumber": "335",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "335",
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 35
+    },
+    "resultToken": "CBMSBAgBIAE4rIOhvP_Sk4ytAUAASBM"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/http/roundtrip.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "package http",
+         "matchingRanges": {
+          "lineNumber": "7",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "7",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "8"
+         },
+         "lineNumber": "8"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "//",
+         "matchingRanges": {
+          "lineNumber": "18"
+         },
+         "lineNumber": "18",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "//go:linkname badRoundTrip net/http.(*Transport).RoundTrip",
+         "matchingRanges": {
+          "lineNumber": "19",
+          "columnRanges": [
+           {
+            "startIndex": 31,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "19",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 58
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 31,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "func badRoundTrip(*Transport, *Request) (*Response, error)",
+         "matchingRanges": {
+          "lineNumber": "20"
+         },
+         "lineNumber": "20",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "//",
+         "matchingRanges": {
+          "lineNumber": "23"
+         },
+         "lineNumber": "23",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "// For higher-level HTTP client support (such as handling of cookies",
+         "matchingRanges": {
+          "lineNumber": "24",
+          "columnRanges": [
+           {
+            "startIndex": 20,
+            "length": 4
+           },
+           {
+            "startIndex": 25,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "24",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 68
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 20,
+           "length": 4
+          },
+          {
+           "startIndex": 25,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "// and redirects), see [Get], [Post], and the [Client] type.",
+         "matchingRanges": {
+          "lineNumber": "25",
+          "columnRanges": [
+           {
+            "startIndex": 7,
+            "length": 8
+           },
+           {
+            "startIndex": 47,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "25",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 60
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 7,
+           "length": 8
+          },
+          {
+           "startIndex": 47,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "//",
+         "matchingRanges": {
+          "lineNumber": "26"
+         },
+         "lineNumber": "26",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 4
+    },
+    "resultToken": "CBQSAggBOJLT0dL3_bqgdkAASBQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/dnsclient_unix_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t}",
+         "matchingRanges": {
+          "lineNumber": "674"
+         },
+         "lineNumber": "674"
+        },
+        {
+         "lineText": "\t// Redirect host file lookups.",
+         "matchingRanges": {
+          "lineNumber": "675",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "675",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 30
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\tdefer func(orig string) { hostsFilePath = orig }(hostsFilePath)",
+         "matchingRanges": {
+          "lineNumber": "676"
+         },
+         "lineNumber": "676",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tdefer func() { DefaultResolver = originalDefault }()",
+         "matchingRanges": {
+          "lineNumber": "2135"
+         },
+         "lineNumber": "2135",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t// Redirect host file lookups.",
+         "matchingRanges": {
+          "lineNumber": "2136",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "2136",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 30
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\tdefer func(orig string) { hostsFilePath = orig }(hostsFilePath)",
+         "matchingRanges": {
+          "lineNumber": "2137"
+         },
+         "lineNumber": "2137",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func TestRootNS(t *testing.T) {",
+         "matchingRanges": {
+          "lineNumber": "2327"
+         },
+         "lineNumber": "2327",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t// See https://golang.org/issue/45715.",
+         "matchingRanges": {
+          "lineNumber": "2328",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "2328",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 38
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\tfake := fakeDNSServer{",
+         "matchingRanges": {
+          "lineNumber": "2329"
+         },
+         "lineNumber": "2329"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CBUSAggBOKT785mUxva6vQFAAEgV"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/vendor/golang.org/x/sys/windows/zerrors_windows.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tFACILITY_WINDOWS_CE                                                                     = 24",
+         "matchingRanges": {
+          "lineNumber": "31"
+         },
+         "lineNumber": "31",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 91,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tFACILITY_HTTP                                                                           = 25",
+         "matchingRanges": {
+          "lineNumber": "32",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "32",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 91,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\tFACILITY_USERMODE_COMMONLOG                                                             = 26",
+         "matchingRanges": {
+          "lineNumber": "33"
+         },
+         "lineNumber": "33",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 91,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tCLIENTSITE_E_FIRST                                                        syscall.Errno = 0x80040190",
+         "matchingRanges": {
+          "lineNumber": "3417",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "3417",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 91,
+            "length": 10
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tCLIENTSITE_E_LAST                                                         syscall.Errno = 0x8004019F",
+         "matchingRanges": {
+          "lineNumber": "3418",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "3418",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 91,
+            "length": 10
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tCLIENTSITE_S_FIRST                                                        syscall.Errno = 0x00040190",
+         "matchingRanges": {
+          "lineNumber": "3419",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "3419",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 91,
+            "length": 10
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tCLIENTSITE_S_LAST                                                         syscall.Errno = 0x0004019F",
+         "matchingRanges": {
+          "lineNumber": "3420",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "3420",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 91,
+            "length": 10
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tHTTP_E_STATUS_MOVED                                                       Handle        = 0x8019012D",
+         "matchingRanges": {
+          "lineNumber": "6553",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "6553",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 91,
+            "length": 10
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\tHTTP_E_STATUS_REDIRECT                                                    Handle        = 0x8019012E",
+         "matchingRanges": {
+          "lineNumber": "6554",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 4
+           },
+           {
+            "startIndex": 15,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "6554",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 91,
+            "length": 10
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 4
+          },
+          {
+           "startIndex": 15,
+           "length": 8
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 106
+    },
+    "resultToken": "CBYSBAgBIAE45vfgpte9koNxQABIFg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/vendor/golang.org/x/sys/windows/types_windows.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t/* AuthType values for SSLExtraCertChainPolicyPara struct */",
+         "matchingRanges": {
+          "lineNumber": "662"
+         },
+         "lineNumber": "662",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 60
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tAUTHTYPE_CLIENT = 1",
+         "matchingRanges": {
+          "lineNumber": "663",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "663",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 19,
+            "length": 1
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tAUTHTYPE_SERVER = 2",
+         "matchingRanges": {
+          "lineNumber": "664"
+         },
+         "lineNumber": "664",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 19,
+            "length": 1
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// cf. http://support.microsoft.com/default.aspx?scid=kb;en-us;257460",
+         "matchingRanges": {
+          "lineNumber": "1082",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "1082",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 69
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "1083"
+         },
+         "lineNumber": "1083"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tPolicyCallbackData              uintptr",
+         "matchingRanges": {
+          "lineNumber": "1704"
+         },
+         "lineNumber": "1704"
+        },
+        {
+         "lineText": "\tSIPClientData                   uintptr",
+         "matchingRanges": {
+          "lineNumber": "1705",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "1705",
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tUIChoice                        uint32",
+         "matchingRanges": {
+          "lineNumber": "1706"
+         },
+         "lineNumber": "1706"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tRedirectionDllName               NTUnicodeString",
+         "matchingRanges": {
+          "lineNumber": "2913",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "2913",
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\tHeapPartitionName                NTUnicodeString",
+         "matchingRanges": {
+          "lineNumber": "2914"
+         },
+         "lineNumber": "2914"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 53
+    },
+    "resultToken": "CBcSBAgBIAE4vLL1t7bHnKAKQABIFw"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/vendor/golang.org/x/tools/internal/stdlib/manifest.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t{\"CipherSuites\", Func, 14, \"func() []*CipherSuite\"},",
+         "matchingRanges": {
+          "lineNumber": "1066"
+         },
+         "lineNumber": "1066",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 3,
+            "length": 14
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 25,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 29,
+            "length": 23
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t{\"Client\", Func, 0, \"func(conn net.Conn, config *Config) *Conn\"},",
+         "matchingRanges": {
+          "lineNumber": "1067",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "1067",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 3,
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 19,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 22,
+            "length": 43
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t{\"ClientAuthType\", Type, 0, \"\"},",
+         "matchingRanges": {
+          "lineNumber": "1068",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "1068",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 3,
+            "length": 16
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 27,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 30,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t{\"(*ServeMux).Handler\", Method, 1, \"\"},",
+         "matchingRanges": {
+          "lineNumber": "8830"
+         },
+         "lineNumber": "8830",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 3,
+            "length": 21
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 34,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 37,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t{\"(*ServeMux).ServeHTTP\", Method, 0, \"\"},",
+         "matchingRanges": {
+          "lineNumber": "8831",
+          "columnRanges": [
+           {
+            "startIndex": 21,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "8831",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 3,
+            "length": 23
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 36,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 39,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 21,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t{\"(*Server).Close\", Method, 8, \"\"},",
+         "matchingRanges": {
+          "lineNumber": "8832"
+         },
+         "lineNumber": "8832",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 3,
+            "length": 17
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 30,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 33,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t{\"ReadResponse\", Func, 0, \"func(r *bufio.Reader, req *Request) (*Response, error)\"},",
+         "matchingRanges": {
+          "lineNumber": "9004"
+         },
+         "lineNumber": "9004",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 3,
+            "length": 14
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 25,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 28,
+            "length": 56
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t{\"Redirect\", Func, 0, \"func(w ResponseWriter, r *Request, url string, code int)\"},",
+         "matchingRanges": {
+          "lineNumber": "9005",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "9005",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 3,
+            "length": 10
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 21,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 24,
+            "length": 58
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t{\"RedirectHandler\", Func, 0, \"func(url string, code int) Handler\"},",
+         "matchingRanges": {
+          "lineNumber": "9006",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "9006",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 3,
+            "length": 17
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 28,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 31,
+            "length": 36
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t{\"Request\", Type, 0, \"\"},",
+         "matchingRanges": {
+          "lineNumber": "9007"
+         },
+         "lineNumber": "9007",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 3,
+            "length": 9
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 23,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 87
+    },
+    "resultToken": "CBgSAggBOJrA-rfNvvHiBUAASBg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/go/internal/vcs/vcs.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tif VCSTestRepoURL != \"\" \u0026\u0026 web.IsLocalHost(u) {",
+         "matchingRanges": {
+          "lineNumber": "85"
+         },
+         "lineNumber": "85",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 22,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t// If the vcstest server is in use, it may redirect to other local ports for",
+         "matchingRanges": {
+          "lineNumber": "86",
+          "columnRanges": [
+           {
+            "startIndex": 45,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "86",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 76
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 45,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t// other protocols (such as svn). Assume that all loopback addresses are",
+         "matchingRanges": {
+          "lineNumber": "87"
+         },
+         "lineNumber": "87",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 72
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tScheme:  []string{\"https\", \"http\", \"ssh\"},",
+         "matchingRanges": {
+          "lineNumber": "154",
+          "columnRanges": [
+           {
+            "startIndex": 20,
+            "length": 4
+           },
+           {
+            "startIndex": 29,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "154",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 19,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 28,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 36,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 20,
+           "length": 4
+          },
+          {
+           "startIndex": 29,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\tPingCmd: \"identify -- {scheme}://{repo}\",",
+         "matchingRanges": {
+          "lineNumber": "155"
+         },
+         "lineNumber": "155",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 10,
+            "length": 31
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// these two systems have had the most attention to issues",
+         "matchingRanges": {
+          "lineNumber": "710"
+         },
+         "lineNumber": "710",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 58
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "// of being run as clients of untrusted servers. In contrast,",
+         "matchingRanges": {
+          "lineNumber": "711",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "711",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 61
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "// Bazaar, Fossil, and Subversion have primarily been used",
+         "matchingRanges": {
+          "lineNumber": "712"
+         },
+         "lineNumber": "712",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 58
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func httpPrefix(s string) string {",
+         "matchingRanges": {
+          "lineNumber": "763",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "763",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\tfor _, prefix := range [...]string{\"http:\", \"https:\"} {",
+         "matchingRanges": {
+          "lineNumber": "764",
+          "columnRanges": [
+           {
+            "startIndex": 37,
+            "length": 4
+           },
+           {
+            "startIndex": 46,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "764",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 18,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 36,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 45,
+            "length": 8
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 37,
+           "length": 4
+          },
+          {
+           "startIndex": 46,
+           "length": 4
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 29
+    },
+    "resultToken": "CBkSBAgBIAE42oLZyNWV69CIAUAASBk"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/vendor/github.com/google/pprof/internal/driver/webui.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tserver := o.HTTPServer",
+         "matchingRanges": {
+          "lineNumber": "119",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "119",
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\tif server == nil {",
+         "matchingRanges": {
+          "lineNumber": "120"
+         },
+         "lineNumber": "120",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\tif isLocal {",
+         "matchingRanges": {
+          "lineNumber": "192"
+         },
+         "lineNumber": "192",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t// Only allow local clients",
+         "matchingRanges": {
+          "lineNumber": "193",
+          "columnRanges": [
+           {
+            "startIndex": 23,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "193",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 3,
+            "length": 27
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 23,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\thost, _, err := net.SplitHostPort(req.RemoteAddr)",
+         "matchingRanges": {
+          "lineNumber": "194"
+         },
+         "lineNumber": "194"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// parameters in the redirect URL. It does not convert relative paths to",
+         "matchingRanges": {
+          "lineNumber": "220",
+          "columnRanges": [
+           {
+            "startIndex": 21,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "220",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 72
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 21,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "// absolute paths like http.Redirect does, so that HTTPServerArgs.Handlers can",
+         "matchingRanges": {
+          "lineNumber": "221",
+          "columnRanges": [
+           {
+            "startIndex": 23,
+            "length": 4
+           },
+           {
+            "startIndex": 28,
+            "length": 8
+           },
+           {
+            "startIndex": 51,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "221",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 78
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 23,
+           "length": 4
+          },
+          {
+           "startIndex": 28,
+           "length": 8
+          },
+          {
+           "startIndex": 51,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "// generate relative redirects that work with the external prefixing.",
+         "matchingRanges": {
+          "lineNumber": "222",
+          "columnRanges": [
+           {
+            "startIndex": 21,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "222",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 69
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 21,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "func redirectWithQuery(path string, code int) http.HandlerFunc {",
+         "matchingRanges": {
+          "lineNumber": "223",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 8
+           },
+           {
+            "startIndex": 46,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "223",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 8
+          },
+          {
+           "startIndex": 46,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\treturn func(w http.ResponseWriter, r *http.Request) {",
+         "matchingRanges": {
+          "lineNumber": "224",
+          "columnRanges": [
+           {
+            "startIndex": 15,
+            "length": 4
+           },
+           {
+            "startIndex": 39,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "224",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 15,
+           "length": 4
+          },
+          {
+           "startIndex": 39,
+           "length": 4
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 38
+    },
+    "resultToken": "CBoSBAgBIAE4rsz53IPI37eIAUAASBo"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/go/proxy_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// Request for $GOPROXY/sumdb-direct is direct sumdb access.",
+         "matchingRanges": {
+          "lineNumber": "158"
+         },
+         "lineNumber": "158",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 60
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t// (Client thinks it is talking directly to a sumdb.)",
+         "matchingRanges": {
+          "lineNumber": "159",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "159",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 53
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tif strings.HasPrefix(path, \"sumdb-direct/\") {",
+         "matchingRanges": {
+          "lineNumber": "160"
+         },
+         "lineNumber": "160",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 28,
+            "length": 15
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tr.URL.Path = path[len(\"sumdb-direct\"):]",
+         "matchingRanges": {
+          "lineNumber": "161"
+         },
+         "lineNumber": "161",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 24,
+            "length": 14
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tsumdbServer.ServeHTTP(w, r)",
+         "matchingRanges": {
+          "lineNumber": "162",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "162",
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "\t\treturn",
+         "matchingRanges": {
+          "lineNumber": "163"
+         },
+         "lineNumber": "163",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t\t\thttp.Redirect(w, r, fmt.Sprintf(\"/mod/%s\", path[j+1:]), 302)",
+         "matchingRanges": {
+          "lineNumber": "203",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 4
+           },
+           {
+            "startIndex": 9,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "203",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 36,
+            "length": 9
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 54,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 60,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 4
+          },
+          {
+           "startIndex": 9,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t\treturn",
+         "matchingRanges": {
+          "lineNumber": "204"
+         },
+         "lineNumber": "204",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t}",
+         "matchingRanges": {
+          "lineNumber": "205"
+         },
+         "lineNumber": "205"
+        },
+        {
+         "lineText": "\t\t\thttp.Redirect(w, r, fmt.Sprintf(\"/mod/redirect/%d/%s\", count-1, path[j+1:]), 302)",
+         "matchingRanges": {
+          "lineNumber": "206",
+          "columnRanges": [
+           {
+            "startIndex": 3,
+            "length": 4
+           },
+           {
+            "startIndex": 8,
+            "length": 8
+           },
+           {
+            "startIndex": 41,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "206",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 35,
+            "length": 21
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 64,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 74,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 80,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 3,
+           "length": 4
+          },
+          {
+           "startIndex": 8,
+           "length": 8
+          },
+          {
+           "startIndex": 41,
+           "length": 8
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 34
+    },
+    "resultToken": "CBsSAggBOM6Wos-5jJn1vAFAAEgb"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "api/go1.txt",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "pkg crypto/tls, const VerifyClientCertIfGiven ClientAuthType",
+         "matchingRanges": {
+          "lineNumber": "513",
+          "columnRanges": [
+           {
+            "startIndex": 28,
+            "length": 6
+           },
+           {
+            "startIndex": 46,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "513",
+         "ranges": [
+          {
+           "startIndex": 28,
+           "length": 6
+          },
+          {
+           "startIndex": 46,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "pkg crypto/tls, func Client(net.Conn, *Config) *Conn",
+         "matchingRanges": {
+          "lineNumber": "514",
+          "columnRanges": [
+           {
+            "startIndex": 21,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "514",
+         "ranges": [
+          {
+           "startIndex": 21,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "pkg crypto/tls, func Dial(string, string, *Config) (*Conn, error)",
+         "matchingRanges": {
+          "lineNumber": "515"
+         },
+         "lineNumber": "515"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "pkg net, var IPv6zero IP",
+         "matchingRanges": {
+          "lineNumber": "4625"
+         },
+         "lineNumber": "4625"
+        },
+        {
+         "lineText": "pkg net/http, const DefaultMaxHeaderBytes ideal-int",
+         "matchingRanges": {
+          "lineNumber": "4626",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "4626",
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "pkg net/http, const DefaultMaxIdleConnsPerHost ideal-int",
+         "matchingRanges": {
+          "lineNumber": "4627",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "4627",
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "pkg net/http, const StatusAccepted ideal-int",
+         "matchingRanges": {
+          "lineNumber": "4628",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "4628",
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "pkg net/http, const StatusBadGateway ideal-int",
+         "matchingRanges": {
+          "lineNumber": "4629",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "4629",
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 4
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "pkg net/http, func Redirect(ResponseWriter, *Request, string, int)",
+         "matchingRanges": {
+          "lineNumber": "4693",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "4693",
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "pkg net/http, func RedirectHandler(string, int) Handler",
+         "matchingRanges": {
+          "lineNumber": "4694",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "4694",
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 8
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 89
+    },
+    "resultToken": "CBwSAggBOOjf65ehl6OAuQFAAEgc"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/go/internal/modfetch/repo.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// For example, the module with path rsc.io/qr corresponds to the",
+         "matchingRanges": {
+          "lineNumber": "100"
+         },
+         "lineNumber": "100",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 65
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "// file tree in the repository https://github.com/rsc/qr.",
+         "matchingRanges": {
+          "lineNumber": "101",
+          "columnRanges": [
+           {
+            "startIndex": 31,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "101",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 57
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 31,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "// That file tree has a go.mod that says \"module rsc.io/qr\".",
+         "matchingRanges": {
+          "lineNumber": "102"
+         },
+         "lineNumber": "102",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 60
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// Because the \"go get\" import paths rsc.io/qr and github.com/rsc/qr",
+         "matchingRanges": {
+          "lineNumber": "122"
+         },
+         "lineNumber": "122",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 68
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "// both redirect to the Git repository https://github.com/rsc/qr,",
+         "matchingRanges": {
+          "lineNumber": "123",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 8
+           },
+           {
+            "startIndex": 39,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "123",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 65
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 8
+          },
+          {
+           "startIndex": 39,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "// github.com/rsc/qr@v0.1.0 is the same file tree as rsc.io/qr@v0.1.0",
+         "matchingRanges": {
+          "lineNumber": "124"
+         },
+         "lineNumber": "124",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 69
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// subtree out of a module into its own module. If done carefully,",
+         "matchingRanges": {
+          "lineNumber": "133"
+         },
+         "lineNumber": "133",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 66
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "// this operation can be done while preserving compatibility for clients.",
+         "matchingRanges": {
+          "lineNumber": "134",
+          "columnRanges": [
+           {
+            "startIndex": 65,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "134",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 73
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 65,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "// For example, suppose that we want to split rsc.io/qr/gf256 into its",
+         "matchingRanges": {
+          "lineNumber": "135"
+         },
+         "lineNumber": "135",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 70
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 8
+    },
+    "resultToken": "CB0SAggBOMzE-Pqh4r6VY0AASB0"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "api/go1.7.txt",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "pkg context, var DeadlineExceeded error",
+         "matchingRanges": {
+          "lineNumber": "19"
+         },
+         "lineNumber": "19"
+        },
+        {
+         "lineText": "pkg crypto/tls, const RenegotiateFreelyAsClient = 2",
+         "matchingRanges": {
+          "lineNumber": "20",
+          "columnRanges": [
+           {
+            "startIndex": 41,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "20",
+         "ranges": [
+          {
+           "startIndex": 41,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "pkg crypto/tls, const RenegotiateFreelyAsClient RenegotiationSupport",
+         "matchingRanges": {
+          "lineNumber": "21",
+          "columnRanges": [
+           {
+            "startIndex": 41,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "21",
+         "ranges": [
+          {
+           "startIndex": 41,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "pkg crypto/tls, const RenegotiateNever = 0",
+         "matchingRanges": {
+          "lineNumber": "22"
+         },
+         "lineNumber": "22"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "pkg net/http, const StatusAlreadyReported = 208",
+         "matchingRanges": {
+          "lineNumber": "173",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "173",
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "pkg net/http, const StatusAlreadyReported ideal-int",
+         "matchingRanges": {
+          "lineNumber": "174",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "174",
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "pkg net/http, const StatusFailedDependency = 424",
+         "matchingRanges": {
+          "lineNumber": "175",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "175",
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "pkg net/http, const StatusFailedDependency ideal-int",
+         "matchingRanges": {
+          "lineNumber": "176",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "176",
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 4
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "pkg net/http, const StatusPermanentRedirect = 308",
+         "matchingRanges": {
+          "lineNumber": "189",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 4
+           },
+           {
+            "startIndex": 35,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "189",
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 4
+          },
+          {
+           "startIndex": 35,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "pkg net/http, const StatusPermanentRedirect ideal-int",
+         "matchingRanges": {
+          "lineNumber": "190",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 4
+           },
+           {
+            "startIndex": 35,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "190",
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 4
+          },
+          {
+           "startIndex": 35,
+           "length": 8
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 58
+    },
+    "resultToken": "CB4SAggBOLiCu5m3i5G5AUAASB4"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "api/go1.16.txt",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "pkg net/http, func FS(fs.FS) FileSystem",
+         "matchingRanges": {
+          "lineNumber": "370",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "370",
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "pkg net/http, type Transport struct, GetProxyConnectHeader func(context.Context, *url.URL, string) (Header, error)",
+         "matchingRanges": {
+          "lineNumber": "371",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "371",
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 4
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "pkg net/http/httputil, func NewClientConn //deprecated",
+         "matchingRanges": {
+          "lineNumber": "560",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 4
+           },
+           {
+            "startIndex": 13,
+            "length": 4
+           },
+           {
+            "startIndex": 31,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "560",
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 4
+          },
+          {
+           "startIndex": 13,
+           "length": 4
+          },
+          {
+           "startIndex": 31,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "pkg net/http/httputil, func NewProxyClientConn //deprecated",
+         "matchingRanges": {
+          "lineNumber": "561",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 4
+           },
+           {
+            "startIndex": 13,
+            "length": 4
+           },
+           {
+            "startIndex": 36,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "561",
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 4
+          },
+          {
+           "startIndex": 13,
+           "length": 4
+          },
+          {
+           "startIndex": 36,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "pkg net/http/httputil, func NewServerConn //deprecated",
+         "matchingRanges": {
+          "lineNumber": "562",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 4
+           },
+           {
+            "startIndex": 13,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "562",
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 4
+          },
+          {
+           "startIndex": 13,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "pkg net/http/httputil, type ClientConn //deprecated",
+         "matchingRanges": {
+          "lineNumber": "563",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 4
+           },
+           {
+            "startIndex": 13,
+            "length": 4
+           },
+           {
+            "startIndex": 28,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "563",
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 4
+          },
+          {
+           "startIndex": 13,
+           "length": 4
+          },
+          {
+           "startIndex": 28,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "pkg syscall (darwin-arm64), const RTM_OLDDEL ideal-int",
+         "matchingRanges": {
+          "lineNumber": "3128"
+         },
+         "lineNumber": "3128"
+        },
+        {
+         "lineText": "pkg syscall (darwin-arm64), const RTM_REDIRECT = 6",
+         "matchingRanges": {
+          "lineNumber": "3129",
+          "columnRanges": [
+           {
+            "startIndex": 38,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "3129",
+         "ranges": [
+          {
+           "startIndex": 38,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "pkg syscall (darwin-arm64), const RTM_REDIRECT ideal-int",
+         "matchingRanges": {
+          "lineNumber": "3130",
+          "columnRanges": [
+           {
+            "startIndex": 38,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "3130",
+         "ranges": [
+          {
+           "startIndex": 38,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "pkg syscall (darwin-arm64), const RTM_RESOLVE = 11",
+         "matchingRanges": {
+          "lineNumber": "3131"
+         },
+         "lineNumber": "3131"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 26
+    },
+    "resultToken": "CB8SAggBOOyGufzk9rvlWkAASB8"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "api/go1.14.txt",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "pkg crypto/tls, method (*CertificateRequestInfo) SupportsCertificate(*Certificate) error",
+         "matchingRanges": {
+          "lineNumber": "8"
+         },
+         "lineNumber": "8"
+        },
+        {
+         "lineText": "pkg crypto/tls, method (*ClientHelloInfo) SupportsCertificate(*Certificate) error",
+         "matchingRanges": {
+          "lineNumber": "9",
+          "columnRanges": [
+           {
+            "startIndex": 25,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "9",
+         "ranges": [
+          {
+           "startIndex": 25,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "pkg crypto/tls, type Certificate struct, SupportedSignatureAlgorithms []SignatureScheme",
+         "matchingRanges": {
+          "lineNumber": "10"
+         },
+         "lineNumber": "10"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "pkg net/http, method (Header) Values(string) []string",
+         "matchingRanges": {
+          "lineNumber": "173",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "173",
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "pkg net/http, type Transport struct, DialTLSContext func(context.Context, string, string) (net.Conn, error)",
+         "matchingRanges": {
+          "lineNumber": "174",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "174",
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "pkg net/http/httptest, type Server struct, EnableHTTP2 bool",
+         "matchingRanges": {
+          "lineNumber": "175",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 4
+           },
+           {
+            "startIndex": 13,
+            "length": 4
+           },
+           {
+            "startIndex": 49,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "175",
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 4
+          },
+          {
+           "startIndex": 13,
+           "length": 4
+          },
+          {
+           "startIndex": 49,
+           "length": 4
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "pkg syscall (freebsd-arm64), const RTM_OLDDEL ideal-int",
+         "matchingRanges": {
+          "lineNumber": "2788"
+         },
+         "lineNumber": "2788"
+        },
+        {
+         "lineText": "pkg syscall (freebsd-arm64), const RTM_REDIRECT = 6",
+         "matchingRanges": {
+          "lineNumber": "2789",
+          "columnRanges": [
+           {
+            "startIndex": 39,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "2789",
+         "ranges": [
+          {
+           "startIndex": 39,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "pkg syscall (freebsd-arm64), const RTM_REDIRECT ideal-int",
+         "matchingRanges": {
+          "lineNumber": "2790",
+          "columnRanges": [
+           {
+            "startIndex": 39,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "2790",
+         "ranges": [
+          {
+           "startIndex": 39,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "pkg syscall (freebsd-arm64), const RTM_RESOLVE = 11",
+         "matchingRanges": {
+          "lineNumber": "2791"
+         },
+         "lineNumber": "2791"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 8
+    },
+    "resultToken": "CCASAggBOIrT89iajN2n5AFAAEgg"
+   }
+  ],
+  "estimatedResultCount": "35",
+  "exhaustive": true,
+  "requestToken": "ChRodHRwIGNsaWVudCByZWRpcmVjdBIdKCBnaXQ6Z28vZ29AbWFzdGVyIGNhc2U6eWVzICkaDAjouqjRBhCgzP2hAiAMKgAyAEgB"
+ }
+}

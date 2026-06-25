@@ -1,0 +1,79 @@
+{
+ "query": "bump-allocating",
+ "oss_project": "opentitan",
+ "repo_name": "manticore",
+ "page_size": 50,
+ "fetched_at": "2026-06-17T23:22:20Z",
+ "response": {
+  "searchResults": [
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "manticore",
+        "ossProject": "opentitan"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/mem/arena.rs",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "/// A bump-allocating [`Arena`] that is backed by fixed storage.",
+         "matchingRanges": {
+          "lineNumber": "192",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "192",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 64
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "lineText": "///",
+         "matchingRanges": {
+          "lineNumber": "193"
+         },
+         "lineNumber": "193",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAASAggBOL7l5_LF_I26hQFAAEgA"
+   }
+  ],
+  "estimatedResultCount": "1",
+  "exhaustive": true,
+  "requestToken": "Cg9idW1wLWFsbG9jYXRpbmcSMCggZ2l0OmdpdGh1Yi9sb3dSSVNDL21hbnRpY29yZUBtYXN0ZXIgY2FzZTp5ZXMgKRoLCKzYzNEGEPa_8SkgDCAPKgAyAEgB"
+ }
+}

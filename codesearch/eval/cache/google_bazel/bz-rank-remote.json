@@ -1,0 +1,4637 @@
+{
+ "query": "remote",
+ "oss_project": "bazel",
+ "repo_name": "bazel",
+ "page_size": 50,
+ "fetched_at": "2026-06-11T22:29:49Z",
+ "response": {
+  "searchResults": [
+   {
+    "directorySearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/remote/",
+      "type": "DIRECTORY"
+     },
+     "childEntries": [
+      {
+       "path": "docs/remote/bep-examples.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/remote/bep-glossary.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/remote/bep.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/remote/cache-local.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/remote/cache-remote.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/remote/caching.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/remote/ci.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/remote/creating.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/remote/dynamic.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/remote/multiplex.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/remote/output-directories.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/remote/persistent.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/remote/rbe.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/remote/rules.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/remote/sandbox.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/remote/workspace.mdx",
+       "type": "FILE"
+      }
+     ]
+    },
+    "resultToken": "CAASADi4-YDuy_2C7WdAAEgA"
+   },
+   {
+    "directorySearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "site/en/remote/",
+      "type": "DIRECTORY"
+     },
+     "childEntries": [
+      {
+       "path": "site/en/remote/bep-examples.md",
+       "type": "FILE"
+      },
+      {
+       "path": "site/en/remote/bep-glossary.md",
+       "type": "FILE"
+      },
+      {
+       "path": "site/en/remote/bep.md",
+       "type": "FILE"
+      },
+      {
+       "path": "site/en/remote/cache-local.md",
+       "type": "FILE"
+      },
+      {
+       "path": "site/en/remote/cache-remote.md",
+       "type": "FILE"
+      },
+      {
+       "path": "site/en/remote/caching.md",
+       "type": "FILE"
+      },
+      {
+       "path": "site/en/remote/ci.md",
+       "type": "FILE"
+      },
+      {
+       "path": "site/en/remote/creating.md",
+       "type": "FILE"
+      },
+      {
+       "path": "site/en/remote/dynamic.md",
+       "type": "FILE"
+      },
+      {
+       "path": "site/en/remote/multiplex.md",
+       "type": "FILE"
+      },
+      {
+       "path": "site/en/remote/output-directories.md",
+       "type": "FILE"
+      },
+      {
+       "path": "site/en/remote/persistent.md",
+       "type": "FILE"
+      },
+      {
+       "path": "site/en/remote/rbe.md",
+       "type": "FILE"
+      },
+      {
+       "path": "site/en/remote/rules.md",
+       "type": "FILE"
+      },
+      {
+       "path": "site/en/remote/sandbox.md",
+       "type": "FILE"
+      },
+      {
+       "path": "site/en/remote/workspace.md",
+       "type": "FILE"
+      }
+     ]
+    },
+    "resultToken": "CAESADia_7zg39T73TNAAEgB"
+   },
+   {
+    "directorySearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/tools/remote/",
+      "type": "DIRECTORY"
+     },
+     "childEntries": [
+      {
+       "path": "src/tools/remote/BUILD",
+       "type": "FILE"
+      },
+      {
+       "path": "src/tools/remote/README.md",
+       "type": "FILE"
+      },
+      {
+       "path": "src/tools/remote/src/",
+       "type": "DIRECTORY"
+      }
+     ]
+    },
+    "resultToken": "CAISADiy84SR_JbBg_UBQABIAg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/remote/CombinedCache.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    @Nullable",
+         "matchingRanges": {
+          "lineNumber": "191"
+         },
+         "lineNumber": "191"
+        },
+        {
+         "lineText": "    public static CachedActionResult remote(ActionResult actionResult) {",
+         "matchingRanges": {
+          "lineNumber": "192",
+          "columnRanges": [
+           {
+            "startIndex": 37,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "192",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 11,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 37,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "      if (actionResult == null) {",
+         "matchingRanges": {
+          "lineNumber": "193"
+         },
+         "lineNumber": "193",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  private ListenableFuture\u003cActionResult\u003e downloadActionResultFromRemote(",
+         "matchingRanges": {
+          "lineNumber": "269",
+          "columnRanges": [
+           {
+            "startIndex": 65,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "269",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 65,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "      RemoteActionExecutionContext context,",
+         "matchingRanges": {
+          "lineNumber": "270"
+         },
+         "lineNumber": "270"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  private ListenableFuture\u003cVoid\u003e downloadBlobFromRemote(",
+         "matchingRanges": {
+          "lineNumber": "512",
+          "columnRanges": [
+           {
+            "startIndex": 49,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "512",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 49,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "      RemoteActionExecutionContext context, Digest digest, OutputStream out) {",
+         "matchingRanges": {
+          "lineNumber": "513"
+         },
+         "lineNumber": "513"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  private ListenableFuture\u003cVoid\u003e regularDownloadBlobFromRemote(",
+         "matchingRanges": {
+          "lineNumber": "540",
+          "columnRanges": [
+           {
+            "startIndex": 56,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "540",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 56,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "      RemoteActionExecutionContext context, Digest digest, OutputStream out) {",
+         "matchingRanges": {
+          "lineNumber": "541"
+         },
+         "lineNumber": "541"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 41
+    },
+    "resultToken": "CAMSBAgBIAE4rpSdroWJ-KNmQABIAw"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "third_party/remoteapis/build/bazel/remote/asset/v1/remote_asset.proto",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "option csharp_namespace = \"Build.Bazel.Remote.Asset.v1\";",
+         "matchingRanges": {
+          "lineNumber": "25",
+          "columnRanges": [
+           {
+            "startIndex": 39,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "25",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 26,
+            "length": 29
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 39,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "option go_package = \"github.com/bazelbuild/remote-apis/build/bazel/remote/asset/v1;remoteasset\";",
+         "matchingRanges": {
+          "lineNumber": "26",
+          "columnRanges": [
+           {
+            "startIndex": 43,
+            "length": 6
+           },
+           {
+            "startIndex": 67,
+            "length": 6
+           },
+           {
+            "startIndex": 83,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "26",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 75
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 43,
+           "length": 6
+          },
+          {
+           "startIndex": 67,
+           "length": 6
+          },
+          {
+           "startIndex": 83,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// The Remote Asset API provides a mapping from a URI and Qualifiers to",
+         "matchingRanges": {
+          "lineNumber": "32",
+          "columnRanges": [
+           {
+            "startIndex": 7,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "32",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 71
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 7,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "// Digests.  ",
+         "matchingRanges": {
+          "lineNumber": "33"
+         },
+         "lineNumber": "33",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 13
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "//",
+         "matchingRanges": {
+          "lineNumber": "81"
+         },
+         "lineNumber": "81",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "// As with other services in the Remote Execution API, any call may return an",
+         "matchingRanges": {
+          "lineNumber": "82",
+          "columnRanges": [
+           {
+            "startIndex": 33,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "82",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 77
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 33,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "// error with a [RetryInfo][google.rpc.RetryInfo] error detail providing",
+         "matchingRanges": {
+          "lineNumber": "83"
+         },
+         "lineNumber": "83",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 72
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "//",
+         "matchingRanges": {
+          "lineNumber": "351"
+         },
+         "lineNumber": "351",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "// As with other services in the Remote Execution API, any call may return an",
+         "matchingRanges": {
+          "lineNumber": "352",
+          "columnRanges": [
+           {
+            "startIndex": 33,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "352",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 77
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 33,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "// error with a [RetryInfo][google.rpc.RetryInfo] error detail providing",
+         "matchingRanges": {
+          "lineNumber": "353"
+         },
+         "lineNumber": "353",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 72
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 37
+    },
+    "resultToken": "CAQSAggBOKyX2KndofTbtgFAAEgE"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "site/en/remote/cache-remote.md",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "# Debugging Remote Cache Hits for Remote Execution",
+         "matchingRanges": {
+          "lineNumber": "4",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 6
+           },
+           {
+            "startIndex": 34,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "4",
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 6
+          },
+          {
+           "startIndex": 34,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "5"
+         },
+         "lineNumber": "5"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "This page describes how to check your cache hit rate and how to investigate",
+         "matchingRanges": {
+          "lineNumber": "8"
+         },
+         "lineNumber": "8"
+        },
+        {
+         "lineText": "cache misses in the context of remote execution.",
+         "matchingRanges": {
+          "lineNumber": "9",
+          "columnRanges": [
+           {
+            "startIndex": 31,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "9",
+         "ranges": [
+          {
+           "startIndex": 31,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "10"
+         },
+         "lineNumber": "10"
+        },
+        {
+         "lineText": "This page assumes that you have a build and/or test that successfully",
+         "matchingRanges": {
+          "lineNumber": "11"
+         },
+         "lineNumber": "11"
+        },
+        {
+         "lineText": "utilizes remote execution, and you want to ensure that you are effectively",
+         "matchingRanges": {
+          "lineNumber": "12",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "12",
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "utilizing remote cache.",
+         "matchingRanges": {
+          "lineNumber": "13",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "13",
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "14"
+         },
+         "lineNumber": "14"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 18
+    },
+    "resultToken": "CAUSAggBOI7wm6Tcsfu1QUAASAU"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "third_party/remoteapis/build/bazel/remote/execution/v2/remote_execution.proto",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "option csharp_namespace = \"Build.Bazel.Remote.Execution.V2\";",
+         "matchingRanges": {
+          "lineNumber": "28",
+          "columnRanges": [
+           {
+            "startIndex": 39,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "28",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 26,
+            "length": 33
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 39,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "option go_package = \"github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2;remoteexecution\";",
+         "matchingRanges": {
+          "lineNumber": "29",
+          "columnRanges": [
+           {
+            "startIndex": 43,
+            "length": 6
+           },
+           {
+            "startIndex": 67,
+            "length": 6
+           },
+           {
+            "startIndex": 87,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "29",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 83
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 43,
+           "length": 6
+          },
+          {
+           "startIndex": 67,
+           "length": 6
+          },
+          {
+           "startIndex": 87,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// The Remote Execution API is used to execute an",
+         "matchingRanges": {
+          "lineNumber": "36",
+          "columnRanges": [
+           {
+            "startIndex": 7,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "36",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 49
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 7,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "// [Action][build.bazel.remote.execution.v2.Action] on the remote",
+         "matchingRanges": {
+          "lineNumber": "37",
+          "columnRanges": [
+           {
+            "startIndex": 24,
+            "length": 6
+           },
+           {
+            "startIndex": 59,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "37",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 65
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 24,
+           "length": 6
+          },
+          {
+           "startIndex": 59,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "//",
+         "matchingRanges": {
+          "lineNumber": "39"
+         },
+         "lineNumber": "39",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "// As with other services in the Remote Execution API, any call may return an",
+         "matchingRanges": {
+          "lineNumber": "40",
+          "columnRanges": [
+           {
+            "startIndex": 33,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "40",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 77
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 33,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "// error with a [RetryInfo][google.rpc.RetryInfo] error detail providing",
+         "matchingRanges": {
+          "lineNumber": "41"
+         },
+         "lineNumber": "41",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 72
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "//",
+         "matchingRanges": {
+          "lineNumber": "152"
+         },
+         "lineNumber": "152",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "// As with other services in the Remote Execution API, any call may return an",
+         "matchingRanges": {
+          "lineNumber": "153",
+          "columnRanges": [
+           {
+            "startIndex": 33,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "153",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 77
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 33,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "// error with a [RetryInfo][google.rpc.RetryInfo] error detail providing",
+         "matchingRanges": {
+          "lineNumber": "154"
+         },
+         "lineNumber": "154",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 72
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 37
+    },
+    "resultToken": "CAYSAggBOPqcibPoos27mgFAAEgG"
+   },
+   {
+    "directorySearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/py/bazel/remote/",
+      "type": "DIRECTORY"
+     },
+     "childEntries": [
+      {
+       "path": "src/test/py/bazel/remote/cache_decompression_test.py",
+       "type": "FILE"
+      }
+     ]
+    },
+    "resultToken": "CAcSADiSnLHt78a6oB5AAEgH"
+   },
+   {
+    "directorySearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/tools/remote/src/",
+      "type": "DIRECTORY"
+     },
+     "childEntries": [
+      {
+       "path": "src/tools/remote/src/main/",
+       "type": "DIRECTORY"
+      },
+      {
+       "path": "src/tools/remote/src/test/",
+       "type": "DIRECTORY"
+      }
+     ]
+    },
+    "resultToken": "CAgSADiA3q_y1Imsr-cBQABICA"
+   },
+   {
+    "directorySearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "third_party/remoteapis/build/bazel/remote/",
+      "type": "DIRECTORY"
+     },
+     "childEntries": [
+      {
+       "path": "third_party/remoteapis/build/bazel/remote/asset/",
+       "type": "DIRECTORY"
+      },
+      {
+       "path": "third_party/remoteapis/build/bazel/remote/execution/",
+       "type": "DIRECTORY"
+      }
+     ]
+    },
+    "resultToken": "CAkSADjuh5ik_b3OtkNAAEgJ"
+   },
+   {
+    "directorySearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/tools/remote/src/test/",
+      "type": "DIRECTORY"
+     },
+     "childEntries": [
+      {
+       "path": "src/tools/remote/src/test/java/",
+       "type": "DIRECTORY"
+      }
+     ]
+    },
+    "resultToken": "CAoSADi249vFw-foniNAAEgK"
+   },
+   {
+    "directorySearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/shell/bazel/remote/",
+      "type": "DIRECTORY"
+     },
+     "childEntries": [
+      {
+       "path": "src/test/shell/bazel/remote/BUILD",
+       "type": "FILE"
+      },
+      {
+       "path": "src/test/shell/bazel/remote/build_without_the_bytes_test.sh",
+       "type": "FILE"
+      },
+      {
+       "path": "src/test/shell/bazel/remote/remote_build_event_uploader_test.sh",
+       "type": "FILE"
+      },
+      {
+       "path": "src/test/shell/bazel/remote/remote_downloader_test.sh",
+       "type": "FILE"
+      },
+      {
+       "path": "src/test/shell/bazel/remote/remote_execution_http_test.sh",
+       "type": "FILE"
+      },
+      {
+       "path": "src/test/shell/bazel/remote/remote_execution_sandboxing_test.sh",
+       "type": "FILE"
+      },
+      {
+       "path": "src/test/shell/bazel/remote/remote_execution_test.sh",
+       "type": "FILE"
+      },
+      {
+       "path": "src/test/shell/bazel/remote/remote_execution_tls_test.sh",
+       "type": "FILE"
+      },
+      {
+       "path": "src/test/shell/bazel/remote/remote_execution_with_xattr_test.sh",
+       "type": "FILE"
+      },
+      {
+       "path": "src/test/shell/bazel/remote/remote_utils.sh",
+       "type": "FILE"
+      },
+      {
+       "path": "src/test/shell/bazel/remote/uds_proxy.py",
+       "type": "FILE"
+      }
+     ]
+    },
+    "resultToken": "CAsSADjox5-clOjFkIYBQABICw"
+   },
+   {
+    "directorySearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "third_party/remoteapis/build/bazel/remote/asset/",
+      "type": "DIRECTORY"
+     },
+     "childEntries": [
+      {
+       "path": "third_party/remoteapis/build/bazel/remote/asset/v1/",
+       "type": "DIRECTORY"
+      }
+     ]
+    },
+    "resultToken": "CAwSADi4oJ7yoffrgWxAAEgM"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "site/en/remote/ci.md",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "# Configuring Bazel CI to Test Rules for Remote Execution",
+         "matchingRanges": {
+          "lineNumber": "4",
+          "columnRanges": [
+           {
+            "startIndex": 41,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "4",
+         "ranges": [
+          {
+           "startIndex": 41,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "5"
+         },
+         "lineNumber": "5"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "describes how to configure the Bazel Continuous Integration (CI) system for",
+         "matchingRanges": {
+          "lineNumber": "9"
+         },
+         "lineNumber": "9"
+        },
+        {
+         "lineText": "your repository to test your rules for compatibility against a remote execution",
+         "matchingRanges": {
+          "lineNumber": "10",
+          "columnRanges": [
+           {
+            "startIndex": 63,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "10",
+         "ranges": [
+          {
+           "startIndex": 63,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "scenario. The instructions on this page apply to projects stored in",
+         "matchingRanges": {
+          "lineNumber": "11"
+         },
+         "lineNumber": "11"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    b.  In the `rbe_ubuntu1604` config, add the build and test targets you want to test against remote execution.",
+         "matchingRanges": {
+          "lineNumber": "29",
+          "columnRanges": [
+           {
+            "startIndex": 96,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "29",
+         "ranges": [
+          {
+           "startIndex": 96,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "30"
+         },
+         "lineNumber": "30"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "*   **Build or test targets are using rules that are incompatible with remote",
+         "matchingRanges": {
+          "lineNumber": "75",
+          "columnRanges": [
+           {
+            "startIndex": 71,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "75",
+         "ranges": [
+          {
+           "startIndex": 71,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "    execution.** See",
+         "matchingRanges": {
+          "lineNumber": "76"
+         },
+         "lineNumber": "76"
+        },
+        {
+         "lineText": "    [Adapting Bazel Rules for Remote Execution](/remote/rules) for",
+         "matchingRanges": {
+          "lineNumber": "77",
+          "columnRanges": [
+           {
+            "startIndex": 30,
+            "length": 6
+           },
+           {
+            "startIndex": 49,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "77",
+         "ranges": [
+          {
+           "startIndex": 30,
+           "length": 6
+          },
+          {
+           "startIndex": 49,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 7
+    },
+    "resultToken": "CA0SAggBOLLCls7j3I2SA0AASA0"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/remote/ByteStreamBuildEventArtifactUploader.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  /** Returns {@code true} if Bazel knows that the file is stored on a remote system. */",
+         "matchingRanges": {
+          "lineNumber": "110",
+          "columnRanges": [
+           {
+            "startIndex": 71,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "110",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 86
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 71,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "  private static boolean isRemoteFile(Path file) throws IOException {",
+         "matchingRanges": {
+          "lineNumber": "111",
+          "columnRanges": [
+           {
+            "startIndex": 27,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "111",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 49,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 27,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "    return file.getFileSystem() instanceof RemoteActionFileSystem",
+         "matchingRanges": {
+          "lineNumber": "112",
+          "columnRanges": [
+           {
+            "startIndex": 43,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "112",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 32,
+            "length": 10
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 43,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    private final boolean symlink;",
+         "matchingRanges": {
+          "lineNumber": "121"
+         },
+         "lineNumber": "121",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    private final boolean remote;",
+         "matchingRanges": {
+          "lineNumber": "122",
+          "columnRanges": [
+           {
+            "startIndex": 26,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "122",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 26,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "    private final boolean isBuildToolLog;",
+         "matchingRanges": {
+          "lineNumber": "123"
+         },
+         "lineNumber": "123",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    public boolean isRemote() {",
+         "matchingRanges": {
+          "lineNumber": "159",
+          "columnRanges": [
+           {
+            "startIndex": 21,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "159",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 21,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "      return remote;",
+         "matchingRanges": {
+          "lineNumber": "160"
+         },
+         "lineNumber": "160",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  private Single\u003cString\u003e getRemoteServerInstanceName(CombinedCache combinedCache) {",
+         "matchingRanges": {
+          "lineNumber": "335",
+          "columnRanges": [
+           {
+            "startIndex": 28,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "335",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 28,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "    if (!Strings.isNullOrEmpty(remoteBytestreamUriPrefix)) {",
+         "matchingRanges": {
+          "lineNumber": "336"
+         },
+         "lineNumber": "336",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 33
+    },
+    "resultToken": "CA4SBAgBIAE4vKfxkZCft8nOAUAASA4"
+   },
+   {
+    "directorySearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/tools/remote/src/test/java/",
+      "type": "DIRECTORY"
+     },
+     "childEntries": [
+      {
+       "path": "src/tools/remote/src/test/java/com/",
+       "type": "DIRECTORY"
+      }
+     ]
+    },
+    "resultToken": "CA8SADiK8MSy9NW0mfwBQABIDw"
+   },
+   {
+    "directorySearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/tools/remote/src/main/",
+      "type": "DIRECTORY"
+     },
+     "childEntries": [
+      {
+       "path": "src/tools/remote/src/main/cpp/",
+       "type": "DIRECTORY"
+      },
+      {
+       "path": "src/tools/remote/src/main/java/",
+       "type": "DIRECTORY"
+      }
+     ]
+    },
+    "resultToken": "CBASADju89Tzta6x5o0BQABIEA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/remote/cache-remote.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "---",
+         "matchingRanges": {
+          "lineNumber": "1"
+         },
+         "lineNumber": "1"
+        },
+        {
+         "lineText": "title: 'Debugging Remote Cache Hits for Remote Execution'",
+         "matchingRanges": {
+          "lineNumber": "2",
+          "columnRanges": [
+           {
+            "startIndex": 18,
+            "length": 6
+           },
+           {
+            "startIndex": 40,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "2",
+         "ranges": [
+          {
+           "startIndex": 18,
+           "length": 6
+          },
+          {
+           "startIndex": 40,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "---",
+         "matchingRanges": {
+          "lineNumber": "3"
+         },
+         "lineNumber": "3"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "This page describes how to check your cache hit rate and how to investigate",
+         "matchingRanges": {
+          "lineNumber": "7"
+         },
+         "lineNumber": "7"
+        },
+        {
+         "lineText": "cache misses in the context of remote execution.",
+         "matchingRanges": {
+          "lineNumber": "8",
+          "columnRanges": [
+           {
+            "startIndex": 31,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "8",
+         "ranges": [
+          {
+           "startIndex": 31,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "9"
+         },
+         "lineNumber": "9"
+        },
+        {
+         "lineText": "This page assumes that you have a build and/or test that successfully",
+         "matchingRanges": {
+          "lineNumber": "10"
+         },
+         "lineNumber": "10"
+        },
+        {
+         "lineText": "utilizes remote execution, and you want to ensure that you are effectively",
+         "matchingRanges": {
+          "lineNumber": "11",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "11",
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "utilizing remote cache.",
+         "matchingRanges": {
+          "lineNumber": "12",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "12",
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "13"
+         },
+         "lineNumber": "13"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 18
+    },
+    "resultToken": "CBESAggBOJLXtOmqtsfBKEAASBE"
+   },
+   {
+    "directorySearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "third_party/remoteapis/build/bazel/remote/asset/v1/",
+      "type": "DIRECTORY"
+     },
+     "childEntries": [
+      {
+       "path": "third_party/remoteapis/build/bazel/remote/asset/v1/remote_asset.proto",
+       "type": "FILE"
+      }
+     ]
+    },
+    "resultToken": "CBISADia84iqkfTzorsBQABIEg"
+   },
+   {
+    "directorySearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "third_party/remoteapis/build/bazel/remote/execution/",
+      "type": "DIRECTORY"
+     },
+     "childEntries": [
+      {
+       "path": "third_party/remoteapis/build/bazel/remote/execution/v2/",
+       "type": "DIRECTORY"
+      }
+     ]
+    },
+    "resultToken": "CBMSADikz-KIlsv15ShAAEgT"
+   },
+   {
+    "directorySearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/8.3.1/remote/",
+      "type": "DIRECTORY"
+     },
+     "childEntries": [
+      {
+       "path": "docs/versions/8.3.1/remote/bep-examples.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.3.1/remote/bep-glossary.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.3.1/remote/bep.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.3.1/remote/cache-local.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.3.1/remote/cache-remote.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.3.1/remote/caching.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.3.1/remote/ci.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.3.1/remote/creating.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.3.1/remote/dynamic.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.3.1/remote/multiplex.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.3.1/remote/output-directories.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.3.1/remote/persistent.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.3.1/remote/rbe.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.3.1/remote/rules.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.3.1/remote/sandbox.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.3.1/remote/workspace.mdx",
+       "type": "FILE"
+      }
+     ]
+    },
+    "resultToken": "CBQSADiW453Mr-zTrBBAAEgU"
+   },
+   {
+    "directorySearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/8.1.1/remote/",
+      "type": "DIRECTORY"
+     },
+     "childEntries": [
+      {
+       "path": "docs/versions/8.1.1/remote/bep-examples.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.1.1/remote/bep-glossary.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.1.1/remote/bep.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.1.1/remote/cache-local.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.1.1/remote/cache-remote.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.1.1/remote/caching.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.1.1/remote/ci.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.1.1/remote/creating.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.1.1/remote/dynamic.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.1.1/remote/multiplex.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.1.1/remote/output-directories.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.1.1/remote/persistent.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.1.1/remote/rbe.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.1.1/remote/rules.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.1.1/remote/sandbox.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.1.1/remote/workspace.mdx",
+       "type": "FILE"
+      }
+     ]
+    },
+    "resultToken": "CBUSADiCuoO36NKptRdAAEgV"
+   },
+   {
+    "directorySearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/7.6.1/remote/",
+      "type": "DIRECTORY"
+     },
+     "childEntries": [
+      {
+       "path": "docs/versions/7.6.1/remote/bep-examples.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/7.6.1/remote/bep-glossary.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/7.6.1/remote/bep.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/7.6.1/remote/cache-local.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/7.6.1/remote/cache-remote.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/7.6.1/remote/caching.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/7.6.1/remote/ci.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/7.6.1/remote/creating.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/7.6.1/remote/dynamic.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/7.6.1/remote/multiplex.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/7.6.1/remote/output-directories.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/7.6.1/remote/persistent.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/7.6.1/remote/rbe.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/7.6.1/remote/rules.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/7.6.1/remote/sandbox.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/7.6.1/remote/workspace.mdx",
+       "type": "FILE"
+      }
+     ]
+    },
+    "resultToken": "CBYSADi0zc3BpOTI5SdAAEgW"
+   },
+   {
+    "directorySearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/8.5.1/remote/",
+      "type": "DIRECTORY"
+     },
+     "childEntries": [
+      {
+       "path": "docs/versions/8.5.1/remote/bep-examples.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.5.1/remote/bep-glossary.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.5.1/remote/bep.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.5.1/remote/cache-local.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.5.1/remote/cache-remote.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.5.1/remote/caching.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.5.1/remote/ci.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.5.1/remote/creating.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.5.1/remote/dynamic.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.5.1/remote/multiplex.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.5.1/remote/output-directories.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.5.1/remote/persistent.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.5.1/remote/rbe.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.5.1/remote/rules.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.5.1/remote/sandbox.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.5.1/remote/workspace.mdx",
+       "type": "FILE"
+      }
+     ]
+    },
+    "resultToken": "CBcSADio48f547K4sihAAEgX"
+   },
+   {
+    "directorySearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/8.4.2/remote/",
+      "type": "DIRECTORY"
+     },
+     "childEntries": [
+      {
+       "path": "docs/versions/8.4.2/remote/bep-examples.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.4.2/remote/bep-glossary.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.4.2/remote/bep.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.4.2/remote/cache-local.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.4.2/remote/cache-remote.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.4.2/remote/caching.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.4.2/remote/ci.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.4.2/remote/creating.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.4.2/remote/dynamic.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.4.2/remote/multiplex.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.4.2/remote/output-directories.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.4.2/remote/persistent.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.4.2/remote/rbe.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.4.2/remote/rules.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.4.2/remote/sandbox.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.4.2/remote/workspace.mdx",
+       "type": "FILE"
+      }
+     ]
+    },
+    "resultToken": "CBgSADiKmKzU8omOxDRAAEgY"
+   },
+   {
+    "directorySearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/9.1.0/remote/",
+      "type": "DIRECTORY"
+     },
+     "childEntries": [
+      {
+       "path": "docs/versions/9.1.0/remote/bep-examples.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/9.1.0/remote/bep-glossary.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/9.1.0/remote/bep.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/9.1.0/remote/cache-local.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/9.1.0/remote/cache-remote.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/9.1.0/remote/caching.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/9.1.0/remote/ci.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/9.1.0/remote/creating.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/9.1.0/remote/dynamic.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/9.1.0/remote/multiplex.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/9.1.0/remote/output-directories.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/9.1.0/remote/persistent.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/9.1.0/remote/rbe.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/9.1.0/remote/rules.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/9.1.0/remote/sandbox.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/9.1.0/remote/workspace.mdx",
+       "type": "FILE"
+      }
+     ]
+    },
+    "resultToken": "CBkSADiiz877n83GmUJAAEgZ"
+   },
+   {
+    "directorySearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/9.0.0/remote/",
+      "type": "DIRECTORY"
+     },
+     "childEntries": [
+      {
+       "path": "docs/versions/9.0.0/remote/bep-examples.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/9.0.0/remote/bep-glossary.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/9.0.0/remote/bep.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/9.0.0/remote/cache-local.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/9.0.0/remote/cache-remote.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/9.0.0/remote/caching.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/9.0.0/remote/ci.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/9.0.0/remote/creating.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/9.0.0/remote/dynamic.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/9.0.0/remote/multiplex.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/9.0.0/remote/output-directories.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/9.0.0/remote/persistent.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/9.0.0/remote/rbe.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/9.0.0/remote/rules.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/9.0.0/remote/sandbox.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/9.0.0/remote/workspace.mdx",
+       "type": "FILE"
+      }
+     ]
+    },
+    "resultToken": "CBoSADiO7960zNPmkEVAAEga"
+   },
+   {
+    "directorySearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/8.2.1/remote/",
+      "type": "DIRECTORY"
+     },
+     "childEntries": [
+      {
+       "path": "docs/versions/8.2.1/remote/bep-examples.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.2.1/remote/bep-glossary.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.2.1/remote/bep.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.2.1/remote/cache-local.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.2.1/remote/cache-remote.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.2.1/remote/caching.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.2.1/remote/ci.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.2.1/remote/creating.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.2.1/remote/dynamic.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.2.1/remote/multiplex.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.2.1/remote/output-directories.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.2.1/remote/persistent.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.2.1/remote/rbe.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.2.1/remote/rules.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.2.1/remote/sandbox.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.2.1/remote/workspace.mdx",
+       "type": "FILE"
+      }
+     ]
+    },
+    "resultToken": "CBsSADjosPTw67DEuZMBQABIGw"
+   },
+   {
+    "directorySearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/8.0.1/remote/",
+      "type": "DIRECTORY"
+     },
+     "childEntries": [
+      {
+       "path": "docs/versions/8.0.1/remote/bep-examples.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.0.1/remote/bep-glossary.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.0.1/remote/bep.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.0.1/remote/cache-local.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.0.1/remote/cache-remote.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.0.1/remote/caching.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.0.1/remote/ci.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.0.1/remote/creating.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.0.1/remote/dynamic.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.0.1/remote/multiplex.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.0.1/remote/output-directories.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.0.1/remote/persistent.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.0.1/remote/rbe.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.0.1/remote/rules.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.0.1/remote/sandbox.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.0.1/remote/workspace.mdx",
+       "type": "FILE"
+      }
+     ]
+    },
+    "resultToken": "CBwSADjyrKuNnNWoxtEBQABIHA"
+   },
+   {
+    "directorySearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/8.6.0/remote/",
+      "type": "DIRECTORY"
+     },
+     "childEntries": [
+      {
+       "path": "docs/versions/8.6.0/remote/bep-examples.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.6.0/remote/bep-glossary.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.6.0/remote/bep.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.6.0/remote/cache-local.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.6.0/remote/cache-remote.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.6.0/remote/caching.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.6.0/remote/ci.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.6.0/remote/creating.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.6.0/remote/dynamic.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.6.0/remote/multiplex.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.6.0/remote/output-directories.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.6.0/remote/persistent.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.6.0/remote/rbe.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.6.0/remote/rules.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.6.0/remote/sandbox.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.6.0/remote/workspace.mdx",
+       "type": "FILE"
+      }
+     ]
+    },
+    "resultToken": "CB0SADici8T974Kw7dwBQABIHQ"
+   },
+   {
+    "directorySearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/7.7.1/remote/",
+      "type": "DIRECTORY"
+     },
+     "childEntries": [
+      {
+       "path": "docs/versions/7.7.1/remote/bep-examples.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/7.7.1/remote/bep-glossary.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/7.7.1/remote/bep.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/7.7.1/remote/cache-local.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/7.7.1/remote/cache-remote.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/7.7.1/remote/caching.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/7.7.1/remote/ci.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/7.7.1/remote/creating.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/7.7.1/remote/dynamic.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/7.7.1/remote/multiplex.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/7.7.1/remote/output-directories.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/7.7.1/remote/persistent.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/7.7.1/remote/rbe.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/7.7.1/remote/rules.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/7.7.1/remote/sandbox.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/7.7.1/remote/workspace.mdx",
+       "type": "FILE"
+      }
+     ]
+    },
+    "resultToken": "CB4SADiYyrrS6_j7yN4BQABIHg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "site/en/remote/bep.md",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "1. The root event is always a [`BuildStarted`](/remote/bep-glossary#buildstarted)",
+         "matchingRanges": {
+          "lineNumber": "57",
+          "columnRanges": [
+           {
+            "startIndex": 48,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "57",
+         "ranges": [
+          {
+           "startIndex": 48,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "   event. All other events are its descendants.",
+         "matchingRanges": {
+          "lineNumber": "58"
+         },
+         "lineNumber": "58"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "   results, appear before the [`BuildFinished`](/remote/bep-glossary#buildfinished)",
+         "matchingRanges": {
+          "lineNumber": "62",
+          "columnRanges": [
+           {
+            "startIndex": 49,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "62",
+         "ranges": [
+          {
+           "startIndex": 49,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "   event.",
+         "matchingRanges": {
+          "lineNumber": "63"
+         },
+         "lineNumber": "63"
+        },
+        {
+         "lineText": "1. The [`BuildFinished`](/remote/bep-glossary#buildfinished) event *may* be followed",
+         "matchingRanges": {
+          "lineNumber": "64",
+          "columnRanges": [
+           {
+            "startIndex": 26,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "64",
+         "ranges": [
+          {
+           "startIndex": 26,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "These settings can be controlled using the below flags. Please note that these",
+         "matchingRanges": {
+          "lineNumber": "123"
+         },
+         "lineNumber": "123"
+        },
+        {
+         "lineText": "flags are also used for Bazel’s Remote Execution. This implies that the Build",
+         "matchingRanges": {
+          "lineNumber": "124",
+          "columnRanges": [
+           {
+            "startIndex": 32,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "124",
+         "ranges": [
+          {
+           "startIndex": 32,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "Event Service and Remote Execution Endpoints need to share the same",
+         "matchingRanges": {
+          "lineNumber": "125",
+          "columnRanges": [
+           {
+            "startIndex": 18,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "125",
+         "ranges": [
+          {
+           "startIndex": 18,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "authentication and TLS infrastructure.",
+         "matchingRanges": {
+          "lineNumber": "126"
+         },
+         "lineNumber": "126"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 10
+    },
+    "resultToken": "CB8SAggBOILmlMjXr_DaUEAASB8"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "site/en/remote/rbe.md",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "# Remote Execution Overview",
+         "matchingRanges": {
+          "lineNumber": "4",
+          "columnRanges": [
+           {
+            "startIndex": 2,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "4",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 27
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 2,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "5"
+         },
+         "lineNumber": "5",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {}
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "with remote execution.",
+         "matchingRanges": {
+          "lineNumber": "9",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "9",
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "10"
+         },
+         "lineNumber": "10"
+        },
+        {
+         "lineText": "By default, Bazel executes builds and tests on your local machine. Remote",
+         "matchingRanges": {
+          "lineNumber": "11",
+          "columnRanges": [
+           {
+            "startIndex": 67,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "11",
+         "ranges": [
+          {
+           "startIndex": 67,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "Remote execution provides the following benefits:",
+         "matchingRanges": {
+          "lineNumber": "15",
+          "columnRanges": [
+           {
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "15",
+         "ranges": [
+          {
+           "length": 6
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "16"
+         },
+         "lineNumber": "16"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "self-service tools, see",
+         "matchingRanges": {
+          "lineNumber": "27"
+         },
+         "lineNumber": "27"
+        },
+        {
+         "lineText": "[Remote Execution Services](https://www.bazel.build/remote-execution-services.html){: .external}",
+         "matchingRanges": {
+          "lineNumber": "28",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 6
+           },
+           {
+            "startIndex": 52,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "28",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "length": 83
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 6
+          },
+          {
+           "startIndex": 52,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "29"
+         },
+         "lineNumber": "29"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 10
+    },
+    "resultToken": "CCASAggBOPC3n-uhrsvZcEAASCA"
+   },
+   {
+    "directorySearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "third_party/remoteapis/build/bazel/remote/execution/v2/",
+      "type": "DIRECTORY"
+     },
+     "childEntries": [
+      {
+       "path": "third_party/remoteapis/build/bazel/remote/execution/v2/remote_execution.proto",
+       "type": "FILE"
+      }
+     ]
+    },
+    "resultToken": "CCESADiC2PbP3Z7NmbQBQABIIQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/remote/RemoteActionFileSystemTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "@RunWith(TestParameterInjector.class)",
+         "matchingRanges": {
+          "lineNumber": "75"
+         },
+         "lineNumber": "75",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 31,
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "public final class RemoteActionFileSystemTest extends RemoteActionFileSystemTestBase {",
+         "matchingRanges": {
+          "lineNumber": "76",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 6
+           },
+           {
+            "startIndex": 54,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "76",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 13,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 46,
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 6
+          },
+          {
+           "startIndex": 54,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "  private static final RemoteOutputChecker DUMMY_REMOTE_OUTPUT_CHECKER =",
+         "matchingRanges": {
+          "lineNumber": "77",
+          "columnRanges": [
+           {
+            "startIndex": 23,
+            "length": 6
+           },
+           {
+            "startIndex": 49,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "77",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 17,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 23,
+           "length": 6
+          },
+          {
+           "startIndex": 49,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    LOCAL,",
+         "matchingRanges": {
+          "lineNumber": "90"
+         },
+         "lineNumber": "90"
+        },
+        {
+         "lineText": "    REMOTE;",
+         "matchingRanges": {
+          "lineNumber": "91",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "91",
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "92"
+         },
+         "lineNumber": "92"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  @CanIgnoreReturnValue",
+         "matchingRanges": {
+          "lineNumber": "1160"
+         },
+         "lineNumber": "1160"
+        },
+        {
+         "lineText": "  protected FileArtifactValue injectRemoteFile(",
+         "matchingRanges": {
+          "lineNumber": "1161",
+          "columnRanges": [
+           {
+            "startIndex": 36,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "1161",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 9
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 36,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "      FileSystem actionFs, PathFragment path, String content) throws IOException {",
+         "matchingRanges": {
+          "lineNumber": "1162"
+         },
+         "lineNumber": "1162",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 62,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 40
+    },
+    "resultToken": "CCISBAgBIAE4wqn-vrXS_MhLQABIIg"
+   },
+   {
+    "directorySearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/tools/remote/src/test/java/com/",
+      "type": "DIRECTORY"
+     },
+     "childEntries": [
+      {
+       "path": "src/tools/remote/src/test/java/com/google/",
+       "type": "DIRECTORY"
+      }
+     ]
+    },
+    "resultToken": "CCMSADj8zJTm6-ivqCtAAEgj"
+   },
+   {
+    "directorySearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/tools/remote/src/main/cpp/",
+      "type": "DIRECTORY"
+     },
+     "childEntries": [
+      {
+       "path": "src/tools/remote/src/main/cpp/testonly_output_service/",
+       "type": "DIRECTORY"
+      }
+     ]
+    },
+    "resultToken": "CCQSADjU2dfp4u6ZzfUBQABIJA"
+   },
+   {
+    "directorySearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/tools/remote/src/test/java/com/google/devtools/build/remote/",
+      "type": "DIRECTORY"
+     },
+     "childEntries": [
+      {
+       "path": "src/tools/remote/src/test/java/com/google/devtools/build/remote/worker/",
+       "type": "DIRECTORY"
+      }
+     ]
+    },
+    "resultToken": "CCUSADj09Pjlo6SR8qYBQABIJQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "site/en/remote/rules.md",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "# Adapting Bazel Rules for Remote Execution",
+         "matchingRanges": {
+          "lineNumber": "4",
+          "columnRanges": [
+           {
+            "startIndex": 27,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "4",
+         "ranges": [
+          {
+           "startIndex": 27,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "5"
+         },
+         "lineNumber": "5"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "remote execution.",
+         "matchingRanges": {
+          "lineNumber": "10",
+          "columnRanges": [
+           {
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "10",
+         "ranges": [
+          {
+           "length": 6
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "11"
+         },
+         "lineNumber": "11"
+        },
+        {
+         "lineText": "Remote execution allows Bazel to execute actions on a separate platform, such as",
+         "matchingRanges": {
+          "lineNumber": "12",
+          "columnRanges": [
+           {
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "12",
+         "ranges": [
+          {
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "a datacenter. Bazel uses a",
+         "matchingRanges": {
+          "lineNumber": "13"
+         },
+         "lineNumber": "13"
+        },
+        {
+         "lineText": "[gRPC protocol](https://github.com/bazelbuild/remote-apis/blob/main/build/bazel/remote/execution/v2/remote_execution.proto){: .external}",
+         "matchingRanges": {
+          "lineNumber": "14",
+          "columnRanges": [
+           {
+            "startIndex": 46,
+            "length": 6
+           },
+           {
+            "startIndex": 80,
+            "length": 6
+           },
+           {
+            "startIndex": 100,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "14",
+         "ranges": [
+          {
+           "startIndex": 46,
+           "length": 6
+          },
+          {
+           "startIndex": 80,
+           "length": 6
+          },
+          {
+           "startIndex": 100,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "execution. Use the sandbox to prepare your build for remote execution by",
+         "matchingRanges": {
+          "lineNumber": "89",
+          "columnRanges": [
+           {
+            "startIndex": 53,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "89",
+         "ranges": [
+          {
+           "startIndex": 53,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "identifying and resolving dependency-related build errors. See [Troubleshooting Bazel Remote Execution with Docker Sandbox](/remote/sandbox)",
+         "matchingRanges": {
+          "lineNumber": "90",
+          "columnRanges": [
+           {
+            "startIndex": 86,
+            "length": 6
+           },
+           {
+            "startIndex": 125,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "90",
+         "ranges": [
+          {
+           "startIndex": 86,
+           "length": 6
+          },
+          {
+           "startIndex": 125,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "for more information.",
+         "matchingRanges": {
+          "lineNumber": "91"
+         },
+         "lineNumber": "91"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 34
+    },
+    "resultToken": "CCYSAggBOPaR5e7Fxv-MbUAASCY"
+   },
+   {
+    "directorySearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/tools/remote/src/main/java/",
+      "type": "DIRECTORY"
+     },
+     "childEntries": [
+      {
+       "path": "src/tools/remote/src/main/java/com/",
+       "type": "DIRECTORY"
+      }
+     ]
+    },
+    "resultToken": "CCcSADiQrdvckd2azPIBQABIJw"
+   },
+   {
+    "directorySearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/tools/remote/src/main/java/com/google/devtools/build/remote/",
+      "type": "DIRECTORY"
+     },
+     "childEntries": [
+      {
+       "path": "src/tools/remote/src/main/java/com/google/devtools/build/remote/worker/",
+       "type": "DIRECTORY"
+      }
+     ]
+    },
+    "resultToken": "CCgSADjkw5elt_X226MBQABIKA"
+   },
+   {
+    "directorySearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/tools/remote/src/test/java/com/google/devtools/build/remote/worker/",
+      "type": "DIRECTORY"
+     },
+     "childEntries": [
+      {
+       "path": "src/tools/remote/src/test/java/com/google/devtools/build/remote/worker/BUILD",
+       "type": "FILE"
+      },
+      {
+       "path": "src/tools/remote/src/test/java/com/google/devtools/build/remote/worker/http/",
+       "type": "DIRECTORY"
+      }
+     ]
+    },
+    "resultToken": "CCkSADjW2fflhaH1zidAAEgp"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "site/en/remote/caching.md",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "# Remote Caching",
+         "matchingRanges": {
+          "lineNumber": "4",
+          "columnRanges": [
+           {
+            "startIndex": 2,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "4",
+         "ranges": [
+          {
+           "startIndex": 2,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "5"
+         },
+         "lineNumber": "5"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "This page covers remote caching, setting up a server to host the cache, and",
+         "matchingRanges": {
+          "lineNumber": "8",
+          "columnRanges": [
+           {
+            "startIndex": 17,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "8",
+         "ranges": [
+          {
+           "startIndex": 17,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "running builds using the remote cache.",
+         "matchingRanges": {
+          "lineNumber": "9",
+          "columnRanges": [
+           {
+            "startIndex": 25,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "9",
+         "ranges": [
+          {
+           "startIndex": 25,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "10"
+         },
+         "lineNumber": "10"
+        },
+        {
+         "lineText": "A remote cache is used by a team of developers and/or a continuous integration",
+         "matchingRanges": {
+          "lineNumber": "11",
+          "columnRanges": [
+           {
+            "startIndex": 2,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "11",
+         "ranges": [
+          {
+           "startIndex": 2,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "(CI) system to share build outputs. If your build is reproducible, the",
+         "matchingRanges": {
+          "lineNumber": "12"
+         },
+         "lineNumber": "12"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "You can set up a server to be a remote cache for build outputs, which are these",
+         "matchingRanges": {
+          "lineNumber": "22",
+          "columnRanges": [
+           {
+            "startIndex": 32,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "22",
+         "ranges": [
+          {
+           "startIndex": 32,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "action outputs. These outputs consist of a list of output file names and the",
+         "matchingRanges": {
+          "lineNumber": "23"
+         },
+         "lineNumber": "23"
+        },
+        {
+         "lineText": "hashes of their contents. With a remote cache, you can reuse build outputs",
+         "matchingRanges": {
+          "lineNumber": "24",
+          "columnRanges": [
+           {
+            "startIndex": 33,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "24",
+         "ranges": [
+          {
+           "startIndex": 33,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 36
+    },
+    "resultToken": "CCoSAggBONjE_7GAxMrZsAFAAEgq"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "site/en/remote/sandbox.md",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "# Troubleshooting Bazel Remote Execution with Docker Sandbox",
+         "matchingRanges": {
+          "lineNumber": "4",
+          "columnRanges": [
+           {
+            "startIndex": 24,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "4",
+         "ranges": [
+          {
+           "startIndex": 24,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "5"
+         },
+         "lineNumber": "5"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "causes of such failures are described in [Adapting Bazel Rules for Remote Execution](/remote/rules).",
+         "matchingRanges": {
+          "lineNumber": "10",
+          "columnRanges": [
+           {
+            "startIndex": 67,
+            "length": 6
+           },
+           {
+            "startIndex": 86,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "10",
+         "ranges": [
+          {
+           "startIndex": 67,
+           "length": 6
+          },
+          {
+           "startIndex": 86,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "11"
+         },
+         "lineNumber": "11"
+        },
+        {
+         "lineText": "This page describes how to identify and resolve the most common issues that",
+         "matchingRanges": {
+          "lineNumber": "12"
+         },
+         "lineNumber": "12"
+        },
+        {
+         "lineText": "arise with remote execution using the Docker sandbox feature, which imposes",
+         "matchingRanges": {
+          "lineNumber": "13",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "13",
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "restrictions upon the build equal to those of remote execution. This allows you",
+         "matchingRanges": {
+          "lineNumber": "14",
+          "columnRanges": [
+           {
+            "startIndex": 46,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "14",
+         "ranges": [
+          {
+           "startIndex": 46,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    your build rules declared in the WORKSPACE file are not compatible with",
+         "matchingRanges": {
+          "lineNumber": "256"
+         },
+         "lineNumber": "256"
+        },
+        {
+         "lineText": "    remote execution. See [Adapting Bazel Rules for Remote Execution](/remote/rules)",
+         "matchingRanges": {
+          "lineNumber": "257",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 6
+           },
+           {
+            "startIndex": 52,
+            "length": 6
+           },
+           {
+            "startIndex": 71,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "257",
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 6
+          },
+          {
+           "startIndex": 52,
+           "length": 6
+          },
+          {
+           "startIndex": 71,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "    for possible causes and workarounds.",
+         "matchingRanges": {
+          "lineNumber": "258"
+         },
+         "lineNumber": "258"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 19
+    },
+    "resultToken": "CCsSAggBOPKxgaiQjaLAJkAASCs"
+   },
+   {
+    "directorySearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/tools/remote/src/main/java/com/",
+      "type": "DIRECTORY"
+     },
+     "childEntries": [
+      {
+       "path": "src/tools/remote/src/main/java/com/google/",
+       "type": "DIRECTORY"
+      }
+     ]
+    },
+    "resultToken": "CCwSADiOnLvc-JPalu0BQABILA"
+   },
+   {
+    "directorySearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/tools/remote/src/test/java/com/google/",
+      "type": "DIRECTORY"
+     },
+     "childEntries": [
+      {
+       "path": "src/tools/remote/src/test/java/com/google/devtools/",
+       "type": "DIRECTORY"
+      }
+     ]
+    },
+    "resultToken": "CC0SADikhs3H-dO9nGFAAEgt"
+   },
+   {
+    "directorySearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/tools/remote/src/test/java/com/google/devtools/build/remote/worker/http/",
+      "type": "DIRECTORY"
+     },
+     "childEntries": [
+      {
+       "path": "src/tools/remote/src/test/java/com/google/devtools/build/remote/worker/http/AbstractHttpCacheServerHandlerTest.java",
+       "type": "FILE"
+      },
+      {
+       "path": "src/tools/remote/src/test/java/com/google/devtools/build/remote/worker/http/BUILD",
+       "type": "FILE"
+      }
+     ]
+    },
+    "resultToken": "CC4SADik593Fg6ad0pUBQABILg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "site/en/remote/creating.md",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "[Persistent workers](/remote/persistent) can make your build faster. If",
+         "matchingRanges": {
+          "lineNumber": "8",
+          "columnRanges": [
+           {
+            "startIndex": 22,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "8",
+         "ranges": [
+          {
+           "startIndex": 22,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "you have repeated actions in your build that have a high startup cost or would",
+         "matchingRanges": {
+          "lineNumber": "9"
+         },
+         "lineNumber": "9"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "The optional `sandbox_dir` field is used only by workers that support",
+         "matchingRanges": {
+          "lineNumber": "67"
+         },
+         "lineNumber": "67"
+        },
+        {
+         "lineText": "[multiplex sandboxing](/remote/multiplex).",
+         "matchingRanges": {
+          "lineNumber": "68",
+          "columnRanges": [
+           {
+            "startIndex": 24,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "68",
+         "ranges": [
+          {
+           "startIndex": 24,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "69"
+         },
+         "lineNumber": "69"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "This is particularly useful in connection with dynamic execution, where local",
+         "matchingRanges": {
+          "lineNumber": "123"
+         },
+         "lineNumber": "123"
+        },
+        {
+         "lineText": "execution can regularly be interrupted by a faster remote execution. To allow",
+         "matchingRanges": {
+          "lineNumber": "124",
+          "columnRanges": [
+           {
+            "startIndex": 51,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "124",
+         "ranges": [
+          {
+           "startIndex": 51,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "cancellation, add `supports-worker-cancellation: 1` to the",
+         "matchingRanges": {
+          "lineNumber": "125"
+         },
+         "lineNumber": "125"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 4
+    },
+    "resultToken": "CC8SAggBOOrE8efArIrpgwFAAEgv"
+   },
+   {
+    "directorySearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/tools/remote/src/main/java/com/google/devtools/build/remote/worker/",
+      "type": "DIRECTORY"
+     },
+     "childEntries": [
+      {
+       "path": "src/tools/remote/src/main/java/com/google/devtools/build/remote/worker/ActionCacheServer.java",
+       "type": "FILE"
+      },
+      {
+       "path": "src/tools/remote/src/main/java/com/google/devtools/build/remote/worker/BUILD",
+       "type": "FILE"
+      },
+      {
+       "path": "src/tools/remote/src/main/java/com/google/devtools/build/remote/worker/ByteStreamServer.java",
+       "type": "FILE"
+      },
+      {
+       "path": "src/tools/remote/src/main/java/com/google/devtools/build/remote/worker/CapabilitiesServer.java",
+       "type": "FILE"
+      },
+      {
+       "path": "src/tools/remote/src/main/java/com/google/devtools/build/remote/worker/CasServer.java",
+       "type": "FILE"
+      },
+      {
+       "path": "src/tools/remote/src/main/java/com/google/devtools/build/remote/worker/ExecutionServer.java",
+       "type": "FILE"
+      },
+      {
+       "path": "src/tools/remote/src/main/java/com/google/devtools/build/remote/worker/FetchServer.java",
+       "type": "FILE"
+      },
+      {
+       "path": "src/tools/remote/src/main/java/com/google/devtools/build/remote/worker/OnDiskBlobStoreCache.java",
+       "type": "FILE"
+      },
+      {
+       "path": "src/tools/remote/src/main/java/com/google/devtools/build/remote/worker/OnDiskHttpCacheServerHandler.java",
+       "type": "FILE"
+      },
+      {
+       "path": "src/tools/remote/src/main/java/com/google/devtools/build/remote/worker/RemoteWorker.java",
+       "type": "FILE"
+      },
+      {
+       "path": "src/tools/remote/src/main/java/com/google/devtools/build/remote/worker/RemoteWorkerOptions.java",
+       "type": "FILE"
+      },
+      {
+       "path": "src/tools/remote/src/main/java/com/google/devtools/build/remote/worker/StatusUtils.java",
+       "type": "FILE"
+      },
+      {
+       "path": "src/tools/remote/src/main/java/com/google/devtools/build/remote/worker/http/",
+       "type": "DIRECTORY"
+      }
+     ]
+    },
+    "resultToken": "CDASADiAt9qG99-X7VdAAEgw"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/remote/ci.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "---",
+         "matchingRanges": {
+          "lineNumber": "1"
+         },
+         "lineNumber": "1"
+        },
+        {
+         "lineText": "title: 'Configuring Bazel CI to Test Rules for Remote Execution'",
+         "matchingRanges": {
+          "lineNumber": "2",
+          "columnRanges": [
+           {
+            "startIndex": 47,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "2",
+         "ranges": [
+          {
+           "startIndex": 47,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "---",
+         "matchingRanges": {
+          "lineNumber": "3"
+         },
+         "lineNumber": "3"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "describes how to configure the Bazel Continuous Integration (CI) system for",
+         "matchingRanges": {
+          "lineNumber": "8"
+         },
+         "lineNumber": "8"
+        },
+        {
+         "lineText": "your repository to test your rules for compatibility against a remote execution",
+         "matchingRanges": {
+          "lineNumber": "9",
+          "columnRanges": [
+           {
+            "startIndex": 63,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "9",
+         "ranges": [
+          {
+           "startIndex": 63,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "scenario. The instructions on this page apply to projects stored in",
+         "matchingRanges": {
+          "lineNumber": "10"
+         },
+         "lineNumber": "10"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "*   **Build or test targets are using rules that are incompatible with remote",
+         "matchingRanges": {
+          "lineNumber": "74",
+          "columnRanges": [
+           {
+            "startIndex": 71,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "74",
+         "ranges": [
+          {
+           "startIndex": 71,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "    execution.** See",
+         "matchingRanges": {
+          "lineNumber": "75"
+         },
+         "lineNumber": "75"
+        },
+        {
+         "lineText": "    [Adapting Bazel Rules for Remote Execution](/remote/rules) for",
+         "matchingRanges": {
+          "lineNumber": "76",
+          "columnRanges": [
+           {
+            "startIndex": 30,
+            "length": 6
+           },
+           {
+            "startIndex": 49,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "76",
+         "ranges": [
+          {
+           "startIndex": 30,
+           "length": 6
+          },
+          {
+           "startIndex": 49,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "    details about compatibility with remote execution.",
+         "matchingRanges": {
+          "lineNumber": "77",
+          "columnRanges": [
+           {
+            "startIndex": 37,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "77",
+         "ranges": [
+          {
+           "startIndex": 37,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 7
+    },
+    "resultToken": "CDESAggBOJ7oh5qyp9TTnQFAAEgx"
+   }
+  ],
+  "estimatedResultCount": "3121",
+  "nextPageToken": "CLLCls7j3I2SAwiW453Mr+zTrBAIgrqDt+jSqbUXCJKcse3vxrqgHgi249vFw+foniMI8rGBqJCNosAmCNbZ9+WFofXOJwi0zc3BpOTI5ScIqOPH+eOyuLIoCJLXtOmqtsfBKAikz+KIlsv15SgI/MyU5uvor6grCJr/vODf1PvdMwiKmKzU8omOxDQIjvCbpNyx+7VBCKLPzvufzcaZQgjuh5ik/b3OtkMIju/etMzT5pBFCMKp/r610vzISwiC5pTI16/w2lAIgLfahvffl+1XCKSGzcf5072cYQiulJ2uhYn4o2YIuPmA7sv9gu1nCLignvKh9+uBbAj2keXuxcb/jG0I8Lef66Guy9lwCOrE8efArIrpgwEI6MefnJToxZCGAQju89Tzta6x5o0BCOiw9PDrsMS5kwEIpOfdxYOmndKVAQj6nImz6KLNu5oBCJ7oh5qyp9TTnQEI5MOXpbf19tujAQj09Pjlo6SR8qYBCNjE/7GAxMrZsAEIgtj2z92ezZm0AQisl9ip3aH027YBCJrziKqR9POiuwEIvKfxkZCft8nOAQjyrKuNnNWoxtEBCJyLxP3vgrDt3AEImMq60uv4+8jeAQiA3q/y1Imsr+cBCI6cu9z4k9qW7QEIkK3b3JHdmszyAQiy84SR/JbBg/UBCNTZ1+ni7pnN9QEIivDEsvTVtJn8AQ==",
+  "requestToken": "CgZyZW1vdGUSIyggZ2l0OmJhemVsL2JhemVsQG1hc3RlciBjYXNlOnllcyApGgwI3e2s0QYQl_6kvAMgDCoAMgBIAQ"
+ }
+}

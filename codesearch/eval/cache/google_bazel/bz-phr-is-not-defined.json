@@ -1,0 +1,4810 @@
+{
+ "query": "\"is not defined\"",
+ "oss_project": "bazel",
+ "repo_name": "bazel",
+ "page_size": 50,
+ "fetched_at": "2026-06-11T22:28:46Z",
+ "response": {
+  "searchResults": [
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "third_party/py/abseil/absl/flags/_defines.py",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  Raises:",
+         "matchingRanges": {
+          "lineNumber": "187"
+         },
+         "lineNumber": "187",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "length": 9
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    UnrecognizedFlagError: Raised when the flag is not defined.",
+         "matchingRanges": {
+          "lineNumber": "188",
+          "columnRanges": [
+           {
+            "startIndex": 48,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "188",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "length": 63
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 48,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "  \"\"\"",
+         "matchingRanges": {
+          "lineNumber": "189"
+         },
+         "lineNumber": "189",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAASAggBOMTT_qGhi6eqmwFAAEgA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/shell/integration/configured_query_test.sh",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  assert_contains \"invalid --starlark:expr: name 'no_symbol' is not defined\" $TEST_log",
+         "matchingRanges": {
+          "lineNumber": "1298",
+          "columnRanges": [
+           {
+            "startIndex": 61,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "1298",
+         "ranges": [
+          {
+           "startIndex": 61,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "1299"
+         },
+         "lineNumber": "1299"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAESAggBOMS6hIyg8Y6VP0AASAE"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/runtime/ConfigExpander.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "      throw new OptionsParsingException(",
+         "matchingRanges": {
+          "lineNumber": "299"
+         },
+         "lineNumber": "299",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "          \"Config value '\" + configToExpand + \"' is not defined in any .rc file\");",
+         "matchingRanges": {
+          "lineNumber": "300",
+          "columnRanges": [
+           {
+            "startIndex": 49,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "300",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 10,
+            "length": 16
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 46,
+            "length": 34
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 49,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "    }",
+         "matchingRanges": {
+          "lineNumber": "301"
+         },
+         "lineNumber": "301"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAISAggBOITwv7jwsM3ydUAASAI"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "CHANGELOG.md",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  - New bazelrc file list.",
+         "matchingRanges": {
+          "lineNumber": "21780"
+         },
+         "lineNumber": "21780"
+        },
+        {
+         "lineText": "  - Windows: when BAZEL_SH envvar is not defined and Bazel searches",
+         "matchingRanges": {
+          "lineNumber": "21781",
+          "columnRanges": [
+           {
+            "startIndex": 34,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "21781",
+         "ranges": [
+          {
+           "startIndex": 34,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "    for a suitable bash.exe, Bazel will no longer look for Git Bash",
+         "matchingRanges": {
+          "lineNumber": "21782"
+         },
+         "lineNumber": "21782"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAMSAggBOM6Q6oHo3avs2AFAAEgD"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/analysis/PrerequisitesCollection.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    Preconditions.checkNotNull(",
+         "matchingRanges": {
+          "lineNumber": "284"
+         },
+         "lineNumber": "284"
+        },
+        {
+         "lineText": "        ruleDefinition, \"%s attribute %s is not defined\", ruleClassNameForLogging, attributeName);",
+         "matchingRanges": {
+          "lineNumber": "285",
+          "columnRanges": [
+           {
+            "startIndex": 41,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "285",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 24,
+            "length": 32
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 41,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "    Preconditions.checkState(",
+         "matchingRanges": {
+          "lineNumber": "286"
+         },
+         "lineNumber": "286"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "        attributeDefinition,",
+         "matchingRanges": {
+          "lineNumber": "319"
+         },
+         "lineNumber": "319"
+        },
+        {
+         "lineText": "        \"%s: %s attribute %s is not defined\",",
+         "matchingRanges": {
+          "lineNumber": "320",
+          "columnRanges": [
+           {
+            "startIndex": 29,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "320",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 36
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 29,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "        rule.getLocation(),",
+         "matchingRanges": {
+          "lineNumber": "321"
+         },
+         "lineNumber": "321"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAQSAggBOKDLnNSAnveF4AFAAEgE"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/remote/util/TracingMetadataUtils.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "   *",
+         "matchingRanges": {
+          "lineNumber": "98"
+         },
+         "lineNumber": "98",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "   * @throws IllegalStateException when the metadata is not defined in the current context.",
+         "matchingRanges": {
+          "lineNumber": "99",
+          "columnRanges": [
+           {
+            "startIndex": 53,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "99",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 91
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 53,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "   */",
+         "matchingRanges": {
+          "lineNumber": "100"
+         },
+         "lineNumber": "100",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAUSAggBOJL3x_vvrrnjekAASAU"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/rules/repository/RepoRecordedInput.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "        // that for us instead. This also sidesteps an awkward situation when the external repo in",
+         "matchingRanges": {
+          "lineNumber": "394"
+         },
+         "lineNumber": "394",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 8,
+            "length": 90
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "        // question is not defined.",
+         "matchingRanges": {
+          "lineNumber": "395",
+          "columnRanges": [
+           {
+            "startIndex": 20,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "395",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 8,
+            "length": 27
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 20,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "        root =",
+         "matchingRanges": {
+          "lineNumber": "396"
+         },
+         "lineNumber": "396"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAYSAggBOOTc46HQ5dSdngFAAEgG"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/cpp/util/port.h",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "//",
+         "matchingRanges": {
+          "lineNumber": "51"
+         },
+         "lineNumber": "51",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "// It evaluates to zero if `__has_attribute` is not defined by the compiler.",
+         "matchingRanges": {
+          "lineNumber": "52",
+          "columnRanges": [
+           {
+            "startIndex": 45,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "52",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 76
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 45,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "//",
+         "matchingRanges": {
+          "lineNumber": "53"
+         },
+         "lineNumber": "53",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAcSAggBOPK85qDX-YX31QFAAEgH"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/net/starlark/java/eval/Module.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    candidates.addAll(Starlark.UNIVERSE.keySet());",
+         "matchingRanges": {
+          "lineNumber": "276"
+         },
+         "lineNumber": "276"
+        },
+        {
+         "lineText": "    throw new Undefined(String.format(\"name '%s' is not defined\", name), candidates);",
+         "matchingRanges": {
+          "lineNumber": "277",
+          "columnRanges": [
+           {
+            "startIndex": 49,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "277",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 38,
+            "length": 26
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 49,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "  }",
+         "matchingRanges": {
+          "lineNumber": "278"
+         },
+         "lineNumber": "278"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAgSAggBOJqrgdPXyLn_igFAAEgI"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/buildtool/MiscAnalysisTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    Exception e = assertThrows(Exception.class, () -\u003e buildTarget(\"//pkg:all\"));",
+         "matchingRanges": {
+          "lineNumber": "308"
+         },
+         "lineNumber": "308",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 41,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 66,
+            "length": 11
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    events.assertContainsError(\"name 'unknown_value' is not defined\");",
+         "matchingRanges": {
+          "lineNumber": "309",
+          "columnRanges": [
+           {
+            "startIndex": 53,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "309",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 31,
+            "length": 37
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 53,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "    assertPkgErrorMsg(e);",
+         "matchingRanges": {
+          "lineNumber": "310"
+         },
+         "lineNumber": "310"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAkSAggBOOaA6cLlioC6OEAASAk"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/packages/AttributeProvider.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "   *",
+         "matchingRanges": {
+          "lineNumber": "104"
+         },
+         "lineNumber": "104",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "   * \u003cp\u003eReturns null if the named attribute is not defined for this class of rule or macro.",
+         "matchingRanges": {
+          "lineNumber": "105",
+          "columnRanges": [
+           {
+            "startIndex": 44,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "105",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 91
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 44,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "   */",
+         "matchingRanges": {
+          "lineNumber": "106"
+         },
+         "lineNumber": "106",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAoSAggBOJyepumvnPyDjgFAAEgK"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/packages/BuiltinRestriction.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "   * Throws {@code EvalException} if the innermost Starlark function in the given thread's call",
+         "matchingRanges": {
+          "lineNumber": "213"
+         },
+         "lineNumber": "213",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 95
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "   * stack is not defined within the builtins repository.",
+         "matchingRanges": {
+          "lineNumber": "214",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "214",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 57
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "   */",
+         "matchingRanges": {
+          "lineNumber": "215"
+         },
+         "lineNumber": "215",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "   * Throws {@code EvalException} if the innermost Starlark function in the given thread's call",
+         "matchingRanges": {
+          "lineNumber": "221"
+         },
+         "lineNumber": "221",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 95
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "   * stack is not defined within either 1) the builtins repository, or 2) a package or subpackage of",
+         "matchingRanges": {
+          "lineNumber": "222",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "222",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 100
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "   * an entry in the given allowlist.",
+         "matchingRanges": {
+          "lineNumber": "223"
+         },
+         "lineNumber": "223",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 37
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAsSAggBOK7E8fKlgKXDiAFAAEgL"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "third_party/py/abseil/absl/testing/parameterized.py",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "      # the parameterized.TestCase definition itself, this raises because",
+         "matchingRanges": {
+          "lineNumber": "588"
+         },
+         "lineNumber": "588",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 6,
+            "length": 67
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "      # itself is not defined yet. This works as long as absltest.TestCase does",
+         "matchingRanges": {
+          "lineNumber": "589",
+          "columnRanges": [
+           {
+            "startIndex": 15,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "589",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 6,
+            "length": 73
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 15,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "      # not define _test_params_reprs.",
+         "matchingRanges": {
+          "lineNumber": "590"
+         },
+         "lineNumber": "590",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 6,
+            "length": 32
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAwSAggBOILQrLyb_oji7gFAAEgM"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/pkgcache/LoadingPhaseRunnerTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    }",
+         "matchingRanges": {
+          "lineNumber": "1606"
+         },
+         "lineNumber": "1606"
+        },
+        {
+         "lineText": "    tester.assertContainsError(\"/workspace/bad/BUILD:1:1: name 'nope' is not defined\");",
+         "matchingRanges": {
+          "lineNumber": "1607",
+          "columnRanges": [
+           {
+            "startIndex": 70,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "1607",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 31,
+            "length": 54
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 70,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "  }",
+         "matchingRanges": {
+          "lineNumber": "1608"
+         },
+         "lineNumber": "1608"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    }",
+         "matchingRanges": {
+          "lineNumber": "1755"
+         },
+         "lineNumber": "1755"
+        },
+        {
+         "lineText": "    tester.assertContainsError(\"/workspace/bad/f1.bzl:1:1: name 'nope' is not defined\");",
+         "matchingRanges": {
+          "lineNumber": "1756",
+          "columnRanges": [
+           {
+            "startIndex": 71,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "1756",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 31,
+            "length": 55
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 71,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "  }",
+         "matchingRanges": {
+          "lineNumber": "1757"
+         },
+         "lineNumber": "1757"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CA0SAggBOPaYwtDmyvXNLEAASA0"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/net/starlark/java/syntax/Resolver.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "     *",
+         "matchingRanges": {
+          "lineNumber": "444"
+         },
+         "lineNumber": "444",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "     * @throws Undefined if the name is not defined. The exception may contain a set of available",
+         "matchingRanges": {
+          "lineNumber": "445",
+          "columnRanges": [
+           {
+            "startIndex": 37,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "445",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 97
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 37,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "     *     candidate names that are predefined symbols.",
+         "matchingRanges": {
+          "lineNumber": "446"
+         },
+         "lineNumber": "446",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 55
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "     * @return null if the name is known but not a type constructor.",
+         "matchingRanges": {
+          "lineNumber": "453"
+         },
+         "lineNumber": "453",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 68
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "     * @throws Undefined if the name is not defined, as per {@link #resolve}.",
+         "matchingRanges": {
+          "lineNumber": "454",
+          "columnRanges": [
+           {
+            "startIndex": 37,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "454",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 77
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 37,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "     */",
+         "matchingRanges": {
+          "lineNumber": "455"
+         },
+         "lineNumber": "455",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 7
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CA4SAggBOPCHxcfxl5yp-AFAAEgO"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/rules/cpp/CcToolchainFeatures.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "          \"Invalid toolchain configuration: feature '%s', which is referenced from feature '%s',\"",
+         "matchingRanges": {
+          "lineNumber": "1334"
+         },
+         "lineNumber": "1334",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 10,
+            "length": 87
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "              + \" is not defined.\",",
+         "matchingRanges": {
+          "lineNumber": "1335",
+          "columnRanges": [
+           {
+            "startIndex": 18,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "1335",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 16,
+            "length": 18
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 18,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "          name, reference);",
+         "matchingRanges": {
+          "lineNumber": "1336"
+         },
+         "lineNumber": "1336"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CA8SAggBOOSsqrao9MesdEAASA8"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/packages/BuiltinsInternalModule.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "              + \" (Note that for clarity and to avoid a conceptual cycle, the regular top-level\"",
+         "matchingRanges": {
+          "lineNumber": "76"
+         },
+         "lineNumber": "76",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 16,
+            "length": 80
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "              + \" \u003ccode\u003enative\u003c/code\u003e object is not defined for \u003ccode\u003e@_builtins\u003c/code\u003e .bzl\"",
+         "matchingRanges": {
+          "lineNumber": "77",
+          "columnRanges": [
+           {
+            "startIndex": 45,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "77",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 16,
+            "length": 77
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 45,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "              + \" files.)\",",
+         "matchingRanges": {
+          "lineNumber": "78"
+         },
+         "lineNumber": "78",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 16,
+            "length": 10
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBASAggBOMKbzJiFs-W0NkAASBA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/analysis/starlark/StarlarkRuleContext.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "        \"No attribute '%s' in split_attr.\"",
+         "matchingRanges": {
+          "lineNumber": "581"
+         },
+         "lineNumber": "581",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 34
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "            + \"This attribute is not defined with a split configuration.\");",
+         "matchingRanges": {
+          "lineNumber": "582",
+          "columnRanges": [
+           {
+            "startIndex": 30,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "582",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 14,
+            "length": 59
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 30,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "  }",
+         "matchingRanges": {
+          "lineNumber": "583"
+         },
+         "lineNumber": "583"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    if (outputsObject == null) {",
+         "matchingRanges": {
+          "lineNumber": "803"
+         },
+         "lineNumber": "803",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "      throw new EvalException(\"'outputs' is not defined\");",
+         "matchingRanges": {
+          "lineNumber": "804",
+          "columnRanges": [
+           {
+            "startIndex": 41,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "804",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 30,
+            "length": 26
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 41,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "    }",
+         "matchingRanges": {
+          "lineNumber": "805"
+         },
+         "lineNumber": "805"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CBESAggBONy-16Lay72EE0AASBE"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/profiler/LocalResourceUsageCollectors.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    public void collect(double deltaNanos, BiConsumer\u003cCounterSeriesTask, Double\u003e consumer) {",
+         "matchingRanges": {
+          "lineNumber": "400"
+         },
+         "lineNumber": "400",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 11,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "      // The pressure stall indicator for full CPU metric is not defined.",
+         "matchingRanges": {
+          "lineNumber": "401",
+          "columnRanges": [
+           {
+            "startIndex": 58,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "401",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 6,
+            "length": 67
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 58,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "      double pressureStallFullIo = ResourceUsage.readPressureStallIndicator(IO, FULL);",
+         "matchingRanges": {
+          "lineNumber": "402"
+         },
+         "lineNumber": "402"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBISAggBOPS1_M7dv4asaEAASBI"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "site/en/external/faq.md",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    3.  Otherwise, `@bar` resolves to `@@bar`. This most likely will point to a",
+         "matchingRanges": {
+          "lineNumber": "239"
+         },
+         "lineNumber": "239"
+        },
+        {
+         "lineText": "        repo `bar` defined in WORKSPACE; if such a repo is not defined, Bazel",
+         "matchingRanges": {
+          "lineNumber": "240",
+          "columnRanges": [
+           {
+            "startIndex": 56,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "240",
+         "ranges": [
+          {
+           "startIndex": 56,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "        will throw an error.",
+         "matchingRanges": {
+          "lineNumber": "241"
+         },
+         "lineNumber": "241"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBMSAggBOLrYzdbhmZ6E8QFAAEgT"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/tools/launcher/launcher_main.cc",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// MinGW requires linkopt=-municode to use wmain as entry point.",
+         "matchingRanges": {
+          "lineNumber": "71"
+         },
+         "lineNumber": "71",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 64
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "// The below allows fallback to main when BAZEL_MINGW_UNICODE is not defined.",
+         "matchingRanges": {
+          "lineNumber": "72",
+          "columnRanges": [
+           {
+            "startIndex": 62,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "72",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 77
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 62,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "// Otherwise, to use wmain directly, one needs to use both linkopt=-municode and",
+         "matchingRanges": {
+          "lineNumber": "73"
+         },
+         "lineNumber": "73",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 80
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBQSAggBOPq86KPppfLHWUAASBQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/analysis/starlark/StarlarkRuleClassFunctions.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "          throw Starlark.errorf(",
+         "matchingRanges": {
+          "lineNumber": "1418"
+         },
+         "lineNumber": "1418",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "              \"Starlark aspect attribute '%s' is late-bound but somehow is not defined in Starlark.\"",
+         "matchingRanges": {
+          "lineNumber": "1419",
+          "columnRanges": [
+           {
+            "startIndex": 72,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "1419",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 14,
+            "length": 86
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 72,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "                  + \" This violates an invariant inside of Bazel. Please file a bug with\"",
+         "matchingRanges": {
+          "lineNumber": "1420"
+         },
+         "lineNumber": "1420",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 69
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBUSAggBOKqSzKGWxs_VWUAASBU"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "site/en/query/language.md",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "singleton set containing either `//foo:main` or `//bar:baz`—though which",
+         "matchingRanges": {
+          "lineNumber": "634"
+         },
+         "lineNumber": "634"
+        },
+        {
+         "lineText": "one is not defined. The expression `some(//foo:main union //bar:baz, 2)` or",
+         "matchingRanges": {
+          "lineNumber": "635",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "635",
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "`some(//foo:main union //bar:baz, 3)` returns both `//foo:main` and",
+         "matchingRanges": {
+          "lineNumber": "636"
+         },
+         "lineNumber": "636"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBYSAggBOMTf3-PVvbq1nQFAAEgW"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/shell/integration/ui_test.sh",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "      pkgloadingerror:all \u003e \"${TEST_log}\" 2\u003e\u00261 \u0026\u0026 fail \"expected failure\"",
+         "matchingRanges": {
+          "lineNumber": "622"
+         },
+         "lineNumber": "622"
+        },
+        {
+         "lineText": "  expect_log \"^ERROR: $(pwd)/bzl/bzl.bzl:1:5: name 'invalidsyntax' is not defined\"",
+         "matchingRanges": {
+          "lineNumber": "623",
+          "columnRanges": [
+           {
+            "startIndex": 67,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "623",
+         "ranges": [
+          {
+           "startIndex": 67,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "624"
+         },
+         "lineNumber": "624"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "      pkgloadingerror:all \u003e \"${TEST_log}\" 2\u003e\u00261 \u0026\u0026 fail \"expected failure\"",
+         "matchingRanges": {
+          "lineNumber": "626"
+         },
+         "lineNumber": "626"
+        },
+        {
+         "lineText": "  expect_log \"^ERROR: bzl/bzl.bzl:1:5: name 'invalidsyntax' is not defined\"",
+         "matchingRanges": {
+          "lineNumber": "627",
+          "columnRanges": [
+           {
+            "startIndex": 60,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "627",
+         "ranges": [
+          {
+           "startIndex": 60,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "  expect_not_log \"$(pwd)/bzl/bzl.bzl\"",
+         "matchingRanges": {
+          "lineNumber": "628"
+         },
+         "lineNumber": "628"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  bazel build pkgloadingerror:all \u003e \"${TEST_log}\" 2\u003e\u00261 \u0026\u0026 fail \"expected failure\"",
+         "matchingRanges": {
+          "lineNumber": "642"
+         },
+         "lineNumber": "642"
+        },
+        {
+         "lineText": "  expect_log \"^ERROR: .*/bzl/bzl.bzl:1:5: name 'invalidsyntax' is not defined\"",
+         "matchingRanges": {
+          "lineNumber": "643",
+          "columnRanges": [
+           {
+            "startIndex": 63,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "643",
+         "ranges": [
+          {
+           "startIndex": 63,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "  expect_log \"^WARNING: Target pattern parsing failed.\"",
+         "matchingRanges": {
+          "lineNumber": "644"
+         },
+         "lineNumber": "644"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 9
+    },
+    "resultToken": "CBcSAggBOJrRmbWS34ukEkAASBc"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/shell/unittest.bash",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "#",
+         "matchingRanges": {
+          "lineNumber": "68"
+         },
+         "lineNumber": "68"
+        },
+        {
+         "lineText": "# The order in which test functions are run is not defined, so it is",
+         "matchingRanges": {
+          "lineNumber": "69",
+          "columnRanges": [
+           {
+            "startIndex": 44,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "69",
+         "ranges": [
+          {
+           "startIndex": 44,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "# important that tests clean up after themselves.",
+         "matchingRanges": {
+          "lineNumber": "70"
+         },
+         "lineNumber": "70"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBgSAggBOMj_j6ObrMm9cEAASBg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/net/starlark/java/eval/StarlarkThreadDebuggingTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    assertThat(e).hasMessageThat().isEqualTo(\"name 'b' is not defined\");",
+         "matchingRanges": {
+          "lineNumber": "308",
+          "columnRanges": [
+           {
+            "startIndex": 55,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "308",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 45,
+            "length": 25
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 55,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "  }",
+         "matchingRanges": {
+          "lineNumber": "309"
+         },
+         "lineNumber": "309"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBkSAggBOMC3k6vEz9qhpwFAAEgZ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/skyframe/ProjectValue.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  /**",
+         "matchingRanges": {
+          "lineNumber": "182"
+         },
+         "lineNumber": "182",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "   * Returns the map of named {@code project_directories} in the project. If the map is not defined",
+         "matchingRanges": {
+          "lineNumber": "183",
+          "columnRanges": [
+           {
+            "startIndex": 85,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "183",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 99
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 85,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "   * in the file, returns an empty map.",
+         "matchingRanges": {
+          "lineNumber": "184"
+         },
+         "lineNumber": "184",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 39
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBoSAggBOLif_6-Dq-rUggFAAEga"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/shell/bazel/cc_integration_test.sh",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  nm -u bazel-bin/\"$pkg\"/e  | grep alongernamethanusual \u0026\u0026 \\",
+         "matchingRanges": {
+          "lineNumber": "531"
+         },
+         "lineNumber": "531"
+        },
+        {
+         "lineText": "    fail \"alongernamethanusual is not defined\"",
+         "matchingRanges": {
+          "lineNumber": "532",
+          "columnRanges": [
+           {
+            "startIndex": 31,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "532",
+         "ranges": [
+          {
+           "startIndex": 31,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "533"
+         },
+         "lineNumber": "533"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBsSAggBOMKHwYnE1qizaUAASBs"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/py/bazel/test_base.py",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "class EnvVarUndefinedError(Error):",
+         "matchingRanges": {
+          "lineNumber": "60"
+         },
+         "lineNumber": "60",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  \"\"\"An expected environment variable is not defined.\"\"\"",
+         "matchingRanges": {
+          "lineNumber": "61",
+          "columnRanges": [
+           {
+            "startIndex": 38,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "61",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 54
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 38,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "62"
+         },
+         "lineNumber": "62"
+        },
+        {
+         "lineText": "  def __init__(self, name):",
+         "matchingRanges": {
+          "lineNumber": "63"
+         },
+         "lineNumber": "63",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    Error.__init__(self, 'Environment variable \"%s\" is not defined' % name)",
+         "matchingRanges": {
+          "lineNumber": "64",
+          "columnRanges": [
+           {
+            "startIndex": 52,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "64",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 25,
+            "length": 42
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 52,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "65"
+         },
+         "lineNumber": "65"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "      name: string; name of the environment variable",
+         "matchingRanges": {
+          "lineNumber": "250"
+         },
+         "lineNumber": "250",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "length": 52
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "      default: anything; return this value if the envvar is not defined",
+         "matchingRanges": {
+          "lineNumber": "251",
+          "columnRanges": [
+           {
+            "startIndex": 57,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "251",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "length": 71
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 57,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "    Returns:",
+         "matchingRanges": {
+          "lineNumber": "252"
+         },
+         "lineNumber": "252",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "length": 12
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CBwSAggBOPyZmvz0z7Om_QFAAEgc"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/util/LogHandlerQuerier.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    String subclassName = System.getProperty(PROPERTY_NAME);",
+         "matchingRanges": {
+          "lineNumber": "46"
+         },
+         "lineNumber": "46"
+        },
+        {
+         "lineText": "    checkNotNull(subclassName, \"System property %s is not defined\", PROPERTY_NAME);",
+         "matchingRanges": {
+          "lineNumber": "47",
+          "columnRanges": [
+           {
+            "startIndex": 51,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "47",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 31,
+            "length": 35
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 51,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "    try {",
+         "matchingRanges": {
+          "lineNumber": "48"
+         },
+         "lineNumber": "48",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CB0SAggBOLiTkePzw_KCJkAASB0"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/skyframe/BuiltinsInjectionTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    buildAndAssertFailure();",
+         "matchingRanges": {
+          "lineNumber": "348"
+         },
+         "lineNumber": "348"
+        },
+        {
+         "lineText": "    assertContainsEvent(\"name 'overridable_symbol' is not defined\");",
+         "matchingRanges": {
+          "lineNumber": "349",
+          "columnRanges": [
+           {
+            "startIndex": 51,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "349",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 24,
+            "length": 42
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 51,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "  }",
+         "matchingRanges": {
+          "lineNumber": "350"
+         },
+         "lineNumber": "350"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    buildAndAssertFailure();",
+         "matchingRanges": {
+          "lineNumber": "612"
+         },
+         "lineNumber": "612"
+        },
+        {
+         "lineText": "    assertContainsEvent(\"name 'internal_symbol' is not defined\");",
+         "matchingRanges": {
+          "lineNumber": "613",
+          "columnRanges": [
+           {
+            "startIndex": 48,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "613",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 24,
+            "length": 39
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 48,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "  }",
+         "matchingRanges": {
+          "lineNumber": "614"
+         },
+         "lineNumber": "614"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CB4SAggBONiB3cCXhMrd_gFAAEge"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/common/options/processor/OptionProcessor.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": " *   \u003cli\u003eExpansion options and options with implicit requirements cannot expand in more than one",
+         "matchingRanges": {
+          "lineNumber": "46"
+         },
+         "lineNumber": "46",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 96
+           }
+          }
+         ]
+        },
+        {
+         "lineText": " *       way, how multiple expansions would interact is not defined and should not be necessary.",
+         "matchingRanges": {
+          "lineNumber": "47",
+          "columnRanges": [
+           {
+            "startIndex": 53,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "47",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 96
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 53,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": " *   \u003cli\u003eMultiple options must not declare default value (see {@link",
+         "matchingRanges": {
+          "lineNumber": "48"
+         },
+         "lineNumber": "48",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 68
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CB8SAggBOOC_2N6p5-HjJkAASB8"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/rules/cpp/CcToolchainFeaturesTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "        .contains(",
+         "matchingRanges": {
+          "lineNumber": "1297"
+         },
+         "lineNumber": "1297"
+        },
+        {
+         "lineText": "            \"feature '\u003c\u003c\u003cundefined\u003e\u003e\u003e', which is referenced from feature 'a', is not defined\");",
+         "matchingRanges": {
+          "lineNumber": "1298",
+          "columnRanges": [
+           {
+            "startIndex": 78,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "1298",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 12,
+            "length": 81
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 78,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "  }",
+         "matchingRanges": {
+          "lineNumber": "1299"
+         },
+         "lineNumber": "1299"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CCASAggBOIiCwcyU-67qZEAASCA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/runtime/BlazeCommandDispatcherTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "                .setMessage(",
+         "matchingRanges": {
+          "lineNumber": "775"
+         },
+         "lineNumber": "775"
+        },
+        {
+         "lineText": "                    \"Error parsing options: Config value \\'UNDEFINED_CONFIG_VALUE\\' is not defined\"",
+         "matchingRanges": {
+          "lineNumber": "776",
+          "columnRanges": [
+           {
+            "startIndex": 84,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "776",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 79
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 84,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "                        + \" in any .rc file\")",
+         "matchingRanges": {
+          "lineNumber": "777"
+         },
+         "lineNumber": "777",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 26,
+            "length": 18
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    assertThat(outErr.errAsLatin1())",
+         "matchingRanges": {
+          "lineNumber": "819"
+         },
+         "lineNumber": "819"
+        },
+        {
+         "lineText": "        .contains(\"Config value 'UNDEFINED_CONFIG_VALUE' is not defined in any .rc file\");",
+         "matchingRanges": {
+          "lineNumber": "820",
+          "columnRanges": [
+           {
+            "startIndex": 57,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "820",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 18,
+            "length": 70
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 57,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "  }",
+         "matchingRanges": {
+          "lineNumber": "821"
+         },
+         "lineNumber": "821"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CCESAggBONiv_ef5w7bo1gFAAEgh"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/skyframe/StarlarkBuiltinsFunctionTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "        \"exported_to_java = {}\");",
+         "matchingRanges": {
+          "lineNumber": "201"
+         },
+         "lineNumber": "201",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 23
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    assertContainsEvent(\"name 'native' is not defined\");",
+         "matchingRanges": {
+          "lineNumber": "202",
+          "columnRanges": [
+           {
+            "startIndex": 39,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "202",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 24,
+            "length": 30
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 39,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "  }",
+         "matchingRanges": {
+          "lineNumber": "203"
+         },
+         "lineNumber": "203"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "        \"exported_to_java = {}\");",
+         "matchingRanges": {
+          "lineNumber": "213"
+         },
+         "lineNumber": "213",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 23
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    assertContainsEvent(\"name 'overridable_symbol' is not defined\");",
+         "matchingRanges": {
+          "lineNumber": "214",
+          "columnRanges": [
+           {
+            "startIndex": 51,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "214",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 24,
+            "length": 42
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 51,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "  }",
+         "matchingRanges": {
+          "lineNumber": "215"
+         },
+         "lineNumber": "215"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    getConfiguredTarget(\"//pkg:BUILD\");",
+         "matchingRanges": {
+          "lineNumber": "243"
+         },
+         "lineNumber": "243",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 24,
+            "length": 13
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    assertContainsEvent(\"name '_builtins' is not defined\");",
+         "matchingRanges": {
+          "lineNumber": "244",
+          "columnRanges": [
+           {
+            "startIndex": 42,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "244",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 24,
+            "length": 33
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 42,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "  }",
+         "matchingRanges": {
+          "lineNumber": "245"
+         },
+         "lineNumber": "245"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CCISAggBOJKMitW08brVIkAASCI"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/analysis/starlark/StarlarkSubruleTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    checkLoadingPhaseError(\"//foo\", \"'subrule' is not defined\");",
+         "matchingRanges": {
+          "lineNumber": "68",
+          "columnRanges": [
+           {
+            "startIndex": 47,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "68",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 27,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 36,
+            "length": 26
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 47,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "  }",
+         "matchingRanges": {
+          "lineNumber": "69"
+         },
+         "lineNumber": "69"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CCMSAggBOLa5uL7b3vnReUAASCM"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/shell/integration/bazel_command_log_test.sh",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    -e '/^WARNING: The startup option --host_javabase is deprecated; prefer --server_javabase.$/d' \\",
+         "matchingRanges": {
+          "lineNumber": "46"
+         },
+         "lineNumber": "46"
+        },
+        {
+         "lineText": "    -e '/^WARNING: The home directory is not defined, no home_rc will be looked for.$/d' \\",
+         "matchingRanges": {
+          "lineNumber": "47",
+          "columnRanges": [
+           {
+            "startIndex": 38,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "47",
+         "ranges": [
+          {
+           "startIndex": 38,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "    -e '/^WARNING: ignoring JAVA_TOOL_OPTIONS in environment.$/d' \\",
+         "matchingRanges": {
+          "lineNumber": "48"
+         },
+         "lineNumber": "48"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CCQSAggBOOLz0JGO3OuxMUAASCQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/skyframe/SequencedSkyframeExecutorTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    assertThat(pkg.containsErrors()).isTrue();",
+         "matchingRanges": {
+          "lineNumber": "787"
+         },
+         "lineNumber": "787"
+        },
+        {
+         "lineText": "    MoreAsserts.assertContainsEvent(customEventCollector, \"name 'thisisanerror' is not defined\");",
+         "matchingRanges": {
+          "lineNumber": "788",
+          "columnRanges": [
+           {
+            "startIndex": 80,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "788",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 58,
+            "length": 37
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 80,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "  }",
+         "matchingRanges": {
+          "lineNumber": "789"
+         },
+         "lineNumber": "789"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CCUSAggBOKTqs8iqyJqcrQFAAEgl"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/net/starlark/java/syntax/TestUtils.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "      } else {",
+         "matchingRanges": {
+          "lineNumber": "139"
+         },
+         "lineNumber": "139",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "        throw new Undefined(String.format(\"name '%s' is not defined\", name), predeclared);",
+         "matchingRanges": {
+          "lineNumber": "140",
+          "columnRanges": [
+           {
+            "startIndex": 53,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "140",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 14,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 42,
+            "length": 26
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 53,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "      }",
+         "matchingRanges": {
+          "lineNumber": "141"
+         },
+         "lineNumber": "141"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CCYSAggBONqcvpHazY6A5AFAAEgm"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/bazel/repository/RepositoryFetchFunction.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "        case RepoDefinitionValue.NotFound() -\u003e {",
+         "matchingRanges": {
+          "lineNumber": "166"
+         },
+         "lineNumber": "166",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "          return new Failure(String.format(\"Repository '%s' is not defined\", repositoryName));",
+         "matchingRanges": {
+          "lineNumber": "167",
+          "columnRanges": [
+           {
+            "startIndex": 60,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "167",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 17,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 43,
+            "length": 32
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 60,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "        }",
+         "matchingRanges": {
+          "lineNumber": "168"
+         },
+         "lineNumber": "168"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CCcSAggBOML5kY-W8MLT7gFAAEgn"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/net/starlark/java/syntax/ResolverTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  public void testUndefinedName() throws Exception {",
+         "matchingRanges": {
+          "lineNumber": "197"
+         },
+         "lineNumber": "197",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 34,
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    assertInvalid(\"name 'foo' is not defined\", \"[foo for x in []]\");",
+         "matchingRanges": {
+          "lineNumber": "198",
+          "columnRanges": [
+           {
+            "startIndex": 30,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "198",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 18,
+            "length": 27
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 47,
+            "length": 19
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 30,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "  }",
+         "matchingRanges": {
+          "lineNumber": "199"
+         },
+         "lineNumber": "199"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    assertInvalid(",
+         "matchingRanges": {
+          "lineNumber": "203"
+         },
+         "lineNumber": "203"
+        },
+        {
+         "lineText": "        \"name 'a' is not defined\", //",
+         "matchingRanges": {
+          "lineNumber": "204",
+          "columnRanges": [
+           {
+            "startIndex": 18,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "204",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 25
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 35,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 18,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "        \"def func2(b):\",",
+         "matchingRanges": {
+          "lineNumber": "205"
+         },
+         "lineNumber": "205",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 15
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    assertInvalid(",
+         "matchingRanges": {
+          "lineNumber": "215"
+         },
+         "lineNumber": "215"
+        },
+        {
+         "lineText": "        \"name 'a' is not defined\", //",
+         "matchingRanges": {
+          "lineNumber": "216",
+          "columnRanges": [
+           {
+            "startIndex": 18,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "216",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 25
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 35,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 18,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "        \"def func1():\",",
+         "matchingRanges": {
+          "lineNumber": "217"
+         },
+         "lineNumber": "217",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 14
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 9
+    },
+    "resultToken": "CCgSAggBONCpqrPiqri0LEAASCg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/starlarkdebug/server/StarlarkDebugServerTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "            .setConditionalBreakpointError(",
+         "matchingRanges": {
+          "lineNumber": "356"
+         },
+         "lineNumber": "356"
+        },
+        {
+         "lineText": "                StarlarkDebuggingProtos.Error.newBuilder().setMessage(\"name 'z' is not defined\"))",
+         "matchingRanges": {
+          "lineNumber": "357",
+          "columnRanges": [
+           {
+            "startIndex": 80,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "357",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 70,
+            "length": 25
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 80,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "            .build();",
+         "matchingRanges": {
+          "lineNumber": "358"
+         },
+         "lineNumber": "358"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    assertThat(response.hasError()).isTrue();",
+         "matchingRanges": {
+          "lineNumber": "776"
+         },
+         "lineNumber": "776"
+        },
+        {
+         "lineText": "    assertThat(response.getError().getMessage()).isEqualTo(\"name 'z' is not defined\");",
+         "matchingRanges": {
+          "lineNumber": "777",
+          "columnRanges": [
+           {
+            "startIndex": 69,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "777",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 59,
+            "length": 25
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 69,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "  }",
+         "matchingRanges": {
+          "lineNumber": "778"
+         },
+         "lineNumber": "778"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    assertThat(responseForLocal.hasError()).isTrue();",
+         "matchingRanges": {
+          "lineNumber": "832"
+         },
+         "lineNumber": "832"
+        },
+        {
+         "lineText": "    assertThat(responseForLocal.getError().getMessage()).isEqualTo(\"name 'my_arg' is not defined\");",
+         "matchingRanges": {
+          "lineNumber": "833",
+          "columnRanges": [
+           {
+            "startIndex": 82,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "833",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 67,
+            "length": 30
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 82,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "  }",
+         "matchingRanges": {
+          "lineNumber": "834"
+         },
+         "lineNumber": "834"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CCkSAggBOMzygOPBmYn_8QFAAEgp"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/net/starlark/java/syntax/TypeTaggerTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  public void extractType_unknownIdentifier() throws Exception {",
+         "matchingRanges": {
+          "lineNumber": "266"
+         },
+         "lineNumber": "266",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 46,
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    assertExtractTypeFails(\"Foo\", \"name 'Foo' is not defined\");",
+         "matchingRanges": {
+          "lineNumber": "267",
+          "columnRanges": [
+           {
+            "startIndex": 46,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "267",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 27,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 34,
+            "length": 27
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 46,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "    assertExtractTypeFails(\"Foo[int]\", \"name 'Foo' is not defined\");",
+         "matchingRanges": {
+          "lineNumber": "268",
+          "columnRanges": [
+           {
+            "startIndex": 51,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "268",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 27,
+            "length": 10
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 39,
+            "length": 27
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 51,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "  }",
+         "matchingRanges": {
+          "lineNumber": "269"
+         },
+         "lineNumber": "269"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CCoSAggBOKrBzdLdwqOSQEAASCo"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/net/starlark/java/eval/StarlarkThreadTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    SyntaxError.Exception e = assertThrows(SyntaxError.Exception.class, () -\u003e ev.eval(\"foo\"));",
+         "matchingRanges": {
+          "lineNumber": "61"
+         },
+         "lineNumber": "61",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 65,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 86,
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    assertThat(e).hasMessageThat().isEqualTo(\"name 'foo' is not defined\");",
+         "matchingRanges": {
+          "lineNumber": "62",
+          "columnRanges": [
+           {
+            "startIndex": 57,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "62",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 45,
+            "length": 27
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 57,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "    ev.update(\"foo\", \"bar\");",
+         "matchingRanges": {
+          "lineNumber": "63"
+         },
+         "lineNumber": "63",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 14,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 21,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    SyntaxError.Exception e = assertThrows(SyntaxError.Exception.class, () -\u003e ev.eval(\"foo\"));",
+         "matchingRanges": {
+          "lineNumber": "70"
+         },
+         "lineNumber": "70",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 65,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 86,
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    assertThat(e).hasMessageThat().isEqualTo(\"name 'foo' is not defined\");",
+         "matchingRanges": {
+          "lineNumber": "71",
+          "columnRanges": [
+           {
+            "startIndex": 57,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "71",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 45,
+            "length": 27
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 57,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "    ev.exec(\"foo = 'bar'\");",
+         "matchingRanges": {
+          "lineNumber": "72"
+         },
+         "lineNumber": "72",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 12,
+            "length": 13
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CCsSAggBOKj3iZejubmYZ0AASCs"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/skyframe/AbstractCollectPackagesUnderDirectoryTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    MoreAsserts.assertContainsEvent(eventCollector, \"Loading package: a1/b1\");",
+         "matchingRanges": {
+          "lineNumber": "191"
+         },
+         "lineNumber": "191",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 52,
+            "length": 24
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    MoreAsserts.assertContainsEvent(eventCollector, \"a1/b1/BUILD:1:1: name 'xxx' is not defined\");",
+         "matchingRanges": {
+          "lineNumber": "192",
+          "columnRanges": [
+           {
+            "startIndex": 81,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "192",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 52,
+            "length": 44
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 81,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "    MoreAsserts.assertContainsEvent(eventCollector, \"Loading package: a2/b2\");",
+         "matchingRanges": {
+          "lineNumber": "193"
+         },
+         "lineNumber": "193",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 52,
+            "length": 24
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    MoreAsserts.assertContainsEvent(eventCollector, \"a2/b2/BUILD:1:1: name 'yyy' is not defined\");",
+         "matchingRanges": {
+          "lineNumber": "194",
+          "columnRanges": [
+           {
+            "startIndex": 81,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "194",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 52,
+            "length": 44
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 81,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "  }",
+         "matchingRanges": {
+          "lineNumber": "195"
+         },
+         "lineNumber": "195"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CCwSAggBOPjM3YSy2vboSkAASCw"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/net/starlark/java/eval/StaticTypeCheckTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    assertInvalid(",
+         "matchingRanges": {
+          "lineNumber": "124"
+         },
+         "lineNumber": "124"
+        },
+        {
+         "lineText": "        \"name 'unknown' is not defined\",",
+         "matchingRanges": {
+          "lineNumber": "125",
+          "columnRanges": [
+           {
+            "startIndex": 24,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "125",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 31
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 24,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "        \"\"\"",
+         "matchingRanges": {
+          "lineNumber": "126"
+         },
+         "lineNumber": "126",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CC0SAggBONjLsPO00v7sMkAASC0"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "third_party/py/concurrent/futures/_compat.py",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    # where the named tuple is created.  Bypass this step in enviroments where",
+         "matchingRanges": {
+          "lineNumber": "96"
+         },
+         "lineNumber": "96",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 74
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    # sys._getframe is not defined (Jython for example).",
+         "matchingRanges": {
+          "lineNumber": "97",
+          "columnRanges": [
+           {
+            "startIndex": 20,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "97",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 52
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 20,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "    if hasattr(_sys, '_getframe'):",
+         "matchingRanges": {
+          "lineNumber": "98"
+         },
+         "lineNumber": "98",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 21,
+            "length": 11
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CC4SAggBOPrmssvqwpvpT0AASC4"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/net/starlark/java/eval/StarlarkEvaluationTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    assertResolutionError(",
+         "matchingRanges": {
+          "lineNumber": "1827"
+         },
+         "lineNumber": "1827"
+        },
+        {
+         "lineText": "        \"name 'my_variable' is not defined (did you mean 'myVariable'?)\",",
+         "matchingRanges": {
+          "lineNumber": "1828",
+          "columnRanges": [
+           {
+            "startIndex": 28,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "1828",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 64
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 28,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "        //",
+         "matchingRanges": {
+          "lineNumber": "1829"
+         },
+         "lineNumber": "1829",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 8,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CC8SAggBONaolr-F8sDDiwFAAEgv"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/py/bazel/bzlmod/bazel_vendor_test.py",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "        \"ERROR: Vendoring some repos failed with errors: [Repository '@@nono'\"",
+         "matchingRanges": {
+          "lineNumber": "255"
+         },
+         "lineNumber": "255",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 70
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "        \" is not defined, No repository visible as '@nana' from main\"",
+         "matchingRanges": {
+          "lineNumber": "256",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "256",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 61
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "lineText": "        ' repository]',",
+         "matchingRanges": {
+          "lineNumber": "257"
+         },
+         "lineNumber": "257",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 14
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CDASAggBON6Xk8yE37CgjwFAAEgw"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "third_party/py/abseil/absl/flags/_flagvalues.py",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "      flagname: str, name of the flag to lookup.",
+         "matchingRanges": {
+          "lineNumber": "300"
+         },
+         "lineNumber": "300",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "length": 48
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "      default: Value to return if flagname is not defined. Defaults to None.",
+         "matchingRanges": {
+          "lineNumber": "301",
+          "columnRanges": [
+           {
+            "startIndex": 43,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "301",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "length": 76
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 43,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "302"
+         },
+         "lineNumber": "302",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {}
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "      flagname: str, name of the flag to lookup.",
+         "matchingRanges": {
+          "lineNumber": "325"
+         },
+         "lineNumber": "325",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "length": 48
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "      default: Value to return if flagname is not defined. Defaults to None.",
+         "matchingRanges": {
+          "lineNumber": "326",
+          "columnRanges": [
+           {
+            "startIndex": 43,
+            "length": 14
+           }
+          ]
+         },
+         "lineNumber": "326",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "length": 76
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 43,
+           "length": 14
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "327"
+         },
+         "lineNumber": "327",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {}
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CDESAggBOKjLheyOkeqC4AFAAEgx"
+   }
+  ],
+  "estimatedResultCount": "88",
+  "nextPageToken": "CJrRmbWS34ukEgjcvtei2su9hBMIkoyK1bTxutUiCLiTkePzw/KCJgjgv9jeqefh4yYI0Kmqs+KquLQsCPaYwtDmyvXNLAji89CRjtzrsTEI2Muw87TS/uwyCMKbzJiFs+W0NgjmgOnC5YqAujgIxLqEjKDxjpU/CKrBzdLdwqOSQAj4zN2Estr26EoI+uayy+rCm+lPCPq86KPppfLHWQiqksyhlsbP1VkIiILBzJT7rupkCKj3iZejubmYZwj0tfzO3b+GrGgIwofBicTWqLNpCMj/j6ObrMm9cAjkrKq2qPTHrHQIhPC/uPCwzfJ1CLa5uL7b3vnReQiS98f7766543oIuJ//r4Or6tSCAQiuxPHypYClw4gBCJqrgdPXyLn/igEI1qiWv4XywMOLAQicnqbpr5z8g44BCN6Xk8yE37CgjwEIxNP+oaGLp6qbAQjE39/j1b26tZ0BCOTc46HQ5dSdngEIwLeTq8TP2qGnAQik6rPIqsianK0BCPK85qDX+YX31QEI2K/95/nDtujWAQjOkOqB6N2r7NgBCKjLheyOkeqC4AEIoMuc1ICe94XgAQjanL6R2s2OgOQBCML5kY+W8MLT7gEIgtCsvJv+iOLuAQi62M3W4ZmehPEBCMzygOPBmYn/8QEI8IfFx/GXnKn4AQj8mZr89M+zpv0BCNiB3cCXhMrd/gE=",
+  "exhaustive": true,
+  "requestToken": "ChAiaXMgbm90IGRlZmluZWQiEiMoIGdpdDpiYXplbC9iYXplbEBtYXN0ZXIgY2FzZTp5ZXMgKRoMCJ7trNEGEIv_7YsCIAwqADIASAE"
+ }
+}

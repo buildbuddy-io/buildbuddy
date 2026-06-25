@@ -1,0 +1,1671 @@
+{
+ "query": "\"missing input file\"",
+ "oss_project": "bazel",
+ "repo_name": "bazel",
+ "page_size": 50,
+ "fetched_at": "2026-06-11T22:28:30Z",
+ "response": {
+  "searchResults": [
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/actions/MissingInputFileException.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": " *",
+         "matchingRanges": {
+          "lineNumber": "25"
+         },
+         "lineNumber": "25",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": " * \u003cp\u003eIf a missing input file is an input to an action, an {@link ActionExecutionException} is",
+         "matchingRanges": {
+          "lineNumber": "26",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "26",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 94
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "lineText": " * thrown instead.",
+         "matchingRanges": {
+          "lineNumber": "27"
+         },
+         "lineNumber": "27",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 18
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAASAggBOIDt5r7MlKvmAkAASAA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/buildeventstream/proto/build_event_stream.proto",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  // Identifier of an event reporting an event associated with an unconfigured",
+         "matchingRanges": {
+          "lineNumber": "185"
+         },
+         "lineNumber": "185",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 76
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  // label. Usually, this indicates a failure due to a missing input file. In",
+         "matchingRanges": {
+          "lineNumber": "186",
+          "columnRanges": [
+           {
+            "startIndex": 55,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "186",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 75
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 55,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "lineText": "  // any case, it will report some form of error (i.e., the payload will be an",
+         "matchingRanges": {
+          "lineNumber": "187"
+         },
+         "lineNumber": "187",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 76
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAESAggBOIbKhbKGnb3YUUAASAE"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/buildtool/MissingInputActionTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "/** Tests related to \"missing input file\" errors. */",
+         "matchingRanges": {
+          "lineNumber": "34",
+          "columnRanges": [
+           {
+            "startIndex": 22,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "34",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 52
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 22,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "lineText": "@RunWith(JUnit4.class)",
+         "matchingRanges": {
+          "lineNumber": "35"
+         },
+         "lineNumber": "35",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 16,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    assertMissingInputOnBuild(\"//dummy\", 2);",
+         "matchingRanges": {
+          "lineNumber": "59"
+         },
+         "lineNumber": "59",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 30,
+            "length": 9
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 41,
+            "length": 1
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    events.assertDoesNotContainEvent(\"missing input file '\" + \"//\" + \"dummy\" + \":\" + \"in1'\");",
+         "matchingRanges": {
+          "lineNumber": "60",
+          "columnRanges": [
+           {
+            "startIndex": 38,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "60",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 37,
+            "length": 22
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 62,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 69,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 79,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 85,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 38,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "lineText": "    events.assertContainsError(\"missing input file '\" + \"//\" + \"dummy\" + \":\" + \"in2'\");",
+         "matchingRanges": {
+          "lineNumber": "61",
+          "columnRanges": [
+           {
+            "startIndex": 32,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "61",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 31,
+            "length": 22
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 56,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 63,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 73,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 79,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 32,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "lineText": "    events.assertContainsError(\"missing input file '\" + \"//\" + \"dummy\" + \":\" + \"in3'\");",
+         "matchingRanges": {
+          "lineNumber": "62",
+          "columnRanges": [
+           {
+            "startIndex": 32,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "62",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 31,
+            "length": 22
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 56,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 63,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 73,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 79,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 32,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "lineText": "  }",
+         "matchingRanges": {
+          "lineNumber": "63"
+         },
+         "lineNumber": "63"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "          \"dummy/BUILD:1:8: Executing genrule //dummy:dummy failed: missing input file\"",
+         "matchingRanges": {
+          "lineNumber": "81",
+          "columnRanges": [
+           {
+            "startIndex": 68,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "81",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 10,
+            "length": 77
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 68,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "lineText": "              + \" '//dummy:in'\");",
+         "matchingRanges": {
+          "lineNumber": "82"
+         },
+         "lineNumber": "82",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 16,
+            "length": 15
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "      events.assertContainsEventWithFrequency(\"missing input file\", 1);",
+         "matchingRanges": {
+          "lineNumber": "83",
+          "columnRanges": [
+           {
+            "startIndex": 47,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "83",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 46,
+            "length": 20
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 68,
+            "length": 1
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 47,
+           "length": 18
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 10
+    },
+    "resultToken": "CAISAggBOPDa1v2Yw6K5wwFAAEgC"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/buildtool/DanglingSymlinkTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    assertThrows(BuildFailedException.class, () -\u003e buildTarget(\"//foo:top\"));",
+         "matchingRanges": {
+          "lineNumber": "109"
+         },
+         "lineNumber": "109",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 38,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 63,
+            "length": 11
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    events.assertContainsError(\"missing input file '//foo:foo.sh'\");",
+         "matchingRanges": {
+          "lineNumber": "110",
+          "columnRanges": [
+           {
+            "startIndex": 32,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "110",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 31,
+            "length": 35
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 32,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "lineText": "  }",
+         "matchingRanges": {
+          "lineNumber": "111"
+         },
+         "lineNumber": "111"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAMSAggBOOra3MqczsG5rAFAAEgD"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/buildtool/TransitiveDataDependencyTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "      assertThat(recOutErr.errAsLatin1())",
+         "matchingRanges": {
+          "lineNumber": "104"
+         },
+         "lineNumber": "104"
+        },
+        {
+         "lineText": "          .containsMatch(\"//data:needsdata: missing input file '//data:data_file'\");",
+         "matchingRanges": {
+          "lineNumber": "105",
+          "columnRanges": [
+           {
+            "startIndex": 44,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "105",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 25,
+            "length": 57
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 44,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "lineText": "    } finally {",
+         "matchingRanges": {
+          "lineNumber": "106"
+         },
+         "lineNumber": "106",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 7
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    } catch (BuildFailedException e) {",
+         "matchingRanges": {
+          "lineNumber": "124"
+         },
+         "lineNumber": "124",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "      assertThat(recOutErr.errAsLatin1()).containsMatch(\"missing input file '//data:nosuchfile'\");",
+         "matchingRanges": {
+          "lineNumber": "125",
+          "columnRanges": [
+           {
+            "startIndex": 57,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "125",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 56,
+            "length": 40
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 57,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "lineText": "    } finally {",
+         "matchingRanges": {
+          "lineNumber": "126"
+         },
+         "lineNumber": "126",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 7
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "          .containsMatch(",
+         "matchingRanges": {
+          "lineNumber": "162"
+         },
+         "lineNumber": "162"
+        },
+        {
+         "lineText": "              \"data/BUILD:2:1: //data:needsdata1: missing input file '//data:data_file1'\");",
+         "matchingRanges": {
+          "lineNumber": "163",
+          "columnRanges": [
+           {
+            "startIndex": 50,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "163",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 14,
+            "length": 75
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 50,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "lineText": "    } finally {",
+         "matchingRanges": {
+          "lineNumber": "164"
+         },
+         "lineNumber": "164",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 7
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CAQSAggBOPDajZWUk-ODhQFAAEgE"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/buildtool/SkymeldBuildIntegrationTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    events.assertContainsError(",
+         "matchingRanges": {
+          "lineNumber": "407"
+         },
+         "lineNumber": "407"
+        },
+        {
+         "lineText": "        \"Action foo/execution_failure.out failed: missing input file '//foo:missing'\");",
+         "matchingRanges": {
+          "lineNumber": "408",
+          "columnRanges": [
+           {
+            "startIndex": 50,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "408",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 77
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 50,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "lineText": "  }",
+         "matchingRanges": {
+          "lineNumber": "409"
+         },
+         "lineNumber": "409"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    events.assertContainsError(",
+         "matchingRanges": {
+          "lineNumber": "502"
+         },
+         "lineNumber": "502"
+        },
+        {
+         "lineText": "        \"Action foo/execution_failure.out failed: missing input file '//foo:missing'\");",
+         "matchingRanges": {
+          "lineNumber": "503",
+          "columnRanges": [
+           {
+            "startIndex": 50,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "503",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 77
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 50,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "lineText": "    events.assertContainsError(\"rule '//foo:missing' does not exist\");",
+         "matchingRanges": {
+          "lineNumber": "504"
+         },
+         "lineNumber": "504",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 31,
+            "length": 37
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAUSAggBOIDZgPiKjv26uAFAAEgF"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/skyframe/ArtifactFunction.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  /** A {@link SkyValue} representing a missing input file. */",
+         "matchingRanges": {
+          "lineNumber": "79",
+          "columnRanges": [
+           {
+            "startIndex": 40,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "79",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 60
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 40,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "lineText": "  public static final class MissingArtifactValue implements SkyValue {",
+         "matchingRanges": {
+          "lineNumber": "80"
+         },
+         "lineNumber": "80",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 16,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 22,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 49,
+            "length": 10
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "          FailureDetail.newBuilder()",
+         "matchingRanges": {
+          "lineNumber": "85"
+         },
+         "lineNumber": "85"
+        },
+        {
+         "lineText": "              .setMessage(constructErrorMessage(missingArtifact, \"missing input file\"))",
+         "matchingRanges": {
+          "lineNumber": "86",
+          "columnRanges": [
+           {
+            "startIndex": 66,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "86",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 65,
+            "length": 20
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 66,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "lineText": "              .setExecution(Execution.newBuilder().setCode(Code.SOURCE_INPUT_MISSING))",
+         "matchingRanges": {
+          "lineNumber": "87"
+         },
+         "lineNumber": "87"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAYSAggBOKik8tmC2fLDnQFAAEgG"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/shell/integration/java_integration_test.sh",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  bazel build //$pkg/third_party/library:common \u003e\u0026 \"$TEST_log\" \u0026\u0026 fail \"Unexpected success\"",
+         "matchingRanges": {
+          "lineNumber": "933"
+         },
+         "lineNumber": "933"
+        },
+        {
+         "lineText": "  expect_log \"missing input file '//$pkg/third_party/library:src.jar'\"",
+         "matchingRanges": {
+          "lineNumber": "934",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "934",
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "lineText": "}",
+         "matchingRanges": {
+          "lineNumber": "935"
+         },
+         "lineNumber": "935"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAcSAggBONLU25X8wsHeTkAASAc"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/sandbox/SandboxOptions.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "              + \"extra debugging information on execution. This can help developers of Bazel or \"",
+         "matchingRanges": {
+          "lineNumber": "96"
+         },
+         "lineNumber": "96",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 16,
+            "length": 81
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "              + \"Starlark rules with debugging failures due to missing input files, etc.\")",
+         "matchingRanges": {
+          "lineNumber": "97",
+          "columnRanges": [
+           {
+            "startIndex": 63,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "97",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 16,
+            "length": 73
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 63,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "lineText": "  public abstract boolean getSandboxDebug();",
+         "matchingRanges": {
+          "lineNumber": "98"
+         },
+         "lineNumber": "98",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 8
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAgSAggBOMSQhaTOg_XqH0AASAg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/7.7.1/reference/command-line-reference.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "... ; and second, prints extra debugging information on execution. This can help developers of Bazel or Starlark rules with debugging failures due to missing input files, etc.",
+         "matchingRanges": {
+          "lineNumber": "4396",
+          "columnRanges": [
+           {
+            "startIndex": 150,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "4396",
+         "ranges": [
+          {
+           "startIndex": 150,
+           "length": 18
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAkSAggBOIa52cubwcyeCkAASAk"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/8.0.1/reference/command-line-reference.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "... ; and second, prints extra debugging information on execution. This can help developers of Bazel or Starlark rules with debugging failures due to missing input files, etc.",
+         "matchingRanges": {
+          "lineNumber": "3881",
+          "columnRanges": [
+           {
+            "startIndex": 150,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "3881",
+         "ranges": [
+          {
+           "startIndex": 150,
+           "length": 18
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAoSAggBOJTD1L_b77e1IkAASAo"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/8.3.1/reference/command-line-reference.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "... ; and second, prints extra debugging information on execution. This can help developers of Bazel or Starlark rules with debugging failures due to missing input files, etc.",
+         "matchingRanges": {
+          "lineNumber": "3948",
+          "columnRanges": [
+           {
+            "startIndex": 150,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "3948",
+         "ranges": [
+          {
+           "startIndex": 150,
+           "length": 18
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAsSAggBOISf7LXGv7uQNUAASAs"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/8.6.0/reference/command-line-reference.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "... ; and second, prints extra debugging information on execution. This can help developers of Bazel or Starlark rules with debugging failures due to missing input files, etc.",
+         "matchingRanges": {
+          "lineNumber": "4000",
+          "columnRanges": [
+           {
+            "startIndex": 150,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "4000",
+         "ranges": [
+          {
+           "startIndex": 150,
+           "length": 18
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAwSAggBONqireGC0vW0OkAASAw"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/9.0.0/reference/command-line-reference.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "... ; and second, prints extra debugging information on execution. This can help developers of Bazel or Starlark rules with debugging failures due to missing input files, etc.",
+         "matchingRanges": {
+          "lineNumber": "4417",
+          "columnRanges": [
+           {
+            "startIndex": 150,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "4417",
+         "ranges": [
+          {
+           "startIndex": 150,
+           "length": 18
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CA0SAggBOPKarYH-w7aEaEAASA0"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/8.1.1/reference/command-line-reference.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "... ; and second, prints extra debugging information on execution. This can help developers of Bazel or Starlark rules with debugging failures due to missing input files, etc.",
+         "matchingRanges": {
+          "lineNumber": "3893",
+          "columnRanges": [
+           {
+            "startIndex": 150,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "3893",
+         "ranges": [
+          {
+           "startIndex": 150,
+           "length": 18
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CA4SAggBONyaovXb5KbxaUAASA4"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/8.2.1/reference/command-line-reference.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "... ; and second, prints extra debugging information on execution. This can help developers of Bazel or Starlark rules with debugging failures due to missing input files, etc.",
+         "matchingRanges": {
+          "lineNumber": "3911",
+          "columnRanges": [
+           {
+            "startIndex": 150,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "3911",
+         "ranges": [
+          {
+           "startIndex": 150,
+           "length": 18
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CA8SAggBOLrL1ZDPsPrLc0AASA8"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/8.4.2/reference/command-line-reference.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "... ; and second, prints extra debugging information on execution. This can help developers of Bazel or Starlark rules with debugging failures due to missing input files, etc.",
+         "matchingRanges": {
+          "lineNumber": "3970",
+          "columnRanges": [
+           {
+            "startIndex": 150,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "3970",
+         "ranges": [
+          {
+           "startIndex": 150,
+           "length": 18
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBASAggBOOTbo5TI6Jmqe0AASBA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/7.6.1/reference/command-line-reference.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "... ; and second, prints extra debugging information on execution. This can help developers of Bazel or Starlark rules with debugging failures due to missing input files, etc.",
+         "matchingRanges": {
+          "lineNumber": "4396",
+          "columnRanges": [
+           {
+            "startIndex": 150,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "4396",
+         "ranges": [
+          {
+           "startIndex": 150,
+           "length": 18
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBESAggBOMrEs-OSvNq1oAFAAEgR"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/9.1.0/reference/command-line-reference.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "... ; and second, prints extra debugging information on execution. This can help developers of Bazel or Starlark rules with debugging failures due to missing input files, etc.",
+         "matchingRanges": {
+          "lineNumber": "4423",
+          "columnRanges": [
+           {
+            "startIndex": 150,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "4423",
+         "ranges": [
+          {
+           "startIndex": 150,
+           "length": 18
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBISAggBOJrBy8rNoNTpswFAAEgS"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/8.5.1/reference/command-line-reference.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "... ; and second, prints extra debugging information on execution. This can help developers of Bazel or Starlark rules with debugging failures due to missing input files, etc.",
+         "matchingRanges": {
+          "lineNumber": "3991",
+          "columnRanges": [
+           {
+            "startIndex": 150,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "3991",
+         "ranges": [
+          {
+           "startIndex": 150,
+           "length": 18
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBMSAggBOIDc9v2Ji63SwgFAAEgT"
+   }
+  ],
+  "estimatedResultCount": "20",
+  "exhaustive": true,
+  "requestToken": "ChQibWlzc2luZyBpbnB1dCBmaWxlIhIjKCBnaXQ6YmF6ZWwvYmF6ZWxAbWFzdGVyIGNhc2U6eWVzICkaCwiO7azRBhCckfhPIAwqADIASAE"
+ }
+}

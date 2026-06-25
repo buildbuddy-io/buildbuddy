@@ -1,0 +1,3614 @@
+{
+ "query": "JavaCompileAction",
+ "oss_project": "bazel",
+ "repo_name": "bazel",
+ "page_size": 50,
+ "fetched_at": "2026-06-11T22:27:11Z",
+ "response": {
+  "searchResults": [
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/rules/java/JavaCompileAction.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "@Immutable",
+         "matchingRanges": {
+          "lineNumber": "99"
+         },
+         "lineNumber": "99"
+        },
+        {
+         "lineText": "public final class JavaCompileAction extends AbstractAction implements CommandAction {",
+         "matchingRanges": {
+          "lineNumber": "100",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "100",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 13,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 37,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 60,
+            "length": 10
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "  private static final ResourceSet LOCAL_RESOURCES =",
+         "matchingRanges": {
+          "lineNumber": "101"
+         },
+         "lineNumber": "101",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 17,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  public JavaCompileAction(",
+         "matchingRanges": {
+          "lineNumber": "141",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "141",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "      CompilationType compilationType,",
+         "matchingRanges": {
+          "lineNumber": "142"
+         },
+         "lineNumber": "142"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "          String.format(",
+         "matchingRanges": {
+          "lineNumber": "162"
+         },
+         "lineNumber": "162"
+        },
+        {
+         "lineText": "              \"Unexpected tree artifact output(s): [%s] in JavaCompileAction for %s\",",
+         "matchingRanges": {
+          "lineNumber": "163",
+          "columnRanges": [
+           {
+            "startIndex": 59,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "163",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 14,
+            "length": 70
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 59,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "              outputs.stream()",
+         "matchingRanges": {
+          "lineNumber": "164"
+         },
+         "lineNumber": "164"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  /** Computes all of a {@link JavaCompileAction}'s inputs. */",
+         "matchingRanges": {
+          "lineNumber": "194",
+          "columnRanges": [
+           {
+            "startIndex": 31,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "194",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 60
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 31,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "  private static NestedSet\u003cArtifact\u003e allInputs(",
+         "matchingRanges": {
+          "lineNumber": "195"
+         },
+         "lineNumber": "195",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 11
+    },
+    "resultToken": "CAASBAgBIAE4yIfFmeWoy_l5QABIAA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/rules/java/JavaCompileActionContext.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "/** Context for compiling Java files. */",
+         "matchingRanges": {
+          "lineNumber": "34"
+         },
+         "lineNumber": "34",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 40
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "public class JavaCompileActionContext implements ActionContext {",
+         "matchingRanges": {
+          "lineNumber": "35",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "35",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 38,
+            "length": 10
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "36"
+         },
+         "lineNumber": "36"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAESBAgBIAE44KSFgs3fwKkgQABIAQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/rules/java/JavaCompileActionBuilder.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "/** Java compilation action builder. */",
+         "matchingRanges": {
+          "lineNumber": "50"
+         },
+         "lineNumber": "50",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 39
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "public final class JavaCompileActionBuilder {",
+         "matchingRanges": {
+          "lineNumber": "51",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "51",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 13,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "52"
+         },
+         "lineNumber": "52"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  /** Returns true if this is a Java compile action. */",
+         "matchingRanges": {
+          "lineNumber": "58"
+         },
+         "lineNumber": "58",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 53
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  public static boolean isJavaCompileAction(ActionAnalysisMetadata action) {",
+         "matchingRanges": {
+          "lineNumber": "59",
+          "columnRanges": [
+           {
+            "startIndex": 26,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "59",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 26,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "    return action != null \u0026\u0026 action.getMnemonic().equals(MNEMONIC);",
+         "matchingRanges": {
+          "lineNumber": "60"
+         },
+         "lineNumber": "60",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  public JavaCompileActionBuilder(",
+         "matchingRanges": {
+          "lineNumber": "166",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "166",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "      RuleContext ruleContext, JavaToolchainProvider toolchain, String execGroup) {",
+         "matchingRanges": {
+          "lineNumber": "167"
+         },
+         "lineNumber": "167"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  public JavaCompileAction build() throws RuleErrorException, InterruptedException {",
+         "matchingRanges": {
+          "lineNumber": "173",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "173",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 35,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "    checkNotNull(utf8Environment, \"utf8Environment must not be null\");",
+         "matchingRanges": {
+          "lineNumber": "174"
+         },
+         "lineNumber": "174",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 34,
+            "length": 34
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 29
+    },
+    "resultToken": "CAISBAgBIAE4zPvpuuKs56qTAUAASAI"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/rules/java/JavaCompileActionBuilderTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "@RunWith(JUnit4.class)",
+         "matchingRanges": {
+          "lineNumber": "39"
+         },
+         "lineNumber": "39",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 16,
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "public final class JavaCompileActionBuilderTest extends BuildViewTestCase {",
+         "matchingRanges": {
+          "lineNumber": "40",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "40",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 13,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 48,
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "41"
+         },
+         "lineNumber": "41"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "        \"\"\");",
+         "matchingRanges": {
+          "lineNumber": "52"
+         },
+         "lineNumber": "52",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "length": 11
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    JavaCompileAction action =",
+         "matchingRanges": {
+          "lineNumber": "53",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "53",
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "        (JavaCompileAction) getGeneratingActionForLabel(\"//java/com/google/test:a.jar\");",
+         "matchingRanges": {
+          "lineNumber": "54",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "54",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 56,
+            "length": 30
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "    List\u003cString\u003e command = new ArrayList\u003c\u003e();",
+         "matchingRanges": {
+          "lineNumber": "55"
+         },
+         "lineNumber": "55",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 27,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    JavaCompileAction action =",
+         "matchingRanges": {
+          "lineNumber": "80",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "80",
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "        (JavaCompileAction) getGeneratingActionForLabel(\"//java/com/google/test:liba.jar\");",
+         "matchingRanges": {
+          "lineNumber": "81",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "81",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 56,
+            "length": 33
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 17
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 23
+    },
+    "resultToken": "CAMSBAgBIAE4tLSv8_mv_bKeAUAASAM"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/rules/java/JavaCompileActionTestHelper.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// TODO(djasper): Investigate removing this class and moving the functions to JavaCompileAction.",
+         "matchingRanges": {
+          "lineNumber": "24",
+          "columnRanges": [
+           {
+            "startIndex": 78,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "24",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 96
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 78,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "/**",
+         "matchingRanges": {
+          "lineNumber": "25"
+         },
+         "lineNumber": "25",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": " */",
+         "matchingRanges": {
+          "lineNumber": "28"
+         },
+         "lineNumber": "28",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "public final class JavaCompileActionTestHelper {",
+         "matchingRanges": {
+          "lineNumber": "29",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "29",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 13,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "30"
+         },
+         "lineNumber": "30"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  public static Set\u003cString\u003e getDirectJars(JavaCompileAction javac) throws Exception {",
+         "matchingRanges": {
+          "lineNumber": "33",
+          "columnRanges": [
+           {
+            "startIndex": 42,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "33",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 67,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 42,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "    return getOptions(javac).directJars();",
+         "matchingRanges": {
+          "lineNumber": "34"
+         },
+         "lineNumber": "34",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  private JavaCompileActionTestHelper() {}",
+         "matchingRanges": {
+          "lineNumber": "126",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "126",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "}",
+         "matchingRanges": {
+          "lineNumber": "127"
+         },
+         "lineNumber": "127"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 20
+    },
+    "resultToken": "CAQSBAgBIAE4-vnlmcWb4fdeQABIBA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/rules/java/JavaHeaderCompileAction.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import com.google.devtools.build.lib.packages.TargetUtils;",
+         "matchingRanges": {
+          "lineNumber": "50"
+         },
+         "lineNumber": "50",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.rules.java.JavaCompileAction.ProgressMessage;",
+         "matchingRanges": {
+          "lineNumber": "51",
+          "columnRanges": [
+           {
+            "startIndex": 48,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "51",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 48,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.rules.java.JavaConfiguration.JavaClasspathMode;",
+         "matchingRanges": {
+          "lineNumber": "52"
+         },
+         "lineNumber": "52",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "      Deps.Dependencies fullOutputDeps =",
+         "matchingRanges": {
+          "lineNumber": "143"
+         },
+         "lineNumber": "143"
+        },
+        {
+         "lineText": "          JavaCompileAction.createFullOutputDeps(",
+         "matchingRanges": {
+          "lineNumber": "144",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "144",
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "              spawnResult,",
+         "matchingRanges": {
+          "lineNumber": "145"
+         },
+         "lineNumber": "145"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "      ruleContext.registerAction(",
+         "matchingRanges": {
+          "lineNumber": "642"
+         },
+         "lineNumber": "642"
+        },
+        {
+         "lineText": "          new JavaCompileAction(",
+         "matchingRanges": {
+          "lineNumber": "643",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "643",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "              /* compilationType= */ JavaCompileAction.CompilationType.TURBINE,",
+         "matchingRanges": {
+          "lineNumber": "644",
+          "columnRanges": [
+           {
+            "startIndex": 37,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "644",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 14,
+            "length": 22
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 37,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "              /* owner= */ actionOwner,",
+         "matchingRanges": {
+          "lineNumber": "645"
+         },
+         "lineNumber": "645",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 14,
+            "length": 12
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 6
+    },
+    "resultToken": "CAUSAggBOPLtqoiorK2AsQFAAEgF"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/starlarkbuildapi/java/JavaCommonApi.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "      useStarlarkThread = true)",
+         "matchingRanges": {
+          "lineNumber": "407"
+         },
+         "lineNumber": "407"
+        },
+        {
+         "lineText": "  default JavaInfoApi\u003cFileT, ?, ?\u003e createJavaCompileAction(",
+         "matchingRanges": {
+          "lineNumber": "408",
+          "columnRanges": [
+           {
+            "startIndex": 41,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "408",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 41,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "      StarlarkRuleContextT starlarkRuleContext,",
+         "matchingRanges": {
+          "lineNumber": "409"
+         },
+         "lineNumber": "409"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAYSBAgBIAE42s6LzOXI06FjQABIBg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/rules/java/JavaCompilationHelper.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    JavaCompileActionBuilder builder =",
+         "matchingRanges": {
+          "lineNumber": "240",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "240",
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "        new JavaCompileActionBuilder(ruleContext, javaToolchain, execGroup);",
+         "matchingRanges": {
+          "lineNumber": "241",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "241",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "242"
+         },
+         "lineNumber": "242"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    JavaCompileAction javaCompileAction = builder.build();",
+         "matchingRanges": {
+          "lineNumber": "315",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 17
+           },
+           {
+            "startIndex": 22,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "315",
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 17
+          },
+          {
+           "startIndex": 22,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "    ruleContext.getAnalysisEnvironment().registerAction(javaCompileAction);",
+         "matchingRanges": {
+          "lineNumber": "316",
+          "columnRanges": [
+           {
+            "startIndex": 56,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "316",
+         "ranges": [
+          {
+           "startIndex": 56,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "317"
+         },
+         "lineNumber": "317"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "            .modifiedExecutionInfo(",
+         "matchingRanges": {
+          "lineNumber": "376"
+         },
+         "lineNumber": "376"
+        },
+        {
+         "lineText": "                modifiableExecutionInfo.buildOrThrow(), JavaCompileActionBuilder.MNEMONIC));",
+         "matchingRanges": {
+          "lineNumber": "377",
+          "columnRanges": [
+           {
+            "startIndex": 56,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "377",
+         "ranges": [
+          {
+           "startIndex": 56,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "    executionInfo.putAll(",
+         "matchingRanges": {
+          "lineNumber": "378"
+         },
+         "lineNumber": "378"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 5
+    },
+    "resultToken": "CAcSAggBONq6mPvJi8C3IkAASAc"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/rules/java/JavaCompileOutputs.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "/** The outputs of a {@link JavaCompileAction}. */",
+         "matchingRanges": {
+          "lineNumber": "21",
+          "columnRanges": [
+           {
+            "startIndex": 28,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "21",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 50
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 28,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "@AutoValue",
+         "matchingRanges": {
+          "lineNumber": "22"
+         },
+         "lineNumber": "22"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAgSAggBOI7PgML1kcDhO0AASAg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/rules/java/proto/StarlarkJavaLiteProtoLibraryTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import com.google.devtools.build.lib.rules.java.JavaCompilationArgsProvider;",
+         "matchingRanges": {
+          "lineNumber": "41"
+         },
+         "lineNumber": "41",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.rules.java.JavaCompileAction;",
+         "matchingRanges": {
+          "lineNumber": "42",
+          "columnRanges": [
+           {
+            "startIndex": 48,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "42",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 48,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.rules.java.JavaInfo;",
+         "matchingRanges": {
+          "lineNumber": "43"
+         },
+         "lineNumber": "43",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    JavaCompileAction javacAction =",
+         "matchingRanges": {
+          "lineNumber": "236",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "236",
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "        (JavaCompileAction)",
+         "matchingRanges": {
+          "lineNumber": "237",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "237",
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "            getGeneratingAction(",
+         "matchingRanges": {
+          "lineNumber": "238"
+         },
+         "lineNumber": "238"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    {",
+         "matchingRanges": {
+          "lineNumber": "556"
+         },
+         "lineNumber": "556"
+        },
+        {
+         "lineText": "      JavaCompileAction action =",
+         "matchingRanges": {
+          "lineNumber": "557",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "557",
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "          (JavaCompileAction)",
+         "matchingRanges": {
+          "lineNumber": "558",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "558",
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "              getGeneratingAction(getConfiguredTarget(\"//x:foo_lite_pb\"), \"x/libfoo-lite.jar\");",
+         "matchingRanges": {
+          "lineNumber": "559"
+         },
+         "lineNumber": "559",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 54,
+            "length": 17
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 74,
+            "length": 19
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 9
+    },
+    "resultToken": "CAkSAggBOIakgurr_a2aSkAASAk"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/java_tools/buildjar/java/com/google/devtools/build/java/turbine/BUILD",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "        # further improvement and would go over the local resource estimate in",
+         "matchingRanges": {
+          "lineNumber": "88"
+         },
+         "lineNumber": "88",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 8,
+            "length": 70
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "        # com.google.devtools.build.lib.rules.java.JavaCompileAction.LOCAL_RESOURCES.",
+         "matchingRanges": {
+          "lineNumber": "89",
+          "columnRanges": [
+           {
+            "startIndex": 51,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "89",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 8,
+            "length": 77
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 51,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "        # See :turbine_benchmark for the benchmark script used.",
+         "matchingRanges": {
+          "lineNumber": "90"
+         },
+         "lineNumber": "90",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 8,
+            "length": 55
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAoSAggBOOTHrM_I7tH9d0AASAo"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/rules/java/BUILD",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "        \"JavaCompilationHelper.java\",",
+         "matchingRanges": {
+          "lineNumber": "18"
+         },
+         "lineNumber": "18",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 28
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "        \"JavaCompileAction.java\",",
+         "matchingRanges": {
+          "lineNumber": "19",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "19",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 24
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "        \"JavaCompileActionBuilder.java\",",
+         "matchingRanges": {
+          "lineNumber": "20",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "20",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 31
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "        \"JavaCompileActionContext.java\",",
+         "matchingRanges": {
+          "lineNumber": "21",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "21",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 31
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "        \"JavaCompileOutputs.java\",",
+         "matchingRanges": {
+          "lineNumber": "22"
+         },
+         "lineNumber": "22",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 25
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CAsSAggBOKD86cHwqqe7PEAASAs"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/rules/java/BUILD",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "java_test(",
+         "matchingRanges": {
+          "lineNumber": "56"
+         },
+         "lineNumber": "56"
+        },
+        {
+         "lineText": "    name = \"JavaCompileActionBuilderTest\",",
+         "matchingRanges": {
+          "lineNumber": "57",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "57",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 30
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "    srcs = [\"JavaCompileActionBuilderTest.java\"],",
+         "matchingRanges": {
+          "lineNumber": "58",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "58",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 12,
+            "length": 35
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "    deps = [",
+         "matchingRanges": {
+          "lineNumber": "59"
+         },
+         "lineNumber": "59"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    testonly = 1,",
+         "matchingRanges": {
+          "lineNumber": "246"
+         },
+         "lineNumber": "246",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 15,
+            "length": 1
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    srcs = [\"JavaCompileActionTestHelper.java\"],",
+         "matchingRanges": {
+          "lineNumber": "247",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "247",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 12,
+            "length": 34
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "    deps = [",
+         "matchingRanges": {
+          "lineNumber": "248"
+         },
+         "lineNumber": "248"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CAwSBAgBIAE42sKM89L2jev-AUAASAw"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/bazel/rules/BazelRulesModule.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import com.google.devtools.build.lib.exec.ModuleActionContextRegistry;",
+         "matchingRanges": {
+          "lineNumber": "23"
+         },
+         "lineNumber": "23",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.rules.java.JavaCompileActionContext;",
+         "matchingRanges": {
+          "lineNumber": "24",
+          "columnRanges": [
+           {
+            "startIndex": 48,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "24",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 48,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.runtime.BlazeModule;",
+         "matchingRanges": {
+          "lineNumber": "25"
+         },
+         "lineNumber": "25",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "      BuildRequest buildRequest) {",
+         "matchingRanges": {
+          "lineNumber": "1392"
+         },
+         "lineNumber": "1392"
+        },
+        {
+         "lineText": "    registryBuilder.register(JavaCompileActionContext.class, new JavaCompileActionContext());",
+         "matchingRanges": {
+          "lineNumber": "1393",
+          "columnRanges": [
+           {
+            "startIndex": 29,
+            "length": 17
+           },
+           {
+            "startIndex": 65,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "1393",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 54,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 61,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 29,
+           "length": 17
+          },
+          {
+           "startIndex": 65,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "  }",
+         "matchingRanges": {
+          "lineNumber": "1394"
+         },
+         "lineNumber": "1394"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CA0SAggBOMy4z5axlPeJOUAASA0"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/analysis/AutoExecGroupsTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import com.google.devtools.build.lib.rules.cpp.CppRuleClasses;",
+         "matchingRanges": {
+          "lineNumber": "40"
+         },
+         "lineNumber": "40",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.rules.java.JavaCompileAction;",
+         "matchingRanges": {
+          "lineNumber": "41",
+          "columnRanges": [
+           {
+            "startIndex": 48,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "41",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 48,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.rules.java.JavaGenJarsProvider;",
+         "matchingRanges": {
+          "lineNumber": "42"
+         },
+         "lineNumber": "42",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    ConfiguredTarget customNoproc = getConfiguredTarget(\"//foo:custom_noproc\");",
+         "matchingRanges": {
+          "lineNumber": "2678"
+         },
+         "lineNumber": "2678",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 56,
+            "length": 21
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    JavaCompileAction turbineAction =",
+         "matchingRanges": {
+          "lineNumber": "2679",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "2679",
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "        (JavaCompileAction) getGeneratingAction(getBinArtifact(\"libcustom-hjar.jar\", custom));",
+         "matchingRanges": {
+          "lineNumber": "2680",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "2680",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 63,
+            "length": 20
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "    SpawnAction turbineActionNoProc =",
+         "matchingRanges": {
+          "lineNumber": "2681"
+         },
+         "lineNumber": "2681"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CA4SAggBOPiPzLC-6qxIQABIDg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "CHANGELOG.md",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "   + ac504cbb463e76b1374d0060534acabbccb408d2:",
+         "matchingRanges": {
+          "lineNumber": "4133"
+         },
+         "lineNumber": "4133"
+        },
+        {
+         "lineText": "     Register JavaCompileActionContext in Bazel.",
+         "matchingRanges": {
+          "lineNumber": "4134",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "4134",
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "   + f090433fcf0f42639608b9c5f0243018c1bb9ac7:",
+         "matchingRanges": {
+          "lineNumber": "4135"
+         },
+         "lineNumber": "4135"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "   + ac504cbb463e76b1374d0060534acabbccb408d2:",
+         "matchingRanges": {
+          "lineNumber": "6738"
+         },
+         "lineNumber": "6738"
+        },
+        {
+         "lineText": "     Register JavaCompileActionContext in Bazel.",
+         "matchingRanges": {
+          "lineNumber": "6739",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "6739",
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "   + f090433fcf0f42639608b9c5f0243018c1bb9ac7:",
+         "matchingRanges": {
+          "lineNumber": "6740"
+         },
+         "lineNumber": "6740"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "   + ac504cbb463e76b1374d0060534acabbccb408d2:",
+         "matchingRanges": {
+          "lineNumber": "7666"
+         },
+         "lineNumber": "7666"
+        },
+        {
+         "lineText": "     Register JavaCompileActionContext in Bazel.",
+         "matchingRanges": {
+          "lineNumber": "7667",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "7667",
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "   + f090433fcf0f42639608b9c5f0243018c1bb9ac7:",
+         "matchingRanges": {
+          "lineNumber": "7668"
+         },
+         "lineNumber": "7668"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 5
+    },
+    "resultToken": "CA8SAggBOM6Q6oHo3avs2AFAAEgP"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "site/en/contribute/codebase.md",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "separate classes), although Java and C++ have their own action types",
+         "matchingRanges": {
+          "lineNumber": "941"
+         },
+         "lineNumber": "941"
+        },
+        {
+         "lineText": "(`JavaCompileAction`, `CppCompileAction` and `CppLinkAction`).",
+         "matchingRanges": {
+          "lineNumber": "942",
+          "columnRanges": [
+           {
+            "startIndex": 2,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "942",
+         "ranges": [
+          {
+           "startIndex": 2,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "943"
+         },
+         "lineNumber": "943"
+        },
+        {
+         "lineText": "We eventually want to move everything to `SpawnAction`; `JavaCompileAction` is",
+         "matchingRanges": {
+          "lineNumber": "944",
+          "columnRanges": [
+           {
+            "startIndex": 57,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "944",
+         "ranges": [
+          {
+           "startIndex": 57,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "pretty close, but C++ is a bit of a special-case due to .d file parsing and",
+         "matchingRanges": {
+          "lineNumber": "945"
+         },
+         "lineNumber": "945"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CBASAggBON6k8vrd8L-0hwFAAEgQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/8.5.1/contribute/codebase.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "separate classes), although Java and C++ have their own action types",
+         "matchingRanges": {
+          "lineNumber": "951"
+         },
+         "lineNumber": "951"
+        },
+        {
+         "lineText": "(`JavaCompileAction`, `CppCompileAction` and `CppLinkAction`).",
+         "matchingRanges": {
+          "lineNumber": "952",
+          "columnRanges": [
+           {
+            "startIndex": 2,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "952",
+         "ranges": [
+          {
+           "startIndex": 2,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "953"
+         },
+         "lineNumber": "953"
+        },
+        {
+         "lineText": "We eventually want to move everything to `SpawnAction`; `JavaCompileAction` is",
+         "matchingRanges": {
+          "lineNumber": "954",
+          "columnRanges": [
+           {
+            "startIndex": 57,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "954",
+         "ranges": [
+          {
+           "startIndex": 57,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "pretty close, but C++ is a bit of a special-case due to .d file parsing and",
+         "matchingRanges": {
+          "lineNumber": "955"
+         },
+         "lineNumber": "955"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CBESAggBOMDwhtWb1cGgHEAASBE"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/7.7.1/contribute/codebase.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "separate classes), although Java and C++ have their own action types",
+         "matchingRanges": {
+          "lineNumber": "945"
+         },
+         "lineNumber": "945"
+        },
+        {
+         "lineText": "(`JavaCompileAction`, `CppCompileAction` and `CppLinkAction`).",
+         "matchingRanges": {
+          "lineNumber": "946",
+          "columnRanges": [
+           {
+            "startIndex": 2,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "946",
+         "ranges": [
+          {
+           "startIndex": 2,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "947"
+         },
+         "lineNumber": "947"
+        },
+        {
+         "lineText": "We eventually want to move everything to `SpawnAction`; `JavaCompileAction` is",
+         "matchingRanges": {
+          "lineNumber": "948",
+          "columnRanges": [
+           {
+            "startIndex": 57,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "948",
+         "ranges": [
+          {
+           "startIndex": 57,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "pretty close, but C++ is a bit of a special-case due to .d file parsing and",
+         "matchingRanges": {
+          "lineNumber": "949"
+         },
+         "lineNumber": "949"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CBISAggBONq4rMyX-bimJEAASBI"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/9.0.0/contribute/codebase.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "separate classes), although Java and C++ have their own action types",
+         "matchingRanges": {
+          "lineNumber": "947"
+         },
+         "lineNumber": "947"
+        },
+        {
+         "lineText": "(`JavaCompileAction`, `CppCompileAction` and `CppLinkAction`).",
+         "matchingRanges": {
+          "lineNumber": "948",
+          "columnRanges": [
+           {
+            "startIndex": 2,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "948",
+         "ranges": [
+          {
+           "startIndex": 2,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "949"
+         },
+         "lineNumber": "949"
+        },
+        {
+         "lineText": "We eventually want to move everything to `SpawnAction`; `JavaCompileAction` is",
+         "matchingRanges": {
+          "lineNumber": "950",
+          "columnRanges": [
+           {
+            "startIndex": 57,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "950",
+         "ranges": [
+          {
+           "startIndex": 57,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "pretty close, but C++ is a bit of a special-case due to .d file parsing and",
+         "matchingRanges": {
+          "lineNumber": "951"
+         },
+         "lineNumber": "951"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CBMSAggBONDtpo7lw72KJkAASBM"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/8.0.1/contribute/codebase.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "separate classes), although Java and C++ have their own action types",
+         "matchingRanges": {
+          "lineNumber": "952"
+         },
+         "lineNumber": "952"
+        },
+        {
+         "lineText": "(`JavaCompileAction`, `CppCompileAction` and `CppLinkAction`).",
+         "matchingRanges": {
+          "lineNumber": "953",
+          "columnRanges": [
+           {
+            "startIndex": 2,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "953",
+         "ranges": [
+          {
+           "startIndex": 2,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "954"
+         },
+         "lineNumber": "954"
+        },
+        {
+         "lineText": "We eventually want to move everything to `SpawnAction`; `JavaCompileAction` is",
+         "matchingRanges": {
+          "lineNumber": "955",
+          "columnRanges": [
+           {
+            "startIndex": 57,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "955",
+         "ranges": [
+          {
+           "startIndex": 57,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "pretty close, but C++ is a bit of a special-case due to .d file parsing and",
+         "matchingRanges": {
+          "lineNumber": "956"
+         },
+         "lineNumber": "956"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CBQSAggBOJLE4a3I5NfLL0AASBQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/7.6.1/contribute/codebase.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "separate classes), although Java and C++ have their own action types",
+         "matchingRanges": {
+          "lineNumber": "945"
+         },
+         "lineNumber": "945"
+        },
+        {
+         "lineText": "(`JavaCompileAction`, `CppCompileAction` and `CppLinkAction`).",
+         "matchingRanges": {
+          "lineNumber": "946",
+          "columnRanges": [
+           {
+            "startIndex": 2,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "946",
+         "ranges": [
+          {
+           "startIndex": 2,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "947"
+         },
+         "lineNumber": "947"
+        },
+        {
+         "lineText": "We eventually want to move everything to `SpawnAction`; `JavaCompileAction` is",
+         "matchingRanges": {
+          "lineNumber": "948",
+          "columnRanges": [
+           {
+            "startIndex": 57,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "948",
+         "ranges": [
+          {
+           "startIndex": 57,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "pretty close, but C++ is a bit of a special-case due to .d file parsing and",
+         "matchingRanges": {
+          "lineNumber": "949"
+         },
+         "lineNumber": "949"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CBUSAggBOISxhcH-x-iQdUAASBU"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/8.6.0/contribute/codebase.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "separate classes), although Java and C++ have their own action types",
+         "matchingRanges": {
+          "lineNumber": "951"
+         },
+         "lineNumber": "951"
+        },
+        {
+         "lineText": "(`JavaCompileAction`, `CppCompileAction` and `CppLinkAction`).",
+         "matchingRanges": {
+          "lineNumber": "952",
+          "columnRanges": [
+           {
+            "startIndex": 2,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "952",
+         "ranges": [
+          {
+           "startIndex": 2,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "953"
+         },
+         "lineNumber": "953"
+        },
+        {
+         "lineText": "We eventually want to move everything to `SpawnAction`; `JavaCompileAction` is",
+         "matchingRanges": {
+          "lineNumber": "954",
+          "columnRanges": [
+           {
+            "startIndex": 57,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "954",
+         "ranges": [
+          {
+           "startIndex": 57,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "pretty close, but C++ is a bit of a special-case due to .d file parsing and",
+         "matchingRanges": {
+          "lineNumber": "955"
+         },
+         "lineNumber": "955"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CBYSAggBOPTC87KJgvTJjAFAAEgW"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/9.1.0/contribute/codebase.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "separate classes), although Java and C++ have their own action types",
+         "matchingRanges": {
+          "lineNumber": "948"
+         },
+         "lineNumber": "948"
+        },
+        {
+         "lineText": "(`JavaCompileAction`, `CppCompileAction` and `CppLinkAction`).",
+         "matchingRanges": {
+          "lineNumber": "949",
+          "columnRanges": [
+           {
+            "startIndex": 2,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "949",
+         "ranges": [
+          {
+           "startIndex": 2,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "950"
+         },
+         "lineNumber": "950"
+        },
+        {
+         "lineText": "We eventually want to move everything to `SpawnAction`; `JavaCompileAction` is",
+         "matchingRanges": {
+          "lineNumber": "951",
+          "columnRanges": [
+           {
+            "startIndex": 57,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "951",
+         "ranges": [
+          {
+           "startIndex": 57,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "pretty close, but C++ is a bit of a special-case due to .d file parsing and",
+         "matchingRanges": {
+          "lineNumber": "952"
+         },
+         "lineNumber": "952"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CBcSAggBOKStpaKY9I-nnwFAAEgX"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/8.2.1/contribute/codebase.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "separate classes), although Java and C++ have their own action types",
+         "matchingRanges": {
+          "lineNumber": "952"
+         },
+         "lineNumber": "952"
+        },
+        {
+         "lineText": "(`JavaCompileAction`, `CppCompileAction` and `CppLinkAction`).",
+         "matchingRanges": {
+          "lineNumber": "953",
+          "columnRanges": [
+           {
+            "startIndex": 2,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "953",
+         "ranges": [
+          {
+           "startIndex": 2,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "954"
+         },
+         "lineNumber": "954"
+        },
+        {
+         "lineText": "We eventually want to move everything to `SpawnAction`; `JavaCompileAction` is",
+         "matchingRanges": {
+          "lineNumber": "955",
+          "columnRanges": [
+           {
+            "startIndex": 57,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "955",
+         "ranges": [
+          {
+           "startIndex": 57,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "pretty close, but C++ is a bit of a special-case due to .d file parsing and",
+         "matchingRanges": {
+          "lineNumber": "956"
+         },
+         "lineNumber": "956"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CBgSAggBOPL5tLKv7azhrwFAAEgY"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/8.4.2/contribute/codebase.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "separate classes), although Java and C++ have their own action types",
+         "matchingRanges": {
+          "lineNumber": "952"
+         },
+         "lineNumber": "952"
+        },
+        {
+         "lineText": "(`JavaCompileAction`, `CppCompileAction` and `CppLinkAction`).",
+         "matchingRanges": {
+          "lineNumber": "953",
+          "columnRanges": [
+           {
+            "startIndex": 2,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "953",
+         "ranges": [
+          {
+           "startIndex": 2,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "954"
+         },
+         "lineNumber": "954"
+        },
+        {
+         "lineText": "We eventually want to move everything to `SpawnAction`; `JavaCompileAction` is",
+         "matchingRanges": {
+          "lineNumber": "955",
+          "columnRanges": [
+           {
+            "startIndex": 57,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "955",
+         "ranges": [
+          {
+           "startIndex": 57,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "pretty close, but C++ is a bit of a special-case due to .d file parsing and",
+         "matchingRanges": {
+          "lineNumber": "956"
+         },
+         "lineNumber": "956"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CBkSAggBOJKDqY6p3-jZsAFAAEgZ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/8.3.1/contribute/codebase.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "separate classes), although Java and C++ have their own action types",
+         "matchingRanges": {
+          "lineNumber": "952"
+         },
+         "lineNumber": "952"
+        },
+        {
+         "lineText": "(`JavaCompileAction`, `CppCompileAction` and `CppLinkAction`).",
+         "matchingRanges": {
+          "lineNumber": "953",
+          "columnRanges": [
+           {
+            "startIndex": 2,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "953",
+         "ranges": [
+          {
+           "startIndex": 2,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "954"
+         },
+         "lineNumber": "954"
+        },
+        {
+         "lineText": "We eventually want to move everything to `SpawnAction`; `JavaCompileAction` is",
+         "matchingRanges": {
+          "lineNumber": "955",
+          "columnRanges": [
+           {
+            "startIndex": 57,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "955",
+         "ranges": [
+          {
+           "startIndex": 57,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "pretty close, but C++ is a bit of a special-case due to .d file parsing and",
+         "matchingRanges": {
+          "lineNumber": "956"
+         },
+         "lineNumber": "956"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CBoSAggBOLzd_t7g-IrzsQFAAEga"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/8.1.1/contribute/codebase.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "separate classes), although Java and C++ have their own action types",
+         "matchingRanges": {
+          "lineNumber": "952"
+         },
+         "lineNumber": "952"
+        },
+        {
+         "lineText": "(`JavaCompileAction`, `CppCompileAction` and `CppLinkAction`).",
+         "matchingRanges": {
+          "lineNumber": "953",
+          "columnRanges": [
+           {
+            "startIndex": 2,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "953",
+         "ranges": [
+          {
+           "startIndex": 2,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "954"
+         },
+         "lineNumber": "954"
+        },
+        {
+         "lineText": "We eventually want to move everything to `SpawnAction`; `JavaCompileAction` is",
+         "matchingRanges": {
+          "lineNumber": "955",
+          "columnRanges": [
+           {
+            "startIndex": 57,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "955",
+         "ranges": [
+          {
+           "startIndex": 57,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "pretty close, but C++ is a bit of a special-case due to .d file parsing and",
+         "matchingRanges": {
+          "lineNumber": "956"
+         },
+         "lineNumber": "956"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CBsSAggBOKCK_Pnlpb6x8gFAAEgb"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/contribute/codebase.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "separate classes), although Java and C++ have their own action types",
+         "matchingRanges": {
+          "lineNumber": "949"
+         },
+         "lineNumber": "949"
+        },
+        {
+         "lineText": "(`JavaCompileAction`, `CppCompileAction` and `CppLinkAction`).",
+         "matchingRanges": {
+          "lineNumber": "950",
+          "columnRanges": [
+           {
+            "startIndex": 2,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "950",
+         "ranges": [
+          {
+           "startIndex": 2,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "951"
+         },
+         "lineNumber": "951"
+        },
+        {
+         "lineText": "We eventually want to move everything to `SpawnAction`; `JavaCompileAction` is",
+         "matchingRanges": {
+          "lineNumber": "952",
+          "columnRanges": [
+           {
+            "startIndex": 57,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "952",
+         "ranges": [
+          {
+           "startIndex": 57,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "pretty close, but C++ is a bit of a special-case due to .d file parsing and",
+         "matchingRanges": {
+          "lineNumber": "953"
+         },
+         "lineNumber": "953"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CBwSAggBOKTCjMDE1NjFQ0AASBw"
+   }
+  ],
+  "estimatedResultCount": "32",
+  "exhaustive": true,
+  "requestToken": "ChFKYXZhQ29tcGlsZUFjdGlvbhIjKCBnaXQ6YmF6ZWwvYmF6ZWxAbWFzdGVyIGNhc2U6eWVzICkaDAi-7KzRBhDtpv_XAyAMKgAyAEgB"
+ }
+}

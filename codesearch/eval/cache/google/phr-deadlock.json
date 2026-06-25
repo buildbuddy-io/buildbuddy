@@ -1,0 +1,238 @@
+{
+ "query": "\"all goroutines are asleep\"",
+ "oss_project": "go",
+ "repo_name": "go",
+ "page_size": 50,
+ "fetched_at": "2026-06-11T02:29:30Z",
+ "response": {
+  "searchResults": [
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/crash_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\toutput := runTestProg(t, \"testprog\", name)",
+         "matchingRanges": {
+          "lineNumber": "256"
+         },
+         "lineNumber": "256",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 26,
+            "length": 10
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\twant := \"fatal error: all goroutines are asleep - deadlock!\\n\"",
+         "matchingRanges": {
+          "lineNumber": "257",
+          "columnRanges": [
+           {
+            "startIndex": 23,
+            "length": 25
+           }
+          ]
+         },
+         "lineNumber": "257",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 9,
+            "length": 54
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 23,
+           "length": 25
+          }
+         ]
+        },
+        {
+         "lineText": "\tif !strings.HasPrefix(output, want) {",
+         "matchingRanges": {
+          "lineNumber": "258"
+         },
+         "lineNumber": "258",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAASAggBOKTb1KKLr639E0AASAA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/proc.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tunlock(\u0026sched.lock) // unlock so that GODEBUG=scheddetail=1 doesn't hang",
+         "matchingRanges": {
+          "lineNumber": "6511"
+         },
+         "lineNumber": "6511",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 21,
+            "length": 52
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tfatal(\"all goroutines are asleep - deadlock!\")",
+         "matchingRanges": {
+          "lineNumber": "6512",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 25
+           }
+          ]
+         },
+         "lineNumber": "6512",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 7,
+            "length": 39
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 25
+          }
+         ]
+        },
+        {
+         "lineText": "}",
+         "matchingRanges": {
+          "lineNumber": "6513"
+         },
+         "lineNumber": "6513"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAESAggBOLC4rLb8jbmKWkAASAE"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "test/fixedbugs/issue21576.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\twant := []byte(\"fatal error: all goroutines are asleep - deadlock!\")",
+         "matchingRanges": {
+          "lineNumber": "59",
+          "columnRanges": [
+           {
+            "startIndex": 30,
+            "length": 25
+           }
+          ]
+         },
+         "lineNumber": "59",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 16,
+            "length": 52
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 30,
+           "length": 25
+          }
+         ]
+        },
+        {
+         "lineText": "\tif !bytes.Contains(output, want) {",
+         "matchingRanges": {
+          "lineNumber": "60"
+         },
+         "lineNumber": "60",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAISAggBOODNyNyq2qHctgFAAEgC"
+   }
+  ],
+  "estimatedResultCount": "3",
+  "exhaustive": true,
+  "requestToken": "ChsiYWxsIGdvcm91dGluZXMgYXJlIGFzbGVlcCISHSggZ2l0OmdvL2dvQG1hc3RlciBjYXNlOnllcyApGgwIiruo0QYQ09W1qwMgDCoAMgBIAQ"
+ }
+}

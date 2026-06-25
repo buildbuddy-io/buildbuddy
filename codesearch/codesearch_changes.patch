@@ -1,0 +1,2014 @@
+diff --git a/codesearch/index/BUILD b/codesearch/index/BUILD
+index a901eaf7aa..b46945362b 100644
+--- a/codesearch/index/BUILD
++++ b/codesearch/index/BUILD
+@@ -27,6 +27,7 @@ go_test(
+     srcs = ["index_test.go"],
+     embed = [":index"],
+     deps = [
++        "//codesearch/performance",
+         "//codesearch/posting",
+         "//codesearch/schema",
+         "//codesearch/types",
+diff --git a/codesearch/index/index.go b/codesearch/index/index.go
+index 5bd51de9a1..a59b78a74f 100644
+--- a/codesearch/index/index.go
++++ b/codesearch/index/index.go
+@@ -35,7 +35,7 @@ const (
+ 	generationKey       = "__generation__"
+ )
+ 
+-type postingLists map[string]*posting.BuilderList
++type postingLists map[string]*posting.MergeList
+ 
+ // Writer is not thread-safe. A single instance should not be used concurrently.
+ // Multiple instances can be used concurrently without crashing, however CRUD operations are
+@@ -731,6 +731,10 @@ func (r *Reader) storedFieldKey(docID uint64, field string) []byte {
+ 	return fmt.Appendf(nil, "%s:doc:%d:%s", r.namespace, docID, field)
+ }
+ 
++func (r *Reader) docStatsKey(docID uint64) []byte {
++	return fmt.Appendf(nil, "%s:sta:%d:%s", r.namespace, docID, fieldLengthsField)
++}
++
+ func (r *Reader) allDocIDs() (posting.FieldMap, error) {
+ 	iter, err := r.db.NewIter(&pebble.IterOptions{
+ 		LowerBound: r.storedFieldKey(0, types.DocIDField),
+@@ -780,15 +784,17 @@ func (r *Reader) recordIterStats(iter *pebble.Iterator, kt indexKeyType) {
+ 	case ngramField:
+ 		tracker.Add(performance.INDEX_BYTES_READ, int64(iStats.KeyBytes+iStats.ValueBytes))
+ 		tracker.Add(performance.INDEX_KEYS_SCANNED, int64(iStats.PointCount))
++	case docStatsField:
++		tracker.Add(performance.FIELD_STATS_BYTES_READ, int64(iStats.KeyBytes+iStats.ValueBytes))
++		tracker.Add(performance.FIELD_STATS_KEYS_READ, int64(iStats.PointCount))
+ 	default:
+ 		break
+ 	}
+ }
+ 
+ func (r *Reader) getStoredFields(docID uint64, fieldNames ...string) (map[string]types.Field, error) {
+-	docIDStart := r.storedFieldKey(docID, "")
+ 	iter, err := r.db.NewIter(&pebble.IterOptions{
+-		LowerBound: docIDStart,
++		LowerBound: r.storedFieldKey(docID, ""),
+ 		UpperBound: r.storedFieldKey(docID, "\xff"),
+ 	})
+ 	if err != nil {
+@@ -799,11 +805,28 @@ func (r *Reader) getStoredFields(docID uint64, fieldNames ...string) (map[string
+ 		r.recordIterStats(iter, docField)
+ 	}()
+ 
+-	shouldCopyField := func(fieldName string) bool {
+-		if len(fieldNames) == 0 {
+-			return true
++	if len(fieldNames) > 0 {
++		fieldNames = slices.Clone(fieldNames)
++		slices.Sort(fieldNames)
++		fieldNames = slices.Compact(fieldNames)
++
++		fields := make(map[string]types.Field, len(fieldNames))
++		for _, fieldName := range fieldNames {
++			if fieldName == types.DocIDField {
++				continue
++			}
++			fieldKey := r.storedFieldKey(docID, fieldName)
++			if !iter.SeekGE(fieldKey) {
++				break
++			}
++			if !bytes.Equal(iter.Key(), fieldKey) {
++				continue
++			}
++			fieldVal := make([]byte, len(iter.Value()))
++			copy(fieldVal, iter.Value())
++			fields[fieldName] = r.schema.Field(fieldName).MakeField(fieldVal)
+ 		}
+-		return slices.Contains(fieldNames, fieldName)
++		return fields, nil
+ 	}
+ 
+ 	fields := make(map[string]types.Field, 0)
+@@ -816,10 +839,6 @@ func (r *Reader) getStoredFields(docID uint64, fieldNames ...string) (map[string
+ 			// Skip docID -- we already have it from args.
+ 			continue
+ 		}
+-
+-		if !shouldCopyField(k.field) {
+-			continue
+-		}
+ 		fieldVal := make([]byte, len(iter.Value()))
+ 		copy(fieldVal, iter.Value())
+ 		fields[k.field] = r.schema.Field(k.field).MakeField(fieldVal)
+@@ -827,6 +846,61 @@ func (r *Reader) getStoredFields(docID uint64, fieldNames ...string) (map[string
+ 	return fields, nil
+ }
+ 
++func (r *Reader) populateFieldLengths(docMatches map[uint64]*docMatch) error {
++	if len(docMatches) == 0 {
++		return nil
++	}
++	start := time.Now()
++	defer func() {
++		if tracker := performance.TrackerFromContext(r.ctx); tracker != nil {
++			tracker.Add(performance.FIELD_STATS_READ_DURATION, int64(time.Since(start)))
++		}
++	}()
++
++	// Look up each requested doc's stats key directly via a single iterator,
++	// seeking in lexically-sorted key order. Cost is O(len(docMatches)) seeks
++	// regardless of how many docs the namespace holds -- unlike a full range
++	// scan, whose cost grows with the corpus.
++	type target struct {
++		key   []byte
++		docID uint64
++	}
++	targets := make([]target, 0, len(docMatches))
++	for docID := range docMatches {
++		targets = append(targets, target{key: r.docStatsKey(docID), docID: docID})
++	}
++	slices.SortFunc(targets, func(a, b target) int {
++		return bytes.Compare(a.key, b.key)
++	})
++
++	iter, err := r.db.NewIter(&pebble.IterOptions{
++		LowerBound: targets[0].key,
++		UpperBound: fmt.Appendf(nil, "%s:sta:\xff", r.namespace),
++	})
++	if err != nil {
++		return err
++	}
++	defer iter.Close()
++	defer func() {
++		r.recordIterStats(iter, docStatsField)
++	}()
++
++	for _, t := range targets {
++		if !iter.SeekGE(t.key) {
++			break // nothing at or beyond this key
++		}
++		if !bytes.Equal(iter.Key(), t.key) {
++			continue // no stats key for this doc (e.g. deleted); leave unset
++		}
++		fieldLengths, err := unmarshalFieldLengths(iter.Value())
++		if err != nil {
++			return err
++		}
++		docMatches[t.docID].fieldLengths = fieldLengths
++	}
++	return nil
++}
++
+ // TODO(jdelfino): We can't know if the document exists or not until we fetch the fields, but we
+ // also want to fetch lazily, to avoid unnecessary fetches. This results in missing document
+ // errors surfacing way downstream, in code that probably doesn't expect the document to be able to
+@@ -999,6 +1073,20 @@ func (r *Reader) removeDeletedDocIDs(results posting.FieldMap) error {
+ type docMatch struct {
+ 	docid           uint64
+ 	matchedPostings map[string]types.Posting
++	fieldLengths    map[string]uint32
++}
++
++type matchPosting struct {
++	docid     uint64
++	frequency uint32
++}
++
++func (p matchPosting) Docid() uint64 {
++	return p.docid
++}
++
++func (p matchPosting) Frequency() uint32 {
++	return p.frequency
+ }
+ 
+ func (dm *docMatch) FieldNames() []string {
+@@ -1011,6 +1099,10 @@ func (dm *docMatch) Posting(fieldName string) types.Posting {
+ 	return dm.matchedPostings[fieldName]
+ }
+ 
++func (dm *docMatch) FieldLength(fieldName string) uint32 {
++	return dm.fieldLengths[fieldName]
++}
++
+ type lazyDoc struct {
+ 	r *Reader
+ 
+@@ -1147,9 +1239,15 @@ func (r *Reader) RawQuery(squery string) ([]types.DocumentMatch, error) {
+ 				}
+ 			}
+ 			docMatch := docMatches[docid]
+-			docMatch.matchedPostings[field] = nil // TODO(tylerw): fill in.
++			docMatch.matchedPostings[field] = matchPosting{
++				docid:     docid,
++				frequency: pl.Frequency(docid),
++			}
+ 		}
+ 	}
++	if err := r.populateFieldLengths(docMatches); err != nil {
++		return nil, err
++	}
+ 
+ 	// Convert to interface (ugh).
+ 	matches := make([]types.DocumentMatch, len(docMatches))
+diff --git a/codesearch/index/index_test.go b/codesearch/index/index_test.go
+index 631c7b0786..ca411e8afe 100644
+--- a/codesearch/index/index_test.go
++++ b/codesearch/index/index_test.go
+@@ -7,6 +7,7 @@ import (
+ 	"strconv"
+ 	"testing"
+ 
++	"github.com/buildbuddy-io/buildbuddy/codesearch/performance"
+ 	"github.com/buildbuddy-io/buildbuddy/codesearch/posting"
+ 	"github.com/buildbuddy-io/buildbuddy/codesearch/schema"
+ 	"github.com/buildbuddy-io/buildbuddy/codesearch/types"
+@@ -690,6 +691,136 @@ func TestSparseNgramFrequenciesAcrossMultipleDocs(t *testing.T) {
+ 	}
+ }
+ 
++func TestRawQueryDocumentMatchesIncludeFrequencies(t *testing.T) {
++	ctx := context.Background()
++	db := mustOpenDB(t, testfs.MakeTempDir(t))
++	docSchema := schema.NewDocumentSchema(
++		[]types.FieldSchema{
++			schema.MustFieldSchema(types.KeywordField, "id", true),
++			schema.MustFieldSchema(types.SparseNgramField, "content", true),
++		},
++	)
++
++	docs := []struct {
++		id      string
++		content string
++		wantTF  uint32
++	}{
++		{"1", "abc", 1},
++		{"2", "abc abc abc", 3},
++	}
++	w, err := NewWriter(db, "testns")
++	require.NoError(t, err)
++	for _, d := range docs {
++		require.NoError(t, w.AddDocument(docSchema.MustMakeDocument(map[string][]byte{
++			"id":      []byte(d.id),
++			"content": []byte(d.content),
++		})))
++	}
++	require.NoError(t, w.Flush())
++
++	r := NewReader(ctx, db, "testns", docSchema)
++	matches, err := r.RawQuery(`(:eq content abc)`)
++	require.NoError(t, err)
++
++	got := make(map[string]uint32)
++	for _, match := range matches {
++		storedDoc := r.GetStoredDocument(match.Docid())
++		id := string(storedDoc.Field("id").Contents())
++		posting := match.Posting("content")
++		require.NotNil(t, posting)
++		got[id] = posting.Frequency()
++	}
++	assert.Equal(t, map[string]uint32{"1": 1, "2": 3}, got)
++}
++
++func TestRawQueryDocumentMatchesIncludeFieldLengths(t *testing.T) {
++	ctx := context.Background()
++	db := mustOpenDB(t, testfs.MakeTempDir(t))
++	docSchema := schema.NewDocumentSchema(
++		[]types.FieldSchema{
++			schema.MustFieldSchema(types.KeywordField, "id", true),
++			schema.MustFieldSchema(types.KeywordField, "content", true),
++		},
++	)
++
++	w, err := NewWriter(db, "testns")
++	require.NoError(t, err)
++	require.NoError(t, w.AddDocument(docSchema.MustMakeDocument(map[string][]byte{
++		"id":      []byte("1"),
++		"content": []byte("one two two"),
++	})))
++	require.NoError(t, w.Flush())
++
++	r := NewReader(ctx, db, "testns", docSchema)
++	matches, err := r.RawQuery(`(:eq content two)`)
++	require.NoError(t, err)
++	require.Len(t, matches, 1)
++
++	assert.Equal(t, uint32(1), matches[0].FieldLength("id"))
++	assert.Equal(t, uint32(3), matches[0].FieldLength("content"))
++}
++
++func TestLazyDocFieldSeeksRequestedField(t *testing.T) {
++	ctx := performance.WrapContext(context.Background())
++	db := mustOpenDB(t, testfs.MakeTempDir(t))
++	docSchema := schema.NewDocumentSchema(
++		[]types.FieldSchema{
++			schema.MustFieldSchema(types.KeywordField, "id", true),
++			schema.MustFieldSchema(types.KeywordField, "content", true),
++			schema.MustFieldSchema(types.KeywordField, "owner", true),
++		},
++	)
++
++	w, err := NewWriter(db, "testns")
++	require.NoError(t, err)
++	require.NoError(t, w.AddDocument(docSchema.MustMakeDocument(map[string][]byte{
++		"id":      []byte("1"),
++		"content": []byte("needle"),
++		"owner":   []byte("tyler"),
++	})))
++	require.NoError(t, w.Flush())
++
++	r := NewReader(ctx, db, "testns", docSchema)
++	storedDoc := r.GetStoredDocument(1)
++	assert.Equal(t, "needle", string(storedDoc.Field("content").Contents()))
++
++	tracker := performance.TrackerFromContext(ctx)
++	require.NotNil(t, tracker)
++	assert.Equal(t, int64(1), tracker.Get(performance.DOC_KEYS_SCANNED))
++}
++
++func TestGetStoredFieldsSeeksRequestedFields(t *testing.T) {
++	ctx := performance.WrapContext(context.Background())
++	db := mustOpenDB(t, testfs.MakeTempDir(t))
++	docSchema := schema.NewDocumentSchema(
++		[]types.FieldSchema{
++			schema.MustFieldSchema(types.KeywordField, "id", true),
++			schema.MustFieldSchema(types.KeywordField, "content", true),
++			schema.MustFieldSchema(types.KeywordField, "owner", true),
++		},
++	)
++
++	w, err := NewWriter(db, "testns")
++	require.NoError(t, err)
++	require.NoError(t, w.AddDocument(docSchema.MustMakeDocument(map[string][]byte{
++		"id":      []byte("1"),
++		"content": []byte("needle"),
++		"owner":   []byte("tyler"),
++	})))
++	require.NoError(t, w.Flush())
++
++	r := NewReader(ctx, db, "testns", docSchema)
++	fields, err := r.getStoredFields(1, "owner", "content")
++	require.NoError(t, err)
++	assert.Equal(t, "needle", string(fields["content"].Contents()))
++	assert.Equal(t, "tyler", string(fields["owner"].Contents()))
++
++	tracker := performance.TrackerFromContext(ctx)
++	require.NotNil(t, tracker)
++	assert.Equal(t, int64(2), tracker.Get(performance.DOC_KEYS_SCANNED))
++}
++
+ func printDB(t testing.TB, db *pebble.DB) {
+ 	iter, err := db.NewIter(&pebble.IterOptions{
+ 		LowerBound: []byte{0},
+diff --git a/codesearch/indexprofile/indexprofile.go b/codesearch/indexprofile/indexprofile.go
+index a1396ccb35..e38a193d10 100644
+--- a/codesearch/indexprofile/indexprofile.go
++++ b/codesearch/indexprofile/indexprofile.go
+@@ -105,7 +105,8 @@ type TermFrequencyStats = types.TermFrequencyStats
+ // TermFrequencyStatsFromFrequencies summarizes a per-posting frequency slice
+ // in iteration order. freqs is expected to be in the order the posting list's
+ // roaring iterator yields doc IDs — the same order used when serializing, so
+-// that the RLE byte estimate matches what BuilderList.Marshal would write.
++// that the RLE byte estimate matches what marshalCounted (via MergeList.Marshal)
++// would write.
+ func TermFrequencyStatsFromFrequencies(freqs []uint32) TermFrequencyStats {
+ 	stats := TermFrequencyStats{}
+ 	// Per-posting aggregates.
+diff --git a/codesearch/performance/performance.go b/codesearch/performance/performance.go
+index 763463f633..28f258d1e1 100644
+--- a/codesearch/performance/performance.go
++++ b/codesearch/performance/performance.go
+@@ -19,6 +19,10 @@ const (
+ 	DOC_BYTES_READ
+ 	DOC_KEYS_SCANNED
+ 
++	FIELD_STATS_BYTES_READ
++	FIELD_STATS_KEYS_READ
++	FIELD_STATS_READ_DURATION
++
+ 	QUERY_PARSE_DURATION
+ 
+ 	POSTING_LIST_QUERY_DURATION
+@@ -44,6 +48,12 @@ func (l label) String() string {
+ 		return "DOC_BYTES_READ"
+ 	case DOC_KEYS_SCANNED:
+ 		return "DOC_KEYS_SCANNED"
++	case FIELD_STATS_BYTES_READ:
++		return "FIELD_STATS_BYTES_READ"
++	case FIELD_STATS_KEYS_READ:
++		return "FIELD_STATS_KEYS_READ"
++	case FIELD_STATS_READ_DURATION:
++		return "FIELD_STATS_READ_DURATION"
+ 	case QUERY_PARSE_DURATION:
+ 		return "QUERY_PARSE_DURATION"
+ 	case POSTING_LIST_QUERY_DURATION:
+@@ -138,6 +148,10 @@ func (t *Tracker) PrettyPrint() {
+ 		docMB := float64(t.Get(DOC_BYTES_READ)) / 1e6
+ 		log.Printf("Read %d stored-field keys [%2.2f MB]", t.Get(DOC_KEYS_SCANNED), docMB)
+ 	}
++	if t.Get(FIELD_STATS_KEYS_READ) > 0 {
++		statsMB := float64(t.Get(FIELD_STATS_BYTES_READ)) / 1e6
++		log.Printf("Read %d field-stats keys in %s [%2.2f MB]", t.Get(FIELD_STATS_KEYS_READ), time.Duration(t.Get(FIELD_STATS_READ_DURATION)), statsMB)
++	}
+ 	if t.Get(REMOVE_DELETED_DOCS_COUNT) > 0 {
+ 		log.Printf("Filtered %d deleted docs in %s", t.Get(REMOVE_DELETED_DOCS_COUNT), time.Duration(t.Get(REMOVE_DELETED_DOCS_DURATION)))
+ 	}
+diff --git a/codesearch/posting/posting.go b/codesearch/posting/posting.go
+index a560e4b6bf..6a680cbc3d 100644
+--- a/codesearch/posting/posting.go
++++ b/codesearch/posting/posting.go
+@@ -32,6 +32,10 @@ import (
+ // the bitmap's cardinality is consumed. Chosen because real ngram TFs are
+ // dominated by long runs of TF=1 punctuated by sparse outliers, which this
+ // encoding compresses to a handful of bytes per list.
++//
++// RLE is purely a wire codec: in memory frequencies are always a plain parallel
++// column (see Freqs). marshalCounted / unmarshalCountedReadOnly are the only
++// code that knows this layout.
+ var countedListMagic = []byte{'C', 'S', 'T', 'F', 4}
+ 
+ // A ReadOnlyList is a read-only interface for a posting list. This interface exists to support
+@@ -85,6 +89,18 @@ func (w *roaringWrapper) Frequency(id uint64) uint32 {
+ 	return 0
+ }
+ 
++func (w *roaringWrapper) MarshalInto(buf []byte) error {
++	stream := bytes.NewBuffer(buf)
++	_, err := w.Bitmap.WriteTo(stream)
++	return err
++}
++
++func (w *roaringWrapper) Marshal() ([]byte, error) {
++	stream := bytes.NewBuffer(make([]byte, 0, int(w.GetSerializedSizeInBytes())))
++	_, err := w.Bitmap.WriteTo(stream)
++	return stream.Bytes(), err
++}
++
+ // copyInto copies src into buf, failing if buf lacks the capacity.
+ func copyInto(buf, src []byte) error {
+ 	if cap(buf) < len(src) {
+@@ -94,18 +110,15 @@ func copyInto(buf, src []byte) error {
+ 	return nil
+ }
+ 
+-// docIDSet is a sorted set of doc IDs that serializes to a roaring bitmap. It
+-// stores a single element inline in `first` (avoiding an `ids` allocation for
+-// the common rare-ngram case) and switches to the `ids` slice at two or more
+-// elements. `ids` is populated only when len >= 2.
++// docIDSet is the doc-ID half of a posting list: a sorted set that serializes to
++// a roaring bitmap. It stores a single element inline in `first` (avoiding an
++// `ids` allocation for the common rare-ngram case) and switches to the `ids`
++// slice at two or more elements. `ids` is populated only when len >= 2.
+ //
+-// It is the shared doc-ID core behind BuilderList and MergeList, and it is
+-// deliberately frequency-agnostic: the two wrappers store term frequencies
+-// differently (BuilderList accumulates an RLE byte tail during indexing;
+-// MergeList keeps a decoded slice it can mutate), and they keep their parallel
+-// frequency structure in sync using the positions implied by appendSorted /
+-// removeAt and reported by indexOf. Callers mutate the set only through its
+-// methods rather than its fields.
++// It is deliberately frequency-agnostic. MergeList keeps a parallel Freqs column
++// in sync with it using the positions implied by appendSorted / removeAt and
++// reported by indexOf. Callers mutate the set only through its methods rather
++// than its fields.
+ type docIDSet struct {
+ 	first uint64
+ 	ids   []uint64
+@@ -251,194 +264,50 @@ func panicNotIncreasing(id, last uint64) {
+ 	panic(fmt.Sprintf("docIDSet appends must be strictly increasing: got %d after %d", id, last))
+ }
+ 
+-// BuilderList is a posting list optimized for the indexing build path. Doc IDs
+-// must be added in strictly increasing order (which is exactly what the indexer
+-// does), letting the build stay a branch-light append. It is build-only: it
+-// supports Add/AddWithFrequency and a (cold) Remove for same-batch updates, but
+-// not the boolean set operations — merging uses MergeList instead.
++// Freqs is the per-document term-frequency column that rides alongside a posting
++// list's doc IDs, indexed by position (parallel to the doc-ID order). It is the
++// single in-memory representation of frequencies in this package — the doc-ID
++// structure is never burdened with them, matching how Lucene and Tantivy keep
++// freqs in a parallel stream.
+ //
+-// Term frequencies are accumulated directly into their run-length-encoded
+-// serialized form as IDs arrive, rather than buffered in a parallel slice: the
+-// in-progress run is (curRun, curFreq) and completed runs are appended to
+-// `tail`. A run of equal frequencies — overwhelmingly the common case, since
+-// most TFs are 1 — costs a single counter bump with no allocation, and an
+-// all-ones list (anyNonOne == false) serializes as a plain roaring bitmap.
+-type BuilderList struct {
+-	docs docIDSet
+-
+-	curFreq   uint32
+-	curRun    uint64
+-	tail      []byte
+-	anyNonOne bool
+-
+-	serialized []byte
+-}
+-
+-func (l *BuilderList) GetCardinality() uint64            { return uint64(l.docs.len()) }
+-func (l *BuilderList) ToArray() []uint64                 { return l.docs.array() }
+-func (l *BuilderList) Iterator() roaring64.IntPeekable64 { return l.docs.iterator() }
+-
+-func (l *BuilderList) Add(id uint64) {
+-	l.AddWithFrequency(id, 1)
+-}
+-
+-// AddWithFrequency appends id with the given term frequency. Doc IDs must be
+-// added in strictly increasing order; an out-of-order or duplicate id panics,
+-// since either would silently corrupt the sorted ids and the RLE tail.
+-func (l *BuilderList) AddWithFrequency(id uint64, freq uint32) {
+-	if freq == 0 {
+-		freq = 1
+-	}
+-	first := l.docs.len() == 0
+-	l.docs.appendSorted(id) // panics if not strictly increasing
+-	l.serialized = nil
+-
+-	// Extend the run-length-encoded frequency tail.
+-	switch {
+-	case first:
+-		l.curFreq = freq
+-		l.curRun = 1
+-	case freq == l.curFreq:
+-		l.curRun++
+-	default:
+-		l.tail = binary.AppendUvarint(l.tail, l.curRun)
+-		l.tail = binary.AppendUvarint(l.tail, uint64(l.curFreq))
+-		l.curFreq = freq
+-		l.curRun = 1
+-	}
+-	if freq != 1 {
+-		l.anyNonOne = true
+-	}
+-}
+-
+-// frequencyAt decodes the term frequency at position i from the RLE tail. It is
+-// a cold path (Frequency / Remove); the indexing hot path never reads back.
+-func (l *BuilderList) frequencyAt(i int) uint32 {
+-	if !l.anyNonOne {
+-		return 1
+-	}
+-	pos := 0
+-	buf := l.tail
+-	for len(buf) > 0 {
+-		runlen, n := binary.Uvarint(buf)
+-		buf = buf[n:]
+-		value, n := binary.Uvarint(buf)
+-		buf = buf[n:]
+-		if i < pos+int(runlen) {
+-			return uint32(value)
+-		}
+-		pos += int(runlen)
+-	}
+-	// The in-progress run is not yet flushed into tail.
+-	if i < pos+int(l.curRun) {
+-		return l.curFreq
+-	}
+-	return 1
+-}
+-
+-func (l *BuilderList) Frequency(id uint64) uint32 {
+-	i, ok := l.docs.indexOf(id)
+-	if !ok {
+-		return 0
+-	}
+-	return l.frequencyAt(i)
+-}
+-
+-// Remove deletes id, preserving the frequencies of surviving docs. It is a cold
+-// path — only same-batch document updates hit it, on the tiny id-field posting
+-// list — so it simply decodes, drops the entry, and rebuilds the RLE tail.
+-func (l *BuilderList) Remove(id uint64) {
+-	i, ok := l.docs.indexOf(id)
+-	if !ok {
+-		return
+-	}
+-	ids := l.docs.array()
+-	freqs := make([]uint32, len(ids))
+-	for j := range ids {
+-		freqs[j] = l.frequencyAt(j)
+-	}
+-	l.Clear()
+-	for j := range ids {
+-		if j == i {
+-			continue
+-		}
+-		l.AddWithFrequency(ids[j], freqs[j])
+-	}
+-}
+-
+-func (l *BuilderList) Clear() {
+-	l.docs.reset()
+-	l.curFreq = 0
+-	l.curRun = 0
+-	l.tail = l.tail[:0]
+-	l.anyNonOne = false
+-	l.serialized = nil
+-}
+-
+-func (l *BuilderList) ensureSerialized() error {
+-	if l.serialized != nil {
+-		return nil
+-	}
+-	roaringBuf, err := l.docs.roaringBytes()
+-	if err != nil {
+-		return err
+-	}
+-	if !l.anyNonOne {
+-		l.serialized = roaringBuf
+-		return nil
+-	}
+-	buf := make([]byte, 0, len(countedListMagic)+binary.MaxVarintLen64+len(roaringBuf)+len(l.tail)+2*binary.MaxVarintLen64)
+-	buf = append(buf, countedListMagic...)
+-	buf = binary.AppendUvarint(buf, uint64(len(roaringBuf)))
+-	buf = append(buf, roaringBuf...)
+-	buf = append(buf, l.tail...)
+-	// Flush the in-progress run.
+-	buf = binary.AppendUvarint(buf, l.curRun)
+-	buf = binary.AppendUvarint(buf, uint64(l.curFreq))
+-	l.serialized = buf
+-	return nil
+-}
+-
+-func (l *BuilderList) GetSerializedSizeInBytes() uint64 {
+-	if err := l.ensureSerialized(); err != nil {
+-		return 0
+-	}
+-	return uint64(len(l.serialized))
+-}
+-
+-func (l *BuilderList) MarshalInto(buf []byte) error {
+-	if err := l.ensureSerialized(); err != nil {
+-		return err
+-	}
+-	return copyInto(buf, l.serialized)
+-}
+-
+-func (l *BuilderList) Marshal() ([]byte, error) {
+-	if err := l.ensureSerialized(); err != nil {
+-		return nil, err
+-	}
+-	return bytes.Clone(l.serialized), nil
+-}
+-
+-// termFreqs stores per-position term frequencies for MergeList. It keeps the
+-// common "every TF is 1" case allocation-free (the slice stays nil,
+-// `materialized` false) and otherwise stores a plain dense slice — never a map.
+-// Entries are indexed by position, parallel to the posting list's doc-ID order.
+-type termFreqs struct {
++// The overwhelmingly common case — every term frequency is 1 — is stored for
++// free: `dense` stays nil and `materialized` false, so an all-ones list costs
++// nothing beyond its doc IDs and serializes as a plain roaring bitmap. The
++// column materializes into a dense []uint32 only once some frequency differs
++// from 1, and from then on `dense` stays the same length as the doc-ID set.
++type Freqs struct {
+ 	dense        []uint32
+ 	materialized bool
+ }
+ 
+-func (f *termFreqs) at(i int) uint32 {
++func (f *Freqs) at(i int) uint32 {
+ 	if !f.materialized {
+ 		return 1
+ 	}
+ 	return f.dense[i]
+ }
+ 
++// appendFreq records freq for the next (highest) position. n is the number of
++// positions already present. The column stays unmaterialized while every
++// frequency is 1, backfilling ones for the existing positions the first time a
++// non-unit frequency arrives.
++func (f *Freqs) appendFreq(n int, freq uint32) {
++	if !f.materialized {
++		if freq == 1 {
++			return
++		}
++		f.dense = f.dense[:0]
++		for i := 0; i < n; i++ {
++			f.dense = append(f.dense, 1)
++		}
++		f.materialized = true
++	}
++	f.dense = append(f.dense, freq)
++}
++
+ // setAll replaces the contents with the given per-position frequencies, staying
+ // unmaterialized (all-ones) when every frequency is 1.
+-func (f *termFreqs) setAll(freqs []uint32) {
++func (f *Freqs) setAll(freqs []uint32) {
+ 	for _, v := range freqs {
+ 		if v != 1 {
+ 			f.dense = append(f.dense[:0], freqs...)
+@@ -450,20 +319,20 @@ func (f *termFreqs) setAll(freqs []uint32) {
+ }
+ 
+ // removeAt deletes the entry at position i, shifting later entries left.
+-func (f *termFreqs) removeAt(i int) {
++func (f *Freqs) removeAt(i int) {
+ 	if !f.materialized {
+ 		return
+ 	}
+ 	f.dense = append(f.dense[:i], f.dense[i+1:]...)
+ }
+ 
+-func (f *termFreqs) clear() {
++func (f *Freqs) clear() {
+ 	f.dense = f.dense[:0]
+ 	f.materialized = false
+ }
+ 
+ // any reports whether any position has a frequency other than 1.
+-func (f *termFreqs) any() bool {
++func (f *Freqs) any() bool {
+ 	for _, v := range f.dense {
+ 		if v != 1 {
+ 			return true
+@@ -472,14 +341,23 @@ func (f *termFreqs) any() bool {
+ 	return false
+ }
+ 
+-// MergeList is a mutable posting list used by the pebble value merger, delete
+-// compaction, and query result combination. Unlike BuilderList it supports
+-// boolean set operations, keeping frequencies decoded (termFreqs) so they can
+-// be preserved and summed as lists are combined.
++// MergeList is the package's unified mutable posting list. It backs every path
++// that mutates a list:
++//
++//   - indexing/build: AddWithFrequency appends doc IDs (in increasing order, the
++//     indexer's normal case) through an allocation-light append fast path;
++//   - the pebble value merger and delete compaction: Or / RemoveAll combine and
++//     prune lists, summing and preserving frequencies;
++//   - query result combination: And / AndNot / Or set algebra.
++//
++// It is a structure-of-arrays: a docIDSet (a roaring bitmap with an inline
++// single-element fast path for rare ngrams) plus a parallel Freqs column.
++// Frequencies are run-length-encoded only at serialization time (marshalCounted);
++// in memory they stay a plain column.
+ type MergeList struct {
+-	docs docIDSet
++	docs  docIDSet
++	freqs Freqs
+ 
+-	freqs      termFreqs
+ 	serialized []byte
+ }
+ 
+@@ -506,17 +384,32 @@ func (l *MergeList) Clear() {
+ }
+ 
+ func (l *MergeList) Add(id uint64) {
+-	if _, ok := l.docs.indexOf(id); ok {
+-		return
++	l.AddWithFrequency(id, 1)
++}
++
++// AddWithFrequency inserts id with the given term frequency (a zero frequency is
++// treated as 1). Appending an id greater than the current maximum — the indexing
++// path's normal case — is an allocation-light append; inserting into the middle
++// or front rebuilds the parallel arrays. Re-adding an id already present leaves
++// the list unchanged.
++func (l *MergeList) AddWithFrequency(id uint64, freq uint32) {
++	if freq == 0 {
++		freq = 1
+ 	}
+-	if l.docs.len() == 0 || id > l.docs.last {
++	n := l.docs.len()
++	if n == 0 || id > l.docs.last {
++		// This branch condition is exactly appendSorted's precondition (empty, or
++		// strictly greater than the current max), so appendSorted cannot panic
++		// here. That guarantee is also what lets us grow freqs first: the two
++		// parallel columns can never be left out of step.
++		l.freqs.appendFreq(n, freq)
+ 		l.docs.appendSorted(id)
+-		if l.freqs.materialized {
+-			l.freqs.dense = append(l.freqs.dense, 1)
+-		}
+ 		l.serialized = nil
+ 		return
+ 	}
++	if _, ok := l.docs.indexOf(id); ok {
++		return
++	}
+ 
+ 	oldIDs := l.docs.array()
+ 	ids := make([]uint64, 0, len(oldIDs)+1)
+@@ -525,7 +418,7 @@ func (l *MergeList) Add(id uint64) {
+ 	for i, oldID := range oldIDs {
+ 		if !inserted && id < oldID {
+ 			ids = append(ids, id)
+-			freqs = append(freqs, 1)
++			freqs = append(freqs, freq)
+ 			inserted = true
+ 		}
+ 		ids = append(ids, oldID)
+@@ -533,7 +426,7 @@ func (l *MergeList) Add(id uint64) {
+ 	}
+ 	if !inserted {
+ 		ids = append(ids, id)
+-		freqs = append(freqs, 1)
++		freqs = append(freqs, freq)
+ 	}
+ 	l.setFromSorted(ids, freqs)
+ }
+@@ -688,29 +581,10 @@ func (l *MergeList) ensureSerialized() error {
+ 		l.serialized = roaringBuf
+ 		return nil
+ 	}
+-	l.serialized = l.marshalRLECounts(roaringBuf)
++	l.serialized = marshalCounted(roaringBuf, l.freqs.dense)
+ 	return nil
+ }
+ 
+-func (l *MergeList) marshalRLECounts(roaringBuf []byte) []byte {
+-	n := l.docs.len()
+-	buf := make([]byte, 0, len(countedListMagic)+binary.MaxVarintLen64+len(roaringBuf)+n)
+-	buf = append(buf, countedListMagic...)
+-	buf = binary.AppendUvarint(buf, uint64(len(roaringBuf)))
+-	buf = append(buf, roaringBuf...)
+-	for i := 0; i < n; {
+-		v := l.frequencyAt(i)
+-		j := i + 1
+-		for j < n && l.frequencyAt(j) == v {
+-			j++
+-		}
+-		buf = binary.AppendUvarint(buf, uint64(j-i))
+-		buf = binary.AppendUvarint(buf, uint64(v))
+-		i = j
+-	}
+-	return buf
+-}
+-
+ func (l *MergeList) GetSerializedSizeInBytes() uint64 {
+ 	if err := l.ensureSerialized(); err != nil {
+ 		return 0
+@@ -732,12 +606,41 @@ func (l *MergeList) Marshal() ([]byte, error) {
+ 	return bytes.Clone(l.serialized), nil
+ }
+ 
++// marshalCounted serializes a counted posting list: the magic prefix, the
++// roaring doc-ID payload, then the run-length-encoded frequency tail. freqs must
++// be the full per-position frequency slice (length == cardinality); it is the
++// caller's job to fall back to a plain roaring payload when every frequency is 1.
++func marshalCounted(roaringBuf []byte, freqs []uint32) []byte {
++	buf := make([]byte, 0, len(countedListMagic)+binary.MaxVarintLen64+len(roaringBuf)+len(freqs))
++	buf = append(buf, countedListMagic...)
++	buf = binary.AppendUvarint(buf, uint64(len(roaringBuf)))
++	buf = append(buf, roaringBuf...)
++	for i := 0; i < len(freqs); {
++		v := freqs[i]
++		j := i + 1
++		for j < len(freqs) && freqs[j] == v {
++			j++
++		}
++		buf = binary.AppendUvarint(buf, uint64(j-i))
++		buf = binary.AppendUvarint(buf, uint64(v))
++		i = j
++	}
++	return buf
++}
++
+ // frequenciesInOrder returns the per-doc frequencies of l in the same order as
+-// ids (which must be l.ToArray()). For a counted read-only list it returns the
+-// decoded frequency slice directly; otherwise every present doc has frequency 1.
++// ids (which must be l.ToArray()). Lists that already hold a parallel frequency
++// column return it directly; otherwise every present doc has frequency 1.
+ func frequenciesInOrder(l ReadOnlyList, ids []uint64) []uint32 {
+-	if c, ok := l.(*countedReadOnlyList); ok {
+-		return c.freqs
++	switch t := l.(type) {
++	case *countedReadOnlyList:
++		return t.freqs
++	case *MergeList:
++		freqs := make([]uint32, len(ids))
++		for i := range ids {
++			freqs[i] = t.freqs.at(i)
++		}
++		return freqs
+ 	}
+ 	freqs := make([]uint32, len(ids))
+ 	for i, id := range ids {
+@@ -808,32 +711,20 @@ func NewList(ids ...uint64) List {
+ 	return &roaringWrapper{bm}
+ }
+ 
+-// NewBuilderList returns a build-only posting list optimized for the indexing
+-// path. See BuilderList.
+-func NewBuilderList(ids ...uint64) *BuilderList {
+-	pl := &BuilderList{}
+-	for _, id := range ids {
+-		pl.Add(id)
+-	}
+-	return pl
+-}
+-
+-// NewMergeList returns an empty posting list for the merge / compaction path.
+-// See MergeList.
++// NewMergeList returns an empty unified mutable posting list. See MergeList.
+ func NewMergeList() *MergeList {
+ 	return &MergeList{}
+ }
+ 
+-func (w *roaringWrapper) MarshalInto(buf []byte) error {
+-	stream := bytes.NewBuffer(buf)
+-	_, err := w.Bitmap.WriteTo(stream)
+-	return err
+-}
+-
+-func (w *roaringWrapper) Marshal() ([]byte, error) {
+-	stream := bytes.NewBuffer(make([]byte, 0, int(w.GetSerializedSizeInBytes())))
+-	_, err := w.Bitmap.WriteTo(stream)
+-	return stream.Bytes(), err
++// NewBuilderList returns a MergeList seeded with the given ids, a convenience for
++// the indexing path (which then appends term frequencies via AddWithFrequency)
++// and for tests. Ids are added via Add, so they need not be sorted.
++func NewBuilderList(ids ...uint64) *MergeList {
++	pl := &MergeList{}
++	for _, id := range ids {
++		pl.Add(id)
++	}
++	return pl
+ }
+ 
+ func readOnlyListToRoaring(l ReadOnlyList) *roaring64.Bitmap {
+@@ -849,21 +740,12 @@ func readOnlyListToRoaring(l ReadOnlyList) *roaring64.Bitmap {
+ }
+ 
+ func Unmarshal(buf []byte) (*MergeList, error) {
+-	ml := NewMergeList()
+-	if isCountedList(buf) {
+-		roList, err := unmarshalCountedReadOnly(buf)
+-		if err != nil {
+-			return nil, err
+-		}
+-		ml.setFromSorted(roList.ToArray(), roList.freqs)
+-		return ml, nil
+-	}
+-
+-	roList, err := UnmarshalReadOnly(buf)
++	bm, freqs, err := decodePostings(buf)
+ 	if err != nil {
+ 		return nil, err
+ 	}
+-	ml.setFromSorted(roList.ToArray(), nil)
++	ml := NewMergeList()
++	ml.setFromSorted(bm.ToArray(), freqs)
+ 	return ml, nil
+ }
+ 
+@@ -871,51 +753,84 @@ func Unmarshal(buf []byte) (*MergeList, error) {
+ // the underlying data. Important: buf must remain valid for the lifetime of the returned
+ // ReadOnlyList.
+ func UnmarshalReadOnly(buf []byte) (ReadOnlyList, error) {
+-	if isCountedList(buf) {
+-		return unmarshalCountedReadOnly(buf)
+-	}
+-	pl := roaring64.New()
+-	n, err := pl.FromUnsafeBytes(buf)
++	bm, freqs, err := decodePostings(buf)
+ 	if err != nil {
+ 		return nil, err
+ 	}
+-	if n < int64(len(buf)) {
+-		return nil, fmt.Errorf("read only %d bytes of buffer with size %d", n, len(buf))
++	if freqs == nil {
++		return &roaringWrapper{bm}, nil
++	}
++	return &countedReadOnlyList{bm: bm, freqs: freqs, serialized: buf}, nil
++}
++
++// decodePostings is the shared decode path for both Unmarshal and
++// UnmarshalReadOnly. It splits buf into the roaring doc-ID payload and (for
++// counted lists) the RLE frequency tail, then decodes each: a plain list is just
++// the roaring payload, while a counted list carries the magic prefix, an
++// explicit roaring length, the roaring payload, then the tail. freqs is nil for
++// a plain (all-ones) list. The returned bitmap aliases buf via FromUnsafeBytes,
++// so buf must outlive any read-only list built from it.
++func decodePostings(buf []byte) (*roaring64.Bitmap, []uint32, error) {
++	counted := bytes.HasPrefix(buf, countedListMagic)
++
++	// For a plain list the whole buffer is the roaring payload; for a counted
++	// list the length prefix bounds it and the remainder is the frequency tail.
++	roaringBuf := buf
++	var tail []byte
++	if counted {
++		rest := buf[len(countedListMagic):]
++		roaringLen, n := binary.Uvarint(rest)
++		if n <= 0 {
++			return nil, nil, fmt.Errorf("invalid counted posting list roaring length")
++		}
++		rest = rest[n:]
++		if roaringLen > uint64(len(rest)) {
++			return nil, nil, fmt.Errorf("counted posting list roaring length %d exceeds remaining buffer %d", roaringLen, len(rest))
++		}
++		roaringBuf = rest[:roaringLen:roaringLen]
++		tail = rest[roaringLen:]
+ 	}
+-	return &roaringWrapper{pl}, nil
+-}
+ 
+-func isCountedList(buf []byte) bool {
+-	return bytes.HasPrefix(buf, countedListMagic)
+-}
++	bm := roaring64.New()
++	read, err := bm.FromUnsafeBytes(roaringBuf)
++	if err != nil {
++		return nil, nil, err
++	}
++	if read < int64(len(roaringBuf)) {
++		return nil, nil, fmt.Errorf("read only %d bytes of roaring buffer with size %d", read, len(roaringBuf))
++	}
+ 
+-func unmarshalCountedReadOnly(buf []byte) (*countedReadOnlyList, error) {
+-	if !bytes.HasPrefix(buf, countedListMagic) {
+-		return nil, fmt.Errorf("unknown counted posting list format")
++	if !counted {
++		return bm, nil, nil
+ 	}
+-	pl, countBuf, err := unmarshalCountedRoaring(buf[len(countedListMagic):])
++	freqs, err := decodeRLEFreqs(tail, bm.GetCardinality())
+ 	if err != nil {
+-		return nil, err
++		return nil, nil, err
+ 	}
+-	cardinality := pl.GetCardinality()
++	return bm, freqs, nil
++}
++
++// decodeRLEFreqs expands the run-length-encoded frequency tail (see
++// marshalCounted) into a per-position slice of length cardinality.
++func decodeRLEFreqs(tail []byte, cardinality uint64) ([]uint32, error) {
+ 	if cardinality > uint64(int(^uint(0)>>1)) {
+ 		return nil, fmt.Errorf("counted posting list cardinality %d overflows int", cardinality)
+ 	}
+ 	freqs := make([]uint32, 0, int(cardinality))
+-	for len(countBuf) > 0 {
+-		runlen, n := binary.Uvarint(countBuf)
++	for len(tail) > 0 {
++		runlen, n := binary.Uvarint(tail)
+ 		if n <= 0 || runlen == 0 {
+ 			return nil, fmt.Errorf("invalid counted posting list run length")
+ 		}
+-		countBuf = countBuf[n:]
+-		value, n := binary.Uvarint(countBuf)
++		tail = tail[n:]
++		value, n := binary.Uvarint(tail)
+ 		if n <= 0 {
+ 			return nil, fmt.Errorf("invalid counted posting list frequency")
+ 		}
+ 		if value > uint64(^uint32(0)) {
+ 			return nil, fmt.Errorf("posting list frequency %d overflows uint32", value)
+ 		}
+-		countBuf = countBuf[n:]
++		tail = tail[n:]
+ 		if uint64(len(freqs))+runlen > cardinality {
+ 			return nil, fmt.Errorf("counted posting list runs total %d exceed cardinality %d", uint64(len(freqs))+runlen, cardinality)
+ 		}
+@@ -927,34 +842,7 @@ func unmarshalCountedReadOnly(buf []byte) (*countedReadOnlyList, error) {
+ 	if uint64(len(freqs)) != cardinality {
+ 		return nil, fmt.Errorf("decoded %d frequencies for posting list with cardinality %d", len(freqs), cardinality)
+ 	}
+-	return &countedReadOnlyList{
+-		bm:         pl,
+-		freqs:      freqs,
+-		serialized: buf,
+-	}, nil
+-}
+-
+-func unmarshalCountedRoaring(rest []byte) (*roaring64.Bitmap, []byte, error) {
+-	roaringLen, n := binary.Uvarint(rest)
+-	if n <= 0 {
+-		return nil, nil, fmt.Errorf("invalid counted posting list roaring length")
+-	}
+-	rest = rest[n:]
+-	if roaringLen > uint64(len(rest)) {
+-		return nil, nil, fmt.Errorf("counted posting list roaring length %d exceeds remaining buffer %d", roaringLen, len(rest))
+-	}
+-	roaringBuf := rest[:roaringLen:roaringLen]
+-	rest = rest[roaringLen:]
+-
+-	pl := roaring64.New()
+-	read, err := pl.FromUnsafeBytes(roaringBuf)
+-	if err != nil {
+-		return nil, nil, err
+-	}
+-	if read < int64(len(roaringBuf)) {
+-		return nil, nil, fmt.Errorf("read only %d bytes of roaring buffer with size %d", read, len(roaringBuf))
+-	}
+-	return pl, rest, nil
++	return freqs, nil
+ }
+ 
+ // A FieldMap is a collection of postingLists that are keyed by the field that
+diff --git a/codesearch/posting/posting_test.go b/codesearch/posting/posting_test.go
+index ab7c8140b1..979db1995c 100644
+--- a/codesearch/posting/posting_test.go
++++ b/codesearch/posting/posting_test.go
+@@ -92,10 +92,51 @@ func TestBuilderList(t *testing.T) {
+ 	assert.Equal(t, []uint64{1, 2, 3}, pl.ToArray())
+ }
+ 
+-func TestBuilderListPanicsOnNonIncreasingAdd(t *testing.T) {
++func TestBuilderListAddOutOfOrder(t *testing.T) {
++	// The unified list accepts adds in any order: duplicates are ignored and
++	// smaller ids are inserted in sorted position. The indexing path still hits
++	// the increasing-append fast path, but out-of-order adds are no longer a
++	// programming error.
++	pl := posting.NewBuilderList(1, 2, 4)
++	pl.Add(4) // duplicate trailing id: ignored
++	pl.Add(2) // duplicate interior id: ignored
++	pl.Add(3) // out-of-order id: inserted in place
++	assert.Equal(t, []uint64{1, 2, 3, 4}, pl.ToArray())
++}
++
++func TestAddWithFrequencyOnExistingIDIsNoOp(t *testing.T) {
++	// Re-adding an id already present is a no-op: the doc set is unchanged and the
++	// supplied frequency is dropped (the original is kept). This pins the dedup
++	// behavior the unified list inherited from MergeList; the old BuilderList
++	// panicked on a duplicate add instead, so the indexer must continue to feed
++	// unique ids per list.
++	pl := posting.NewBuilderList()
++	pl.AddWithFrequency(1, 2)
++	pl.AddWithFrequency(2, 3)
++
++	pl.AddWithFrequency(2, 9) // duplicate trailing id, higher freq: dropped
++	pl.AddWithFrequency(1, 9) // duplicate interior id, higher freq: dropped
++
++	assert.Equal(t, []uint64{1, 2}, pl.ToArray())
++	assert.Equal(t, uint32(2), pl.Frequency(1))
++	assert.Equal(t, uint32(3), pl.Frequency(2))
++}
++
++func TestAddWithFrequencyOnExistingIDKeepsAllOnesUnmaterialized(t *testing.T) {
++	// A dropped duplicate add must not force an otherwise all-ones list to
++	// materialize a frequency column: it still serializes byte-for-byte as a plain
++	// (uncounted) roaring list.
+ 	pl := posting.NewBuilderList(1, 2, 3)
+-	assert.Panics(t, func() { pl.Add(3) }, "duplicate trailing id should panic")
+-	assert.Panics(t, func() { pl.Add(2) }, "out-of-order id should panic")
++	pl.AddWithFrequency(2, 5) // dropped
++
++	assert.Equal(t, []uint64{1, 2, 3}, pl.ToArray())
++	assert.Equal(t, uint32(1), pl.Frequency(2))
++
++	got, err := pl.Marshal()
++	require.NoError(t, err)
++	want, err := posting.NewList(1, 2, 3).Marshal()
++	require.NoError(t, err)
++	assert.Equal(t, want, got, "duplicate add must not turn an all-ones list into a counted one")
+ }
+ 
+ func TestBuilderListFrequencyDecodesRLE(t *testing.T) {
+@@ -108,7 +149,7 @@ func TestBuilderListFrequencyDecodesRLE(t *testing.T) {
+ 	assert.Equal(t, uint32(1), pl.Frequency(1))
+ 	assert.Equal(t, uint32(3), pl.Frequency(2))
+ 	assert.Equal(t, uint32(3), pl.Frequency(3))
+-	assert.Equal(t, uint32(1), pl.Frequency(4)) // in the not-yet-flushed final run
++	assert.Equal(t, uint32(1), pl.Frequency(4)) // last run
+ 	assert.Equal(t, uint32(0), pl.Frequency(99))
+ }
+ 
+@@ -516,15 +557,48 @@ func BenchmarkListSerializationPosting(b *testing.B) {
+ 		}
+ 	}
+ 
++	// b.Loop() requires the timer to be running when it's evaluated, so the
++	// per-iteration work goes straight in the loop body; setup before the loop is
++	// excluded from timing automatically.
+ 	b.ReportAllocs()
+-	b.StopTimer()
+ 	for b.Loop() {
+-		b.StartTimer()
+ 		pl := posting.NewList(ids...)
+-		_, err := pl.Marshal()
+-		b.StopTimer()
+-		require.NoError(b, err)
++		if _, err := pl.Marshal(); err != nil {
++			b.Fatal(err)
++		}
++	}
++}
++
++// BenchmarkBuildList models the indexing hot path: append doc IDs in increasing
++// order via AddWithFrequency, then serialize. The AllOnes arm exercises the
++// common case where the frequency column never materializes; SparseOutliers
++// adds occasional TF>1 docs so the dense column and the RLE marshal kick in.
++func BenchmarkBuildList(b *testing.B) {
++	const n = 100_000
++	build := func(b *testing.B, freq func(i uint64) uint32) {
++		b.ReportAllocs()
++		for b.Loop() {
++			pl := posting.NewBuilderList()
++			for i := uint64(0); i < n; i++ {
++				pl.AddWithFrequency(i, freq(i))
++			}
++			if _, err := pl.Marshal(); err != nil {
++				b.Fatal(err)
++			}
++		}
+ 	}
++
++	b.Run("AllOnes", func(b *testing.B) {
++		build(b, func(i uint64) uint32 { return 1 })
++	})
++	b.Run("SparseOutliers", func(b *testing.B) {
++		build(b, func(i uint64) uint32 {
++			if i%50 == 0 {
++				return 3
++			}
++			return 1
++		})
++	})
+ }
+ 
+ func BenchmarkListDeserializationPosting(b *testing.B) {
+diff --git a/codesearch/query/BUILD b/codesearch/query/BUILD
+index b386e94086..6efb8800dc 100644
+--- a/codesearch/query/BUILD
++++ b/codesearch/query/BUILD
+@@ -26,7 +26,6 @@ go_test(
+     ],
+     embed = [":query"],
+     deps = [
+-        "//codesearch/schema",
+         "//codesearch/token",
+         "//codesearch/types",
+         "@com_github_stretchr_testify//assert",
+diff --git a/codesearch/query/regexp_query.go b/codesearch/query/regexp_query.go
+index 9557273597..cea55acfad 100644
+--- a/codesearch/query/regexp_query.go
++++ b/codesearch/query/regexp_query.go
+@@ -106,7 +106,6 @@ type fieldScorer struct {
+ 	op        scorerOp
+ 	fieldName string
+ 	weight    int
+-	matcher   *dfa.Regexp
+ 	children  []*fieldScorer
+ }
+ 
+@@ -114,57 +113,62 @@ func (fs *fieldScorer) Skip() bool {
+ 	return fs.op == Noop
+ }
+ 
+-func (fs *fieldScorer) scoreInternal(doc types.Document) (matchCount, tokenCount int) {
++func (fs *fieldScorer) scoreInternal(docMatch types.DocumentMatch) (matchCount, tokenCount int) {
+ 	// We adapt BM25 scoring to work with multiple fields by counting matches and tokens from each
+ 	// field, summing them up, then running BM25 on those numbers. Fields can be weighted - the
+ 	// counts from a field (both token and match) are duplicated `weight` times.
+-	// This approach is meant to match the method describe here:
++	// This approach is meant to match the method described here:
+ 	// https://www.researchgate.net/publication/221613382_Simple_BM25_extension_to_multiple_weighted_fields
+-
+ 	switch fs.op {
+ 	case Match:
+-		contents := doc.Field(fs.fieldName).Contents()
+-		m := match(fs.matcher.Clone(), contents)
+-		matchCount = len(m) * fs.weight
+-		tokenCount = len(strings.Fields(string(contents))) * fs.weight
++		if docMatch == nil {
++			return 0, 0
++		}
++		posting := docMatch.Posting(fs.fieldName)
++		tokenCount = int(docMatch.FieldLength(fs.fieldName)) * fs.weight
++		if posting == nil {
++			return 0, tokenCount
++		}
++		matchCount = int(posting.Frequency()) * fs.weight
+ 		return matchCount, tokenCount
+ 	case Or:
+-		// Sum up the scores of all children. Arguably, we could take the highest score,
++		// Sum up the matches of all children. Arguably, we could take the highest score,
+ 		// but it seems more useful to boost queries that match more terms.
+-		matchCount = 0.0
+-		tokenCount = 0.0
++		matchCount = 0
++		tokenCount = 0
+ 		for _, child := range fs.children {
+-			m, t := child.scoreInternal(doc)
++			m, t := child.scoreInternal(docMatch)
+ 			matchCount += m
+ 			tokenCount += t
+ 		}
+ 		return matchCount, tokenCount
+ 	case And:
+-		// Same os OR, but if any child scores 0, the overall score is 0.
+-		matchCount = 0.0
+-		tokenCount = 0.0
++		// Same as OR, but if any child scores 0, the overall score is 0.
++		matchCount = 0
++		tokenCount = 0
+ 
+ 		for _, child := range fs.children {
+-			m, t := child.scoreInternal(doc)
+-			if m == 0.0 {
+-				return 0.0, 0.0
++			m, t := child.scoreInternal(docMatch)
++			if m == 0 {
++				return 0, 0
+ 			}
+ 			matchCount += m
+ 			tokenCount += t
+ 		}
+ 		return matchCount, tokenCount
+ 	case Noop:
+-		return 1.0, 1.0
++		return 1, 1
+ 	default:
+ 		log.Warningf("Unknown scorer operation %d", fs.op)
+-		return 0.0, 0.0 // Should never happen
++		return 0, 0 // Should never happen
+ 	}
+ }
+ 
+ func bm25Score(f_qi_d, D float64) float64 {
+ 	// See https://en.wikipedia.org/wiki/Okapi_BM25#The_ranking_function for
+ 	// the formula for BM25 scoring. k1 and b are left at "default" values here, and haven't been
+-	// tuned.
++	// tuned. Query scoring passes a field-length based normalization value computed from
++	// the indexed fields that contributed to the score.
+ 	k1 := 1.2
+ 	b := 0.75
+ 	return (f_qi_d * (k1 + 1)) / (f_qi_d + k1*(1-b+b*D))
+@@ -176,12 +180,11 @@ func newNoopScorer() *fieldScorer {
+ 	}
+ }
+ 
+-func newFieldScorer(fieldName string, weight int, matcher *dfa.Regexp) *fieldScorer {
++func newFieldScorer(fieldName string, weight int) *fieldScorer {
+ 	return &fieldScorer{
+ 		op:        Match,
+ 		fieldName: fieldName,
+ 		weight:    weight,
+-		matcher:   matcher,
+ 	}
+ }
+ 
+@@ -211,8 +214,8 @@ func orScorers(a *fieldScorer, b *fieldScorer) *fieldScorer {
+ 	}
+ }
+ 
+-func (fs *fieldScorer) Score(docMatch types.DocumentMatch, doc types.Document) float64 {
+-	matchCount, tokenCount := fs.scoreInternal(doc)
++func (fs *fieldScorer) Score(docMatch types.DocumentMatch) float64 {
++	matchCount, tokenCount := fs.scoreInternal(docMatch)
+ 	return bm25Score(float64(matchCount), float64(tokenCount))
+ }
+ 
+@@ -346,13 +349,9 @@ func NewReQuery(ctx context.Context, q string) (*ReQuery, error) {
+ 			return nil, status.InvalidArgumentError(err.Error())
+ 		}
+ 		sClauses = append(sClauses, subQ)
+-		fileMatchRe, err := dfa.Compile(filename)
+-		if err != nil {
+-			return nil, status.InvalidArgumentError(err.Error())
+-		}
+ 		// Weight 2 because explicit filename matches should be more impactful to ranking than
+ 		// non-explicit filename matches.
+-		scorer = andScorers(scorer, newFieldScorer(filenameField, 2, fileMatchRe))
++		scorer = andScorers(scorer, newFieldScorer(filenameField, 2))
+ 	}
+ 
+ 	q, lang := filters.ExtractLanguageFilter(q)
+@@ -400,8 +399,8 @@ func NewReQuery(ctx context.Context, q string) (*ReQuery, error) {
+ 			orScorers(
+ 				// Weight 2 because content matches should be more important than non-explicit
+ 				// filename matches.
+-				newFieldScorer(contentField, 2, re),
+-				newFieldScorer(filenameField, 1, re),
++				newFieldScorer(contentField, 2),
++				newFieldScorer(filenameField, 1),
+ 			))
+ 		contentMatcher = re
+ 
+diff --git a/codesearch/query/regexp_query_test.go b/codesearch/query/regexp_query_test.go
+index d4c5349630..ecfe63a7e1 100644
+--- a/codesearch/query/regexp_query_test.go
++++ b/codesearch/query/regexp_query_test.go
+@@ -4,27 +4,60 @@ import (
+ 	"context"
+ 	"testing"
+ 
+-	"github.com/buildbuddy-io/buildbuddy/codesearch/schema"
+ 	"github.com/buildbuddy-io/buildbuddy/codesearch/types"
+ 	"github.com/stretchr/testify/assert"
+ 	"github.com/stretchr/testify/require"
+ )
+ 
+-var testSchema = schema.NewDocumentSchema(
+-	[]types.FieldSchema{
+-		schema.MustFieldSchema(types.KeywordField, "id", true),
+-		schema.MustFieldSchema(types.TrigramField, "filename", true),
+-		schema.MustFieldSchema(types.SparseNgramField, "content", true),
+-		schema.MustFieldSchema(types.KeywordField, "lang", true),
+-	},
+-)
++type testPosting struct {
++	docid     uint64
++	frequency uint32
++}
++
++func (p testPosting) Docid() uint64 {
++	return p.docid
++}
++
++func (p testPosting) Frequency() uint32 {
++	return p.frequency
++}
++
++type testDocumentMatch struct {
++	docid        uint64
++	postings     map[string]types.Posting
++	fieldLengths map[string]uint32
++}
++
++func (m testDocumentMatch) Docid() uint64 {
++	return m.docid
++}
+ 
+-func newTestDocument(t *testing.T, fieldMap map[string][]byte) types.Document {
+-	doc, err := testSchema.MakeDocument(fieldMap)
+-	if err != nil {
+-		t.Fatalf("failed to create test document: %v", err)
++func (m testDocumentMatch) FieldNames() []string {
++	fields := make([]string, 0, len(m.postings))
++	for fieldName := range m.postings {
++		fields = append(fields, fieldName)
+ 	}
+-	return doc
++	return fields
++}
++
++func (m testDocumentMatch) Posting(fieldName string) types.Posting {
++	return m.postings[fieldName]
++}
++
++func (m testDocumentMatch) FieldLength(fieldName string) uint32 {
++	return m.fieldLengths[fieldName]
++}
++
++func matchWithFrequencies(freqs map[string]uint32) types.DocumentMatch {
++	return matchWithFrequenciesAndLengths(freqs, freqs)
++}
++
++func matchWithFrequenciesAndLengths(freqs, fieldLengths map[string]uint32) types.DocumentMatch {
++	postings := make(map[string]types.Posting, len(freqs))
++	for fieldName, frequency := range freqs {
++		postings[fieldName] = testPosting{docid: 1, frequency: frequency}
++	}
++	return testDocumentMatch{docid: 1, postings: postings, fieldLengths: fieldLengths}
+ }
+ 
+ func TestCaseSensitive(t *testing.T) {
+@@ -187,15 +220,11 @@ func TestScoringMatchContentOnly(t *testing.T) {
+ 	scorer := q.Scorer()
+ 	require.NotNil(t, scorer)
+ 
+-	doc := newTestDocument(t, map[string][]byte{
+-		"id":       []byte("1"),
+-		"filename": []byte("bar.txt"),
+-		"content":  []byte("foo"),
+-	})
+-
+-	score := scorer.Score(nil, doc)
+-	require.NotNil(t, score)
+-	assert.InDelta(t, 0.88, score, 0.1)
++	docMatch := matchWithFrequenciesAndLengths(
++		map[string]uint32{contentField: 1},
++		map[string]uint32{contentField: 1, filenameField: 1},
++	)
++	assert.Equal(t, bm25Score(2, 3), scorer.Score(docMatch))
+ }
+ 
+ func TestScoringMatchContentAndFilename(t *testing.T) {
+@@ -206,15 +235,14 @@ func TestScoringMatchContentAndFilename(t *testing.T) {
+ 	scorer := q.Scorer()
+ 	require.NotNil(t, scorer)
+ 
+-	doc := newTestDocument(t, map[string][]byte{
+-		"id":       []byte("1"),
+-		"filename": []byte("bar.go"),
+-		"content":  []byte("foo"),
+-	})
+-
+-	score := scorer.Score(nil, doc)
+-	require.NotNil(t, score)
+-	assert.InDelta(t, 1, score, 0.1)
++	docMatch := matchWithFrequenciesAndLengths(
++		map[string]uint32{
++			contentField:  1,
++			filenameField: 1,
++		},
++		map[string]uint32{contentField: 1, filenameField: 1},
++	)
++	assert.Equal(t, bm25Score(5, 5), scorer.Score(docMatch))
+ }
+ 
+ func TestScoringMatchFilenameWithoutAtom(t *testing.T) {
+@@ -225,15 +253,11 @@ func TestScoringMatchFilenameWithoutAtom(t *testing.T) {
+ 	scorer := q.Scorer()
+ 	require.NotNil(t, scorer)
+ 
+-	doc := newTestDocument(t, map[string][]byte{
+-		"id":       []byte("1"),
+-		"filename": []byte("bar.txt"),
+-		"content":  []byte("foo"),
+-	})
+-
+-	score := scorer.Score(nil, doc)
+-	require.NotNil(t, score)
+-	assert.InDelta(t, 0.55, score, 0.1)
++	docMatch := matchWithFrequenciesAndLengths(
++		map[string]uint32{filenameField: 1},
++		map[string]uint32{contentField: 1, filenameField: 1},
++	)
++	assert.Equal(t, bm25Score(1, 3), scorer.Score(docMatch))
+ }
+ 
+ func TestScoringMatchExplicitFilename(t *testing.T) {
+@@ -244,15 +268,11 @@ func TestScoringMatchExplicitFilename(t *testing.T) {
+ 	scorer := q.Scorer()
+ 	require.NotNil(t, scorer)
+ 
+-	doc := newTestDocument(t, map[string][]byte{
+-		"id":       []byte("1"),
+-		"filename": []byte("bar.txt"),
+-		"content":  []byte("foo"),
+-	})
+-
+-	score := scorer.Score(nil, doc)
+-	require.NotNil(t, score)
+-	assert.InDelta(t, 1.0, score, 0.1)
++	docMatch := matchWithFrequenciesAndLengths(
++		map[string]uint32{filenameField: 1},
++		map[string]uint32{contentField: 1, filenameField: 1},
++	)
++	assert.Equal(t, bm25Score(2, 2), scorer.Score(docMatch))
+ }
+ 
+ func TestScorerWithNoMatchers(t *testing.T) {
+@@ -263,16 +283,7 @@ func TestScorerWithNoMatchers(t *testing.T) {
+ 	scorer := q.Scorer()
+ 	require.NotNil(t, scorer)
+ 
+-	doc := newTestDocument(t, map[string][]byte{
+-		"id":       []byte("1"),
+-		"filename": []byte("bar.txt"),
+-		"content":  []byte("foo"),
+-		"lang":     []byte("java"),
+-	})
+-
+-	score := scorer.Score(nil, doc)
+-	require.NotNil(t, score)
+-	assert.Equal(t, 1.0, score)
++	assert.Equal(t, 1.0, scorer.Score(matchWithFrequencies(nil)))
+ }
+ 
+ func TestScorerNonMatch(t *testing.T) {
+@@ -283,15 +294,11 @@ func TestScorerNonMatch(t *testing.T) {
+ 	scorer := q.Scorer()
+ 	require.NotNil(t, scorer)
+ 
+-	doc := newTestDocument(t, map[string][]byte{
+-		"id":       []byte("1"),
+-		"filename": []byte("bar.txt"),
+-		"content":  []byte("foo"),
+-	})
+-
+-	score := scorer.Score(nil, doc)
+-	require.NotNil(t, score)
+-	assert.Equal(t, 0.0, score)
++	docMatch := matchWithFrequenciesAndLengths(
++		nil,
++		map[string]uint32{contentField: 1, filenameField: 1},
++	)
++	assert.Equal(t, 0.0, scorer.Score(docMatch))
+ }
+ 
+ func TestScorerWithOnlyOneMatch(t *testing.T) {
+@@ -302,15 +309,11 @@ func TestScorerWithOnlyOneMatch(t *testing.T) {
+ 	scorer := q.Scorer()
+ 	require.NotNil(t, scorer)
+ 
+-	doc := newTestDocument(t, map[string][]byte{
+-		"id":       []byte("1"),
+-		"filename": []byte("bar.txt"),
+-		"content":  []byte("foo"),
+-	})
+-
+-	score := scorer.Score(nil, doc)
+-	require.NotNil(t, score)
+-	assert.Equal(t, 0.0, score)
++	docMatch := matchWithFrequenciesAndLengths(
++		map[string]uint32{contentField: 1},
++		map[string]uint32{contentField: 1, filenameField: 1},
++	)
++	assert.Equal(t, 0.0, scorer.Score(docMatch))
+ }
+ 
+ func TestScorerWithShortFilePathNoMatch(t *testing.T) {
+@@ -324,13 +327,9 @@ func TestScorerWithShortFilePathNoMatch(t *testing.T) {
+ 	scorer := q.Scorer()
+ 	require.NotNil(t, scorer)
+ 
+-	doc := newTestDocument(t, map[string][]byte{
+-		"id":       []byte("1"),
+-		"filename": []byte("bar.txt"),
+-		"content":  []byte("foo"),
+-	})
+-
+-	score := scorer.Score(nil, doc)
+-	require.NotNil(t, score)
+-	assert.Equal(t, 0.0, score)
++	docMatch := matchWithFrequenciesAndLengths(
++		map[string]uint32{contentField: 1},
++		map[string]uint32{contentField: 1, filenameField: 1},
++	)
++	assert.Equal(t, 0.0, scorer.Score(docMatch))
+ }
+diff --git a/codesearch/searcher/BUILD b/codesearch/searcher/BUILD
+index e0e3c6e27a..7170a6bad5 100644
+--- a/codesearch/searcher/BUILD
++++ b/codesearch/searcher/BUILD
+@@ -9,7 +9,6 @@ go_library(
+         "//codesearch/performance",
+         "//codesearch/types",
+         "//server/util/log",
+-        "@org_golang_x_sync//errgroup",
+     ],
+ )
+ 
+diff --git a/codesearch/searcher/searcher.go b/codesearch/searcher/searcher.go
+index d73129d979..819cdc4dfb 100644
+--- a/codesearch/searcher/searcher.go
++++ b/codesearch/searcher/searcher.go
+@@ -1,21 +1,16 @@
+ package searcher
+ 
+ import (
++	"container/heap"
+ 	"context"
+-	"runtime"
+-	"slices"
+ 	"sort"
+-	"sync"
+ 	"time"
+ 
+ 	"github.com/buildbuddy-io/buildbuddy/codesearch/performance"
+ 	"github.com/buildbuddy-io/buildbuddy/codesearch/types"
+ 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+-	"golang.org/x/sync/errgroup"
+ )
+ 
+-const maxDocsToScore = 100_000
+-
+ type CodeSearcher struct {
+ 	ctx         context.Context
+ 	indexReader types.IndexReader
+@@ -48,27 +43,53 @@ func truncate(results []uint64, numResults, offset int) []uint64 {
+ 	return rest
+ }
+ 
+-func dropZeroScores(docIDs []uint64, scoreMap map[uint64]float64) []uint64 {
+-	// Precondition: docIDs is sorted in descending order of score.
+-	for i, docID := range docIDs {
+-		if scoreMap[docID] <= 0.0 {
+-			log.Infof("Dropping %d zero scores", len(docIDs)-i)
+-			return docIDs[:i]
+-		}
++type scoredDoc struct {
++	docID uint64
++	score float64
++}
++
++// lowerScoredDoc orders docs from weakest to strongest: ascending score,
++// breaking ties toward the larger doc ID so that equal-scored docs surface in
++// ascending doc ID order.
++func lowerScoredDoc(a, b scoredDoc) bool {
++	if a.score == b.score {
++		return a.docID > b.docID
+ 	}
+-	return docIDs
++	return a.score < b.score
+ }
+ 
+-func (c *CodeSearcher) scoreDocs(scorer types.Scorer, matches []types.DocumentMatch, numResults, offset int) ([]uint64, error) {
+-	start := time.Now()
++// topDocsHeap is a min-heap whose root is the weakest doc in the current top
++// set, so a stronger doc can replace it in O(log n).
++type topDocsHeap []scoredDoc
++
++func (h topDocsHeap) Len() int           { return len(h) }
++func (h topDocsHeap) Less(i, j int) bool { return lowerScoredDoc(h[i], h[j]) }
++func (h topDocsHeap) Swap(i, j int)      { h[i], h[j] = h[j], h[i] }
++func (h *topDocsHeap) Push(x any)        { *h = append(*h, x.(scoredDoc)) }
++func (h *topDocsHeap) Pop() any {
++	old := *h
++	doc := old[len(old)-1]
++	*h = old[:len(old)-1]
++	return doc
++}
+ 
+-	allDocIDs := make([]uint64, 0)
+-	for _, match := range matches {
+-		allDocIDs = append(allDocIDs, match.Docid())
++func pushOrReplaceTopDoc(h *topDocsHeap, doc scoredDoc, limit int) {
++	if doc.score <= 0 {
++		return
++	}
++	if h.Len() < limit {
++		heap.Push(h, doc)
++		return
++	}
++	if lowerScoredDoc((*h)[0], doc) {
++		(*h)[0] = doc
++		heap.Fix(h, 0)
+ 	}
+-	slices.Sort(allDocIDs)
+-	docIDs := slices.Compact(allDocIDs)
+-	numDocs := len(docIDs)
++}
++
++func (c *CodeSearcher) scoreDocs(scorer types.Scorer, matches []types.DocumentMatch, numResults, offset int) ([]uint64, error) {
++	start := time.Now()
++	docsScored := 0
+ 
+ 	defer func() {
+ 		tracker := performance.TrackerFromContext(c.ctx)
+@@ -76,57 +97,45 @@ func (c *CodeSearcher) scoreDocs(scorer types.Scorer, matches []types.DocumentMa
+ 			return
+ 		}
+ 		tracker.TrackOnce(performance.TOTAL_SCORING_DURATION, int64(time.Since(start)))
+-		tracker.TrackOnce(performance.TOTAL_DOCS_SCORED_COUNT, int64(numDocs))
++		tracker.TrackOnce(performance.TOTAL_DOCS_SCORED_COUNT, int64(docsScored))
+ 	}()
+ 
+ 	if scorer.Skip() {
++		docIDs := make([]uint64, 0, len(matches))
++		for _, match := range matches {
++			docIDs = append(docIDs, match.Docid())
++		}
++		sort.Slice(docIDs, func(i, j int) bool {
++			return docIDs[i] < docIDs[j]
++		})
+ 		return truncate(docIDs, numResults, offset), nil
+ 	}
+ 
+-	scoreMap := make(map[uint64]float64, numDocs)
+-	var mu sync.Mutex
+-
+-	// TODO(tylerw): use a priority-queue; stop iteration early.
+-	g := new(errgroup.Group)
+-	g.SetLimit(runtime.GOMAXPROCS(0))
++	if numResults <= 0 {
++		return nil, nil
++	}
+ 
+-	docsScored := 0
+-	quitScoringEarly := false
++	// Scoring uses only index-side data (term frequencies and field lengths),
++	// so it is cheap enough to run on every match; the heap keeps just the
++	// docs that can make it into the requested result window.
++	resultLimit := offset + numResults
++	topDocs := make(topDocsHeap, 0, resultLimit)
+ 	for _, match := range matches {
+-		docID := match.Docid()
+-		if docsScored > maxDocsToScore {
+-			quitScoringEarly = true
+-			mu.Lock()
+-			scoreMap[docID] = 0.0
+-			mu.Unlock()
+-			continue
+-		}
+-		g.Go(func() error {
+-			// TODO(jdelfino): We throw away the stored document here, but then re-fetch it if
+-			// this document makes the cut. Save it and plumb it back out to improve performance.
+-			doc := c.indexReader.GetStoredDocument(docID)
+-
+-			score := scorer.Score(match, doc)
+-			mu.Lock()
+-			scoreMap[docID] = score
+-			mu.Unlock()
+-			return nil
+-		})
+-		docsScored += 1
+-	}
+-	if err := g.Wait(); err != nil {
+-		log.Errorf("error: %s", err)
+-	}
+-	if quitScoringEarly {
+-		log.Warningf("Stopped scoring after %d (max) docs", maxDocsToScore)
++		doc := scoredDoc{docID: match.Docid(), score: scorer.Score(match)}
++		docsScored++
++		pushOrReplaceTopDoc(&topDocs, doc, resultLimit)
+ 	}
+ 
+-	sort.Slice(docIDs, func(i, j int) bool {
+-		return scoreMap[docIDs[i]] > scoreMap[docIDs[j]]
++	results := []scoredDoc(topDocs)
++	sort.Slice(results, func(i, j int) bool {
++		return lowerScoredDoc(results[j], results[i])
+ 	})
+ 
+-	docIDs = truncate(docIDs, numResults, offset)
+-	return dropZeroScores(docIDs, scoreMap), nil
++	resultDocIDs := make([]uint64, len(results))
++	for i, result := range results {
++		resultDocIDs[i] = result.docID
++	}
++	return truncate(resultDocIDs, numResults, offset), nil
+ }
+ 
+ func (c *CodeSearcher) Search(q types.Query, numResults, offset int) ([]types.Document, error) {
+diff --git a/codesearch/searcher/searcher_test.go b/codesearch/searcher/searcher_test.go
+index cd5c10b502..308a6cfac0 100644
+--- a/codesearch/searcher/searcher_test.go
++++ b/codesearch/searcher/searcher_test.go
+@@ -2,6 +2,7 @@ package searcher_test
+ 
+ import (
+ 	"context"
++	"sort"
+ 	"testing"
+ 
+ 	"github.com/buildbuddy-io/buildbuddy/codesearch/index"
+@@ -50,19 +51,18 @@ var sampleData = []struct {
+ 
+ type constantScorer struct{}
+ 
+-func (s constantScorer) Skip() bool                                                     { return false }
+-func (s constantScorer) Score(docMatch types.DocumentMatch, doc types.Document) float64 { return 0.1 }
++func (s constantScorer) Skip() bool { return false }
++func (s constantScorer) Score(docMatch types.DocumentMatch) float64 {
++	return 0.1
++}
+ 
+ type explicitScorer struct {
+-	scores map[string]float64
++	scores map[uint64]float64
+ }
+ 
+-func (s explicitScorer) Skip() bool { return false }
+-func (s explicitScorer) Score(docMatch types.DocumentMatch, doc types.Document) float64 {
+-	if score, ok := s.scores[string(doc.Field("ident").Contents())]; ok {
+-		return score
+-	}
+-	return 0.0
++func (s *explicitScorer) Skip() bool { return false }
++func (s *explicitScorer) Score(docMatch types.DocumentMatch) float64 {
++	return s.scores[docMatch.Docid()]
+ }
+ 
+ type sQuery struct {
+@@ -121,11 +121,11 @@ func TestSearcherZeroScoresDropped(t *testing.T) {
+ 	db := createSampleIndex(t)
+ 	s := searcher.New(ctx, index.NewReader(ctx, db, "testns", testSchema))
+ 
+-	scorer := explicitScorer{
+-		scores: map[string]float64{
+-			"one":   1.0,
+-			"four":  0.5,
+-			"eight": 0.00001,
++	scorer := &explicitScorer{
++		scores: map[uint64]float64{
++			1: 1.0,
++			4: 0.5,
++			8: 0.00001,
+ 		},
+ 	}
+ 	docs, err := s.Search(sQuery{"(:all)", scorer}, 100, 0)
+@@ -136,3 +136,104 @@ func TestSearcherZeroScoresDropped(t *testing.T) {
+ 	assert.Equal(t, "four", string(docs[1].Field("ident").Contents()))
+ 	assert.Equal(t, "eight", string(docs[2].Field("ident").Contents()))
+ }
++
++func TestSearcherTopKMatchesExhaustiveScan(t *testing.T) {
++	ctx := context.Background()
++	db := createSampleIndex(t)
++	s := searcher.New(ctx, index.NewReader(ctx, db, "testns", testSchema))
++
++	scorer := &explicitScorer{
++		scores: map[uint64]float64{
++			1:  1.0,
++			2:  80.0,
++			3:  2.0,
++			4:  85.0,
++			5:  3.0,
++			6:  4.0,
++			7:  5.0,
++			8:  81.0,
++			9:  9.0,
++			10: 8.0,
++			11: 7.0,
++		},
++	}
++	docs, err := s.Search(sQuery{"(:all)", scorer}, 3, 0)
++	require.NoError(t, err)
++
++	assert.Equal(t, exhaustiveTopIdents(scorer.scores, 3, 0), docIdents(docs))
++}
++
++func TestSearcherTopKWithOffsetMatchesExhaustiveScan(t *testing.T) {
++	ctx := context.Background()
++	db := createSampleIndex(t)
++	s := searcher.New(ctx, index.NewReader(ctx, db, "testns", testSchema))
++
++	scorer := &explicitScorer{
++		scores: map[uint64]float64{
++			1:  1.0,
++			2:  80.0,
++			3:  2.0,
++			4:  85.0,
++			5:  3.0,
++			6:  4.0,
++			7:  5.0,
++			8:  81.0,
++			9:  9.0,
++			10: 8.0,
++			11: 7.0,
++		},
++	}
++	docs, err := s.Search(sQuery{"(:all)", scorer}, 3, 2)
++	require.NoError(t, err)
++
++	assert.Equal(t, exhaustiveTopIdents(scorer.scores, 3, 2), docIdents(docs))
++}
++
++func TestSearcherEvictsLargerDocIDOnScoreTie(t *testing.T) {
++	ctx := context.Background()
++	db := createSampleIndex(t)
++	s := searcher.New(ctx, index.NewReader(ctx, db, "testns", testSchema))
++
++	scorer := &explicitScorer{
++		scores: map[uint64]float64{
++			1: 1.0,
++			2: 1.0,
++			3: 1.0,
++		},
++	}
++	docs, err := s.Search(sQuery{"(:all)", scorer}, 2, 0)
++	require.NoError(t, err)
++
++	assert.Equal(t, []string{"one", "two"}, docIdents(docs))
++}
++
++func docIdents(docs []types.Document) []string {
++	idents := make([]string, 0, len(docs))
++	for _, doc := range docs {
++		idents = append(idents, string(doc.Field("ident").Contents()))
++	}
++	return idents
++}
++
++func exhaustiveTopIdents(scores map[uint64]float64, numResults, offset int) []string {
++	docIDs := make([]uint64, 0, len(scores))
++	for docID, score := range scores {
++		if score > 0 {
++			docIDs = append(docIDs, docID)
++		}
++	}
++	sort.Slice(docIDs, func(i, j int) bool {
++		if scores[docIDs[i]] == scores[docIDs[j]] {
++			return docIDs[i] < docIDs[j]
++		}
++		return scores[docIDs[i]] > scores[docIDs[j]]
++	})
++
++	start := min(offset, len(docIDs))
++	end := min(offset+numResults, len(docIDs))
++	idents := make([]string, 0, end-start)
++	for _, docID := range docIDs[start:end] {
++		idents = append(idents, sampleData[docID-1].id)
++	}
++	return idents
++}
+diff --git a/codesearch/types/types.go b/codesearch/types/types.go
+index b42490cc02..1b8c2d871b 100644
+--- a/codesearch/types/types.go
++++ b/codesearch/types/types.go
+@@ -59,14 +59,14 @@ type Document interface {
+ 
+ type Posting interface {
+ 	Docid() uint64
+-	Positions() []uint64
+-	Merge(Posting)
++	Frequency() uint32
+ }
+ 
+ type DocumentMatch interface {
+ 	Docid() uint64
+ 	FieldNames() []string
+ 	Posting(fieldName string) Posting
++	FieldLength(fieldName string) uint32
+ }
+ 
+ type Tokenizer interface {
+@@ -115,7 +115,10 @@ type IndexReader interface {
+ 
+ type Scorer interface {
+ 	Skip() bool
+-	Score(docMatch DocumentMatch, doc Document) float64
++	// Score computes a relevance score for a matched document using only
++	// index-side data (term frequencies and field lengths) — it must not need
++	// the stored document, so it stays cheap enough to run on every match.
++	Score(docMatch DocumentMatch) float64
+ }
+ 
+ type HighlightedRegion interface {

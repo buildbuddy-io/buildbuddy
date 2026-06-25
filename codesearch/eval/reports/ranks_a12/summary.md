@@ -1,0 +1,29 @@
+# Search quality: local codesearch vs cs.opensource.google
+
+Target metrics are over queries with labeled target files (n_t). `g@1∈L5` = how often Google's top result appears in our top 5; `J@10` = mean Jaccard overlap of top-10 file sets.
+
+| category | n | n_t | local R@1 | local R@5 | local MRR | google R@1 | google R@5 | google MRR | J@10 | g@1∈L5 |
+|---|---|---|---|---|---|---|---|---|---|---|
+| symbol | 25 | 25 | 32% | 72% | 0.52 | 80% | 96% | 0.88 | 0.34 | 64% |
+| keyword | 20 | 20 | 45% | 95% | 0.64 | 70% | 90% | 0.78 | 0.40 | 80% |
+| phrase | 15 | 15 | 53% | 80% | 0.65 | 40% | 80% | 0.57 | 0.30 | 60% |
+| regex | 15 | 6 | 17% | 50% | 0.35 | 50% | 83% | 0.62 | 0.14 | 27% |
+| filter | 10 | 5 | 20% | 40% | 0.36 | 60% | 100% | 0.80 | 0.39 | 50% |
+| ranking | 15 | 0 | - | - | - | - | - | - | 0.12 | 40% |
+| **total** | 100 | 71 | 38% | 76% | 0.55 | 65% | 90% | 0.76 | 0.29 | 56% |
+
+## Queries where we miss the target but Google finds it
+
+- `func Fprintf` (sym-fprintf): local rank 31, google rank 1, target src/fmt/print.go
+- `mallocgc` (sym-mallocgc): local rank 6, google rank 1, target src/runtime/malloc.go
+- `Goexit` (sym-goexit): local rank 13, google rank 1, target src/runtime/panic.go
+- `LittleEndian` (sym-littleendian): local rank 13, google rank 3, target src/encoding/binary/binary.go
+- `stopTheWorld` (sym-stoptheworld): local rank 8, google rank 1, target src/runtime/proc.go
+- `QuoteMeta` (sym-quotemeta): local rank 21, google rank 1, target src/regexp/regexp.go
+- `func Fields` (sym-fields): local rank 43, google rank 9, target src/strings/strings.go
+- `tls handshake client` (kw-tls-handshake-client): local rank 7, google rank 1, target src/crypto/tls/handshake_client.go
+- `"concurrent map read and map write"` (phr-concurrent-map): local rank 11, google rank 1, target src/runtime/map_noswiss.go
+- `EOF = errors\.New` (re-eof-error): local rank 9, google rank 1, target src/io/io.go
+- `lang:go file:print.go Fprintf` (flt-print-fprintf): local rank 7, google rank 1, target src/fmt/print.go
+- `case:yes Printf` (flt-case-printf): local rank 35, google rank 2, target src/fmt/print.go
+- `file:json decode` (flt-json-decode): local rank 9, google rank 2, target src/encoding/json/decode.go

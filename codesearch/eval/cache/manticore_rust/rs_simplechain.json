@@ -1,0 +1,682 @@
+{
+ "query": "SimpleChain",
+ "oss_project": "opentitan",
+ "repo_name": "manticore",
+ "page_size": 50,
+ "fetched_at": "2026-06-17T22:58:28Z",
+ "response": {
+  "searchResults": [
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "manticore",
+        "ossProject": "opentitan"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cert/chain.rs",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "/// A simple trust chain with only one slot.",
+         "matchingRanges": {
+          "lineNumber": "49"
+         },
+         "lineNumber": "49",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 44
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "pub struct SimpleChain\u003c'cert, const LEN: usize\u003e {",
+         "matchingRanges": {
+          "lineNumber": "50",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "50",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 30,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": "    chain: ArrayVec\u003cCert\u003c'cert\u003e, LEN\u003e,",
+         "matchingRanges": {
+          "lineNumber": "51"
+         },
+         "lineNumber": "51"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "impl\u003cconst LEN: usize\u003e fmt::Debug for SimpleChain\u003c'_, LEN\u003e {",
+         "matchingRanges": {
+          "lineNumber": "55",
+          "columnRanges": [
+           {
+            "startIndex": 38,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "55",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 5,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 34,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 38,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": "    fn fmt(\u0026self, f: \u0026mut fmt::Formatter) -\u003e fmt::Result {",
+         "matchingRanges": {
+          "lineNumber": "56"
+         },
+         "lineNumber": "56",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 22,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "impl\u003c'cert, const LEN: usize\u003e SimpleChain\u003c'cert, LEN\u003e {",
+         "matchingRanges": {
+          "lineNumber": "61",
+          "columnRanges": [
+           {
+            "startIndex": 30,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "61",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 30,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": "    /// Parses and verifies the trust chain described by `raw_chain`,",
+         "matchingRanges": {
+          "lineNumber": "62"
+         },
+         "lineNumber": "62",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 65
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "impl\u003cconst LEN: usize\u003e TrustChain for SimpleChain\u003c'_, LEN\u003e {",
+         "matchingRanges": {
+          "lineNumber": "102",
+          "columnRanges": [
+           {
+            "startIndex": 38,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "102",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 5,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 34,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 38,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": "    fn cert(\u0026self, slot: u8, index: usize) -\u003e Option\u003c\u0026Cert\u003e {",
+         "matchingRanges": {
+          "lineNumber": "103"
+         },
+         "lineNumber": "103",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    fn x509_chain_parse() {",
+         "matchingRanges": {
+          "lineNumber": "136"
+         },
+         "lineNumber": "136",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "        let chain = SimpleChain::\u003c3\u003e::parse(",
+         "matchingRanges": {
+          "lineNumber": "137",
+          "columnRanges": [
+           {
+            "startIndex": 20,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "137",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 34,
+            "length": 1
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 20,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": "            \u0026[x509::CHAIN1, x509::CHAIN2, x509::CHAIN3],",
+         "matchingRanges": {
+          "lineNumber": "138"
+         },
+         "lineNumber": "138"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    fn x509_chain_ooo() {",
+         "matchingRanges": {
+          "lineNumber": "154"
+         },
+         "lineNumber": "154",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "        let result = SimpleChain::\u003c3\u003e::parse(",
+         "matchingRanges": {
+          "lineNumber": "155",
+          "columnRanges": [
+           {
+            "startIndex": 21,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "155",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 35,
+            "length": 1
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 21,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": "            \u0026[x509::CHAIN1, x509::CHAIN3, x509::CHAIN2],",
+         "matchingRanges": {
+          "lineNumber": "156"
+         },
+         "lineNumber": "156"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "        let result = SimpleChain::\u003c3\u003e::parse(",
+         "matchingRanges": {
+          "lineNumber": "163",
+          "columnRanges": [
+           {
+            "startIndex": 21,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "163",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 35,
+            "length": 1
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 21,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": "            \u0026[x509::CHAIN2, x509::CHAIN1, x509::CHAIN3],",
+         "matchingRanges": {
+          "lineNumber": "164"
+         },
+         "lineNumber": "164"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "        let data = data.iter().map(Vec::as_ref).collect::\u003cVec\u003c_\u003e\u003e();",
+         "matchingRanges": {
+          "lineNumber": "211"
+         },
+         "lineNumber": "211",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "        let chain = SimpleChain::\u003c3\u003e::parse(",
+         "matchingRanges": {
+          "lineNumber": "212",
+          "columnRanges": [
+           {
+            "startIndex": 20,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "212",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 34,
+            "length": 1
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 20,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": "            \u0026data,",
+         "matchingRanges": {
+          "lineNumber": "213"
+         },
+         "lineNumber": "213"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 10
+    },
+    "resultToken": "CAASAggBOPKIrc67weyeIEAASAA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "manticore",
+        "ossProject": "opentitan"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "e2e/src/tests/challenge.rs",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    let mut ciphers = ring::sig::Ciphers::new();",
+         "matchingRanges": {
+          "lineNumber": "102"
+         },
+         "lineNumber": "102",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    let certs = cert::SimpleChain::\u003c8\u003e::parse(",
+         "matchingRanges": {
+          "lineNumber": "103",
+          "columnRanges": [
+           {
+            "startIndex": 22,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "103",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 36,
+            "length": 1
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 22,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": "        \u0026certs,",
+         "matchingRanges": {
+          "lineNumber": "104"
+         },
+         "lineNumber": "104"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAESAggBOILSh7Ok3sjlbkAASAE"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "manticore",
+        "ossProject": "opentitan"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "e2e/src/support/rot.rs",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    });",
+         "matchingRanges": {
+          "lineNumber": "289"
+         },
+         "lineNumber": "289"
+        },
+        {
+         "lineText": "    let mut trust_chain = cert::SimpleChain::\u003c8\u003e::parse(",
+         "matchingRanges": {
+          "lineNumber": "290",
+          "columnRanges": [
+           {
+            "startIndex": 32,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "290",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 46,
+            "length": 1
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 32,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": "        \u0026trust_chain_bytes,",
+         "matchingRanges": {
+          "lineNumber": "291"
+         },
+         "lineNumber": "291"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAISAggBOKje_YH32puU7QFAAEgC"
+   }
+  ],
+  "estimatedResultCount": "3",
+  "exhaustive": true,
+  "requestToken": "CgtTaW1wbGVDaGFpbhIwKCBnaXQ6Z2l0aHViL2xvd1JJU0MvbWFudGljb3JlQG1hc3RlciBjYXNlOnllcyApGgwIlM3M0QYQ287SggIgDCoAMgBIAQ"
+ }
+}

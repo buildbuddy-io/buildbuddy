@@ -1,0 +1,1908 @@
+{
+ "query": "ReverseProxy",
+ "oss_project": "go",
+ "repo_name": "go",
+ "page_size": 50,
+ "fetched_at": "2026-06-11T02:27:36Z",
+ "response": {
+  "searchResults": [
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/http/httputil/reverseproxy.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// A ProxyRequest contains a request to be rewritten by a [ReverseProxy].",
+         "matchingRanges": {
+          "lineNumber": "31",
+          "columnRanges": [
+           {
+            "startIndex": 59,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "31",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 73
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 59,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "type ProxyRequest struct {",
+         "matchingRanges": {
+          "lineNumber": "32"
+         },
+         "lineNumber": "32",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 18,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// ReverseProxy is an HTTP Handler that takes an incoming request and",
+         "matchingRanges": {
+          "lineNumber": "101",
+          "columnRanges": [
+           {
+            "startIndex": 3,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "101",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 69
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 3,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "// sends it to another server, proxying the response back to the",
+         "matchingRanges": {
+          "lineNumber": "102"
+         },
+         "lineNumber": "102",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 64
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// and the ModifyResponse function may be used to remove them from the response.",
+         "matchingRanges": {
+          "lineNumber": "113"
+         },
+         "lineNumber": "113",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 80
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "type ReverseProxy struct {",
+         "matchingRanges": {
+          "lineNumber": "114",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "114",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 18,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "\t// Rewrite must be a function which modifies",
+         "matchingRanges": {
+          "lineNumber": "115"
+         },
+         "lineNumber": "115",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 44
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "//\t}",
+         "matchingRanges": {
+          "lineNumber": "332"
+         },
+         "lineNumber": "332",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "func NewSingleHostReverseProxy(target *url.URL) *ReverseProxy {",
+         "matchingRanges": {
+          "lineNumber": "333",
+          "columnRanges": [
+           {
+            "startIndex": 18,
+            "length": 12
+           },
+           {
+            "startIndex": 49,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "333",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 18,
+           "length": 12
+          },
+          {
+           "startIndex": 49,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "\tdirector := func(req *http.Request) {",
+         "matchingRanges": {
+          "lineNumber": "334"
+         },
+         "lineNumber": "334",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 13,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 33
+    },
+    "resultToken": "CAASBAgBIAE4wIPbsdrqjc76AUAASAA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/http/httputil/reverseproxy_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "func TestReverseProxy(t *testing.T) {",
+         "matchingRanges": {
+          "lineNumber": "42",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "42",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "\tconst backendResponse = \"I am the backend\"",
+         "matchingRanges": {
+          "lineNumber": "43"
+         },
+         "lineNumber": "43",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 25,
+            "length": 18
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func TestReverseProxyQuery(t *testing.T) {",
+         "matchingRanges": {
+          "lineNumber": "428",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "428",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "\tbackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {",
+         "matchingRanges": {
+          "lineNumber": "429"
+         },
+         "lineNumber": "429",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 48,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func TestReverseProxy_Post(t *testing.T) {",
+         "matchingRanges": {
+          "lineNumber": "777",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "777",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "\tconst backendResponse = \"I am the backend\"",
+         "matchingRanges": {
+          "lineNumber": "778"
+         },
+         "lineNumber": "778",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 25,
+            "length": 18
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// Issue 16036: send a Request with a nil Body when possible",
+         "matchingRanges": {
+          "lineNumber": "824"
+         },
+         "lineNumber": "824",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 60
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "func TestReverseProxy_NilBody(t *testing.T) {",
+         "matchingRanges": {
+          "lineNumber": "825",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "825",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "\tbackendURL, _ := url.Parse(\"http://fake.tld/\")",
+         "matchingRanges": {
+          "lineNumber": "826"
+         },
+         "lineNumber": "826",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 28,
+            "length": 18
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 54
+    },
+    "resultToken": "CAESBAgBIAE4nquXveP13KyaAUAASAE"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/http/clientserver_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "func TestBidiStreamReverseProxy(t *testing.T) {",
+         "matchingRanges": {
+          "lineNumber": "1733",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "1733",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "\trun(t, testBidiStreamReverseProxy, []testMode{http2Mode})",
+         "matchingRanges": {
+          "lineNumber": "1734",
+          "columnRanges": [
+           {
+            "startIndex": 22,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "1734",
+         "ranges": [
+          {
+           "startIndex": 22,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "}",
+         "matchingRanges": {
+          "lineNumber": "1735"
+         },
+         "lineNumber": "1735"
+        },
+        {
+         "lineText": "func testBidiStreamReverseProxy(t *testing.T, mode testMode) {",
+         "matchingRanges": {
+          "lineNumber": "1736",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "1736",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "\tbackend := newClientServerTest(t, mode, HandlerFunc(func(w ResponseWriter, r *Request) {",
+         "matchingRanges": {
+          "lineNumber": "1737"
+         },
+         "lineNumber": "1737",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 53,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t}",
+         "matchingRanges": {
+          "lineNumber": "1746"
+         },
+         "lineNumber": "1746"
+        },
+        {
+         "lineText": "\trp := httputil.NewSingleHostReverseProxy(backURL)",
+         "matchingRanges": {
+          "lineNumber": "1747",
+          "columnRanges": [
+           {
+            "startIndex": 29,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "1747",
+         "ranges": [
+          {
+           "startIndex": 29,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "\trp.Transport = backend.tr",
+         "matchingRanges": {
+          "lineNumber": "1748"
+         },
+         "lineNumber": "1748"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 4
+    },
+    "resultToken": "CAISBAgBIAE47N6q7sLCirhmQABIAg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/http/httputil/example_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "func ExampleReverseProxy() {",
+         "matchingRanges": {
+          "lineNumber": "96",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "96",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "\tbackendServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {",
+         "matchingRanges": {
+          "lineNumber": "97"
+         },
+         "lineNumber": "97",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 54,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t}",
+         "matchingRanges": {
+          "lineNumber": "105"
+         },
+         "lineNumber": "105"
+        },
+        {
+         "lineText": "\tfrontendProxy := httptest.NewServer(\u0026httputil.ReverseProxy{",
+         "matchingRanges": {
+          "lineNumber": "106",
+          "columnRanges": [
+           {
+            "startIndex": 47,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "106",
+         "ranges": [
+          {
+           "startIndex": 47,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tRewrite: func(r *httputil.ProxyRequest) {",
+         "matchingRanges": {
+          "lineNumber": "107"
+         },
+         "lineNumber": "107",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 11,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAMSBAgBIAE48IOpu72XuozqAUAASAM"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/http/header.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\tif vv == nil {",
+         "matchingRanges": {
+          "lineNumber": "107"
+         },
+         "lineNumber": "107",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t// Preserve nil values. ReverseProxy distinguishes",
+         "matchingRanges": {
+          "lineNumber": "108",
+          "columnRanges": [
+           {
+            "startIndex": 27,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "108",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 3,
+            "length": 50
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 27,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t// between nil and zero-length header values.",
+         "matchingRanges": {
+          "lineNumber": "109"
+         },
+         "lineNumber": "109",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 3,
+            "length": 45
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAQSAggBOLiL-Ofh8ZGfL0AASAQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/vendor/golang.org/x/tools/internal/stdlib/manifest.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t{\"(*ProxyRequest).SetXForwarded\", Method, 20, \"\"},",
+         "matchingRanges": {
+          "lineNumber": "9284"
+         },
+         "lineNumber": "9284",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 3,
+            "length": 31
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 44,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 48,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t{\"(*ReverseProxy).ServeHTTP\", Method, 0, \"\"},",
+         "matchingRanges": {
+          "lineNumber": "9285",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "9285",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 3,
+            "length": 27
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 40,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 43,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t{\"(*ServerConn).Close\", Method, 0, \"\"},",
+         "matchingRanges": {
+          "lineNumber": "9286"
+         },
+         "lineNumber": "9286",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 3,
+            "length": 21
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 34,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 37,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t{\"NewServerConn\", Func, 0, \"func(c net.Conn, r *bufio.Reader) *ServerConn\"},",
+         "matchingRanges": {
+          "lineNumber": "9306"
+         },
+         "lineNumber": "9306",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 3,
+            "length": 15
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 26,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 29,
+            "length": 47
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t{\"NewSingleHostReverseProxy\", Func, 0, \"func(target *url.URL) *ReverseProxy\"},",
+         "matchingRanges": {
+          "lineNumber": "9307",
+          "columnRanges": [
+           {
+            "startIndex": 17,
+            "length": 12
+           },
+           {
+            "startIndex": 65,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "9307",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 3,
+            "length": 27
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 38,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 41,
+            "length": 37
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 17,
+           "length": 12
+          },
+          {
+           "startIndex": 65,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t{\"ProxyRequest\", Type, 20, \"\"},",
+         "matchingRanges": {
+          "lineNumber": "9308"
+         },
+         "lineNumber": "9308",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 3,
+            "length": 14
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 25,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 29,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t{\"ReverseProxy\", Type, 0, \"\"},",
+         "matchingRanges": {
+          "lineNumber": "9311",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "9311",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 3,
+            "length": 14
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 25,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 28,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t{\"ReverseProxy.BufferPool\", Field, 6, \"\"},",
+         "matchingRanges": {
+          "lineNumber": "9312",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "9312",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 3,
+            "length": 25
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 37,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 40,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t{\"ReverseProxy.Director\", Field, 0, \"\"},",
+         "matchingRanges": {
+          "lineNumber": "9313",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "9313",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 3,
+            "length": 23
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 35,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 38,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t{\"ReverseProxy.ErrorHandler\", Field, 11, \"\"},",
+         "matchingRanges": {
+          "lineNumber": "9314",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "9314",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 3,
+            "length": 27
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 39,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 43,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 12
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 11
+    },
+    "resultToken": "CAUSAggBOJrA-rfNvvHiBUAASAU"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "api/go1.txt",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "pkg net/http/httputil, func NewServerConn(net.Conn, *bufio.Reader) *ServerConn",
+         "matchingRanges": {
+          "lineNumber": "4898"
+         },
+         "lineNumber": "4898"
+        },
+        {
+         "lineText": "pkg net/http/httputil, func NewSingleHostReverseProxy(*url.URL) *ReverseProxy",
+         "matchingRanges": {
+          "lineNumber": "4899",
+          "columnRanges": [
+           {
+            "startIndex": 41,
+            "length": 12
+           },
+           {
+            "startIndex": 65,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "4899",
+         "ranges": [
+          {
+           "startIndex": 41,
+           "length": 12
+          },
+          {
+           "startIndex": 65,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "pkg net/http/httputil, method (*ClientConn) Close() error",
+         "matchingRanges": {
+          "lineNumber": "4900"
+         },
+         "lineNumber": "4900"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "pkg net/http/httputil, method (*ClientConn) Write(*http.Request) error",
+         "matchingRanges": {
+          "lineNumber": "4905"
+         },
+         "lineNumber": "4905"
+        },
+        {
+         "lineText": "pkg net/http/httputil, method (*ReverseProxy) ServeHTTP(http.ResponseWriter, *http.Request)",
+         "matchingRanges": {
+          "lineNumber": "4906",
+          "columnRanges": [
+           {
+            "startIndex": 32,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "4906",
+         "ranges": [
+          {
+           "startIndex": 32,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "pkg net/http/httputil, method (*ServerConn) Close() error",
+         "matchingRanges": {
+          "lineNumber": "4907"
+         },
+         "lineNumber": "4907"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "pkg net/http/httputil, type ReverseProxy struct",
+         "matchingRanges": {
+          "lineNumber": "4913",
+          "columnRanges": [
+           {
+            "startIndex": 28,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "4913",
+         "ranges": [
+          {
+           "startIndex": 28,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "pkg net/http/httputil, type ReverseProxy struct, Director func(*http.Request)",
+         "matchingRanges": {
+          "lineNumber": "4914",
+          "columnRanges": [
+           {
+            "startIndex": 28,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "4914",
+         "ranges": [
+          {
+           "startIndex": 28,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "pkg net/http/httputil, type ReverseProxy struct, FlushInterval time.Duration",
+         "matchingRanges": {
+          "lineNumber": "4915",
+          "columnRanges": [
+           {
+            "startIndex": 28,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "4915",
+         "ranges": [
+          {
+           "startIndex": 28,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "pkg net/http/httputil, type ReverseProxy struct, Transport http.RoundTripper",
+         "matchingRanges": {
+          "lineNumber": "4916",
+          "columnRanges": [
+           {
+            "startIndex": 28,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "4916",
+         "ranges": [
+          {
+           "startIndex": 28,
+           "length": 12
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 6
+    },
+    "resultToken": "CAYSAggBOOjf65ehl6OAuQFAAEgG"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/go/internal/vcweb/hg.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t\tlogger.Printf(\"proxying hg request to %s\", u)",
+         "matchingRanges": {
+          "lineNumber": "95"
+         },
+         "lineNumber": "95",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 17,
+            "length": 27
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\thttputil.NewSingleHostReverseProxy(u).ServeHTTP(w, req)",
+         "matchingRanges": {
+          "lineNumber": "96",
+          "columnRanges": [
+           {
+            "startIndex": 25,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "96",
+         "ranges": [
+          {
+           "startIndex": 25,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\th.mu.Unlock()",
+         "matchingRanges": {
+          "lineNumber": "97"
+         },
+         "lineNumber": "97"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\tlogger.Printf(\"proxying hg request to %s\", u)",
+         "matchingRanges": {
+          "lineNumber": "173"
+         },
+         "lineNumber": "173",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 16,
+            "length": 27
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\thttputil.NewSingleHostReverseProxy(u).ServeHTTP(w, req)",
+         "matchingRanges": {
+          "lineNumber": "174",
+          "columnRanges": [
+           {
+            "startIndex": 24,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "174",
+         "ranges": [
+          {
+           "startIndex": 24,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "\t})",
+         "matchingRanges": {
+          "lineNumber": "175"
+         },
+         "lineNumber": "175"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAcSAggBONDEw7rF6Zn_oQFAAEgH"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "api/go1.4.txt",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "# CL 132750043 net/http/httputil: Pass a Logger to ReverseProxy, allowing the user to control logging., Mark Theunissen \u003cmark.theunissen@gmail.com\u003e",
+         "matchingRanges": {
+          "lineNumber": "373",
+          "columnRanges": [
+           {
+            "startIndex": 51,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "373",
+         "ranges": [
+          {
+           "startIndex": 51,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "pkg net/http/httputil, type ReverseProxy struct, ErrorLog *log.Logger",
+         "matchingRanges": {
+          "lineNumber": "374",
+          "columnRanges": [
+           {
+            "startIndex": 28,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "374",
+         "ranges": [
+          {
+           "startIndex": 28,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "375"
+         },
+         "lineNumber": "375"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAgSAggBOI7Y94-Fjt_-lwFAAEgI"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "api/go1.8.txt",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "pkg net/http/httptrace, type ClientTrace struct, TLSHandshakeStart func()",
+         "matchingRanges": {
+          "lineNumber": "193"
+         },
+         "lineNumber": "193"
+        },
+        {
+         "lineText": "pkg net/http/httputil, type ReverseProxy struct, ModifyResponse func(*http.Response) error",
+         "matchingRanges": {
+          "lineNumber": "194",
+          "columnRanges": [
+           {
+            "startIndex": 28,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "194",
+         "ranges": [
+          {
+           "startIndex": 28,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "pkg net/http, method (*Server) Close() error",
+         "matchingRanges": {
+          "lineNumber": "195"
+         },
+         "lineNumber": "195"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAkSAggBOPzgzOSoq9u6LkAASAk"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "api/go1.6.txt",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "pkg net/http/httputil, type BufferPool interface, Put([]uint8)",
+         "matchingRanges": {
+          "lineNumber": "257"
+         },
+         "lineNumber": "257"
+        },
+        {
+         "lineText": "pkg net/http/httputil, type ReverseProxy struct, BufferPool BufferPool",
+         "matchingRanges": {
+          "lineNumber": "258",
+          "columnRanges": [
+           {
+            "startIndex": 28,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "258",
+         "ranges": [
+          {
+           "startIndex": 28,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "pkg net/url, method (*Error) Temporary() bool",
+         "matchingRanges": {
+          "lineNumber": "259"
+         },
+         "lineNumber": "259"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAoSAggBOIqm5fO97d_S1AFAAEgK"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "api/go1.26.txt",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "pkg net/http, type HTTP2Config struct, StrictMaxConcurrentRequests bool #67813",
+         "matchingRanges": {
+          "lineNumber": "165"
+         },
+         "lineNumber": "165"
+        },
+        {
+         "lineText": "pkg net/http/httputil, type ReverseProxy struct, Director //deprecated #73161",
+         "matchingRanges": {
+          "lineNumber": "166",
+          "columnRanges": [
+           {
+            "startIndex": 28,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "166",
+         "ranges": [
+          {
+           "startIndex": 28,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "pkg net/netip, method (Prefix) Compare(Prefix) int #61642",
+         "matchingRanges": {
+          "lineNumber": "167"
+         },
+         "lineNumber": "167"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAsSAggBOMSy2MGSmfnalgFAAEgL"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "api/go1.11.txt",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "pkg net/http/httptrace, type ClientTrace struct, WroteHeaderField func(string, []string)",
+         "matchingRanges": {
+          "lineNumber": "460"
+         },
+         "lineNumber": "460"
+        },
+        {
+         "lineText": "pkg net/http/httputil, type ReverseProxy struct, ErrorHandler func(http.ResponseWriter, *http.Request, error)",
+         "matchingRanges": {
+          "lineNumber": "461",
+          "columnRanges": [
+           {
+            "startIndex": 28,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "461",
+         "ranges": [
+          {
+           "startIndex": 28,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "pkg os, const ModeIrregular = 524288",
+         "matchingRanges": {
+          "lineNumber": "462"
+         },
+         "lineNumber": "462"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAwSAggBOJiShfa7u6v6wQFAAEgM"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "api/go1.20.txt",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "pkg net/http/httputil, type ProxyRequest struct, Out *http.Request #53002",
+         "matchingRanges": {
+          "lineNumber": "259"
+         },
+         "lineNumber": "259"
+        },
+        {
+         "lineText": "pkg net/http/httputil, type ReverseProxy struct, Rewrite func(*ProxyRequest) #53002",
+         "matchingRanges": {
+          "lineNumber": "260",
+          "columnRanges": [
+           {
+            "startIndex": 28,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "260",
+         "ranges": [
+          {
+           "startIndex": 28,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "pkg net/http, method (*ResponseController) Flush() error #54136",
+         "matchingRanges": {
+          "lineNumber": "261"
+         },
+         "lineNumber": "261"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CA0SAggBOJT_kNPgyZnk9wFAAEgN"
+   }
+  ],
+  "estimatedResultCount": "14",
+  "exhaustive": true,
+  "requestToken": "CgxSZXZlcnNlUHJveHkSHSggZ2l0OmdvL2dvQG1hc3RlciBjYXNlOnllcyApGgwImLqo0QYQsezu9AEgDCoAMgBIAQ"
+ }
+}

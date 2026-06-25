@@ -1,0 +1,1312 @@
+{
+ "query": "\"slice bounds out of range\"",
+ "oss_project": "go",
+ "repo_name": "go",
+ "page_size": 50,
+ "fetched_at": "2026-06-11T02:29:36Z",
+ "response": {
+  "searchResults": [
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/panic.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "func goPanicSliceAlen(x int, y int) {",
+         "matchingRanges": {
+          "lineNumber": "126"
+         },
+         "lineNumber": "126",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tpanicCheck1(sys.GetCallerPC(), \"slice bounds out of range\")",
+         "matchingRanges": {
+          "lineNumber": "127",
+          "columnRanges": [
+           {
+            "startIndex": 33,
+            "length": 25
+           }
+          ]
+         },
+         "lineNumber": "127",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 32,
+            "length": 27
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 33,
+           "length": 25
+          }
+         ]
+        },
+        {
+         "lineText": "\tpanic(boundsError{x: int64(x), signed: true, y: y, code: abi.BoundsSliceAlen})",
+         "matchingRanges": {
+          "lineNumber": "128"
+         },
+         "lineNumber": "128"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func goPanicSliceAlenU(x uint, y int) {",
+         "matchingRanges": {
+          "lineNumber": "132"
+         },
+         "lineNumber": "132",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tpanicCheck1(sys.GetCallerPC(), \"slice bounds out of range\")",
+         "matchingRanges": {
+          "lineNumber": "133",
+          "columnRanges": [
+           {
+            "startIndex": 33,
+            "length": 25
+           }
+          ]
+         },
+         "lineNumber": "133",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 32,
+            "length": 27
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 33,
+           "length": 25
+          }
+         ]
+        },
+        {
+         "lineText": "\tpanic(boundsError{x: int64(x), signed: false, y: y, code: abi.BoundsSliceAlen})",
+         "matchingRanges": {
+          "lineNumber": "134"
+         },
+         "lineNumber": "134"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func goPanicSliceAcap(x int, y int) {",
+         "matchingRanges": {
+          "lineNumber": "138"
+         },
+         "lineNumber": "138",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tpanicCheck1(sys.GetCallerPC(), \"slice bounds out of range\")",
+         "matchingRanges": {
+          "lineNumber": "139",
+          "columnRanges": [
+           {
+            "startIndex": 33,
+            "length": 25
+           }
+          ]
+         },
+         "lineNumber": "139",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 32,
+            "length": 27
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 33,
+           "length": 25
+          }
+         ]
+        },
+        {
+         "lineText": "\tpanic(boundsError{x: int64(x), signed: true, y: y, code: abi.BoundsSliceAcap})",
+         "matchingRanges": {
+          "lineNumber": "140"
+         },
+         "lineNumber": "140"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 17
+    },
+    "resultToken": "CAASAggBOPDUzp2Nq9_XIEAASAA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/panic32.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "func goPanicExtendSliceAlen(hi int, lo uint, y int) {",
+         "matchingRanges": {
+          "lineNumber": "28"
+         },
+         "lineNumber": "28",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tpanicCheck1(sys.GetCallerPC(), \"slice bounds out of range\")",
+         "matchingRanges": {
+          "lineNumber": "29",
+          "columnRanges": [
+           {
+            "startIndex": 33,
+            "length": 25
+           }
+          ]
+         },
+         "lineNumber": "29",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 32,
+            "length": 27
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 33,
+           "length": 25
+          }
+         ]
+        },
+        {
+         "lineText": "\tpanic(boundsError{x: int64(hi)\u003c\u003c32 + int64(lo), signed: true, y: y, code: abi.BoundsSliceAlen})",
+         "matchingRanges": {
+          "lineNumber": "30"
+         },
+         "lineNumber": "30",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 33,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func goPanicExtendSliceAlenU(hi uint, lo uint, y int) {",
+         "matchingRanges": {
+          "lineNumber": "32"
+         },
+         "lineNumber": "32",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tpanicCheck1(sys.GetCallerPC(), \"slice bounds out of range\")",
+         "matchingRanges": {
+          "lineNumber": "33",
+          "columnRanges": [
+           {
+            "startIndex": 33,
+            "length": 25
+           }
+          ]
+         },
+         "lineNumber": "33",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 32,
+            "length": 27
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 33,
+           "length": 25
+          }
+         ]
+        },
+        {
+         "lineText": "\tpanic(boundsError{x: int64(hi)\u003c\u003c32 + int64(lo), signed: false, y: y, code: abi.BoundsSliceAlen})",
+         "matchingRanges": {
+          "lineNumber": "34"
+         },
+         "lineNumber": "34",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 33,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func goPanicExtendSliceAcap(hi int, lo uint, y int) {",
+         "matchingRanges": {
+          "lineNumber": "36"
+         },
+         "lineNumber": "36",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tpanicCheck1(sys.GetCallerPC(), \"slice bounds out of range\")",
+         "matchingRanges": {
+          "lineNumber": "37",
+          "columnRanges": [
+           {
+            "startIndex": 33,
+            "length": 25
+           }
+          ]
+         },
+         "lineNumber": "37",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 32,
+            "length": 27
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 33,
+           "length": 25
+          }
+         ]
+        },
+        {
+         "lineText": "\tpanic(boundsError{x: int64(hi)\u003c\u003c32 + int64(lo), signed: true, y: y, code: abi.BoundsSliceAcap})",
+         "matchingRanges": {
+          "lineNumber": "38"
+         },
+         "lineNumber": "38",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 33,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 14
+    },
+    "resultToken": "CAESAggBOKzX38S0q46WSUAASAE"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/error.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tabi.BoundsIndex:      \"index out of range [%x] with length %y\",",
+         "matchingRanges": {
+          "lineNumber": "142"
+         },
+         "lineNumber": "142",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 23,
+            "length": 40
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tabi.BoundsSliceAlen:  \"slice bounds out of range [:%x] with length %y\",",
+         "matchingRanges": {
+          "lineNumber": "143",
+          "columnRanges": [
+           {
+            "startIndex": 24,
+            "length": 25
+           }
+          ]
+         },
+         "lineNumber": "143",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 23,
+            "length": 48
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 24,
+           "length": 25
+          }
+         ]
+        },
+        {
+         "lineText": "\tabi.BoundsSliceAcap:  \"slice bounds out of range [:%x] with capacity %y\",",
+         "matchingRanges": {
+          "lineNumber": "144",
+          "columnRanges": [
+           {
+            "startIndex": 24,
+            "length": 25
+           }
+          ]
+         },
+         "lineNumber": "144",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 23,
+            "length": 50
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 24,
+           "length": 25
+          }
+         ]
+        },
+        {
+         "lineText": "\tabi.BoundsSliceB:     \"slice bounds out of range [%x:%y]\",",
+         "matchingRanges": {
+          "lineNumber": "145",
+          "columnRanges": [
+           {
+            "startIndex": 24,
+            "length": 25
+           }
+          ]
+         },
+         "lineNumber": "145",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 23,
+            "length": 35
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 24,
+           "length": 25
+          }
+         ]
+        },
+        {
+         "lineText": "\tabi.BoundsSlice3Alen: \"slice bounds out of range [::%x] with length %y\",",
+         "matchingRanges": {
+          "lineNumber": "146",
+          "columnRanges": [
+           {
+            "startIndex": 24,
+            "length": 25
+           }
+          ]
+         },
+         "lineNumber": "146",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 23,
+            "length": 49
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 24,
+           "length": 25
+          }
+         ]
+        },
+        {
+         "lineText": "\tabi.BoundsSlice3Acap: \"slice bounds out of range [::%x] with capacity %y\",",
+         "matchingRanges": {
+          "lineNumber": "147",
+          "columnRanges": [
+           {
+            "startIndex": 24,
+            "length": 25
+           }
+          ]
+         },
+         "lineNumber": "147",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 23,
+            "length": 51
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 24,
+           "length": 25
+          }
+         ]
+        },
+        {
+         "lineText": "\tabi.BoundsSlice3B:    \"slice bounds out of range [:%x:%y]\",",
+         "matchingRanges": {
+          "lineNumber": "148",
+          "columnRanges": [
+           {
+            "startIndex": 24,
+            "length": 25
+           }
+          ]
+         },
+         "lineNumber": "148",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 23,
+            "length": 36
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 24,
+           "length": 25
+          }
+         ]
+        },
+        {
+         "lineText": "\tabi.BoundsSlice3C:    \"slice bounds out of range [%x:%y:]\",",
+         "matchingRanges": {
+          "lineNumber": "149",
+          "columnRanges": [
+           {
+            "startIndex": 24,
+            "length": 25
+           }
+          ]
+         },
+         "lineNumber": "149",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 23,
+            "length": 36
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 24,
+           "length": 25
+          }
+         ]
+        },
+        {
+         "lineText": "\tabi.BoundsConvert:    \"cannot convert slice with length %y to array or pointer to array with length %x\",",
+         "matchingRanges": {
+          "lineNumber": "150"
+         },
+         "lineNumber": "150",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 23,
+            "length": 81
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 15
+    },
+    "resultToken": "CAISAggBOPT6gJv_08uQuwFAAEgC"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/internal/poll/fd_unix.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t\t\t// If we don't check this we will panic",
+         "matchingRanges": {
+          "lineNumber": "379"
+         },
+         "lineNumber": "379",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 39
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t\t// with slice bounds out of range.",
+         "matchingRanges": {
+          "lineNumber": "380",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 25
+           }
+          ]
+         },
+         "lineNumber": "380",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 34
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 25
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t\t// Use a more informative panic.",
+         "matchingRanges": {
+          "lineNumber": "381"
+         },
+         "lineNumber": "381",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 32
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAMSAggBOPKQ3OLHqoqJOkAASAM"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "test/fixedbugs/issue46938.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t}",
+         "matchingRanges": {
+          "lineNumber": "19"
+         },
+         "lineNumber": "19"
+        },
+        {
+         "lineText": "\t\tif got := err.(error).Error(); !strings.Contains(got, \"slice bounds out of range\") {",
+         "matchingRanges": {
+          "lineNumber": "20",
+          "columnRanges": [
+           {
+            "startIndex": 57,
+            "length": 25
+           }
+          ]
+         },
+         "lineNumber": "20",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 56,
+            "length": 27
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 57,
+           "length": 25
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\tpanic(\"expected panic slice out of bound, got \" + got)",
+         "matchingRanges": {
+          "lineNumber": "21"
+         },
+         "lineNumber": "21",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 9,
+            "length": 41
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAQSAggBOPKf2u75sMSaMUAASAQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "test/fixedbugs/issue30116.out",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "             slice[-9876543210:-9876543210] runtime error: slice bounds out of range [:-9876543210]",
+         "matchingRanges": {
+          "lineNumber": "19",
+          "columnRanges": [
+           {
+            "startIndex": 59,
+            "length": 25
+           }
+          ]
+         },
+         "lineNumber": "19",
+         "ranges": [
+          {
+           "startIndex": 59,
+           "length": 25
+          }
+         ]
+        },
+        {
+         "lineText": "                      slice[-9876543210:-1] runtime error: slice bounds out of range [:-1]",
+         "matchingRanges": {
+          "lineNumber": "20",
+          "columnRanges": [
+           {
+            "startIndex": 59,
+            "length": 25
+           }
+          ]
+         },
+         "lineNumber": "20",
+         "ranges": [
+          {
+           "startIndex": 59,
+           "length": 25
+          }
+         ]
+        },
+        {
+         "lineText": "                       slice[-9876543210:0] runtime error: slice bounds out of range [-9876543210:]",
+         "matchingRanges": {
+          "lineNumber": "21",
+          "columnRanges": [
+           {
+            "startIndex": 59,
+            "length": 25
+           }
+          ]
+         },
+         "lineNumber": "21",
+         "ranges": [
+          {
+           "startIndex": 59,
+           "length": 25
+          }
+         ]
+        },
+        {
+         "lineText": "                       slice[-9876543210:3] runtime error: slice bounds out of range [-9876543210:]",
+         "matchingRanges": {
+          "lineNumber": "22",
+          "columnRanges": [
+           {
+            "startIndex": 59,
+            "length": 25
+           }
+          ]
+         },
+         "lineNumber": "22",
+         "ranges": [
+          {
+           "startIndex": 59,
+           "length": 25
+          }
+         ]
+        },
+        {
+         "lineText": "                       slice[-9876543210:4] runtime error: slice bounds out of range [:4] with capacity 3",
+         "matchingRanges": {
+          "lineNumber": "23",
+          "columnRanges": [
+           {
+            "startIndex": 59,
+            "length": 25
+           }
+          ]
+         },
+         "lineNumber": "23",
+         "ranges": [
+          {
+           "startIndex": 59,
+           "length": 25
+          }
+         ]
+        },
+        {
+         "lineText": "              slice[-9876543210:9876543210] runtime error: slice bounds out of range [:9876543210] with capacity 3",
+         "matchingRanges": {
+          "lineNumber": "24",
+          "columnRanges": [
+           {
+            "startIndex": 59,
+            "length": 25
+           }
+          ]
+         },
+         "lineNumber": "24",
+         "ranges": [
+          {
+           "startIndex": 59,
+           "length": 25
+          }
+         ]
+        },
+        {
+         "lineText": "                      slice[-1:-9876543210] runtime error: slice bounds out of range [:-9876543210]",
+         "matchingRanges": {
+          "lineNumber": "25",
+          "columnRanges": [
+           {
+            "startIndex": 59,
+            "length": 25
+           }
+          ]
+         },
+         "lineNumber": "25",
+         "ranges": [
+          {
+           "startIndex": 59,
+           "length": 25
+          }
+         ]
+        },
+        {
+         "lineText": "                               slice[-1:-1] runtime error: slice bounds out of range [:-1]",
+         "matchingRanges": {
+          "lineNumber": "26",
+          "columnRanges": [
+           {
+            "startIndex": 59,
+            "length": 25
+           }
+          ]
+         },
+         "lineNumber": "26",
+         "ranges": [
+          {
+           "startIndex": 59,
+           "length": 25
+          }
+         ]
+        },
+        {
+         "lineText": "                                slice[-1:0] runtime error: slice bounds out of range [-1:]",
+         "matchingRanges": {
+          "lineNumber": "27",
+          "columnRanges": [
+           {
+            "startIndex": 59,
+            "length": 25
+           }
+          ]
+         },
+         "lineNumber": "27",
+         "ranges": [
+          {
+           "startIndex": 59,
+           "length": 25
+          }
+         ]
+        },
+        {
+         "lineText": "                                slice[-1:3] runtime error: slice bounds out of range [-1:]",
+         "matchingRanges": {
+          "lineNumber": "28",
+          "columnRanges": [
+           {
+            "startIndex": 59,
+            "length": 25
+           }
+          ]
+         },
+         "lineNumber": "28",
+         "ranges": [
+          {
+           "startIndex": 59,
+           "length": 25
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 40
+    },
+    "resultToken": "CAUSAggBOPjI9YTp6s7DG0AASAU"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "test/fixedbugs/issue30116u.out",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "                                                            slice[0:4] runtime error: slice bounds out of range [:4] with capacity 3",
+         "matchingRanges": {
+          "lineNumber": "18",
+          "columnRanges": [
+           {
+            "startIndex": 86,
+            "length": 25
+           }
+          ]
+         },
+         "lineNumber": "18",
+         "ranges": [
+          {
+           "startIndex": 86,
+           "length": 25
+          }
+         ]
+        },
+        {
+         "lineText": "                                                   slice[0:4294967295] runtime error: slice bounds out of range [:4294967295] with capacity 3",
+         "matchingRanges": {
+          "lineNumber": "19",
+          "columnRanges": [
+           {
+            "startIndex": 86,
+            "length": 25
+           }
+          ]
+         },
+         "lineNumber": "19",
+         "ranges": [
+          {
+           "startIndex": 86,
+           "length": 25
+          }
+         ]
+        },
+        {
+         "lineText": "                                         slice[0:18446744073709551615] runtime error: slice bounds out of range [:18446744073709551615] with capacity 3",
+         "matchingRanges": {
+          "lineNumber": "20",
+          "columnRanges": [
+           {
+            "startIndex": 86,
+            "length": 25
+           }
+          ]
+         },
+         "lineNumber": "20",
+         "ranges": [
+          {
+           "startIndex": 86,
+           "length": 25
+          }
+         ]
+        },
+        {
+         "lineText": "                                                            slice[3:0] runtime error: slice bounds out of range [3:0]",
+         "matchingRanges": {
+          "lineNumber": "21",
+          "columnRanges": [
+           {
+            "startIndex": 86,
+            "length": 25
+           }
+          ]
+         },
+         "lineNumber": "21",
+         "ranges": [
+          {
+           "startIndex": 86,
+           "length": 25
+          }
+         ]
+        },
+        {
+         "lineText": "                                                            slice[3:3] no panic",
+         "matchingRanges": {
+          "lineNumber": "22"
+         },
+         "lineNumber": "22"
+        },
+        {
+         "lineText": "                                                            slice[3:4] runtime error: slice bounds out of range [:4] with capacity 3",
+         "matchingRanges": {
+          "lineNumber": "23",
+          "columnRanges": [
+           {
+            "startIndex": 86,
+            "length": 25
+           }
+          ]
+         },
+         "lineNumber": "23",
+         "ranges": [
+          {
+           "startIndex": 86,
+           "length": 25
+          }
+         ]
+        },
+        {
+         "lineText": "                                                   slice[3:4294967295] runtime error: slice bounds out of range [:4294967295] with capacity 3",
+         "matchingRanges": {
+          "lineNumber": "24",
+          "columnRanges": [
+           {
+            "startIndex": 86,
+            "length": 25
+           }
+          ]
+         },
+         "lineNumber": "24",
+         "ranges": [
+          {
+           "startIndex": 86,
+           "length": 25
+          }
+         ]
+        },
+        {
+         "lineText": "                                         slice[3:18446744073709551615] runtime error: slice bounds out of range [:18446744073709551615] with capacity 3",
+         "matchingRanges": {
+          "lineNumber": "25",
+          "columnRanges": [
+           {
+            "startIndex": 86,
+            "length": 25
+           }
+          ]
+         },
+         "lineNumber": "25",
+         "ranges": [
+          {
+           "startIndex": 86,
+           "length": 25
+          }
+         ]
+        },
+        {
+         "lineText": "                                                            slice[4:0] runtime error: slice bounds out of range [4:0]",
+         "matchingRanges": {
+          "lineNumber": "26",
+          "columnRanges": [
+           {
+            "startIndex": 86,
+            "length": 25
+           }
+          ]
+         },
+         "lineNumber": "26",
+         "ranges": [
+          {
+           "startIndex": 86,
+           "length": 25
+          }
+         ]
+        },
+        {
+         "lineText": "                                                            slice[4:3] runtime error: slice bounds out of range [4:3]",
+         "matchingRanges": {
+          "lineNumber": "27",
+          "columnRanges": [
+           {
+            "startIndex": 86,
+            "length": 25
+           }
+          ]
+         },
+         "lineNumber": "27",
+         "ranges": [
+          {
+           "startIndex": 86,
+           "length": 25
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 40
+    },
+    "resultToken": "CAYSAggBOI7bm_3VvLzavgFAAEgG"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/debug/buildinfo/buildinfo_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// The cause of issue 57002 is when pointerSize is not being checked,",
+         "matchingRanges": {
+          "lineNumber": "318"
+         },
+         "lineNumber": "318",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 69
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "// the read can panic with slice bounds out of range",
+         "matchingRanges": {
+          "lineNumber": "319",
+          "columnRanges": [
+           {
+            "startIndex": 27,
+            "length": 25
+           }
+          ]
+         },
+         "lineNumber": "319",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 52
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 27,
+           "length": 25
+          }
+         ]
+        },
+        {
+         "lineText": "func FuzzIssue57002(f *testing.F) {",
+         "matchingRanges": {
+          "lineNumber": "320"
+         },
+         "lineNumber": "320",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAcSAggBOPjuoor2of2WREAASAc"
+   }
+  ],
+  "estimatedResultCount": "8",
+  "exhaustive": true,
+  "requestToken": "Chsic2xpY2UgYm91bmRzIG91dCBvZiByYW5nZSISHSggZ2l0OmdvL2dvQG1hc3RlciBjYXNlOnllcyApGgwIkLuo0QYQrL7I1QIgDCoAMgBIAQ"
+ }
+}

@@ -1,0 +1,426 @@
+{
+ "query": "\"use of closed network connection\"",
+ "oss_project": "go",
+ "repo_name": "go",
+ "page_size": 50,
+ "fetched_at": "2026-06-11T02:29:28Z",
+ "response": {
+  "searchResults": [
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/error_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// programs unexpectedly. See issues #4373 and #19252.",
+         "matchingRanges": {
+          "lineNumber": "515"
+         },
+         "lineNumber": "515",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 54
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\twant := \"use of closed network connection\"",
+         "matchingRanges": {
+          "lineNumber": "516",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 32
+           }
+          ]
+         },
+         "lineNumber": "516",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 9,
+            "length": 34
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 32
+          }
+         ]
+        },
+        {
+         "lineText": "\tif !isShutdown \u0026\u0026 !strings.Contains(nestedErr.Error(), want) {",
+         "matchingRanges": {
+          "lineNumber": "517"
+         },
+         "lineNumber": "517",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAASAggBOMTI7dOW-429-gFAAEgA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/http/transport_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t\tif err != nil {",
+         "matchingRanges": {
+          "lineNumber": "5731"
+         },
+         "lineNumber": "5731",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 3,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t\tif strings.Contains(err.Error(), \"use of closed network connection\") {",
+         "matchingRanges": {
+          "lineNumber": "5732",
+          "columnRanges": [
+           {
+            "startIndex": 38,
+            "length": 32
+           }
+          ]
+         },
+         "lineNumber": "5732",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 37,
+            "length": 34
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 38,
+           "length": 32
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t\t\tt.Logf(\"req %v: connection closed prematurely\", n)",
+         "matchingRanges": {
+          "lineNumber": "5733"
+         },
+         "lineNumber": "5733",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 12,
+            "length": 39
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAESAggBOIK2tauQy4vGV0AASAE"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/http/httputil/reverseproxy_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// Discards errors of the form:",
+         "matchingRanges": {
+          "lineNumber": "613"
+         },
+         "lineNumber": "613",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 31
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t// http: proxy error: read tcp 127.0.0.1:44643: use of closed network connection",
+         "matchingRanges": {
+          "lineNumber": "614",
+          "columnRanges": [
+           {
+            "startIndex": 49,
+            "length": 32
+           }
+          ]
+         },
+         "lineNumber": "614",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 80
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 49,
+           "length": 32
+          }
+         ]
+        },
+        {
+         "lineText": "\tproxyHandler.ErrorLog = log.New(io.Discard, \"\", 0)",
+         "matchingRanges": {
+          "lineNumber": "615"
+         },
+         "lineNumber": "615",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 45,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 49,
+            "length": 1
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t// Get \"http://127.0.0.1:58079\": read tcp 127.0.0.1:58079:",
+         "matchingRanges": {
+          "lineNumber": "632"
+         },
+         "lineNumber": "632",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 58
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t//    use of closed network connection",
+         "matchingRanges": {
+          "lineNumber": "633",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 32
+           }
+          ]
+         },
+         "lineNumber": "633",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 38
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 32
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tt.Error(\"Server.Client().Do() returned nil error; want non-nil error\")",
+         "matchingRanges": {
+          "lineNumber": "634"
+         },
+         "lineNumber": "634",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 10,
+            "length": 61
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAISAggBOJ6rl73j9dysmgFAAEgC"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/internal/poll/fd.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// this error, they look for the string.",
+         "matchingRanges": {
+          "lineNumber": "23"
+         },
+         "lineNumber": "23",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 40
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "func (e errNetClosing) Error() string { return \"use of closed network connection\" }",
+         "matchingRanges": {
+          "lineNumber": "24",
+          "columnRanges": [
+           {
+            "startIndex": 48,
+            "length": 32
+           }
+          ]
+         },
+         "lineNumber": "24",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 40,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 47,
+            "length": 34
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 48,
+           "length": 32
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "25"
+         },
+         "lineNumber": "25"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAMSAggBOKCd3q3D6669e0AASAM"
+   }
+  ],
+  "estimatedResultCount": "5",
+  "exhaustive": true,
+  "requestToken": "CiIidXNlIG9mIGNsb3NlZCBuZXR3b3JrIGNvbm5lY3Rpb24iEh0oIGdpdDpnby9nb0BtYXN0ZXIgY2FzZTp5ZXMgKRoLCIi7qNEGEPKIqFIgDCoAMgBIAQ"
+ }
+}

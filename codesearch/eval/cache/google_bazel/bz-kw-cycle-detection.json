@@ -1,0 +1,4244 @@
+{
+ "query": "skyframe cycle detection",
+ "oss_project": "bazel",
+ "repo_name": "bazel",
+ "page_size": 50,
+ "fetched_at": "2026-06-11T22:28:06Z",
+ "response": {
+  "searchResults": [
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/skyframe/SimpleCycleDetector.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": " * Depth-first implementation of cycle detection after a {@link ParallelEvaluator} evaluation has",
+         "matchingRanges": {
+          "lineNumber": "39",
+          "columnRanges": [
+           {
+            "startIndex": 33,
+            "length": 5
+           },
+           {
+            "startIndex": 39,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "39",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 97
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 33,
+           "length": 5
+          },
+          {
+           "startIndex": 39,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": " * completed with at least one root unfinished.",
+         "matchingRanges": {
+          "lineNumber": "40"
+         },
+         "lineNumber": "40",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 47
+           }
+          }
+         ]
+        },
+        {
+         "lineText": " */",
+         "matchingRanges": {
+          "lineNumber": "41"
+         },
+         "lineNumber": "41",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "public class SimpleCycleDetector implements CycleDetector {",
+         "matchingRanges": {
+          "lineNumber": "42",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 5
+           },
+           {
+            "startIndex": 44,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "42",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 33,
+            "length": 10
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 5
+          },
+          {
+           "startIndex": 44,
+           "length": 5
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "   */",
+         "matchingRanges": {
+          "lineNumber": "376"
+         },
+         "lineNumber": "376",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  private static List\u003cErrorInfo\u003e getChildrenErrorsForCycle(",
+         "matchingRanges": {
+          "lineNumber": "377",
+          "columnRanges": [
+           {
+            "startIndex": 53,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "377",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 53,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "lineText": "      SkyKey parent,",
+         "matchingRanges": {
+          "lineNumber": "378"
+         },
+         "lineNumber": "378"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "   * children after building the entry. It would violate the invariant that a parent can only be",
+         "matchingRanges": {
+          "lineNumber": "455"
+         },
+         "lineNumber": "455",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 96
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "   * built after its children are built; See bug \"Precondition error while evaluating a Skyframe",
+         "matchingRanges": {
+          "lineNumber": "456",
+          "columnRanges": [
+           {
+            "startIndex": 88,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "456",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 96
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 88,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "   * graph with a cycle\".",
+         "matchingRanges": {
+          "lineNumber": "457"
+         },
+         "lineNumber": "457",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 25
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 45
+    },
+    "resultToken": "CAASBAgBIAE4_v_JsvHGxqC2AUAASAA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/skyframe/SkyframeExecutor.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": " */",
+         "matchingRanges": {
+          "lineNumber": "350"
+         },
+         "lineNumber": "350",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "public abstract class SkyframeExecutor implements WalkableGraphFactory {",
+         "matchingRanges": {
+          "lineNumber": "351",
+          "columnRanges": [
+           {
+            "startIndex": 22,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "351",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 16,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 39,
+            "length": 10
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 22,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "352"
+         },
+         "lineNumber": "352"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    // Remove top-level action-conflict detection values for memory efficiency. Non-top-level ones",
+         "matchingRanges": {
+          "lineNumber": "2601",
+          "columnRanges": [
+           {
+            "startIndex": 40,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "2601",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 94
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 40,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "    // are removed below. We are OK with this mini-phase being non-incremental as the failure mode",
+         "matchingRanges": {
+          "lineNumber": "2602"
+         },
+         "lineNumber": "2602",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 94
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  class SkyframePackageLoader {",
+         "matchingRanges": {
+          "lineNumber": "2861",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "2861",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "    /**",
+         "matchingRanges": {
+          "lineNumber": "2862"
+         },
+         "lineNumber": "2862",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    private void checkCycles(",
+         "matchingRanges": {
+          "lineNumber": "2964",
+          "columnRanges": [
+           {
+            "startIndex": 22,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "2964",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 22,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "lineText": "        ExtendedEventHandler eventHandler,",
+         "matchingRanges": {
+          "lineNumber": "2965"
+         },
+         "lineNumber": "2965"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 86
+    },
+    "resultToken": "CAESBAgBIAE4nsWrmaelgJ1zQABIAQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/skyframe/ParallelEvaluatorTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  private enum SkyframeEventType {",
+         "matchingRanges": {
+          "lineNumber": "717",
+          "columnRanges": [
+           {
+            "startIndex": 15,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "717",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 15,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "    EVENT {",
+         "matchingRanges": {
+          "lineNumber": "718"
+         },
+         "lineNumber": "718"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  @Test",
+         "matchingRanges": {
+          "lineNumber": "1506"
+         },
+         "lineNumber": "1506"
+        },
+        {
+         "lineText": "  public void longCycle() throws Exception {",
+         "matchingRanges": {
+          "lineNumber": "1507",
+          "columnRanges": [
+           {
+            "startIndex": 18,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "1507",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 26,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 18,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "lineText": "    graph = new InMemoryGraphImpl();",
+         "matchingRanges": {
+          "lineNumber": "1508"
+         },
+         "lineNumber": "1508",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  /**",
+         "matchingRanges": {
+          "lineNumber": "1631"
+         },
+         "lineNumber": "1631",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "   * Regression test: \"OOM in Skyframe cycle detection\". We only store the first 20 cycles found",
+         "matchingRanges": {
+          "lineNumber": "1632",
+          "columnRanges": [
+           {
+            "startIndex": 30,
+            "length": 8
+           },
+           {
+            "startIndex": 45,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "1632",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 96
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 30,
+           "length": 8
+          },
+          {
+           "startIndex": 45,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "   * below any given root value.",
+         "matchingRanges": {
+          "lineNumber": "1633"
+         },
+         "lineNumber": "1633",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 32
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    private DelegatingSkyframeLookupResult(",
+         "matchingRanges": {
+          "lineNumber": "3417",
+          "columnRanges": [
+           {
+            "startIndex": 22,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "3417",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 22,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "        ImmutableMap\u003cSkyKey, SkyframeLookupResult\u003e resultsByKey) {",
+         "matchingRanges": {
+          "lineNumber": "3418"
+         },
+         "lineNumber": "3418"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 84
+    },
+    "resultToken": "CAISBAgBIAE4vNHC8P6KkvcyQABIAg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/skyframe/BzlLoadFunction.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "   * contexts could deadlock while trying to evaluate an illegal {@code load()} cycle from opposite",
+         "matchingRanges": {
+          "lineNumber": "256",
+          "columnRanges": [
+           {
+            "startIndex": 80,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "256",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 99
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 80,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "lineText": "   * ends. It would be possible to construct a waits-for graph and perform cycle detection, or to",
+         "matchingRanges": {
+          "lineNumber": "257",
+          "columnRanges": [
+           {
+            "startIndex": 75,
+            "length": 5
+           },
+           {
+            "startIndex": 81,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "257",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 97
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 75,
+           "length": 5
+          },
+          {
+           "startIndex": 81,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "   * monitor slow threads and do detection lazily, but these do not address the cache eviction",
+         "matchingRanges": {
+          "lineNumber": "258",
+          "columnRanges": [
+           {
+            "startIndex": 33,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "258",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 94
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 33,
+           "length": 9
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "            CycleUtils.splitIntoPathAndChain(Predicates.equalTo(key), loadStack).second;",
+         "matchingRanges": {
+          "lineNumber": "524",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "524",
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "lineText": "        throw new BzlLoadFailedException(",
+         "matchingRanges": {
+          "lineNumber": "525"
+         },
+         "lineNumber": "525",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 14,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "            \"Starlark load cycle: \" + Lists.transform(cycle, BzlLoadValue.Key::getLabel),",
+         "matchingRanges": {
+          "lineNumber": "526",
+          "columnRanges": [
+           {
+            "startIndex": 27,
+            "length": 5
+           },
+           {
+            "startIndex": 54,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "526",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 12,
+            "length": 23
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 27,
+           "length": 5
+          },
+          {
+           "startIndex": 54,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "lineText": "            Code.CYCLE);",
+         "matchingRanges": {
+          "lineNumber": "527",
+          "columnRanges": [
+           {
+            "startIndex": 17,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "527",
+         "ranges": [
+          {
+           "startIndex": 17,
+           "length": 5
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  @Nullable",
+         "matchingRanges": {
+          "lineNumber": "1192"
+         },
+         "lineNumber": "1192"
+        },
+        {
+         "lineText": "  private static List\u003cBzlLoadValue\u003e computeBzlLoadsWithSkyframe(",
+         "matchingRanges": {
+          "lineNumber": "1193",
+          "columnRanges": [
+           {
+            "startIndex": 55,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "1193",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 55,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "      Environment env, List\u003cBzlLoadValue.Key\u003e keys, List\u003cPair\u003cString, Location\u003e\u003e programLoads)",
+         "matchingRanges": {
+          "lineNumber": "1194"
+         },
+         "lineNumber": "1194"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 49
+    },
+    "resultToken": "CAMSBAgBIAE47IOF4_nSpdddQABIAw"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/skyframe/SkyFunction.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "   * invocation of this method after missing dependencies are done is commonly referred to as a",
+         "matchingRanges": {
+          "lineNumber": "54"
+         },
+         "lineNumber": "54",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 95
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 95
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "   * \u003cem\u003eSkyframe restart\u003c/em\u003e (not to be confused with {@link Reset}).",
+         "matchingRanges": {
+          "lineNumber": "55",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "55",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 71
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 71
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "   *",
+         "matchingRanges": {
+          "lineNumber": "56"
+         },
+         "lineNumber": "56",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "   * \u003cp\u003eBe aware that during error bubbling Skyframe will interpret a thrown {@link",
+         "matchingRanges": {
+          "lineNumber": "63",
+          "columnRanges": [
+           {
+            "startIndex": 44,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "63",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 83
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 83
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 44,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "   * InterruptedException} to mean that this method has no additional context to contribute to a",
+         "matchingRanges": {
+          "lineNumber": "64"
+         },
+         "lineNumber": "64",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 96
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 96
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "   * dependency's exception. Also note that Skyframe interrupts the evaluating thread when, during",
+         "matchingRanges": {
+          "lineNumber": "65",
+          "columnRanges": [
+           {
+            "startIndex": 44,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "65",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 98
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 98
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 44,
+           "length": 8
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "     * \u003cul\u003e",
+         "matchingRanges": {
+          "lineNumber": "618"
+         },
+         "lineNumber": "618",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 11
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "     *   \u003cli\u003eReturns {@code null} during cycle detection and error bubbling, or for transient",
+         "matchingRanges": {
+          "lineNumber": "619",
+          "columnRanges": [
+           {
+            "startIndex": 41,
+            "length": 5
+           },
+           {
+            "startIndex": 47,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "619",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 93
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 41,
+           "length": 5
+          },
+          {
+           "startIndex": 47,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "     *       errors.",
+         "matchingRanges": {
+          "lineNumber": "620"
+         },
+         "lineNumber": "620",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 20
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 20
+    },
+    "resultToken": "CAQSAggBOPaA88LXo9bMYUAASAQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/skyframe/SkyFunctionEnvironment.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "public class SkyFunctionEnvironment extends AbstractSkyFunctionEnvironment",
+         "matchingRanges": {
+          "lineNumber": "72"
+         },
+         "lineNumber": "72",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 36,
+            "length": 7
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    implements SkyframeLookupResult, ExtendedEventHandler {",
+         "matchingRanges": {
+          "lineNumber": "73",
+          "columnRanges": [
+           {
+            "startIndex": 15,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "73",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 10
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 15,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "74"
+         },
+         "lineNumber": "74"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  /**",
+         "matchingRanges": {
+          "lineNumber": "103"
+         },
+         "lineNumber": "103",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "   * This is not {@code null} only during cycle detection and error bubbling. The nullness of this",
+         "matchingRanges": {
+          "lineNumber": "104",
+          "columnRanges": [
+           {
+            "startIndex": 42,
+            "length": 5
+           },
+           {
+            "startIndex": 48,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "104",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 98
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 42,
+           "length": 5
+          },
+          {
+           "startIndex": 48,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "   * field is used to detect whether evaluation is in one of those special states.",
+         "matchingRanges": {
+          "lineNumber": "105"
+         },
+         "lineNumber": "105",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 82
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "          /* throwIfPreviouslyRequestedDepsUndone= */ false,",
+         "matchingRanges": {
+          "lineNumber": "206"
+         },
+         "lineNumber": "206",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 10,
+            "length": 43
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "          // Cycles can lead to a state where the versions of done children don't accurately reflect",
+         "matchingRanges": {
+          "lineNumber": "207",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "207",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 10,
+            "length": 90
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "lineText": "          // the state that led to this node's value. Be conservative then.",
+         "matchingRanges": {
+          "lineNumber": "208"
+         },
+         "lineNumber": "208",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 10,
+            "length": 65
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 23
+    },
+    "resultToken": "CAUSAggBOJS3woPK46rUiAFAAEgF"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/skyframe/MemoizingEvaluatorTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  public void progressMessageOnlyPrintedTheFirstTime() throws Exception {",
+         "matchingRanges": {
+          "lineNumber": "648"
+         },
+         "lineNumber": "648",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 55,
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    // Skyframe does not store progress messages. Here we only see the message on the first build.",
+         "matchingRanges": {
+          "lineNumber": "649",
+          "columnRanges": [
+           {
+            "startIndex": 7,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "649",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 94
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 7,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "    tester.set(\"x\", new StringValue(\"y\")).setProgress(\"just letting you know\");",
+         "matchingRanges": {
+          "lineNumber": "650"
+         },
+         "lineNumber": "650",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 15,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 20,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 36,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 54,
+            "length": 23
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    initializeTester();",
+         "matchingRanges": {
+          "lineNumber": "1181"
+         },
+         "lineNumber": "1181"
+        },
+        {
+         "lineText": "    // The cycle detection algorithm non-deterministically traverses into children nodes, so",
+         "matchingRanges": {
+          "lineNumber": "1182",
+          "columnRanges": [
+           {
+            "startIndex": 17,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "1182",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 88
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 17,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "    // use explicit determinism.",
+         "matchingRanges": {
+          "lineNumber": "1183"
+         },
+         "lineNumber": "1183",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 28
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  @Test",
+         "matchingRanges": {
+          "lineNumber": "1501"
+         },
+         "lineNumber": "1501"
+        },
+        {
+         "lineText": "  public void breakCycle() throws Exception {",
+         "matchingRanges": {
+          "lineNumber": "1502",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "1502",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 27,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "lineText": "    SkyKey aKey = nonHermeticKey(\"a\");",
+         "matchingRanges": {
+          "lineNumber": "1503"
+         },
+         "lineNumber": "1503",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 33,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 75
+    },
+    "resultToken": "CAYSBAgBIAE46rmqzKbAw8A0QABIBg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/skyframe/FilesystemValueCheckerTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "          .setKeepGoing(false)",
+         "matchingRanges": {
+          "lineNumber": "145"
+         },
+         "lineNumber": "145"
+        },
+        {
+         "lineText": "          .setParallelism(SkyframeExecutor.DEFAULT_THREAD_COUNT)",
+         "matchingRanges": {
+          "lineNumber": "146",
+          "columnRanges": [
+           {
+            "startIndex": 26,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "146",
+         "ranges": [
+          {
+           "startIndex": 26,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "          .setEventHandler(NullEventHandler.INSTANCE)",
+         "matchingRanges": {
+          "lineNumber": "147"
+         },
+         "lineNumber": "147"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    path2.setLastModifiedTime(42);",
+         "matchingRanges": {
+          "lineNumber": "671"
+         },
+         "lineNumber": "671",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 30,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    // Assert that both files changed. The change detection relies, among other things, on ctime",
+         "matchingRanges": {
+          "lineNumber": "672",
+          "columnRanges": [
+           {
+            "startIndex": 50,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "672",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 92
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 50,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "    // change.",
+         "matchingRanges": {
+          "lineNumber": "673"
+         },
+         "lineNumber": "673",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 10
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  @Test",
+         "matchingRanges": {
+          "lineNumber": "708"
+         },
+         "lineNumber": "708"
+        },
+        {
+         "lineText": "  public void testFilesInCycleNotConsideredDirty() throws Exception {",
+         "matchingRanges": {
+          "lineNumber": "709",
+          "columnRanges": [
+           {
+            "startIndex": 25,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "709",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 51,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 25,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "lineText": "    Path path1 = pkgRoot.getRelative(\"foo1\");",
+         "matchingRanges": {
+          "lineNumber": "710"
+         },
+         "lineNumber": "710",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 37,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 25
+    },
+    "resultToken": "CAcSBAgBIAE49M_99oat46mWAUAASAc"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/skyframe/ParallelEvaluator.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  private static final int MAX_CYCLE_ROOTS_TO_LOG = 100;",
+         "matchingRanges": {
+          "lineNumber": "61",
+          "columnRanges": [
+           {
+            "startIndex": 31,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "61",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 17,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 52,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 31,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "62"
+         },
+         "lineNumber": "62"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "   * graph. If a cycle is detected during the bubbling, this method aborts and returns null so that",
+         "matchingRanges": {
+          "lineNumber": "264",
+          "columnRanges": [
+           {
+            "startIndex": 17,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "264",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 99
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 17,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "lineText": "   * the normal cycle detection can handle the cycle.",
+         "matchingRanges": {
+          "lineNumber": "265",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 5
+           },
+           {
+            "startIndex": 22,
+            "length": 9
+           },
+           {
+            "startIndex": 47,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "265",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 53
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 5
+          },
+          {
+           "startIndex": 22,
+           "length": 9
+          },
+          {
+           "startIndex": 47,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "lineText": "   *",
+         "matchingRanges": {
+          "lineNumber": "266"
+         },
+         "lineNumber": "266",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "      try (AutoProfiler p =",
+         "matchingRanges": {
+          "lineNumber": "556"
+         },
+         "lineNumber": "556",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "          GoogleAutoProfilerUtils.logged(\"Checking for Skyframe cycles\", Duration.ofMillis(10))) {",
+         "matchingRanges": {
+          "lineNumber": "557",
+          "columnRanges": [
+           {
+            "startIndex": 55,
+            "length": 8
+           },
+           {
+            "startIndex": 64,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "557",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 41,
+            "length": 30
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 91,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 55,
+           "length": 8
+          },
+          {
+           "startIndex": 64,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "lineText": "        cycleDetector.checkForCycles(cycleRoots, result, evaluatorContext);",
+         "matchingRanges": {
+          "lineNumber": "558",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 5
+           },
+           {
+            "startIndex": 30,
+            "length": 5
+           },
+           {
+            "startIndex": 37,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "558",
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 5
+          },
+          {
+           "startIndex": 30,
+           "length": 5
+          },
+          {
+           "startIndex": 37,
+           "length": 5
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 30
+    },
+    "resultToken": "CAgSBAgBIAE40LqW5MmCxdH_AUAASAg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/skyframe/StarlarkBuildSettingsDetailsFunction.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import com.google.devtools.build.skyframe.SkyFunctionException;",
+         "matchingRanges": {
+          "lineNumber": "38",
+          "columnRanges": [
+           {
+            "startIndex": 33,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "38",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 33,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.skyframe.SkyKey;",
+         "matchingRanges": {
+          "lineNumber": "39",
+          "columnRanges": [
+           {
+            "startIndex": 33,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "39",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 33,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.skyframe.SkyValue;",
+         "matchingRanges": {
+          "lineNumber": "40",
+          "columnRanges": [
+           {
+            "startIndex": 33,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "40",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 33,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.skyframe.SkyframeLookupResult;",
+         "matchingRanges": {
+          "lineNumber": "41",
+          "columnRanges": [
+           {
+            "startIndex": 33,
+            "length": 8
+           },
+           {
+            "startIndex": 42,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "41",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 33,
+           "length": 8
+          },
+          {
+           "startIndex": 42,
+           "length": 8
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    HashMap\u003cPackageIdentifier, PackageValue\u003e buildSettingPackages = new HashMap\u003c\u003e();",
+         "matchingRanges": {
+          "lineNumber": "250"
+         },
+         "lineNumber": "250",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 68,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    // This happens before cycle detection so keep track of all seen build settings to ensure",
+         "matchingRanges": {
+          "lineNumber": "251",
+          "columnRanges": [
+           {
+            "startIndex": 27,
+            "length": 5
+           },
+           {
+            "startIndex": 33,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "251",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 89
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 27,
+           "length": 5
+          },
+          {
+           "startIndex": 33,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "    // we don't get stuck in endless loops (e.g. //alias1-\u003e//alias2 \u0026\u0026 //alias2-\u003ealias1)",
+         "matchingRanges": {
+          "lineNumber": "252"
+         },
+         "lineNumber": "252",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 84
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "          getPackageKeysFromLabels(unverifiedBuildSettings);",
+         "matchingRanges": {
+          "lineNumber": "265"
+         },
+         "lineNumber": "265"
+        },
+        {
+         "lineText": "      SkyframeLookupResult newlyLoaded = env.getValuesAndExceptions(packageKeys);",
+         "matchingRanges": {
+          "lineNumber": "266",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "266",
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "      if (env.valuesMissing()) {",
+         "matchingRanges": {
+          "lineNumber": "267"
+         },
+         "lineNumber": "267",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 10
+    },
+    "resultToken": "CAkSAggBOMjhifnl0enkJ0AASAk"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/skyframe/ParallelEvaluatorContext.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// limitations under the License.",
+         "matchingRanges": {
+          "lineNumber": "13"
+         },
+         "lineNumber": "13",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 33
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "package com.google.devtools.build.skyframe;",
+         "matchingRanges": {
+          "lineNumber": "14",
+          "columnRanges": [
+           {
+            "startIndex": 34,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "14",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 34,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "15"
+         },
+         "lineNumber": "15"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "import com.google.devtools.build.lib.events.Reportable;",
+         "matchingRanges": {
+          "lineNumber": "25"
+         },
+         "lineNumber": "25",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.skyframe.QueryableGraph.Reason;",
+         "matchingRanges": {
+          "lineNumber": "26",
+          "columnRanges": [
+           {
+            "startIndex": 33,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "26",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 33,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.skyframe.SkyFunction.Environment.SkyKeyComputeState;",
+         "matchingRanges": {
+          "lineNumber": "27",
+          "columnRanges": [
+           {
+            "startIndex": 33,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "27",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 33,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "import java.util.Set;",
+         "matchingRanges": {
+          "lineNumber": "28"
+         },
+         "lineNumber": "28",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": " *",
+         "matchingRanges": {
+          "lineNumber": "35"
+         },
+         "lineNumber": "35",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": " * \u003cp\u003eAlso used during cycle detection.",
+         "matchingRanges": {
+          "lineNumber": "36",
+          "columnRanges": [
+           {
+            "startIndex": 23,
+            "length": 5
+           },
+           {
+            "startIndex": 29,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "36",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 39
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 23,
+           "length": 5
+          },
+          {
+           "startIndex": 29,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": " */",
+         "matchingRanges": {
+          "lineNumber": "37"
+         },
+         "lineNumber": "37",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 6
+    },
+    "resultToken": "CAoSAggBOLjy0eTc4pjtZ0AASAo"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/starlark/StarlarkIntegrationTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  @Test",
+         "matchingRanges": {
+          "lineNumber": "2079"
+         },
+         "lineNumber": "2079"
+        },
+        {
+         "lineText": "  public void testRecursionDetection() throws Exception {",
+         "matchingRanges": {
+          "lineNumber": "2080",
+          "columnRanges": [
+           {
+            "startIndex": 27,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "2080",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 39,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 27,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "    reporter.removeHandler(failFastHandler);",
+         "matchingRanges": {
+          "lineNumber": "2081"
+         },
+         "lineNumber": "2081"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    assertContainsEvent(",
+         "matchingRanges": {
+          "lineNumber": "2310"
+         },
+         "lineNumber": "2310"
+        },
+        {
+         "lineText": "        \"cycle detected in extension files: \\n\"",
+         "matchingRanges": {
+          "lineNumber": "2311",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "2311",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 39
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "lineText": "            + \"    test/starlark/BUILD\\n\"",
+         "matchingRanges": {
+          "lineNumber": "2312"
+         },
+         "lineNumber": "2312",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 14,
+            "length": 27
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  // Test for an interesting situation for the inlining implementation's attempt to process",
+         "matchingRanges": {
+          "lineNumber": "4148"
+         },
+         "lineNumber": "4148",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 89
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  // subsequent load statements even when an earlier one has a missing Skyframe dep.",
+         "matchingRanges": {
+          "lineNumber": "4149",
+          "columnRanges": [
+           {
+            "startIndex": 71,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "4149",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 82
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 71,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "  @Test",
+         "matchingRanges": {
+          "lineNumber": "4150"
+         },
+         "lineNumber": "4150"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 11
+    },
+    "resultToken": "CAsSBAgBIAE48oeE4M67yfRQQABICw"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/analysis/BuildViewTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  @Test",
+         "matchingRanges": {
+          "lineNumber": "660"
+         },
+         "lineNumber": "660"
+        },
+        {
+         "lineText": "  public void testErrorBelowCycle() throws Exception {",
+         "matchingRanges": {
+          "lineNumber": "661",
+          "columnRanges": [
+           {
+            "startIndex": 28,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "661",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 36,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 28,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "lineText": "    if (getInternalTestExecutionMode() != InternalTestExecutionMode.NORMAL) {",
+         "matchingRanges": {
+          "lineNumber": "662"
+         },
+         "lineNumber": "662",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    // This error is triggered both in configuration trimming (which visits the transitive target",
+         "matchingRanges": {
+          "lineNumber": "712"
+         },
+         "lineNumber": "712",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 93
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    // closure) and in the normal configured target cycle detection path. So we get an additional",
+         "matchingRanges": {
+          "lineNumber": "713",
+          "columnRanges": [
+           {
+            "startIndex": 52,
+            "length": 5
+           },
+           {
+            "startIndex": 58,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "713",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 93
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 52,
+           "length": 5
+          },
+          {
+           "startIndex": 58,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "    // instance of this check (which varies depending on whether Skyframe loading phase is enabled).",
+         "matchingRanges": {
+          "lineNumber": "714",
+          "columnRanges": [
+           {
+            "startIndex": 65,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "714",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 96
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 65,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "    // TODO(gregce): Fix above and uncomment the below. Note that the duplicate doesn't make it into",
+         "matchingRanges": {
+          "lineNumber": "715"
+         },
+         "lineNumber": "715",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 96
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  @Test",
+         "matchingRanges": {
+          "lineNumber": "924"
+         },
+         "lineNumber": "924"
+        },
+        {
+         "lineText": "  public void testSkyframe() throws Exception {",
+         "matchingRanges": {
+          "lineNumber": "925",
+          "columnRanges": [
+           {
+            "startIndex": 18,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "925",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 29,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 18,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "    setupDummyRule();",
+         "matchingRanges": {
+          "lineNumber": "926"
+         },
+         "lineNumber": "926"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 46
+    },
+    "resultToken": "CAwSBAgBIAE4toax87OCp9TSAUAASAw"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/bazel/bzlmod/SingleExtensionEvalFunction.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import com.google.devtools.build.lib.skyframe.PrecomputedValue;",
+         "matchingRanges": {
+          "lineNumber": "37",
+          "columnRanges": [
+           {
+            "startIndex": 37,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "37",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 37,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.skyframe.RepositoryMappingValue;",
+         "matchingRanges": {
+          "lineNumber": "38",
+          "columnRanges": [
+           {
+            "startIndex": 37,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "38",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 37,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.skyframe.SkyFunction;",
+         "matchingRanges": {
+          "lineNumber": "39",
+          "columnRanges": [
+           {
+            "startIndex": 33,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "39",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 33,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.skyframe.SkyFunctionException;",
+         "matchingRanges": {
+          "lineNumber": "40",
+          "columnRanges": [
+           {
+            "startIndex": 33,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "40",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 33,
+           "length": 8
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    try {",
+         "matchingRanges": {
+          "lineNumber": "328"
+         },
+         "lineNumber": "328",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "      // Put faster diff detections earlier, so that we can short-circuit in UPDATE mode.",
+         "matchingRanges": {
+          "lineNumber": "329",
+          "columnRanges": [
+           {
+            "startIndex": 25,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "329",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 6,
+            "length": 83
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 25,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "      if (!Arrays.equals(",
+         "matchingRanges": {
+          "lineNumber": "330"
+         },
+         "lineNumber": "330",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "      throws InterruptedException, NeedsSkyframeRestartException {",
+         "matchingRanges": {
+          "lineNumber": "406",
+          "columnRanges": [
+           {
+            "startIndex": 40,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "406",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 40,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "    // Check inputs in batches to prevent Skyframe cycles caused by outdated dependencies.",
+         "matchingRanges": {
+          "lineNumber": "407",
+          "columnRanges": [
+           {
+            "startIndex": 42,
+            "length": 8
+           },
+           {
+            "startIndex": 51,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "407",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 86
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 42,
+           "length": 8
+          },
+          {
+           "startIndex": 51,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "lineText": "    for (ImmutableList\u003cRepoRecordedInput.WithValue\u003e batch :",
+         "matchingRanges": {
+          "lineNumber": "408"
+         },
+         "lineNumber": "408",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 14
+    },
+    "resultToken": "CA0SAggBOOiR1JrK1MrXK0AASA0"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/analysis/AnalysisCachingTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  // Regression test for:",
+         "matchingRanges": {
+          "lineNumber": "292"
+         },
+         "lineNumber": "292",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 23
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  // \"action conflict detection is incorrect if conflict is in non-top-level configured targets\".",
+         "matchingRanges": {
+          "lineNumber": "293",
+          "columnRanges": [
+           {
+            "startIndex": 22,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "293",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 95
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 22,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "  @Test",
+         "matchingRanges": {
+          "lineNumber": "294"
+         },
+         "lineNumber": "294"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  /** BUILD file involved in BUILD-file cycle is changed */",
+         "matchingRanges": {
+          "lineNumber": "668",
+          "columnRanges": [
+           {
+            "startIndex": 40,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "668",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 57
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 40,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "lineText": "  @Test",
+         "matchingRanges": {
+          "lineNumber": "669"
+         },
+         "lineNumber": "669"
+        },
+        {
+         "lineText": "  public void testBuildFileInCycleChanged() throws Exception {",
+         "matchingRanges": {
+          "lineNumber": "670",
+          "columnRanges": [
+           {
+            "startIndex": 29,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "670",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 44,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 29,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "lineText": "    if (getInternalTestExecutionMode() != InternalTestExecutionMode.NORMAL) {",
+         "matchingRanges": {
+          "lineNumber": "671"
+         },
+         "lineNumber": "671",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  @Test",
+         "matchingRanges": {
+          "lineNumber": "942"
+         },
+         "lineNumber": "942"
+        },
+        {
+         "lineText": "  public void testSkyframeDifferentPackagesInvalidation() throws Exception {",
+         "matchingRanges": {
+          "lineNumber": "943",
+          "columnRanges": [
+           {
+            "startIndex": 18,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "943",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 58,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 18,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "    scratch.file(",
+         "matchingRanges": {
+          "lineNumber": "944"
+         },
+         "lineNumber": "944"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 26
+    },
+    "resultToken": "CA4SBAgBIAE47rXHp7rMyZJeQABIDg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/query2/common/QueryTransitivePackagePreloader.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "/**",
+         "matchingRanges": {
+          "lineNumber": "39"
+         },
+         "lineNumber": "39",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": " * Preloads transitive packages for query: prepopulates Skyframe with {@link TransitiveTargetValue}",
+         "matchingRanges": {
+          "lineNumber": "40",
+          "columnRanges": [
+           {
+            "startIndex": 56,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "40",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 99
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 56,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": " * objects for the transitive closure of requested targets. To be used when doing a large traversal",
+         "matchingRanges": {
+          "lineNumber": "41"
+         },
+         "lineNumber": "41",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 99
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    boolean foundCycle = false;",
+         "matchingRanges": {
+          "lineNumber": "86",
+          "columnRanges": [
+           {
+            "startIndex": 17,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "86",
+         "ranges": [
+          {
+           "startIndex": 17,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "lineText": "    for (ErrorInfo errorInfo : result.errorMap().values()) {",
+         "matchingRanges": {
+          "lineNumber": "87"
+         },
+         "lineNumber": "87",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "      if (!errorInfo.getCycleInfo().isEmpty()) {",
+         "matchingRanges": {
+          "lineNumber": "88",
+          "columnRanges": [
+           {
+            "startIndex": 24,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "88",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 24,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "lineText": "        foundCycle = true;",
+         "matchingRanges": {
+          "lineNumber": "89",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "89",
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 5
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "            // consume TransitiveTarget nodes after this evaluation here, and no other node type in",
+         "matchingRanges": {
+          "lineNumber": "153"
+         },
+         "lineNumber": "153",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 12,
+            "length": 87
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "            // the graph depends on them), so we disable cycle detection to save time in the",
+         "matchingRanges": {
+          "lineNumber": "154",
+          "columnRanges": [
+           {
+            "startIndex": 57,
+            "length": 5
+           },
+           {
+            "startIndex": 63,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "154",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 12,
+            "length": 80
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 57,
+           "length": 5
+          },
+          {
+           "startIndex": 63,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "            // situation where there are a lot of large cycles involving TransitiveTarget nodes.",
+         "matchingRanges": {
+          "lineNumber": "155",
+          "columnRanges": [
+           {
+            "startIndex": 56,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "155",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 12,
+            "length": 84
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 56,
+           "length": 5
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 22
+    },
+    "resultToken": "CA8SAggBOPqw_LXP8vuzWkAASA8"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "CHANGELOG.md",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "   + e65ee99c8a63a7a0054591ed5635cd875a29f37f:",
+         "matchingRanges": {
+          "lineNumber": "1461"
+         },
+         "lineNumber": "1461"
+        },
+        {
+         "lineText": "     Memoize Skyframe lookups in SkyframeInputMetadataProvider.",
+         "matchingRanges": {
+          "lineNumber": "1462",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 8
+           },
+           {
+            "startIndex": 33,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "1462",
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 8
+          },
+          {
+           "startIndex": 33,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "```",
+         "matchingRanges": {
+          "lineNumber": "1463"
+         },
+         "lineNumber": "1463"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "+ Consider MODULE.bazel for workspace detection in bazel.sh (#20594)",
+         "matchingRanges": {
+          "lineNumber": "2532",
+          "columnRanges": [
+           {
+            "startIndex": 38,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "2532",
+         "ranges": [
+          {
+           "startIndex": 38,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "+ Auto-create deploy jars for Bazel `java_test` targets if requested (#20602)",
+         "matchingRanges": {
+          "lineNumber": "2533"
+         },
+         "lineNumber": "2533"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  - Package loading now consistently fails if package loading had a",
+         "matchingRanges": {
+          "lineNumber": "19237"
+         },
+         "lineNumber": "19237"
+        },
+        {
+         "lineText": "    glob evaluation that encountered a symlink cycle or symlink",
+         "matchingRanges": {
+          "lineNumber": "19238",
+          "columnRanges": [
+           {
+            "startIndex": 47,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "19238",
+         "ranges": [
+          {
+           "startIndex": 47,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "lineText": "    infinite expansion. Previously, such package loading with such",
+         "matchingRanges": {
+          "lineNumber": "19239"
+         },
+         "lineNumber": "19239"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 37
+    },
+    "resultToken": "CBASAggBOM6Q6oHo3avs2AFAAEgQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/rules/repository/RepoRecordedInput.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "   * Returns whether all values are still up-to-date for each recorded input or a human-readable",
+         "matchingRanges": {
+          "lineNumber": "165"
+         },
+         "lineNumber": "165",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 96
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "   * reason for why that's not the case. If Skyframe values are missing, the return value should be",
+         "matchingRanges": {
+          "lineNumber": "166",
+          "columnRanges": [
+           {
+            "startIndex": 44,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "166",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 99
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 44,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "   * ignored; callers are responsible for checking {@code env.valuesMissing()} and triggering a",
+         "matchingRanges": {
+          "lineNumber": "167"
+         },
+         "lineNumber": "167",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 95
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "   * Skyframe restart if needed.",
+         "matchingRanges": {
+          "lineNumber": "168",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "168",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 32
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "   */",
+         "matchingRanges": {
+          "lineNumber": "169"
+         },
+         "lineNumber": "169",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    protected boolean canBeRequestedUnconditionally() {",
+         "matchingRanges": {
+          "lineNumber": "498"
+         },
+         "lineNumber": "498",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 9
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "      // Requesting files in external repositories can result in cycles if the external repo now",
+         "matchingRanges": {
+          "lineNumber": "499",
+          "columnRanges": [
+           {
+            "startIndex": 65,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "499",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 6,
+            "length": 90
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 65,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "lineText": "      // transitively depends on the requesting repo.",
+         "matchingRanges": {
+          "lineNumber": "500"
+         },
+         "lineNumber": "500",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 6,
+            "length": 47
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    /** The glob patterns to exclude from watch/change detection. */",
+         "matchingRanges": {
+          "lineNumber": "678",
+          "columnRanges": [
+           {
+            "startIndex": 55,
+            "length": 9
+           }
+          ]
+         },
+         "lineNumber": "678",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 64
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 55,
+           "length": 9
+          }
+         ]
+        },
+        {
+         "lineText": "    private final ImmutableList\u003cString\u003e excludes;",
+         "matchingRanges": {
+          "lineNumber": "679"
+         },
+         "lineNumber": "679",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 23
+    },
+    "resultToken": "CBESAggBOOTc46HQ5dSdngFAAEgR"
+   }
+  ],
+  "estimatedResultCount": "19",
+  "exhaustive": true,
+  "requestToken": "Chhza3lmcmFtZSBjeWNsZSBkZXRlY3Rpb24SIyggZ2l0OmJhemVsL2JhemVsQG1hc3RlciBjYXNlOnllcyApGgsI9uys0QYQi5mfTCAMKgAyAEgB"
+ }
+}

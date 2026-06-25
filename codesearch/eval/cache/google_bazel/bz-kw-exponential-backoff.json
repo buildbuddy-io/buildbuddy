@@ -1,0 +1,4436 @@
+{
+ "query": "retry exponential backoff",
+ "oss_project": "bazel",
+ "repo_name": "bazel",
+ "page_size": 50,
+ "fetched_at": "2026-06-11T22:28:15Z",
+ "response": {
+  "searchResults": [
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/remote/RemoteRetrier.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  /** Backoff strategy that backs off exponentially. */",
+         "matchingRanges": {
+          "lineNumber": "114",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 7
+           },
+           {
+            "startIndex": 38,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "114",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 53
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 7
+          },
+          {
+           "startIndex": 38,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": "  public static class ExponentialBackoff implements Backoff {",
+         "matchingRanges": {
+          "lineNumber": "115",
+          "columnRanges": [
+           {
+            "startIndex": 22,
+            "length": 18
+           },
+           {
+            "startIndex": 52,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "115",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 16,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 41,
+            "length": 10
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 22,
+           "length": 18
+          },
+          {
+           "startIndex": 52,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "116"
+         },
+         "lineNumber": "116"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "     */",
+         "matchingRanges": {
+          "lineNumber": "134"
+         },
+         "lineNumber": "134",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 7
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    ExponentialBackoff(",
+         "matchingRanges": {
+          "lineNumber": "135",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "135",
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "lineText": "        Duration initial, Duration max, double multiplier, double jitter, int maxAttempts) {",
+         "matchingRanges": {
+          "lineNumber": "136"
+         },
+         "lineNumber": "136"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    @Override",
+         "matchingRanges": {
+          "lineNumber": "172"
+         },
+         "lineNumber": "172"
+        },
+        {
+         "lineText": "    public int getRetryAttempts() {",
+         "matchingRanges": {
+          "lineNumber": "173",
+          "columnRanges": [
+           {
+            "startIndex": 18,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "173",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 18,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "lineText": "      return attempts;",
+         "matchingRanges": {
+          "lineNumber": "174"
+         },
+         "lineNumber": "174",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 45
+    },
+    "resultToken": "CAASBAgBIAE4tvf9tdnc0bM2QABIAA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/remote/RemoteRetrierTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  private RemoteRetrierTest.Foo fooMock;",
+         "matchingRanges": {
+          "lineNumber": "54"
+         },
+         "lineNumber": "54",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  private ListeningScheduledExecutorService retryService;",
+         "matchingRanges": {
+          "lineNumber": "55",
+          "columnRanges": [
+           {
+            "startIndex": 44,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "55",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 44,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "56"
+         },
+         "lineNumber": "56"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  public void testExponentialBackoff() throws Exception {",
+         "matchingRanges": {
+          "lineNumber": "70",
+          "columnRanges": [
+           {
+            "startIndex": 18,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "70",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 39,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 18,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "lineText": "    Exception e = new Exception();",
+         "matchingRanges": {
+          "lineNumber": "71"
+         },
+         "lineNumber": "71",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 18,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    Retrier.Backoff backoff =",
+         "matchingRanges": {
+          "lineNumber": "72",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 7
+           },
+           {
+            "startIndex": 20,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "72",
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 7
+          },
+          {
+           "startIndex": 20,
+           "length": 7
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  @Test",
+         "matchingRanges": {
+          "lineNumber": "83"
+         },
+         "lineNumber": "83"
+        },
+        {
+         "lineText": "  public void testExponentialBackoffJittered() throws Exception {",
+         "matchingRanges": {
+          "lineNumber": "84",
+          "columnRanges": [
+           {
+            "startIndex": 18,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "84",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 47,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 18,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "lineText": "    Exception e = new Exception();",
+         "matchingRanges": {
+          "lineNumber": "85"
+         },
+         "lineNumber": "85",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 18,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 36
+    },
+    "resultToken": "CAESBAgBIAE4yuSO14qdqckGQABIAQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/buildeventstream/BuildEventProtocolOptions.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "      effectTags = {OptionEffectTag.BAZEL_INTERNAL_CONFIGURATION},",
+         "matchingRanges": {
+          "lineNumber": "68"
+         },
+         "lineNumber": "68"
+        },
+        {
+         "lineText": "      help = \"The maximum number of times Bazel should retry uploading a build event.\")",
+         "matchingRanges": {
+          "lineNumber": "69",
+          "columnRanges": [
+           {
+            "startIndex": 55,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "69",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 13,
+            "length": 73
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 55,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "lineText": "  public abstract int getBesUploadMaxRetries();",
+         "matchingRanges": {
+          "lineNumber": "70"
+         },
+         "lineNumber": "70",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 8
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "      help =",
+         "matchingRanges": {
+          "lineNumber": "77"
+         },
+         "lineNumber": "77"
+        },
+        {
+         "lineText": "          \"Initial, minimum delay for exponential backoff retries when BEP upload fails. (exponent:\"",
+         "matchingRanges": {
+          "lineNumber": "78",
+          "columnRanges": [
+           {
+            "startIndex": 38,
+            "length": 11
+           },
+           {
+            "startIndex": 50,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "78",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 10,
+            "length": 90
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 38,
+           "length": 11
+          },
+          {
+           "startIndex": 50,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "              + \" 1.6)\")",
+         "matchingRanges": {
+          "lineNumber": "79"
+         },
+         "lineNumber": "79",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 16,
+            "length": 7
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  public abstract Duration getBesUploadRetryInitialDelay();",
+         "matchingRanges": {
+          "lineNumber": "80",
+          "columnRanges": [
+           {
+            "startIndex": 39,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "80",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 8
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 39,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "81"
+         },
+         "lineNumber": "81"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 4
+    },
+    "resultToken": "CAISBAgBIAE40PS6h8msr6oSQABIAg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/bazel/repository/downloader/HttpConnector.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  private static final int MAX_REDIRECTS = 40;",
+         "matchingRanges": {
+          "lineNumber": "57"
+         },
+         "lineNumber": "57",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 17,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 43,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  private static final int MIN_RETRY_DELAY_MS = 100;",
+         "matchingRanges": {
+          "lineNumber": "58",
+          "columnRanges": [
+           {
+            "startIndex": 31,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "58",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 17,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 48,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 31,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "lineText": "  private static final int MIN_CONNECT_TIMEOUT_MS = 1000;",
+         "matchingRanges": {
+          "lineNumber": "59"
+         },
+         "lineNumber": "59",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 17,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 52,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  private final int maxAttempts;",
+         "matchingRanges": {
+          "lineNumber": "72"
+         },
+         "lineNumber": "72",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  private final Duration maxRetryTimeout;",
+         "matchingRanges": {
+          "lineNumber": "73",
+          "columnRanges": [
+           {
+            "startIndex": 28,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "73",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 28,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "74"
+         },
+         "lineNumber": "74"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "        // We don't respect the Retry-After header (RFC7231 § 7.1.3) because it's rarely used and",
+         "matchingRanges": {
+          "lineNumber": "256",
+          "columnRanges": [
+           {
+            "startIndex": 32,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "256",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 8,
+            "length": 89
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 32,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "lineText": "        // tends to be too conservative when it is. We're already being good citizens by using",
+         "matchingRanges": {
+          "lineNumber": "257"
+         },
+         "lineNumber": "257",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 8,
+            "length": 86
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "        // exponential backoff with jitter. Furthermore RFC law didn't use the magic word \"MUST\".",
+         "matchingRanges": {
+          "lineNumber": "258",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 11
+           },
+           {
+            "startIndex": 23,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "258",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 8,
+            "length": 89
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 11
+          },
+          {
+           "startIndex": 23,
+           "length": 7
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 14
+    },
+    "resultToken": "CAMSBAgBIAE41pvHy-vhprUxQABIAw"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/remote/GrpcCacheClientTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import com.google.devtools.build.lib.exec.util.SpawnBuilder;",
+         "matchingRanges": {
+          "lineNumber": "70"
+         },
+         "lineNumber": "70",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.remote.RemoteRetrier.ExponentialBackoff;",
+         "matchingRanges": {
+          "lineNumber": "71",
+          "columnRanges": [
+           {
+            "startIndex": 58,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "71",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 58,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.remote.Retrier.Backoff;",
+         "matchingRanges": {
+          "lineNumber": "72",
+          "columnRanges": [
+           {
+            "startIndex": 52,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "72",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 52,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.remote.common.ActionKey;",
+         "matchingRanges": {
+          "lineNumber": "73"
+         },
+         "lineNumber": "73",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  private RemotePathResolver remotePathResolver;",
+         "matchingRanges": {
+          "lineNumber": "157"
+         },
+         "lineNumber": "157",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  private ListeningScheduledExecutorService retryService;",
+         "matchingRanges": {
+          "lineNumber": "158",
+          "columnRanges": [
+           {
+            "startIndex": 44,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "158",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 44,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "lineText": "  private final ArrayList\u003cReferenceCountedChannel\u003e channels = new ArrayList\u003c\u003e();",
+         "matchingRanges": {
+          "lineNumber": "159"
+         },
+         "lineNumber": "159",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 62,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  @Test",
+         "matchingRanges": {
+          "lineNumber": "1283"
+         },
+         "lineNumber": "1283"
+        },
+        {
+         "lineText": "  public void downloadBlobDoesNotRetryZeroLengthRequests()",
+         "matchingRanges": {
+          "lineNumber": "1284",
+          "columnRanges": [
+           {
+            "startIndex": 33,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "1284",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 33,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "lineText": "      throws IOException, InterruptedException {",
+         "matchingRanges": {
+          "lineNumber": "1285"
+         },
+         "lineNumber": "1285",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 20
+    },
+    "resultToken": "CAQSBAgBIAE4nqWC-_GG6cqtAUAASAQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/7.7.1/reference/command-line-reference.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "`--experimental_build_event_upload_max_retries=\u0026lt;an integer\u0026gt;` default: \"4\"",
+         "matchingRanges": {
+          "lineNumber": "885"
+         },
+         "lineNumber": "885"
+        },
+        {
+         "lineText": ":   The maximum number of times Bazel should retry uploading a build event.",
+         "matchingRanges": {
+          "lineNumber": "886",
+          "columnRanges": [
+           {
+            "startIndex": 45,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "886",
+         "ranges": [
+          {
+           "startIndex": 45,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "887"
+         },
+         "lineNumber": "887"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "`--experimental_build_event_upload_retry_minimum_delay=\u0026lt;An immutable length of time.\u0026gt;` default: \"1s\"",
+         "matchingRanges": {
+          "lineNumber": "891",
+          "columnRanges": [
+           {
+            "startIndex": 35,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "891",
+         "ranges": [
+          {
+           "startIndex": 35,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "lineText": ":   Initial, minimum delay for exponential backoff retries when BEP upload fails. (exponent: 1.6)",
+         "matchingRanges": {
+          "lineNumber": "892",
+          "columnRanges": [
+           {
+            "startIndex": 31,
+            "length": 11
+           },
+           {
+            "startIndex": 43,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "892",
+         "ranges": [
+          {
+           "startIndex": 31,
+           "length": 11
+          },
+          {
+           "startIndex": 43,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "893"
+         },
+         "lineNumber": "893"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "`--remote_retries=\u0026lt;an integer\u0026gt;` default: \"5\"",
+         "matchingRanges": {
+          "lineNumber": "1219"
+         },
+         "lineNumber": "1219"
+        },
+        {
+         "lineText": ":   The maximum number of attempts to retry a transient error. If set to 0, retries are disabled.",
+         "matchingRanges": {
+          "lineNumber": "1220",
+          "columnRanges": [
+           {
+            "startIndex": 38,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "1220",
+         "ranges": [
+          {
+           "startIndex": 38,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "1221"
+         },
+         "lineNumber": "1221"
+        },
+        {
+         "lineText": "`--remote_retry_max_delay=\u0026lt;An immutable length of time.\u0026gt;` default: \"5s\"",
+         "matchingRanges": {
+          "lineNumber": "1222",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "1222",
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "lineText": ":   The maximum backoff delay between remote retry attempts. Following units can be used: Days (d), hours ( ...",
+         "matchingRanges": {
+          "lineNumber": "1223",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 7
+           },
+           {
+            "startIndex": 45,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "1223",
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 7
+          },
+          {
+           "startIndex": 45,
+           "length": 5
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 40
+    },
+    "resultToken": "CAUSAggBOIa52cubwcyeCkAASAU"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/7.6.1/reference/command-line-reference.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "`--experimental_build_event_upload_max_retries=\u0026lt;an integer\u0026gt;` default: \"4\"",
+         "matchingRanges": {
+          "lineNumber": "885"
+         },
+         "lineNumber": "885"
+        },
+        {
+         "lineText": ":   The maximum number of times Bazel should retry uploading a build event.",
+         "matchingRanges": {
+          "lineNumber": "886",
+          "columnRanges": [
+           {
+            "startIndex": 45,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "886",
+         "ranges": [
+          {
+           "startIndex": 45,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "887"
+         },
+         "lineNumber": "887"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "`--experimental_build_event_upload_retry_minimum_delay=\u0026lt;An immutable length of time.\u0026gt;` default: \"1s\"",
+         "matchingRanges": {
+          "lineNumber": "891",
+          "columnRanges": [
+           {
+            "startIndex": 35,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "891",
+         "ranges": [
+          {
+           "startIndex": 35,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "lineText": ":   Initial, minimum delay for exponential backoff retries when BEP upload fails. (exponent: 1.6)",
+         "matchingRanges": {
+          "lineNumber": "892",
+          "columnRanges": [
+           {
+            "startIndex": 31,
+            "length": 11
+           },
+           {
+            "startIndex": 43,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "892",
+         "ranges": [
+          {
+           "startIndex": 31,
+           "length": 11
+          },
+          {
+           "startIndex": 43,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "893"
+         },
+         "lineNumber": "893"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "`--remote_retries=\u0026lt;an integer\u0026gt;` default: \"5\"",
+         "matchingRanges": {
+          "lineNumber": "1219"
+         },
+         "lineNumber": "1219"
+        },
+        {
+         "lineText": ":   The maximum number of attempts to retry a transient error. If set to 0, retries are disabled.",
+         "matchingRanges": {
+          "lineNumber": "1220",
+          "columnRanges": [
+           {
+            "startIndex": 38,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "1220",
+         "ranges": [
+          {
+           "startIndex": 38,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "1221"
+         },
+         "lineNumber": "1221"
+        },
+        {
+         "lineText": "`--remote_retry_max_delay=\u0026lt;An immutable length of time.\u0026gt;` default: \"5s\"",
+         "matchingRanges": {
+          "lineNumber": "1222",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "1222",
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "lineText": ":   The maximum backoff delay between remote retry attempts. Following units can be used: Days (d), hours ( ...",
+         "matchingRanges": {
+          "lineNumber": "1223",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 7
+           },
+           {
+            "startIndex": 45,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "1223",
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 7
+          },
+          {
+           "startIndex": 45,
+           "length": 5
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 40
+    },
+    "resultToken": "CAYSAggBOMrEs-OSvNq1oAFAAEgG"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/9.0.0/reference/command-line-reference.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "`--experimental_repository_downloader_retries=\u0026lt;an integer\u0026gt;` default: \"5\"",
+         "matchingRanges": {
+          "lineNumber": "321"
+         },
+         "lineNumber": "321"
+        },
+        {
+         "lineText": ":   The maximum number of attempts to retry a download error. If set to 0, retries are disabled.",
+         "matchingRanges": {
+          "lineNumber": "322",
+          "columnRanges": [
+           {
+            "startIndex": 38,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "322",
+         "ranges": [
+          {
+           "startIndex": 38,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "323"
+         },
+         "lineNumber": "323"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "... -gc\\_churning\\_threshold) when they are multiple top-level targets so that the invoker of Bazel can split and retry while still having less aggressive behavior when there i ...",
+         "matchingRanges": {
+          "lineNumber": "413",
+          "columnRanges": [
+           {
+            "startIndex": 114,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "413",
+         "ranges": [
+          {
+           "startIndex": 114,
+           "length": 5
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "`--experimental_build_event_upload_retry_minimum_delay=\u0026lt;An immutable length of time.\u0026gt;` default: \"1s\"",
+         "matchingRanges": {
+          "lineNumber": "1186",
+          "columnRanges": [
+           {
+            "startIndex": 35,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "1186",
+         "ranges": [
+          {
+           "startIndex": 35,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "lineText": ":   Initial, minimum delay for exponential backoff retries when BEP upload fails. (exponent: 1.6)",
+         "matchingRanges": {
+          "lineNumber": "1187",
+          "columnRanges": [
+           {
+            "startIndex": 31,
+            "length": 11
+           },
+           {
+            "startIndex": 43,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "1187",
+         "ranges": [
+          {
+           "startIndex": 31,
+           "length": 11
+          },
+          {
+           "startIndex": 43,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "1188"
+         },
+         "lineNumber": "1188"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "`--remote_retry_max_delay=\u0026lt;An immutable length of time.\u0026gt;` default: \"5s\"",
+         "matchingRanges": {
+          "lineNumber": "1551",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "1551",
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "lineText": ":   The maximum backoff delay between remote retry attempts. Following units can ...",
+         "matchingRanges": {
+          "lineNumber": "1552",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 7
+           },
+           {
+            "startIndex": 45,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "1552",
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 7
+          },
+          {
+           "startIndex": 45,
+           "length": 5
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "`--experimental_build_event_upload_retry_minimum_delay=\u0026lt;An immutable length of time.\u0026gt;` default: \"1s\"",
+         "matchingRanges": {
+          "lineNumber": "4296",
+          "columnRanges": [
+           {
+            "startIndex": 35,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "4296",
+         "ranges": [
+          {
+           "startIndex": 35,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "lineText": ":   Initial, minimum delay for exponential backoff retries when BEP upload fails. (exponent: 1.6)",
+         "matchingRanges": {
+          "lineNumber": "4297",
+          "columnRanges": [
+           {
+            "startIndex": 31,
+            "length": 11
+           },
+           {
+            "startIndex": 43,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "4297",
+         "ranges": [
+          {
+           "startIndex": 31,
+           "length": 11
+          },
+          {
+           "startIndex": 43,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "4298"
+         },
+         "lineNumber": "4298"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 16
+    },
+    "resultToken": "CAcSAggBOPKarYH-w7aEaEAASAc"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/9.1.0/reference/command-line-reference.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "`--experimental_repository_downloader_retries=\u0026lt;an integer\u0026gt;` default: \"5\"",
+         "matchingRanges": {
+          "lineNumber": "321"
+         },
+         "lineNumber": "321"
+        },
+        {
+         "lineText": ":   The maximum number of attempts to retry a download error. If set to 0, retries are disabled.",
+         "matchingRanges": {
+          "lineNumber": "322",
+          "columnRanges": [
+           {
+            "startIndex": 38,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "322",
+         "ranges": [
+          {
+           "startIndex": 38,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "323"
+         },
+         "lineNumber": "323"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "...  --gc_churning_threshold) when they are multiple top-level targets so that the invoker of Bazel can split and retry while still having less aggressive behavior when there i ...",
+         "matchingRanges": {
+          "lineNumber": "413",
+          "columnRanges": [
+           {
+            "startIndex": 114,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "413",
+         "ranges": [
+          {
+           "startIndex": 114,
+           "length": 5
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "`--experimental_build_event_upload_retry_minimum_delay=\u0026lt;An immutable length of time.\u0026gt;` default: \"1s\"",
+         "matchingRanges": {
+          "lineNumber": "1192",
+          "columnRanges": [
+           {
+            "startIndex": 35,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "1192",
+         "ranges": [
+          {
+           "startIndex": 35,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "lineText": ":   Initial, minimum delay for exponential backoff retries when BEP upload fails. (exponent: 1.6)",
+         "matchingRanges": {
+          "lineNumber": "1193",
+          "columnRanges": [
+           {
+            "startIndex": 31,
+            "length": 11
+           },
+           {
+            "startIndex": 43,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "1193",
+         "ranges": [
+          {
+           "startIndex": 31,
+           "length": 11
+          },
+          {
+           "startIndex": 43,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "1194"
+         },
+         "lineNumber": "1194"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "`--remote_retry_max_delay=\u0026lt;An immutable length of time.\u0026gt;` default: \"5s\"",
+         "matchingRanges": {
+          "lineNumber": "1563",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "1563",
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "lineText": ":   The maximum backoff delay between remote retry attempts. Following units can ...",
+         "matchingRanges": {
+          "lineNumber": "1564",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 7
+           },
+           {
+            "startIndex": 45,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "1564",
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 7
+          },
+          {
+           "startIndex": 45,
+           "length": 5
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "`--experimental_build_event_upload_retry_minimum_delay=\u0026lt;An immutable length of time.\u0026gt;` default: \"1s\"",
+         "matchingRanges": {
+          "lineNumber": "4302",
+          "columnRanges": [
+           {
+            "startIndex": 35,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "4302",
+         "ranges": [
+          {
+           "startIndex": 35,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "lineText": ":   Initial, minimum delay for exponential backoff retries when BEP upload fails. (exponent: 1.6)",
+         "matchingRanges": {
+          "lineNumber": "4303",
+          "columnRanges": [
+           {
+            "startIndex": 31,
+            "length": 11
+           },
+           {
+            "startIndex": 43,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "4303",
+         "ranges": [
+          {
+           "startIndex": 31,
+           "length": 11
+          },
+          {
+           "startIndex": 43,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "4304"
+         },
+         "lineNumber": "4304"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 16
+    },
+    "resultToken": "CAgSAggBOJrBy8rNoNTpswFAAEgI"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/8.0.1/reference/command-line-reference.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "`--experimental_repository_downloader_retries=\u003can integer\u003e` default: \"5\"",
+         "matchingRanges": {
+          "lineNumber": "295"
+         },
+         "lineNumber": "295"
+        },
+        {
+         "lineText": ":   The maximum number of attempts to retry a download error. If set to 0, retries are disabled.",
+         "matchingRanges": {
+          "lineNumber": "296",
+          "columnRanges": [
+           {
+            "startIndex": 38,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "296",
+         "ranges": [
+          {
+           "startIndex": 38,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "297"
+         },
+         "lineNumber": "297"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "`--build_event_upload_max_retries=\u003can integer\u003e` default: \"4\"",
+         "matchingRanges": {
+          "lineNumber": "986"
+         },
+         "lineNumber": "986"
+        },
+        {
+         "lineText": ":   The maximum number of times Bazel should retry uploading a build event.",
+         "matchingRanges": {
+          "lineNumber": "987",
+          "columnRanges": [
+           {
+            "startIndex": 45,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "987",
+         "ranges": [
+          {
+           "startIndex": 45,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "988"
+         },
+         "lineNumber": "988"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "`--experimental_build_event_upload_retry_minimum_delay=\u003cAn immutable length of time.\u003e` default: \"1s\"",
+         "matchingRanges": {
+          "lineNumber": "1013",
+          "columnRanges": [
+           {
+            "startIndex": 35,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "1013",
+         "ranges": [
+          {
+           "startIndex": 35,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "lineText": ":   Initial, minimum delay for exponential backoff retries when BEP upload fails. (exponent: 1.6)",
+         "matchingRanges": {
+          "lineNumber": "1014",
+          "columnRanges": [
+           {
+            "startIndex": 31,
+            "length": 11
+           },
+           {
+            "startIndex": 43,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "1014",
+         "ranges": [
+          {
+           "startIndex": 31,
+           "length": 11
+          },
+          {
+           "startIndex": 43,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "1015"
+         },
+         "lineNumber": "1015"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "`--remote_retry_max_delay=\u003cAn immutable length of time.\u003e` default: \"5s\"",
+         "matchingRanges": {
+          "lineNumber": "1376",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "1376",
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "lineText": ":   The maximum backoff delay between remote retry attempts. Following units can be used: Days (d), hours ( ...",
+         "matchingRanges": {
+          "lineNumber": "1377",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 7
+           },
+           {
+            "startIndex": 45,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "1377",
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 7
+          },
+          {
+           "startIndex": 45,
+           "length": 5
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 15
+    },
+    "resultToken": "CAkSAggBOJTD1L_b77e1IkAASAk"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/8.3.1/reference/command-line-reference.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "`--experimental_repository_downloader_retries=\u003can integer\u003e` default: \"5\"",
+         "matchingRanges": {
+          "lineNumber": "301"
+         },
+         "lineNumber": "301"
+        },
+        {
+         "lineText": ":   The maximum number of attempts to retry a download error. If set to 0, retries are disabled.",
+         "matchingRanges": {
+          "lineNumber": "302",
+          "columnRanges": [
+           {
+            "startIndex": 38,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "302",
+         "ranges": [
+          {
+           "startIndex": 38,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "303"
+         },
+         "lineNumber": "303"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "`--build_event_upload_max_retries=\u003can integer\u003e` default: \"4\"",
+         "matchingRanges": {
+          "lineNumber": "1029"
+         },
+         "lineNumber": "1029"
+        },
+        {
+         "lineText": ":   The maximum number of times Bazel should retry uploading a build event.",
+         "matchingRanges": {
+          "lineNumber": "1030",
+          "columnRanges": [
+           {
+            "startIndex": 45,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "1030",
+         "ranges": [
+          {
+           "startIndex": 45,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "1031"
+         },
+         "lineNumber": "1031"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "`--experimental_build_event_upload_retry_minimum_delay=\u003cAn immutable length of time.\u003e` default: \"1s\"",
+         "matchingRanges": {
+          "lineNumber": "1056",
+          "columnRanges": [
+           {
+            "startIndex": 35,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "1056",
+         "ranges": [
+          {
+           "startIndex": 35,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "lineText": ":   Initial, minimum delay for exponential backoff retries when BEP upload fails. (exponent: 1.6)",
+         "matchingRanges": {
+          "lineNumber": "1057",
+          "columnRanges": [
+           {
+            "startIndex": 31,
+            "length": 11
+           },
+           {
+            "startIndex": 43,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "1057",
+         "ranges": [
+          {
+           "startIndex": 31,
+           "length": 11
+          },
+          {
+           "startIndex": 43,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "1058"
+         },
+         "lineNumber": "1058"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "`--remote_retry_max_delay=\u003cAn immutable length of time.\u003e` default: \"5s\"",
+         "matchingRanges": {
+          "lineNumber": "1422",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "1422",
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "lineText": ":   The maximum backoff delay between remote retry attempts. Following units can be used: Days (d), hours ( ...",
+         "matchingRanges": {
+          "lineNumber": "1423",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 7
+           },
+           {
+            "startIndex": 45,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "1423",
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 7
+          },
+          {
+           "startIndex": 45,
+           "length": 5
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 15
+    },
+    "resultToken": "CAoSAggBOISf7LXGv7uQNUAASAo"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/8.6.0/reference/command-line-reference.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "`--experimental_repository_downloader_retries=\u0026lt;an integer\u0026gt;` default: \"5\"",
+         "matchingRanges": {
+          "lineNumber": "301"
+         },
+         "lineNumber": "301"
+        },
+        {
+         "lineText": ":   The maximum number of attempts to retry a download error. If set to 0, retries are disabled.",
+         "matchingRanges": {
+          "lineNumber": "302",
+          "columnRanges": [
+           {
+            "startIndex": 38,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "302",
+         "ranges": [
+          {
+           "startIndex": 38,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "303"
+         },
+         "lineNumber": "303"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "`--build_event_upload_max_retries=\u0026lt;an integer\u0026gt;` default: \"4\"",
+         "matchingRanges": {
+          "lineNumber": "1060"
+         },
+         "lineNumber": "1060"
+        },
+        {
+         "lineText": ":   The maximum number of times Bazel should retry uploading a build event.",
+         "matchingRanges": {
+          "lineNumber": "1061",
+          "columnRanges": [
+           {
+            "startIndex": 45,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "1061",
+         "ranges": [
+          {
+           "startIndex": 45,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "1062"
+         },
+         "lineNumber": "1062"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "`--experimental_build_event_upload_retry_minimum_delay=\u0026lt;An immutable length of time.\u0026gt;` default: \"1s\"",
+         "matchingRanges": {
+          "lineNumber": "1087",
+          "columnRanges": [
+           {
+            "startIndex": 35,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "1087",
+         "ranges": [
+          {
+           "startIndex": 35,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "lineText": ":   Initial, minimum delay for exponential backoff retries when BEP upload fails. (exponent: 1.6)",
+         "matchingRanges": {
+          "lineNumber": "1088",
+          "columnRanges": [
+           {
+            "startIndex": 31,
+            "length": 11
+           },
+           {
+            "startIndex": 43,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "1088",
+         "ranges": [
+          {
+           "startIndex": 31,
+           "length": 11
+          },
+          {
+           "startIndex": 43,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "1089"
+         },
+         "lineNumber": "1089"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "`--remote_retry_max_delay=\u0026lt;An immutable length of time.\u0026gt;` default: \"5s\"",
+         "matchingRanges": {
+          "lineNumber": "1462",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "1462",
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "lineText": ":   The maximum backoff delay between remote retry attempts. Following units can be used: Days (d), hours ( ...",
+         "matchingRanges": {
+          "lineNumber": "1463",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 7
+           },
+           {
+            "startIndex": 45,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "1463",
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 7
+          },
+          {
+           "startIndex": 45,
+           "length": 5
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 15
+    },
+    "resultToken": "CAsSAggBONqireGC0vW0OkAASAs"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/8.1.1/reference/command-line-reference.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "`--experimental_repository_downloader_retries=\u0026lt;an integer\u0026gt;` default: \"5\"",
+         "matchingRanges": {
+          "lineNumber": "295"
+         },
+         "lineNumber": "295"
+        },
+        {
+         "lineText": ":   The maximum number of attempts to retry a download error. If set to 0, retries are disabled.",
+         "matchingRanges": {
+          "lineNumber": "296",
+          "columnRanges": [
+           {
+            "startIndex": 38,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "296",
+         "ranges": [
+          {
+           "startIndex": 38,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "297"
+         },
+         "lineNumber": "297"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "`--build_event_upload_max_retries=\u0026lt;an integer\u0026gt;` default: \"4\"",
+         "matchingRanges": {
+          "lineNumber": "992"
+         },
+         "lineNumber": "992"
+        },
+        {
+         "lineText": ":   The maximum number of times Bazel should retry uploading a build event.",
+         "matchingRanges": {
+          "lineNumber": "993",
+          "columnRanges": [
+           {
+            "startIndex": 45,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "993",
+         "ranges": [
+          {
+           "startIndex": 45,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "994"
+         },
+         "lineNumber": "994"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "`--experimental_build_event_upload_retry_minimum_delay=\u0026lt;An immutable length of time.\u0026gt;` default: \"1s\"",
+         "matchingRanges": {
+          "lineNumber": "1019",
+          "columnRanges": [
+           {
+            "startIndex": 35,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "1019",
+         "ranges": [
+          {
+           "startIndex": 35,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "lineText": ":   Initial, minimum delay for exponential backoff retries when BEP upload fails. (exponent: 1.6)",
+         "matchingRanges": {
+          "lineNumber": "1020",
+          "columnRanges": [
+           {
+            "startIndex": 31,
+            "length": 11
+           },
+           {
+            "startIndex": 43,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "1020",
+         "ranges": [
+          {
+           "startIndex": 31,
+           "length": 11
+          },
+          {
+           "startIndex": 43,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "1021"
+         },
+         "lineNumber": "1021"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "`--remote_retry_max_delay=\u0026lt;An immutable length of time.\u0026gt;` default: \"5s\"",
+         "matchingRanges": {
+          "lineNumber": "1382",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "1382",
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "lineText": ":   The maximum backoff delay between remote retry attempts. Following units can be used: Days (d), hours ( ...",
+         "matchingRanges": {
+          "lineNumber": "1383",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 7
+           },
+           {
+            "startIndex": 45,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "1383",
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 7
+          },
+          {
+           "startIndex": 45,
+           "length": 5
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 15
+    },
+    "resultToken": "CAwSAggBONyaovXb5KbxaUAASAw"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/8.2.1/reference/command-line-reference.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "`--experimental_repository_downloader_retries=\u003can integer\u003e` default: \"5\"",
+         "matchingRanges": {
+          "lineNumber": "301"
+         },
+         "lineNumber": "301"
+        },
+        {
+         "lineText": ":   The maximum number of attempts to retry a download error. If set to 0, retries are disabled.",
+         "matchingRanges": {
+          "lineNumber": "302",
+          "columnRanges": [
+           {
+            "startIndex": 38,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "302",
+         "ranges": [
+          {
+           "startIndex": 38,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "303"
+         },
+         "lineNumber": "303"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "`--build_event_upload_max_retries=\u003can integer\u003e` default: \"4\"",
+         "matchingRanges": {
+          "lineNumber": "1004"
+         },
+         "lineNumber": "1004"
+        },
+        {
+         "lineText": ":   The maximum number of times Bazel should retry uploading a build event.",
+         "matchingRanges": {
+          "lineNumber": "1005",
+          "columnRanges": [
+           {
+            "startIndex": 45,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "1005",
+         "ranges": [
+          {
+           "startIndex": 45,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "1006"
+         },
+         "lineNumber": "1006"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "`--experimental_build_event_upload_retry_minimum_delay=\u003cAn immutable length of time.\u003e` default: \"1s\"",
+         "matchingRanges": {
+          "lineNumber": "1031",
+          "columnRanges": [
+           {
+            "startIndex": 35,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "1031",
+         "ranges": [
+          {
+           "startIndex": 35,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "lineText": ":   Initial, minimum delay for exponential backoff retries when BEP upload fails. (exponent: 1.6)",
+         "matchingRanges": {
+          "lineNumber": "1032",
+          "columnRanges": [
+           {
+            "startIndex": 31,
+            "length": 11
+           },
+           {
+            "startIndex": 43,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "1032",
+         "ranges": [
+          {
+           "startIndex": 31,
+           "length": 11
+          },
+          {
+           "startIndex": 43,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "1033"
+         },
+         "lineNumber": "1033"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "`--remote_retry_max_delay=\u003cAn immutable length of time.\u003e` default: \"5s\"",
+         "matchingRanges": {
+          "lineNumber": "1394",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "1394",
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "lineText": ":   The maximum backoff delay between remote retry attempts. Following units can be used: Days (d), hours ( ...",
+         "matchingRanges": {
+          "lineNumber": "1395",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 7
+           },
+           {
+            "startIndex": 45,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "1395",
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 7
+          },
+          {
+           "startIndex": 45,
+           "length": 5
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 15
+    },
+    "resultToken": "CA0SAggBOLrL1ZDPsPrLc0AASA0"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/8.4.2/reference/command-line-reference.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "`--experimental_repository_downloader_retries=\u0026lt;an integer\u0026gt;` default: \"5\"",
+         "matchingRanges": {
+          "lineNumber": "301"
+         },
+         "lineNumber": "301"
+        },
+        {
+         "lineText": ":   The maximum number of attempts to retry a download error. If set to 0, retries are disabled.",
+         "matchingRanges": {
+          "lineNumber": "302",
+          "columnRanges": [
+           {
+            "startIndex": 38,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "302",
+         "ranges": [
+          {
+           "startIndex": 38,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "303"
+         },
+         "lineNumber": "303"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "`--build_event_upload_max_retries=\u0026lt;an integer\u0026gt;` default: \"4\"",
+         "matchingRanges": {
+          "lineNumber": "1033"
+         },
+         "lineNumber": "1033"
+        },
+        {
+         "lineText": ":   The maximum number of times Bazel should retry uploading a build event.",
+         "matchingRanges": {
+          "lineNumber": "1034",
+          "columnRanges": [
+           {
+            "startIndex": 45,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "1034",
+         "ranges": [
+          {
+           "startIndex": 45,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "1035"
+         },
+         "lineNumber": "1035"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "`--experimental_build_event_upload_retry_minimum_delay=\u0026lt;An immutable length of time.\u0026gt;` default: \"1s\"",
+         "matchingRanges": {
+          "lineNumber": "1060",
+          "columnRanges": [
+           {
+            "startIndex": 35,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "1060",
+         "ranges": [
+          {
+           "startIndex": 35,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "lineText": ":   Initial, minimum delay for exponential backoff retries when BEP upload fails. (exponent: 1.6)",
+         "matchingRanges": {
+          "lineNumber": "1061",
+          "columnRanges": [
+           {
+            "startIndex": 31,
+            "length": 11
+           },
+           {
+            "startIndex": 43,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "1061",
+         "ranges": [
+          {
+           "startIndex": 31,
+           "length": 11
+          },
+          {
+           "startIndex": 43,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "1062"
+         },
+         "lineNumber": "1062"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "`--remote_retry_max_delay=\u0026lt;An immutable length of time.\u0026gt;` default: \"5s\"",
+         "matchingRanges": {
+          "lineNumber": "1426",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "1426",
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "lineText": ":   The maximum backoff delay between remote retry attempts. Following units can be used: Days (d), hours ( ...",
+         "matchingRanges": {
+          "lineNumber": "1427",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 7
+           },
+           {
+            "startIndex": 45,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "1427",
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 7
+          },
+          {
+           "startIndex": 45,
+           "length": 5
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 15
+    },
+    "resultToken": "CA4SAggBOOTbo5TI6Jmqe0AASA4"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/8.5.1/reference/command-line-reference.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "`--experimental_repository_downloader_retries=\u003can integer\u003e` default: \"5\"",
+         "matchingRanges": {
+          "lineNumber": "301"
+         },
+         "lineNumber": "301"
+        },
+        {
+         "lineText": ":   The maximum number of attempts to retry a download error. If set to 0, retries are disabled.",
+         "matchingRanges": {
+          "lineNumber": "302",
+          "columnRanges": [
+           {
+            "startIndex": 38,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "302",
+         "ranges": [
+          {
+           "startIndex": 38,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "303"
+         },
+         "lineNumber": "303"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "`--build_event_upload_max_retries=\u003can integer\u003e` default: \"4\"",
+         "matchingRanges": {
+          "lineNumber": "1045"
+         },
+         "lineNumber": "1045"
+        },
+        {
+         "lineText": ":   The maximum number of times Bazel should retry uploading a build event.",
+         "matchingRanges": {
+          "lineNumber": "1046",
+          "columnRanges": [
+           {
+            "startIndex": 45,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "1046",
+         "ranges": [
+          {
+           "startIndex": 45,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "1047"
+         },
+         "lineNumber": "1047"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "`--experimental_build_event_upload_retry_minimum_delay=\u003cAn immutable length of time.\u003e` default: \"1s\"",
+         "matchingRanges": {
+          "lineNumber": "1072",
+          "columnRanges": [
+           {
+            "startIndex": 35,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "1072",
+         "ranges": [
+          {
+           "startIndex": 35,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "lineText": ":   Initial, minimum delay for exponential backoff retries when BEP upload fails. (exponent: 1.6)",
+         "matchingRanges": {
+          "lineNumber": "1073",
+          "columnRanges": [
+           {
+            "startIndex": 31,
+            "length": 11
+           },
+           {
+            "startIndex": 43,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "1073",
+         "ranges": [
+          {
+           "startIndex": 31,
+           "length": 11
+          },
+          {
+           "startIndex": 43,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "1074"
+         },
+         "lineNumber": "1074"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "`--remote_retry_max_delay=\u003cAn immutable length of time.\u003e` default: \"5s\"",
+         "matchingRanges": {
+          "lineNumber": "1447",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "1447",
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "lineText": ":   The maximum backoff delay between remote retry attempts. Following units can be used: Days (d), hours ( ...",
+         "matchingRanges": {
+          "lineNumber": "1448",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 7
+           },
+           {
+            "startIndex": 45,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "1448",
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 7
+          },
+          {
+           "startIndex": 45,
+           "length": 5
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 15
+    },
+    "resultToken": "CA8SAggBOIDc9v2Ji63SwgFAAEgP"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/buildeventservice/AbstractBuildEventServiceTransportTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    assertTransientError(exception, BuildProgress.Code.BES_UPLOAD_RETRY_LIMIT_EXCEEDED_FAILURE);",
+         "matchingRanges": {
+          "lineNumber": "324",
+          "columnRanges": [
+           {
+            "startIndex": 66,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "324",
+         "ranges": [
+          {
+           "startIndex": 66,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "lineText": "    assertThat(exception.getMessage())",
+         "matchingRanges": {
+          "lineNumber": "325"
+         },
+         "lineNumber": "325"
+        },
+        {
+         "lineText": "        .containsMatch(",
+         "matchingRanges": {
+          "lineNumber": "326"
+         },
+         "lineNumber": "326"
+        },
+        {
+         "lineText": "            \"The Build Event Protocol upload failed: no publishBuildEvents retry attempts left:\"",
+         "matchingRanges": {
+          "lineNumber": "327",
+          "columnRanges": [
+           {
+            "startIndex": 75,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "327",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 12,
+            "length": 84
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 75,
+           "length": 5
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "            BuildEventServiceProtoUtil.streamFinished(COMMAND_CONTEXT, timestamp, 4),",
+         "matchingRanges": {
+          "lineNumber": "349"
+         },
+         "lineNumber": "349",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 82,
+            "length": 1
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "            // Verify retry on streamFinished message",
+         "matchingRanges": {
+          "lineNumber": "350",
+          "columnRanges": [
+           {
+            "startIndex": 22,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "350",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 12,
+            "length": 41
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 22,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "lineText": "            BuildEventServiceProtoUtil.streamFinished(COMMAND_CONTEXT, timestamp, 4))",
+         "matchingRanges": {
+          "lineNumber": "351"
+         },
+         "lineNumber": "351",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 82,
+            "length": 1
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "        .besOptions(besOptions)",
+         "matchingRanges": {
+          "lineNumber": "960"
+         },
+         "lineNumber": "960"
+        },
+        {
+         "lineText": "        // Reduce exponential backoff sleep times to speed up testing",
+         "matchingRanges": {
+          "lineNumber": "961",
+          "columnRanges": [
+           {
+            "startIndex": 18,
+            "length": 11
+           },
+           {
+            "startIndex": 30,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "961",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 8,
+            "length": 61
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 18,
+           "length": 11
+          },
+          {
+           "startIndex": 30,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "        .sleeper(",
+         "matchingRanges": {
+          "lineNumber": "962"
+         },
+         "lineNumber": "962"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 17
+    },
+    "resultToken": "CBASAggBOJLMloePzsLpZ0AASBA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/remote/GrpcRemoteExecutorTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import com.google.devtools.build.lib.authandtls.CallCredentialsProvider;",
+         "matchingRanges": {
+          "lineNumber": "31"
+         },
+         "lineNumber": "31",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.remote.RemoteRetrier.ExponentialBackoff;",
+         "matchingRanges": {
+          "lineNumber": "32",
+          "columnRanges": [
+           {
+            "startIndex": 58,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "32",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 58,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.remote.common.OperationObserver;",
+         "matchingRanges": {
+          "lineNumber": "33"
+         },
+         "lineNumber": "33",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  private ListeningScheduledExecutorService retryService;",
+         "matchingRanges": {
+          "lineNumber": "77",
+          "columnRanges": [
+           {
+            "startIndex": 44,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "77",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 44,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "78"
+         },
+         "lineNumber": "78"
+        },
+        {
+         "lineText": "  private static final int MAX_RETRY_ATTEMPTS = 5;",
+         "matchingRanges": {
+          "lineNumber": "79",
+          "columnRanges": [
+           {
+            "startIndex": 31,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "79",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 17,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 48,
+            "length": 1
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 31,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "80"
+         },
+         "lineNumber": "80"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  @Test",
+         "matchingRanges": {
+          "lineNumber": "374"
+         },
+         "lineNumber": "374"
+        },
+        {
+         "lineText": "  public void executeRemotely_responseWithoutResult_shouldNotRetry() {",
+         "matchingRanges": {
+          "lineNumber": "375",
+          "columnRanges": [
+           {
+            "startIndex": 61,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "375",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 61,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "lineText": "    executionService.whenExecute(DUMMY_REQUEST).thenDone(ExecuteResponse.getDefaultInstance());",
+         "matchingRanges": {
+          "lineNumber": "376"
+         },
+         "lineNumber": "376"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 35
+    },
+    "resultToken": "CBESBAgBIAE4vNyx1JrVlvsVQABIEQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/remote/RemoteServerCapabilitiesTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import com.google.devtools.build.lib.analysis.BlazeVersionInfo;",
+         "matchingRanges": {
+          "lineNumber": "32"
+         },
+         "lineNumber": "32",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.remote.RemoteRetrier.ExponentialBackoff;",
+         "matchingRanges": {
+          "lineNumber": "33",
+          "columnRanges": [
+           {
+            "startIndex": 58,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "33",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 58,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.remote.RemoteServerCapabilities.ServerCapabilitiesRequirement;",
+         "matchingRanges": {
+          "lineNumber": "34"
+         },
+         "lineNumber": "34",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  private Server fakeServer;",
+         "matchingRanges": {
+          "lineNumber": "65"
+         },
+         "lineNumber": "65",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  private ListeningScheduledExecutorService retryService;",
+         "matchingRanges": {
+          "lineNumber": "66",
+          "columnRanges": [
+           {
+            "startIndex": 44,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "66",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 44,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "67"
+         },
+         "lineNumber": "67"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "        TestUtils.newRemoteRetrier(",
+         "matchingRanges": {
+          "lineNumber": "143"
+         },
+         "lineNumber": "143"
+        },
+        {
+         "lineText": "            () -\u003e new ExponentialBackoff(remoteOptions),",
+         "matchingRanges": {
+          "lineNumber": "144",
+          "columnRanges": [
+           {
+            "startIndex": 22,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "144",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 18,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 22,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "lineText": "            RemoteRetrier.EXPERIMENTAL_GRPC_RESULT_CLASSIFIER,",
+         "matchingRanges": {
+          "lineNumber": "145"
+         },
+         "lineNumber": "145"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 9
+    },
+    "resultToken": "CBISBAgBIAE4tLSE14fa-Zh1QABIEg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/remote/RemoteSpawnRunnerWithGrpcRemoteExecutorTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import com.google.devtools.build.lib.exec.util.FakeOwner;",
+         "matchingRanges": {
+          "lineNumber": "86"
+         },
+         "lineNumber": "86",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.remote.RemoteRetrier.ExponentialBackoff;",
+         "matchingRanges": {
+          "lineNumber": "87",
+          "columnRanges": [
+           {
+            "startIndex": 58,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "87",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 58,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.remote.common.RemotePathResolver;",
+         "matchingRanges": {
+          "lineNumber": "88"
+         },
+         "lineNumber": "88",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  private Server fakeServer;",
+         "matchingRanges": {
+          "lineNumber": "172"
+         },
+         "lineNumber": "172",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  private ListeningScheduledExecutorService retryService;",
+         "matchingRanges": {
+          "lineNumber": "173",
+          "columnRanges": [
+           {
+            "startIndex": 44,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "173",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 44,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "174"
+         },
+         "lineNumber": "174"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  @Test",
+         "matchingRanges": {
+          "lineNumber": "1403"
+         },
+         "lineNumber": "1403"
+        },
+        {
+         "lineText": "  public void retryUploadAndExecuteOnMissingInputs() throws Exception {",
+         "matchingRanges": {
+          "lineNumber": "1404",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "1404",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 53,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "lineText": "    serviceRegistry.addService(",
+         "matchingRanges": {
+          "lineNumber": "1405"
+         },
+         "lineNumber": "1405"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 19
+    },
+    "resultToken": "CBMSBAgBIAE42KTY9dLX_6BaQABIEw"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/remote/downloader/GrpcRemoteDownloaderTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import com.google.devtools.build.lib.remote.RemoteRetrier;",
+         "matchingRanges": {
+          "lineNumber": "52"
+         },
+         "lineNumber": "52",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.remote.RemoteRetrier.ExponentialBackoff;",
+         "matchingRanges": {
+          "lineNumber": "53",
+          "columnRanges": [
+           {
+            "startIndex": 58,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "53",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 58,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.remote.common.RemoteActionExecutionContext;",
+         "matchingRanges": {
+          "lineNumber": "54"
+         },
+         "lineNumber": "54",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  private RemoteActionExecutionContext context;",
+         "matchingRanges": {
+          "lineNumber": "110"
+         },
+         "lineNumber": "110",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  private ListeningScheduledExecutorService retryService;",
+         "matchingRanges": {
+          "lineNumber": "111",
+          "columnRanges": [
+           {
+            "startIndex": 44,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "111",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 44,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "112"
+         },
+         "lineNumber": "112"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "            () -\u003e new ExponentialBackoff(remoteOptions),",
+         "matchingRanges": {
+          "lineNumber": "153",
+          "columnRanges": [
+           {
+            "startIndex": 22,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "153",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 18,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 22,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "lineText": "            RemoteRetrier.EXPERIMENTAL_GRPC_RESULT_CLASSIFIER,",
+         "matchingRanges": {
+          "lineNumber": "154"
+         },
+         "lineNumber": "154"
+        },
+        {
+         "lineText": "            retryService);",
+         "matchingRanges": {
+          "lineNumber": "155",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "155",
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 5
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 7
+    },
+    "resultToken": "CBQSBAgBIAE4gOjDz5-FiOG0AUAASBQ"
+   }
+  ],
+  "estimatedResultCount": "21",
+  "exhaustive": true,
+  "requestToken": "ChlyZXRyeSBleHBvbmVudGlhbCBiYWNrb2ZmEiMoIGdpdDpiYXplbC9iYXplbEBtYXN0ZXIgY2FzZTp5ZXMgKRoMCP_srNEGEL-n3dICIAwqADIASAE"
+ }
+}

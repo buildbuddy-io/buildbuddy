@@ -1,0 +1,3474 @@
+{
+ "query": "base64 padding",
+ "oss_project": "go",
+ "repo_name": "go",
+ "page_size": 50,
+ "fetched_at": "2026-06-11T02:29:25Z",
+ "response": {
+  "searchResults": [
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/encoding/base64/base64.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "const (",
+         "matchingRanges": {
+          "lineNumber": "31"
+         },
+         "lineNumber": "31",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tStdPadding rune = '=' // Standard padding character",
+         "matchingRanges": {
+          "lineNumber": "32",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 7
+           },
+           {
+            "startIndex": 35,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "32",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 19,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 23,
+            "length": 29
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 7
+          },
+          {
+           "startIndex": 35,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tNoPadding  rune = -1  // No padding",
+         "matchingRanges": {
+          "lineNumber": "33",
+          "columnRanges": [
+           {
+            "startIndex": 3,
+            "length": 7
+           },
+           {
+            "startIndex": 29,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "33",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 23,
+            "length": 13
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 3,
+           "length": 7
+          },
+          {
+           "startIndex": 29,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": ")",
+         "matchingRanges": {
+          "lineNumber": "34"
+         },
+         "lineNumber": "34"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// Padding characters above '\\x7f' are encoded as their exact byte value",
+         "matchingRanges": {
+          "lineNumber": "94",
+          "columnRanges": [
+           {
+            "startIndex": 3,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "94",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 72
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 3,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "// rather than using the UTF-8 representation of the codepoint.",
+         "matchingRanges": {
+          "lineNumber": "95"
+         },
+         "lineNumber": "95",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 63
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "func (enc Encoding) WithPadding(padding rune) *Encoding {",
+         "matchingRanges": {
+          "lineNumber": "96",
+          "columnRanges": [
+           {
+            "startIndex": 24,
+            "length": 7
+           },
+           {
+            "startIndex": 32,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "96",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 24,
+           "length": 7
+          },
+          {
+           "startIndex": 32,
+           "length": 7
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// the returned writer will be encoded using enc and then written to w.",
+         "matchingRanges": {
+          "lineNumber": "275"
+         },
+         "lineNumber": "275",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 71
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "// Base64 encodings operate in 4-byte blocks; when finished",
+         "matchingRanges": {
+          "lineNumber": "276",
+          "columnRanges": [
+           {
+            "startIndex": 3,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "276",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 59
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 3,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "// writing, the caller must Close the returned encoder to flush any",
+         "matchingRanges": {
+          "lineNumber": "277"
+         },
+         "lineNumber": "277",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 67
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 49
+    },
+    "resultToken": "CAASBAgBIAE4mu-PtsCWyLYQQABIAA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/encoding/base64/base64_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "package base64",
+         "matchingRanges": {
+          "lineNumber": "5",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "5",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "6"
+         },
+         "lineNumber": "6"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// Do nothing to a reference base64 string (leave in standard format)",
+         "matchingRanges": {
+          "lineNumber": "51",
+          "columnRanges": [
+           {
+            "startIndex": 29,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "51",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 69
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 29,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "func stdRef(ref string) string {",
+         "matchingRanges": {
+          "lineNumber": "52"
+         },
+         "lineNumber": "52",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// A nonstandard encoding with a funny padding character, for testing",
+         "matchingRanges": {
+          "lineNumber": "75",
+          "columnRanges": [
+           {
+            "startIndex": 39,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "75",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 69
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 39,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "var funnyEncoding = NewEncoding(encodeStd).WithPadding(rune('@'))",
+         "matchingRanges": {
+          "lineNumber": "76",
+          "columnRanges": [
+           {
+            "startIndex": 47,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "76",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 60,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 47,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "77"
+         },
+         "lineNumber": "77"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// Should work with padding.",
+         "matchingRanges": {
+          "lineNumber": "572",
+          "columnRanges": [
+           {
+            "startIndex": 21,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "572",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 28
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 21,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tr = NewDecoder(URLEncoding, bytes.NewReader([]byte(source+\"==\")))",
+         "matchingRanges": {
+          "lineNumber": "573"
+         },
+         "lineNumber": "573",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 59,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 6
+    },
+    "resultToken": "CAESAggBOI642_Kl-oWthwFAAEgB"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/encoding/json/v2/arshal_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\tBase32Hex []byte `json:\",format:base32hex\"`",
+         "matchingRanges": {
+          "lineNumber": "349"
+         },
+         "lineNumber": "349",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 19,
+            "length": 26
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tBase64    []byte `json:\",format:base64\"`",
+         "matchingRanges": {
+          "lineNumber": "350",
+          "columnRanges": [
+           {
+            "startIndex": 2,
+            "length": 6
+           },
+           {
+            "startIndex": 34,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "350",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 19,
+            "length": 23
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 2,
+           "length": 6
+          },
+          {
+           "startIndex": 34,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tBase64URL []byte `json:\",format:base64url\"`",
+         "matchingRanges": {
+          "lineNumber": "351",
+          "columnRanges": [
+           {
+            "startIndex": 2,
+            "length": 6
+           },
+           {
+            "startIndex": 34,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "351",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 19,
+            "length": 26
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 2,
+           "length": 6
+          },
+          {
+           "startIndex": 34,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tArray     []byte `json:\",format:array\"`",
+         "matchingRanges": {
+          "lineNumber": "352"
+         },
+         "lineNumber": "352",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 19,
+            "length": 22
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\tBase64    [4]byte `json:\",format:base64\"`",
+         "matchingRanges": {
+          "lineNumber": "358",
+          "columnRanges": [
+           {
+            "startIndex": 2,
+            "length": 6
+           },
+           {
+            "startIndex": 35,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "358",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 13,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 23
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 2,
+           "length": 6
+          },
+          {
+           "startIndex": 35,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tBase64URL [4]byte `json:\",format:base64url\"`",
+         "matchingRanges": {
+          "lineNumber": "359",
+          "columnRanges": [
+           {
+            "startIndex": 2,
+            "length": 6
+           },
+           {
+            "startIndex": 35,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "359",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 13,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 26
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 2,
+           "length": 6
+          },
+          {
+           "startIndex": 35,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t}, {",
+         "matchingRanges": {
+          "lineNumber": "6474"
+         },
+         "lineNumber": "6474"
+        },
+        {
+         "lineText": "\t\tname: jsontest.Name(\"Structs/Format/Bytes/Invalid/Base32/Padding\"),",
+         "matchingRanges": {
+          "lineNumber": "6475",
+          "columnRanges": [
+           {
+            "startIndex": 59,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "6475",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 22,
+            "length": 45
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 59,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\t\topts: []Options{jsonopts.ExperimentalSupportFormatTag(true)},",
+         "matchingRanges": {
+          "lineNumber": "6476"
+         },
+         "lineNumber": "6476"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 41
+    },
+    "resultToken": "CAISBAgBIAE4lKSyn-_X_O9uQABIAg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/encoding/json/v2/arshal_default.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tappendEncodeBase64    = base64.StdEncoding.AppendEncode",
+         "matchingRanges": {
+          "lineNumber": "311",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 6
+           },
+           {
+            "startIndex": 25,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "311",
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 6
+          },
+          {
+           "startIndex": 25,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tappendEncodeBase64URL = base64.URLEncoding.AppendEncode",
+         "matchingRanges": {
+          "lineNumber": "312",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 6
+           },
+           {
+            "startIndex": 25,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "312",
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 6
+          },
+          {
+           "startIndex": 25,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tencodedLenBase32Hex   = base32.HexEncoding.EncodedLen",
+         "matchingRanges": {
+          "lineNumber": "315"
+         },
+         "lineNumber": "315"
+        },
+        {
+         "lineText": "\tencodedLenBase64      = base64.StdEncoding.EncodedLen",
+         "matchingRanges": {
+          "lineNumber": "316",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 6
+           },
+           {
+            "startIndex": 25,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "316",
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 6
+          },
+          {
+           "startIndex": 25,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tencodedLenBase64URL   = base64.URLEncoding.EncodedLen",
+         "matchingRanges": {
+          "lineNumber": "317",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 6
+           },
+           {
+            "startIndex": 25,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "317",
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 6
+          },
+          {
+           "startIndex": 25,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tappendDecodeBase16    = hex.AppendDecode",
+         "matchingRanges": {
+          "lineNumber": "318"
+         },
+         "lineNumber": "318"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t\t// NOTE: The v2 default is to strictly comply with RFC 4648.",
+         "matchingRanges": {
+          "lineNumber": "425"
+         },
+         "lineNumber": "425",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 3,
+            "length": 60
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t// Section 3.2 specifies that padding is required.",
+         "matchingRanges": {
+          "lineNumber": "426",
+          "columnRanges": [
+           {
+            "startIndex": 33,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "426",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 3,
+            "length": 50
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 33,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t// Section 3.3 specifies that non-alphabet characters",
+         "matchingRanges": {
+          "lineNumber": "427"
+         },
+         "lineNumber": "427",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 3,
+            "length": 53
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 19
+    },
+    "resultToken": "CAMSBAgBIAE4quiuwM35t-BjQABIAw"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/debug/buildinfo/buildinfo_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "func Test117(t *testing.T) {",
+         "matchingRanges": {
+          "lineNumber": "275"
+         },
+         "lineNumber": "275",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tb, err := obscuretestdata.ReadFile(\"testdata/go117/go117.base64\")",
+         "matchingRanges": {
+          "lineNumber": "276",
+          "columnRanges": [
+           {
+            "startIndex": 58,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "276",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 36,
+            "length": 29
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 58,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tif err != nil {",
+         "matchingRanges": {
+          "lineNumber": "277"
+         },
+         "lineNumber": "277",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func TestNotGo(t *testing.T) {",
+         "matchingRanges": {
+          "lineNumber": "298"
+         },
+         "lineNumber": "298",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tb, err := obscuretestdata.ReadFile(\"testdata/notgo/notgo.base64\")",
+         "matchingRanges": {
+          "lineNumber": "299",
+          "columnRanges": [
+           {
+            "startIndex": 58,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "299",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 36,
+            "length": 29
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 58,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tif err != nil {",
+         "matchingRanges": {
+          "lineNumber": "300"
+         },
+         "lineNumber": "300",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tconst (",
+         "matchingRanges": {
+          "lineNumber": "335"
+         },
+         "lineNumber": "335",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tpaddingSize    = 200",
+         "matchingRanges": {
+          "lineNumber": "336",
+          "columnRanges": [
+           {
+            "startIndex": 2,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "336",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 19,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 2,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tbuildInfoAlign = 16",
+         "matchingRanges": {
+          "lineNumber": "337"
+         },
+         "lineNumber": "337",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 19,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 9
+    },
+    "resultToken": "CAQSAggBOPjuoor2of2WREAASAQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/crypto/tls/bogo_shim_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "type base64Flag []byte",
+         "matchingRanges": {
+          "lineNumber": "158",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "158",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "159"
+         },
+         "lineNumber": "159"
+        },
+        {
+         "lineText": "func flagBase64(name, usage string) *base64Flag {",
+         "matchingRanges": {
+          "lineNumber": "160",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 6
+           },
+           {
+            "startIndex": 37,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "160",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 6
+          },
+          {
+           "startIndex": 37,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tf := new(base64Flag)",
+         "matchingRanges": {
+          "lineNumber": "161",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "161",
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "        body { font-family: monospace; margin: 20px; }",
+         "matchingRanges": {
+          "lineNumber": "760"
+         },
+         "lineNumber": "760",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "length": 54
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "length": 54
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "        .summary { background: #f5f5f5; padding: 10px; margin-bottom: 20px; }",
+         "matchingRanges": {
+          "lineNumber": "761",
+          "columnRanges": [
+           {
+            "startIndex": 40,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "761",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "length": 77
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "length": 77
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 40,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "        .controls { margin-bottom: 10px; }",
+         "matchingRanges": {
+          "lineNumber": "762"
+         },
+         "lineNumber": "762",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "length": 42
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "length": 42
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "        table { width: 100%; border-collapse: collapse; table-layout: fixed; }",
+         "matchingRanges": {
+          "lineNumber": "764"
+         },
+         "lineNumber": "764",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "length": 78
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "length": 78
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; vertical-align: top; }",
+         "matchingRanges": {
+          "lineNumber": "765",
+          "columnRanges": [
+           {
+            "startIndex": 41,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "765",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "length": 95
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "length": 95
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 41,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "        th { background-color: #f2f2f2; cursor: pointer; }",
+         "matchingRanges": {
+          "lineNumber": "766"
+         },
+         "lineNumber": "766",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "length": 58
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "length": 58
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 17
+    },
+    "resultToken": "CAUSBAgBIAE4kICela-Y7OBjQABIBQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/crypto/x509/x509_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// openssl req -newkey rsa:2048 -keyout test.key -sha256 -sigopt \\",
+         "matchingRanges": {
+          "lineNumber": "1153"
+         },
+         "lineNumber": "1153",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 66
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "// rsa_padding_mode:pss -sigopt rsa_pss_saltlen:32 -sigopt rsa_mgf1_md:sha256 \\",
+         "matchingRanges": {
+          "lineNumber": "1154",
+          "columnRanges": [
+           {
+            "startIndex": 7,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "1154",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 79
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 7,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "// -x509 -days 3650 -nodes -subj '/C=US/ST=CA/L=SF/O=Test/CN=Test' -out \\",
+         "matchingRanges": {
+          "lineNumber": "1155"
+         },
+         "lineNumber": "1155",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 73
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func fromBase64(in string) []byte {",
+         "matchingRanges": {
+          "lineNumber": "1411",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "1411",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\tout := make([]byte, base64.StdEncoding.DecodedLen(len(in)))",
+         "matchingRanges": {
+          "lineNumber": "1412",
+          "columnRanges": [
+           {
+            "startIndex": 21,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "1412",
+         "ranges": [
+          {
+           "startIndex": 21,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func TestCRLWithoutExpiry(t *testing.T) {",
+         "matchingRanges": {
+          "lineNumber": "1440"
+         },
+         "lineNumber": "1440",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tderBytes := fromBase64(\"MIHYMIGZMAkGByqGSM44BAMwEjEQMA4GA1UEAxMHQ2FybERTUxcNOTk ...",
+         "matchingRanges": {
+          "lineNumber": "1441",
+          "columnRanges": [
+           {
+            "startIndex": 17,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "1441",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 24,
+            "length": 56
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 17,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "const derCRLBase64 = \"MIINqzCCDJMCAQEwDQYJKoZIhvcNAQEFBQAwVjEZMBcGA1UEAxMQU ...",
+         "matchingRanges": {
+          "lineNumber": "1480",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "1480",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 21,
+            "length": 54
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "const pemCRLBase64 = \"LS0tLS1CRUdJTiBYNTA5IENSTC0tLS0tDQpNSUlCOWpDQ0FWOENBU ...",
+         "matchingRanges": {
+          "lineNumber": "1482",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "1482",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 21,
+            "length": 54
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "//\tunstructuredName  = ignored unstructured name",
+         "matchingRanges": {
+          "lineNumber": "1945"
+         },
+         "lineNumber": "1945",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 48
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "var csrBase64Array = [...]string{",
+         "matchingRanges": {
+          "lineNumber": "1946",
+          "columnRanges": [
+           {
+            "startIndex": 7,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "1946",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 7,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t// Just [ v3_req ]",
+         "matchingRanges": {
+          "lineNumber": "1947"
+         },
+         "lineNumber": "1947",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 18
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 23
+    },
+    "resultToken": "CAYSBAgBIAE4ovvpg5bphbwLQABIBg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/link/internal/ld/lib.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\"debug/pe\"",
+         "matchingRanges": {
+          "lineNumber": "37"
+         },
+         "lineNumber": "37",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 1,
+            "length": 10
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\"encoding/base64\"",
+         "matchingRanges": {
+          "lineNumber": "38",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "38",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 1,
+            "length": 17
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t\"encoding/binary\"",
+         "matchingRanges": {
+          "lineNumber": "39"
+         },
+         "lineNumber": "39",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 1,
+            "length": 17
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// For example an architecture might want to pad with a trap instruction to",
+         "matchingRanges": {
+          "lineNumber": "194"
+         },
+         "lineNumber": "194",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 75
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t// catch wayward programs. Architectures that do not define a padding value",
+         "matchingRanges": {
+          "lineNumber": "195",
+          "columnRanges": [
+           {
+            "startIndex": 63,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "195",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 75
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 63,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\t// are padded with zeros.",
+         "matchingRanges": {
+          "lineNumber": "196"
+         },
+         "lineNumber": "196",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 25
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t}",
+         "matchingRanges": {
+          "lineNumber": "1034"
+         },
+         "lineNumber": "1034"
+        },
+        {
+         "lineText": "\t\treturn prefix + base64.StdEncoding.EncodeToString(hb[:6])",
+         "matchingRanges": {
+          "lineNumber": "1035",
+          "columnRanges": [
+           {
+            "startIndex": 18,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "1035",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 56,
+            "length": 1
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 18,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t}",
+         "matchingRanges": {
+          "lineNumber": "1036"
+         },
+         "lineNumber": "1036"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 4
+    },
+    "resultToken": "CAcSAggBOOiEwd29vKv2dUAASAc"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/vendor/golang.org/x/tools/internal/stdlib/manifest.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t{\"(CorruptInputError).Error\", Method, 0, \"\"},",
+         "matchingRanges": {
+          "lineNumber": "4885"
+         },
+         "lineNumber": "4885",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 3,
+            "length": 27
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 40,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 43,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t{\"(Encoding).WithPadding\", Method, 9, \"\"},",
+         "matchingRanges": {
+          "lineNumber": "4886",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "4886",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 3,
+            "length": 24
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 37,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 40,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t{\"CorruptInputError\", Type, 0, \"\"},",
+         "matchingRanges": {
+          "lineNumber": "4887"
+         },
+         "lineNumber": "4887",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 3,
+            "length": 19
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 30,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 33,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t{\"StdPadding\", Const, 9, \"\"},",
+         "matchingRanges": {
+          "lineNumber": "4895",
+          "columnRanges": [
+           {
+            "startIndex": 7,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "4895",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 3,
+            "length": 12
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 24,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 27,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 7,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\t},",
+         "matchingRanges": {
+          "lineNumber": "4896"
+         },
+         "lineNumber": "4896"
+        },
+        {
+         "lineText": "\t\"encoding/base64\": {",
+         "matchingRanges": {
+          "lineNumber": "4897",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "4897",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 1,
+            "length": 17
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t{\"BpfStat.Drop\", Field, 0, \"\"},",
+         "matchingRanges": {
+          "lineNumber": "11430"
+         },
+         "lineNumber": "11430",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 3,
+            "length": 14
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 26,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 29,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t{\"BpfStat.Padding\", Field, 2, \"\"},",
+         "matchingRanges": {
+          "lineNumber": "11431",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "11431",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 3,
+            "length": 17
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 29,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 32,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t{\"BpfStat.Recv\", Field, 0, \"\"},",
+         "matchingRanges": {
+          "lineNumber": "11432"
+         },
+         "lineNumber": "11432",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 3,
+            "length": 14
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 26,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 29,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 12
+    },
+    "resultToken": "CAgSAggBOJrA-rfNvvHiBUAASAg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/archive/tar/reader_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t}, {",
+         "matchingRanges": {
+          "lineNumber": "527"
+         },
+         "lineNumber": "527"
+        },
+        {
+         "lineText": "\t\tfile:     \"testdata/neg-size.tar.base64\",",
+         "matchingRanges": {
+          "lineNumber": "528",
+          "columnRanges": [
+           {
+            "startIndex": 35,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "528",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 12,
+            "length": 30
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 35,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tobscured: true,",
+         "matchingRanges": {
+          "lineNumber": "529"
+         },
+         "lineNumber": "529"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tfor _, v := range vectors {",
+         "matchingRanges": {
+          "lineNumber": "634"
+         },
+         "lineNumber": "634",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 13,
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tt.Run(strings.TrimSuffix(path.Base(v.file), \".base64\"), func(t *testing.T) {",
+         "matchingRanges": {
+          "lineNumber": "635",
+          "columnRanges": [
+           {
+            "startIndex": 48,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "635",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 46,
+            "length": 9
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 58,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 48,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\tpath := v.file",
+         "matchingRanges": {
+          "lineNumber": "636"
+         },
+         "lineNumber": "636"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tpadInput := func(s string) string {",
+         "matchingRanges": {
+          "lineNumber": "1180"
+         },
+         "lineNumber": "1180",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 13,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\treturn s + string(zeroBlock[:blockPadding(int64(len(s)))])",
+         "matchingRanges": {
+          "lineNumber": "1181",
+          "columnRanges": [
+           {
+            "startIndex": 36,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "1181",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 36,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\t}",
+         "matchingRanges": {
+          "lineNumber": "1182"
+         },
+         "lineNumber": "1182"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 7
+    },
+    "resultToken": "CAkSAggBOIbl5ay09MW_6wFAAEgJ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/malloc.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// See comment in mallocinit for how the randomization is performed.",
+         "matchingRanges": {
+          "lineNumber": "354"
+         },
+         "lineNumber": "354",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 68
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\trandomizeHeapBase = goexperiment.RandomizedHeapBase64 \u0026\u0026 goarch.PtrSize == 8 \u0026\u0026 !isSbrkPlatform \u0026\u0026 !raceenabled \u0026\u0026 !msanenabled \u0026\u0026 !asanenabled",
+         "matchingRanges": {
+          "lineNumber": "355",
+          "columnRanges": [
+           {
+            "startIndex": 48,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "355",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 76,
+            "length": 1
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 48,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "356"
+         },
+         "lineNumber": "356"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t// Note that we disable tinyalloc when raceenabled for this to work.",
+         "matchingRanges": {
+          "lineNumber": "1351"
+         },
+         "lineNumber": "1351",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 68
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t// TODO: This padding is only performed when the race detector",
+         "matchingRanges": {
+          "lineNumber": "1352",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "1352",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 62
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t// is enabled. It would be nice to enable it if any package",
+         "matchingRanges": {
+          "lineNumber": "1353"
+         },
+         "lineNumber": "1353",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 59
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t// detect that (especially at compile time).",
+         "matchingRanges": {
+          "lineNumber": "1355"
+         },
+         "lineNumber": "1355",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 44
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t// TODO: enable this padding for all allocations, not just",
+         "matchingRanges": {
+          "lineNumber": "1356",
+          "columnRanges": [
+           {
+            "startIndex": 23,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "1356",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 58
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 23,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t// tinyalloc ones. It's tricky because of pointer maps.",
+         "matchingRanges": {
+          "lineNumber": "1357"
+         },
+         "lineNumber": "1357",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 55
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CAoSAggBOJbE7MngmNfykAFAAEgK"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/reflect/type.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// PkgPath returns a defined type's package path, that is, the import path",
+         "matchingRanges": {
+          "lineNumber": "97"
+         },
+         "lineNumber": "97",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 74
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t// that uniquely identifies the package, such as \"encoding/base64\".",
+         "matchingRanges": {
+          "lineNumber": "98",
+          "columnRanges": [
+           {
+            "startIndex": 60,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "98",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 67
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 60,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t// If the type was predeclared (string, error) or not defined (*T, struct{},",
+         "matchingRanges": {
+          "lineNumber": "99"
+         },
+         "lineNumber": "99",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 76
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// The string representation may use shortened package names",
+         "matchingRanges": {
+          "lineNumber": "109"
+         },
+         "lineNumber": "109",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 60
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t// (e.g., base64 instead of \"encoding/base64\") and is not",
+         "matchingRanges": {
+          "lineNumber": "110",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 6
+           },
+           {
+            "startIndex": 39,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "110",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 57
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 6
+          },
+          {
+           "startIndex": 39,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t// guaranteed to be unique among types. To test for type identity,",
+         "matchingRanges": {
+          "lineNumber": "111"
+         },
+         "lineNumber": "111",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 66
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// isPaddedField reports whether the i'th field of struct type t is followed",
+         "matchingRanges": {
+          "lineNumber": "2238"
+         },
+         "lineNumber": "2238",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 76
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "// by padding.",
+         "matchingRanges": {
+          "lineNumber": "2239",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "2239",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 14
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "func isPaddedField(t Type, i int) bool {",
+         "matchingRanges": {
+          "lineNumber": "2240"
+         },
+         "lineNumber": "2240",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 4
+    },
+    "resultToken": "CAsSAggBONKIie3W_7ixygFAAEgL"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/export_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tif randomizeHeapBase \u0026\u0026 len(mismatches) \u003e 0 {",
+         "matchingRanges": {
+          "lineNumber": "1207"
+         },
+         "lineNumber": "1207",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 43,
+            "length": 1
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t// When goexperiment.RandomizedHeapBase64 is set we use a series of",
+         "matchingRanges": {
+          "lineNumber": "1208",
+          "columnRanges": [
+           {
+            "startIndex": 37,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "1208",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 67
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 37,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t// padding pages to generate randomized heap base address which have",
+         "matchingRanges": {
+          "lineNumber": "1209",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "1209",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 68
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t// both the alloc and scav bits set. Because of this we expect exactly",
+         "matchingRanges": {
+          "lineNumber": "1210"
+         },
+         "lineNumber": "1210",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 70
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t// We do this, instead of ignoring the mismatches in the chunkLoop, because",
+         "matchingRanges": {
+          "lineNumber": "1216"
+         },
+         "lineNumber": "1216",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 75
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t// it's not easy to determine which arena we added the padding pages to",
+         "matchingRanges": {
+          "lineNumber": "1217",
+          "columnRanges": [
+           {
+            "startIndex": 57,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "1217",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 71
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 57,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t// programmatically, without explicitly recording the base address somewhere",
+         "matchingRanges": {
+          "lineNumber": "1218"
+         },
+         "lineNumber": "1218",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 76
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CAwSAggBOLb-9K2D67Wp7QFAAEgM"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/reflect/all_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\"bytes\"",
+         "matchingRanges": {
+          "lineNumber": "8"
+         },
+         "lineNumber": "8",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 1,
+            "length": 7
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\"encoding/base64\"",
+         "matchingRanges": {
+          "lineNumber": "9",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "9",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 1,
+            "length": 17
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t\"flag\"",
+         "matchingRanges": {
+          "lineNumber": "10"
+         },
+         "lineNumber": "10",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 1,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// Difficult test for function call because of",
+         "matchingRanges": {
+          "lineNumber": "2148"
+         },
+         "lineNumber": "2148",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 46
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "// implicit padding between arguments.",
+         "matchingRanges": {
+          "lineNumber": "2149",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "2149",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 38
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "func dummy(b byte, c int, d byte, e two, f byte, g float32, h byte) (i byte, j int, k byte, l two, m byte, n float32, o byte) {",
+         "matchingRanges": {
+          "lineNumber": "2150"
+         },
+         "lineNumber": "2150",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t}{",
+         "matchingRanges": {
+          "lineNumber": "3151"
+         },
+         "lineNumber": "3151"
+        },
+        {
+         "lineText": "\t\t{TypeOf(\u0026base64.Encoding{}).Elem(), \"encoding/base64\"},",
+         "matchingRanges": {
+          "lineNumber": "3152",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 6
+           },
+           {
+            "startIndex": 48,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "3152",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 38,
+            "length": 17
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 6
+          },
+          {
+           "startIndex": 48,
+           "length": 6
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t{TypeOf(int(0)), \"\"},",
+         "matchingRanges": {
+          "lineNumber": "3153"
+         },
+         "lineNumber": "3153",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 14,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 19,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CA0SAggBOID298-s7Pm0oAFAAEgN"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "api/go1.5.txt",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "pkg debug/elf, type R_PPC64 int",
+         "matchingRanges": {
+          "lineNumber": "273"
+         },
+         "lineNumber": "273"
+        },
+        {
+         "lineText": "pkg encoding/base64, const NoPadding = -1",
+         "matchingRanges": {
+          "lineNumber": "274",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 6
+           },
+           {
+            "startIndex": 29,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "274",
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 6
+          },
+          {
+           "startIndex": 29,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "pkg encoding/base64, const NoPadding int32",
+         "matchingRanges": {
+          "lineNumber": "275",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 6
+           },
+           {
+            "startIndex": 29,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "275",
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 6
+          },
+          {
+           "startIndex": 29,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "pkg encoding/base64, const StdPadding = 61",
+         "matchingRanges": {
+          "lineNumber": "276",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 6
+           },
+           {
+            "startIndex": 30,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "276",
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 6
+          },
+          {
+           "startIndex": 30,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "pkg encoding/base64, const StdPadding int32",
+         "matchingRanges": {
+          "lineNumber": "277",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 6
+           },
+           {
+            "startIndex": 30,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "277",
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 6
+          },
+          {
+           "startIndex": 30,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "pkg encoding/base64, method (Encoding) WithPadding(int32) *Encoding",
+         "matchingRanges": {
+          "lineNumber": "278",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 6
+           },
+           {
+            "startIndex": 43,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "278",
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 6
+          },
+          {
+           "startIndex": 43,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "pkg encoding/base64, var RawStdEncoding *Encoding",
+         "matchingRanges": {
+          "lineNumber": "279",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 6
+           }
+          ]
+         },
+         "lineNumber": "279",
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 6
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 7
+    },
+    "resultToken": "CA4SAggBOKDvtdzlq9S4H0AASA4"
+   }
+  ],
+  "estimatedResultCount": "17",
+  "exhaustive": true,
+  "requestToken": "Cg5iYXNlNjQgcGFkZGluZxIdKCBnaXQ6Z28vZ29AbWFzdGVyIGNhc2U6eWVzICkaDAiEu6jRBhCH64PIAyAMKgAyAEgB"
+ }
+}

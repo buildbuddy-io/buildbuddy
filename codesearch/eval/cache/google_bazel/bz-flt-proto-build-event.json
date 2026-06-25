@@ -1,0 +1,141 @@
+{
+ "query": "file:\\.proto$ build_event",
+ "oss_project": "bazel",
+ "repo_name": "bazel",
+ "page_size": 50,
+ "fetched_at": "2026-06-11T22:29:31Z",
+ "response": {
+  "searchResults": [
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/buildeventstream/proto/build_event_stream.proto",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "package build_event_stream;",
+         "matchingRanges": {
+          "lineNumber": "19",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "19",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "20"
+         },
+         "lineNumber": "20"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  // Inlined files that belong to this output group, requested via",
+         "matchingRanges": {
+          "lineNumber": "636"
+         },
+         "lineNumber": "636",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 64
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  // --experimental_build_event_output_group_mode.",
+         "matchingRanges": {
+          "lineNumber": "637",
+          "columnRanges": [
+           {
+            "startIndex": 20,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "637",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 48
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 20,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": "  repeated File inline_files = 5;",
+         "matchingRanges": {
+          "lineNumber": "638"
+         },
+         "lineNumber": "638",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 31,
+            "length": 1
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAASAggBOIbKhbKGnb3YUUAASAA"
+   }
+  ],
+  "estimatedResultCount": "1",
+  "exhaustive": true,
+  "requestToken": "ChlmaWxlOlwucHJvdG8kIGJ1aWxkX2V2ZW50EiMoIGdpdDpiYXplbC9iYXplbEBtYXN0ZXIgY2FzZTp5ZXMgKRoLCMvtrNEGENjJ42EgDCAPKgAyAEgB"
+ }
+}

@@ -1,0 +1,5009 @@
+{
+ "query": "NewTimer",
+ "oss_project": "go",
+ "repo_name": "go",
+ "page_size": 50,
+ "fetched_at": "2026-06-11T02:27:29Z",
+ "response": {
+  "searchResults": [
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/time/sleep.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "//go:linkname newTimer",
+         "matchingRanges": {
+          "lineNumber": "43",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "43",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 22
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "func newTimer(when, period int64, f func(any, uintptr, int64), arg any, cp unsafe.Pointer) *Timer",
+         "matchingRanges": {
+          "lineNumber": "44",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "44",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 36,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "45"
+         },
+         "lineNumber": "45"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// unless the Timer was created by [AfterFunc].",
+         "matchingRanges": {
+          "lineNumber": "59"
+         },
+         "lineNumber": "59",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 47
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "// A Timer must be created with [NewTimer] or AfterFunc.",
+         "matchingRanges": {
+          "lineNumber": "60",
+          "columnRanges": [
+           {
+            "startIndex": 33,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "60",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 56
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 33,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "type Timer struct {",
+         "matchingRanges": {
+          "lineNumber": "61"
+         },
+         "lineNumber": "61",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 11,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// eliminating the possibility of those stale values.",
+         "matchingRanges": {
+          "lineNumber": "109"
+         },
+         "lineNumber": "109",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 53
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "func NewTimer(d Duration) *Timer {",
+         "matchingRanges": {
+          "lineNumber": "110",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "110",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\tc := make(chan Time, 1)",
+         "matchingRanges": {
+          "lineNumber": "111"
+         },
+         "lineNumber": "111",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 11,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 22,
+            "length": 1
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 18
+    },
+    "resultToken": "CAASBAgBIAE4gt6C6uj2276GAUAASAA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/time.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// newTimer allocates and returns a new time.Timer or time.Ticker (same layout)",
+         "matchingRanges": {
+          "lineNumber": "390",
+          "columnRanges": [
+           {
+            "startIndex": 3,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "390",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 79
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 3,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "// with the given parameters.",
+         "matchingRanges": {
+          "lineNumber": "391"
+         },
+         "lineNumber": "391",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 29
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "//",
+         "matchingRanges": {
+          "lineNumber": "392"
+         },
+         "lineNumber": "392",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "//go:linkname newTimer time.newTimer",
+         "matchingRanges": {
+          "lineNumber": "393",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 8
+           },
+           {
+            "startIndex": 28,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "393",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 36
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 8
+          },
+          {
+           "startIndex": 28,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "func newTimer(when, period int64, f func(arg any, seq uintptr, delay int64), arg any, c *hchan) *timeTimer {",
+         "matchingRanges": {
+          "lineNumber": "394",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "394",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 36,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\tt := new(timeTimer)",
+         "matchingRanges": {
+          "lineNumber": "395"
+         },
+         "lineNumber": "395"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CAESBAgBIAE4lKiXopCNjtaIAUAASAE"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/time/time_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\twg.Add(goroutines)",
+         "matchingRanges": {
+          "lineNumber": "1825"
+         },
+         "lineNumber": "1825"
+        },
+        {
+         "lineText": "\ttimer := NewTimer(Hour)",
+         "matchingRanges": {
+          "lineNumber": "1826",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "1826",
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\tfor i := 0; i \u003c goroutines; i++ {",
+         "matchingRanges": {
+          "lineNumber": "1827"
+         },
+         "lineNumber": "1827",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 10,
+            "length": 1
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\twg.Add(goroutines * 2)",
+         "matchingRanges": {
+          "lineNumber": "1843"
+         },
+         "lineNumber": "1843",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 21,
+            "length": 1
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\ttimer := NewTimer(Hour)",
+         "matchingRanges": {
+          "lineNumber": "1844",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "1844",
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\tfor i := 0; i \u003c goroutines; i++ {",
+         "matchingRanges": {
+          "lineNumber": "1845"
+         },
+         "lineNumber": "1845",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 10,
+            "length": 1
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAISAggBOPjX7c7c04rOREAASAI"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/race/testdata/time_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tv = 2",
+         "matchingRanges": {
+          "lineNumber": "50"
+         },
+         "lineNumber": "50",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 5,
+            "length": 1
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tt := time.NewTimer(1)",
+         "matchingRanges": {
+          "lineNumber": "51",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "51",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 1
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\tgo func() {",
+         "matchingRanges": {
+          "lineNumber": "52"
+         },
+         "lineNumber": "52",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t}",
+         "matchingRanges": {
+          "lineNumber": "67"
+         },
+         "lineNumber": "67"
+        },
+        {
+         "lineText": "\tt := time.NewTimer(time.Hour)",
+         "matchingRanges": {
+          "lineNumber": "68",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "68",
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\tgo func() {",
+         "matchingRanges": {
+          "lineNumber": "69"
+         },
+         "lineNumber": "69",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAMSAggBOK74gpD6gpPCe0AASAM"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/time/tick_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\trun(t, \"Tick\", func() { Tick(Hour) })",
+         "matchingRanges": {
+          "lineNumber": "306"
+         },
+         "lineNumber": "306",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 16,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\trun(t, \"NewTimer\", func() { NewTimer(Hour) })",
+         "matchingRanges": {
+          "lineNumber": "307",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 8
+           },
+           {
+            "startIndex": 29,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "307",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 10
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 20,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 8
+          },
+          {
+           "startIndex": 29,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\trun(t, \"NewTicker\", func() { NewTicker(Hour) })",
+         "matchingRanges": {
+          "lineNumber": "308"
+         },
+         "lineNumber": "308",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 11
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 21,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\trun(t, \"NewTimerStop\", func() { NewTimer(Hour).Stop() })",
+         "matchingRanges": {
+          "lineNumber": "309",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 8
+           },
+           {
+            "startIndex": 33,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "309",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 14
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 24,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 8
+          },
+          {
+           "startIndex": 33,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\trun(t, \"NewTickerStop\", func() { NewTicker(Hour).Stop() })",
+         "matchingRanges": {
+          "lineNumber": "310"
+         },
+         "lineNumber": "310",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 15
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 25,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tt.Run(\"Timer\", func(t *testing.T) {",
+         "matchingRanges": {
+          "lineNumber": "314"
+         },
+         "lineNumber": "314",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 7,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 16,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\ttim := NewTimer(10000 * Second)",
+         "matchingRanges": {
+          "lineNumber": "315",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "315",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 18,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t\ttestTimerChan(t, tim, tim.C)",
+         "matchingRanges": {
+          "lineNumber": "316"
+         },
+         "lineNumber": "316"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CAQSAggBOKC0tJK4tfPilQFAAEgE"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/time/sleep_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// newTimerFunc simulates NewTimer using AfterFunc,",
+         "matchingRanges": {
+          "lineNumber": "21",
+          "columnRanges": [
+           {
+            "startIndex": 3,
+            "length": 8
+           },
+           {
+            "startIndex": 26,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "21",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 51
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 3,
+           "length": 8
+          },
+          {
+           "startIndex": 26,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "// but this version will not hit the special cases for channels",
+         "matchingRanges": {
+          "lineNumber": "22"
+         },
+         "lineNumber": "22",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 63
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "// that are used when calling NewTimer.",
+         "matchingRanges": {
+          "lineNumber": "23",
+          "columnRanges": [
+           {
+            "startIndex": 30,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "23",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 39
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 30,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "// This makes it easy to test both paths.",
+         "matchingRanges": {
+          "lineNumber": "24"
+         },
+         "lineNumber": "24",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 41
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t\tfor pb.Next() {",
+         "matchingRanges": {
+          "lineNumber": "238"
+         },
+         "lineNumber": "238",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 3,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t\tNewTimer(1 * Second).Stop()",
+         "matchingRanges": {
+          "lineNumber": "239",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "239",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 13,
+            "length": 1
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t}",
+         "matchingRanges": {
+          "lineNumber": "240"
+         },
+         "lineNumber": "240"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\tbenchmark(b, func(pb *testing.PB) {",
+         "matchingRanges": {
+          "lineNumber": "284"
+         },
+         "lineNumber": "284",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 15,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\tt := NewTimer(Hour)",
+         "matchingRanges": {
+          "lineNumber": "285",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "285",
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\tfor pb.Next() {",
+         "matchingRanges": {
+          "lineNumber": "286"
+         },
+         "lineNumber": "286",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 3,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 24
+    },
+    "resultToken": "CAUSBAgBIAE44unV9OvKpbBMQABIBQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/os/timeout_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t\tmax := time.NewTimer(100 * time.Millisecond)",
+         "matchingRanges": {
+          "lineNumber": "123",
+          "columnRanges": [
+           {
+            "startIndex": 15,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "123",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 24,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 15,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\tdefer max.Stop()",
+         "matchingRanges": {
+          "lineNumber": "124"
+         },
+         "lineNumber": "124",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 3,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t\tmax := time.NewTimer(100 * time.Millisecond)",
+         "matchingRanges": {
+          "lineNumber": "219",
+          "columnRanges": [
+           {
+            "startIndex": 15,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "219",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 24,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 15,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\tdefer max.Stop()",
+         "matchingRanges": {
+          "lineNumber": "220"
+         },
+         "lineNumber": "220",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 3,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t\t\ttooLong := 5 * time.Second",
+         "matchingRanges": {
+          "lineNumber": "535"
+         },
+         "lineNumber": "535",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 15,
+            "length": 1
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t\tmax := time.NewTimer(tooLong)",
+         "matchingRanges": {
+          "lineNumber": "536",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "536",
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t\tdefer max.Stop()",
+         "matchingRanges": {
+          "lineNumber": "537"
+         },
+         "lineNumber": "537",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CAYSAggBOKS8sbbBnZr-jgFAAEgG"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/timeout_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t}",
+         "matchingRanges": {
+          "lineNumber": "300"
+         },
+         "lineNumber": "300"
+        },
+        {
+         "lineText": "\t\tmaxch \u003c- time.NewTimer(100 * time.Millisecond)",
+         "matchingRanges": {
+          "lineNumber": "301",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "301",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 25,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t_, err := ln.Accept()",
+         "matchingRanges": {
+          "lineNumber": "302"
+         },
+         "lineNumber": "302"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t}",
+         "matchingRanges": {
+          "lineNumber": "413"
+         },
+         "lineNumber": "413"
+        },
+        {
+         "lineText": "\t\tmaxch \u003c- time.NewTimer(100 * time.Millisecond)",
+         "matchingRanges": {
+          "lineNumber": "414",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "414",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 25,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tvar b [1]byte",
+         "matchingRanges": {
+          "lineNumber": "415"
+         },
+         "lineNumber": "415",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 9,
+            "length": 1
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t}",
+         "matchingRanges": {
+          "lineNumber": "587"
+         },
+         "lineNumber": "587"
+        },
+        {
+         "lineText": "\t\tmaxch \u003c- time.NewTimer(100 * time.Millisecond)",
+         "matchingRanges": {
+          "lineNumber": "588",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "588",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 25,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tvar b [1024]byte",
+         "matchingRanges": {
+          "lineNumber": "589"
+         },
+         "lineNumber": "589",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 9,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CAcSAggBOLbO5dmR6KrzKkAASAc"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/http/server.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\ttimer := time.NewTimer(nextPollInterval())",
+         "matchingRanges": {
+          "lineNumber": "3247",
+          "columnRanges": [
+           {
+            "startIndex": 15,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "3247",
+         "ranges": [
+          {
+           "startIndex": 15,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\tdefer timer.Stop()",
+         "matchingRanges": {
+          "lineNumber": "3248"
+         },
+         "lineNumber": "3248",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAgSAggBOKqw0MDfgYL9SEAASAg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/go/internal/gccgoimporter/testdata/time.gox",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\u003e\u003e;",
+         "matchingRanges": {
+          "lineNumber": "102"
+         },
+         "lineNumber": "102"
+        },
+        {
+         "lineText": "func NewTimer (d \u003ctype 1\u003e) \u003ctype 32\u003e;",
+         "matchingRanges": {
+          "lineNumber": "103",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "103",
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "const November \u003ctype 18\u003e = 11 ;",
+         "matchingRanges": {
+          "lineNumber": "104"
+         },
+         "lineNumber": "104"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAkSAggBOOik5JudwqH8OUAASAk"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/http/internal/http2/server.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t}()",
+         "matchingRanges": {
+          "lineNumber": "986"
+         },
+         "lineNumber": "986"
+        },
+        {
+         "lineText": "\ttimer := time.NewTimer(prefaceTimeout) // TODO: configurable on *Server?",
+         "matchingRanges": {
+          "lineNumber": "987",
+          "columnRanges": [
+           {
+            "startIndex": 15,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "987",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 40,
+            "length": 33
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 15,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\tdefer timer.Stop()",
+         "matchingRanges": {
+          "lineNumber": "988"
+         },
+         "lineNumber": "988",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAoSAggBOJTppZbnm-O27wFAAEgK"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/testdata/testgoroutineleakprofile/goker/kubernetes70277.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t\tif timeout != 0 {",
+         "matchingRanges": {
+          "lineNumber": "49"
+         },
+         "lineNumber": "49",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 3,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 17,
+            "length": 1
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t\ttimer := time.NewTimer(timeout)",
+         "matchingRanges": {
+          "lineNumber": "50",
+          "columnRanges": [
+           {
+            "startIndex": 18,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "50",
+         "ranges": [
+          {
+           "startIndex": 18,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t\tafter = timer.C",
+         "matchingRanges": {
+          "lineNumber": "51"
+         },
+         "lineNumber": "51"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAsSAggBOMT7-_ezvtjFsAFAAEgL"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/internal/fuzz/worker.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tt := time.NewTimer(workerTimeoutDuration)",
+         "matchingRanges": {
+          "lineNumber": "439",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "439",
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\tfor {",
+         "matchingRanges": {
+          "lineNumber": "440"
+         },
+         "lineNumber": "440",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAwSAggBOKiZ1Mqt1cPEeUAASAw"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/http/httptest/server.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// in tests.",
+         "matchingRanges": {
+          "lineNumber": "553"
+         },
+         "lineNumber": "553",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 12
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\ttimer := time.NewTimer(5 * time.Second)",
+         "matchingRanges": {
+          "lineNumber": "554",
+          "columnRanges": [
+           {
+            "startIndex": 15,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "554",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 24,
+            "length": 1
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 15,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\tdefer timer.Stop()",
+         "matchingRanges": {
+          "lineNumber": "555"
+         },
+         "lineNumber": "555",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CA0SAggBOPb-iZq4ze2dR0AASA0"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/testdata/testgoroutineleakprofile/goker/grpc1275.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\ttimeout := time.NewTimer(300 * time.Nanosecond)",
+         "matchingRanges": {
+          "lineNumber": "81",
+          "columnRanges": [
+           {
+            "startIndex": 17,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "81",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 26,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 17,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\tselect {",
+         "matchingRanges": {
+          "lineNumber": "82"
+         },
+         "lineNumber": "82",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CA4SAggBOLrCg6Pb98Kl9wFAAEgO"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/testdata/testgoroutineleakprofile/goker/istio17860.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tinterval := time.NewTicker(30 * time.Nanosecond)",
+         "matchingRanges": {
+          "lineNumber": "87"
+         },
+         "lineNumber": "87",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 28,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\ttimer := time.NewTimer(100 * time.Nanosecond)",
+         "matchingRanges": {
+          "lineNumber": "88",
+          "columnRanges": [
+           {
+            "startIndex": 15,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "88",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 24,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 15,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\tdefer func() {",
+         "matchingRanges": {
+          "lineNumber": "89"
+         },
+         "lineNumber": "89",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CA8SAggBOLLR6bGvwObLF0AASA8"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/testdata/testgoroutineleakprofile/goker/istio18454.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "func (s *Strategy_istio18454) startTimer() {",
+         "matchingRanges": {
+          "lineNumber": "60"
+         },
+         "lineNumber": "60",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\ts.timer = time.NewTimer(s.timerFrequency)",
+         "matchingRanges": {
+          "lineNumber": "61",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "61",
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\teventLoop := func(ctx context.Context) {",
+         "matchingRanges": {
+          "lineNumber": "62"
+         },
+         "lineNumber": "62",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 14,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBASAggBOPThqrfX1rTIN0AASBA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/http/transfer.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t}(t.Body)",
+         "matchingRanges": {
+          "lineNumber": "219"
+         },
+         "lineNumber": "219"
+        },
+        {
+         "lineText": "\ttimer := time.NewTimer(200 * time.Millisecond)",
+         "matchingRanges": {
+          "lineNumber": "220",
+          "columnRanges": [
+           {
+            "startIndex": 15,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "220",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 24,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 15,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\tselect {",
+         "matchingRanges": {
+          "lineNumber": "221"
+         },
+         "lineNumber": "221",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBESAggBOKrFpufh4YbO6AFAAEgR"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "doc/godebug.md",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "and [`Timer.Reset`](/pkg/time/#Timer.Reset) method results much easier.",
+         "matchingRanges": {
+          "lineNumber": "350"
+         },
+         "lineNumber": "350",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 4,
+            "length": 39
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "The [`asynctimerchan` setting](/pkg/time/#NewTimer) disables this change.",
+         "matchingRanges": {
+          "lineNumber": "351",
+          "columnRanges": [
+           {
+            "startIndex": 42,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "351",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 4,
+            "length": 47
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 42,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "There are no runtime metrics for this change.",
+         "matchingRanges": {
+          "lineNumber": "352"
+         },
+         "lineNumber": "352"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBISAggBOKSLsvzWs_eNRUAASBI"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/dial.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// Start the timer for the fallback racer.",
+         "matchingRanges": {
+          "lineNumber": "697"
+         },
+         "lineNumber": "697",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 42
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tfallbackTimer := time.NewTimer(sd.fallbackDelay())",
+         "matchingRanges": {
+          "lineNumber": "698",
+          "columnRanges": [
+           {
+            "startIndex": 23,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "698",
+         "ranges": [
+          {
+           "startIndex": 23,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\tdefer fallbackTimer.Stop()",
+         "matchingRanges": {
+          "lineNumber": "699"
+         },
+         "lineNumber": "699",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBMSAggBOP72yLXl-PS2xAFAAEgT"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/crypto/cipher/fuzz_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\tif testing.Short() {",
+         "matchingRanges": {
+          "lineNumber": "48"
+         },
+         "lineNumber": "48",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\ttimeout = time.NewTimer(10 * time.Millisecond)",
+         "matchingRanges": {
+          "lineNumber": "49",
+          "columnRanges": [
+           {
+            "startIndex": 18,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "49",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 27,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 18,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t} else {",
+         "matchingRanges": {
+          "lineNumber": "50"
+         },
+         "lineNumber": "50",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\ttimeout = time.NewTimer(2 * time.Second)",
+         "matchingRanges": {
+          "lineNumber": "51",
+          "columnRanges": [
+           {
+            "startIndex": 18,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "51",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 27,
+            "length": 1
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 18,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t}",
+         "matchingRanges": {
+          "lineNumber": "52"
+         },
+         "lineNumber": "52"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\tif testing.Short() {",
+         "matchingRanges": {
+          "lineNumber": "79"
+         },
+         "lineNumber": "79",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\ttimeout = time.NewTimer(10 * time.Millisecond)",
+         "matchingRanges": {
+          "lineNumber": "80",
+          "columnRanges": [
+           {
+            "startIndex": 18,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "80",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 27,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 18,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t} else {",
+         "matchingRanges": {
+          "lineNumber": "81"
+         },
+         "lineNumber": "81",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\ttimeout = time.NewTimer(2 * time.Second)",
+         "matchingRanges": {
+          "lineNumber": "82",
+          "columnRanges": [
+           {
+            "startIndex": 18,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "82",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 27,
+            "length": 1
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 18,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t}",
+         "matchingRanges": {
+          "lineNumber": "83"
+         },
+         "lineNumber": "83"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 4
+    },
+    "resultToken": "CBQSAggBOKCAkseMsLefzwFAAEgU"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/internal/script/cmds.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t\ttimer := time.NewTimer(d)",
+         "matchingRanges": {
+          "lineNumber": "943",
+          "columnRanges": [
+           {
+            "startIndex": 17,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "943",
+         "ranges": [
+          {
+           "startIndex": 17,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\twait := func(s *State) (stdout, stderr string, err error) {",
+         "matchingRanges": {
+          "lineNumber": "944"
+         },
+         "lineNumber": "944",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 11,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBUSAggBOIaBsu-bksqRGUAASBU"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/os/exec/exec.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\ttimer := time.NewTimer(c.WaitDelay)",
+         "matchingRanges": {
+          "lineNumber": "837",
+          "columnRanges": [
+           {
+            "startIndex": 15,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "837",
+         "ranges": [
+          {
+           "startIndex": 15,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\tselect {",
+         "matchingRanges": {
+          "lineNumber": "838"
+         },
+         "lineNumber": "838",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t// the command, or c.Process.Wait completed before the Context was done.",
+         "matchingRanges": {
+          "lineNumber": "1006"
+         },
+         "lineNumber": "1006",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 72
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\ttimer = time.NewTimer(c.WaitDelay)",
+         "matchingRanges": {
+          "lineNumber": "1007",
+          "columnRanges": [
+           {
+            "startIndex": 15,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "1007",
+         "ranges": [
+          {
+           "startIndex": 15,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t}",
+         "matchingRanges": {
+          "lineNumber": "1008"
+         },
+         "lineNumber": "1008"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CBYSAggBOKKrk4jNxa_5F0AASBY"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "test/typeparam/chansimp.dir/main.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tc := a.Sink[int](context.Background())",
+         "matchingRanges": {
+          "lineNumber": "74"
+         },
+         "lineNumber": "74"
+        },
+        {
+         "lineText": "\tafter := time.NewTimer(time.Minute)",
+         "matchingRanges": {
+          "lineNumber": "75",
+          "columnRanges": [
+           {
+            "startIndex": 15,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "75",
+         "ranges": [
+          {
+           "startIndex": 15,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\tdefer after.Stop()",
+         "matchingRanges": {
+          "lineNumber": "76"
+         },
+         "lineNumber": "76",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBcSAggBOKrdufObmILVX0AASBc"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/context/x_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\td := quiescent(t)",
+         "matchingRanges": {
+          "lineNumber": "130"
+         },
+         "lineNumber": "130"
+        },
+        {
+         "lineText": "\ttimer := time.NewTimer(d)",
+         "matchingRanges": {
+          "lineNumber": "131",
+          "columnRanges": [
+           {
+            "startIndex": 15,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "131",
+         "ranges": [
+          {
+           "startIndex": 15,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\tdefer timer.Stop()",
+         "matchingRanges": {
+          "lineNumber": "132"
+         },
+         "lineNumber": "132",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\td := quiescent(t)",
+         "matchingRanges": {
+          "lineNumber": "401"
+         },
+         "lineNumber": "401"
+        },
+        {
+         "lineText": "\ttimer := time.NewTimer(d)",
+         "matchingRanges": {
+          "lineNumber": "402",
+          "columnRanges": [
+           {
+            "startIndex": 15,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "402",
+         "ranges": [
+          {
+           "startIndex": 15,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\tdefer timer.Stop()",
+         "matchingRanges": {
+          "lineNumber": "403"
+         },
+         "lineNumber": "403",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\td := quiescent(t)",
+         "matchingRanges": {
+          "lineNumber": "480"
+         },
+         "lineNumber": "480"
+        },
+        {
+         "lineText": "\t\ttimer := time.NewTimer(d)",
+         "matchingRanges": {
+          "lineNumber": "481",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "481",
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tdefer timer.Stop()",
+         "matchingRanges": {
+          "lineNumber": "482"
+         },
+         "lineNumber": "482",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CBgSAggBOOq_5peA5_zF7wFAAEgY"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/http/client.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\ttimer := time.NewTimer(time.Until(deadline))",
+         "matchingRanges": {
+          "lineNumber": "405",
+          "columnRanges": [
+           {
+            "startIndex": 15,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "405",
+         "ranges": [
+          {
+           "startIndex": 15,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\tvar timedOut atomic.Bool",
+         "matchingRanges": {
+          "lineNumber": "406"
+         },
+         "lineNumber": "406",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBkSAggBOJ6lm7e-ser_lwFAAEgZ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/internal/synctest/synctest_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\tstart := time.Now()",
+         "matchingRanges": {
+          "lineNumber": "138"
+         },
+         "lineNumber": "138"
+        },
+        {
+         "lineText": "\t\ttm := time.NewTimer(5 * time.Second)",
+         "matchingRanges": {
+          "lineNumber": "139",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "139",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 22,
+            "length": 1
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\u003c-tm.C",
+         "matchingRanges": {
+          "lineNumber": "140"
+         },
+         "lineNumber": "140"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\twant := time.Now().Add(delay)",
+         "matchingRanges": {
+          "lineNumber": "150"
+         },
+         "lineNumber": "150"
+        },
+        {
+         "lineText": "\t\ttm := time.NewTimer(delay)",
+         "matchingRanges": {
+          "lineNumber": "151",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "151",
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t\ttime.Sleep(2 * delay)",
+         "matchingRanges": {
+          "lineNumber": "152"
+         },
+         "lineNumber": "152",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 13,
+            "length": 1
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\tstart := time.Now()",
+         "matchingRanges": {
+          "lineNumber": "162"
+         },
+         "lineNumber": "162"
+        },
+        {
+         "lineText": "\t\ttm := time.NewTimer(1 * time.Second)",
+         "matchingRanges": {
+          "lineNumber": "163",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "163",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 22,
+            "length": 1
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tif got, want := \u003c-tm.C, start.Add(1*time.Second); got != want {",
+         "matchingRanges": {
+          "lineNumber": "164"
+         },
+         "lineNumber": "164",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 36,
+            "length": 1
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 10
+    },
+    "resultToken": "CBoSAggBOIi128yn-syH0AFAAEga"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/internal/poll/splice_linux_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t}",
+         "matchingRanges": {
+          "lineNumber": "64"
+         },
+         "lineNumber": "64"
+        },
+        {
+         "lineText": "\texpiredTime := time.NewTimer(timeout)",
+         "matchingRanges": {
+          "lineNumber": "65",
+          "columnRanges": [
+           {
+            "startIndex": 21,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "65",
+         "ranges": [
+          {
+           "startIndex": 21,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\tdefer expiredTime.Stop()",
+         "matchingRanges": {
+          "lineNumber": "66"
+         },
+         "lineNumber": "66",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBsSAggBOPKfoYfq6uLTlgFAAEgb"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/database/sql/sql.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t}",
+         "matchingRanges": {
+          "lineNumber": "1105"
+         },
+         "lineNumber": "1105"
+        },
+        {
+         "lineText": "\tt := time.NewTimer(d)",
+         "matchingRanges": {
+          "lineNumber": "1106",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "1106",
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "1107"
+         },
+         "lineNumber": "1107"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBwSAggBONaY4LORse6LQkAASBw"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "test/typeparam/chans.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tc := _Sink[int](context.Background())",
+         "matchingRanges": {
+          "lineNumber": "298"
+         },
+         "lineNumber": "298"
+        },
+        {
+         "lineText": "\tafter := time.NewTimer(time.Minute)",
+         "matchingRanges": {
+          "lineNumber": "299",
+          "columnRanges": [
+           {
+            "startIndex": 15,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "299",
+         "ranges": [
+          {
+           "startIndex": 15,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\tdefer after.Stop()",
+         "matchingRanges": {
+          "lineNumber": "300"
+         },
+         "lineNumber": "300",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CB0SAggBOJKinZKM2tuMhgFAAEgd"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/http/internal/http2/transport.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t\t\td := time.Second * time.Duration(backoff)",
+         "matchingRanges": {
+          "lineNumber": "436"
+         },
+         "lineNumber": "436"
+        },
+        {
+         "lineText": "\t\t\t\ttm := time.NewTimer(d)",
+         "matchingRanges": {
+          "lineNumber": "437",
+          "columnRanges": [
+           {
+            "startIndex": 15,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "437",
+         "ranges": [
+          {
+           "startIndex": 15,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t\tselect {",
+         "matchingRanges": {
+          "lineNumber": "438"
+         },
+         "lineNumber": "438",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t\ttraceWait100Continue(cs.trace)",
+         "matchingRanges": {
+          "lineNumber": "1310"
+         },
+         "lineNumber": "1310"
+        },
+        {
+         "lineText": "\t\t\ttimer := time.NewTimer(continueTimeout)",
+         "matchingRanges": {
+          "lineNumber": "1311",
+          "columnRanges": [
+           {
+            "startIndex": 17,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "1311",
+         "ranges": [
+          {
+           "startIndex": 17,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\tselect {",
+         "matchingRanges": {
+          "lineNumber": "1312"
+         },
+         "lineNumber": "1312",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 3,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tif d := cc.responseHeaderTimeout(); d != 0 {",
+         "matchingRanges": {
+          "lineNumber": "1345"
+         },
+         "lineNumber": "1345",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 42,
+            "length": 1
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\ttimer := time.NewTimer(d)",
+         "matchingRanges": {
+          "lineNumber": "1346",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "1346",
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tdefer timer.Stop()",
+         "matchingRanges": {
+          "lineNumber": "1347"
+         },
+         "lineNumber": "1347",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CB4SAggBOLLSj6f3jIL_b0AASB4"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/internal/testdir/testdir_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t\tif err == nil {",
+         "matchingRanges": {
+          "lineNumber": "676"
+         },
+         "lineNumber": "676",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 3,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t\ttick := time.NewTimer(time.Duration(tim) * time.Second)",
+         "matchingRanges": {
+          "lineNumber": "677",
+          "columnRanges": [
+           {
+            "startIndex": 17,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "677",
+         "ranges": [
+          {
+           "startIndex": 17,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t\tdone := make(chan error)",
+         "matchingRanges": {
+          "lineNumber": "678"
+         },
+         "lineNumber": "678",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 17,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CB8SAggBOL6ExLHHzf-W2AFAAEgf"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/http/transport.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\treturn func() bool {",
+         "matchingRanges": {
+          "lineNumber": "2743"
+         },
+         "lineNumber": "2743",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\ttimer := time.NewTimer(pc.t.ExpectContinueTimeout)",
+         "matchingRanges": {
+          "lineNumber": "2744",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "2744",
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tdefer timer.Stop()",
+         "matchingRanges": {
+          "lineNumber": "2745"
+         },
+         "lineNumber": "2745",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t// connection isn't re-used.",
+         "matchingRanges": {
+          "lineNumber": "2871"
+         },
+         "lineNumber": "2871",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 28
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tt := time.NewTimer(maxWriteWaitBeforeConnReuse)",
+         "matchingRanges": {
+          "lineNumber": "2872",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "2872",
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tdefer t.Stop()",
+         "matchingRanges": {
+          "lineNumber": "2873"
+         },
+         "lineNumber": "2873",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t\t\t}",
+         "matchingRanges": {
+          "lineNumber": "3081"
+         },
+         "lineNumber": "3081"
+        },
+        {
+         "lineText": "\t\t\t\ttimer := time.NewTimer(d)",
+         "matchingRanges": {
+          "lineNumber": "3082",
+          "columnRanges": [
+           {
+            "startIndex": 18,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "3082",
+         "ranges": [
+          {
+           "startIndex": 18,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t\tdefer timer.Stop() // prevent leaks",
+         "matchingRanges": {
+          "lineNumber": "3083"
+         },
+         "lineNumber": "3083",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 23,
+            "length": 16
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CCASAggBONLVzLir4tGDlAFAAEgg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/time/internal_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// the entire period before the first update.",
+         "matchingRanges": {
+          "lineNumber": "49"
+         },
+         "lineNumber": "49",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 45
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tt := newTimer(runtimeNano(), 1\u003c\u003c63-1, empty, nil, nil)",
+         "matchingRanges": {
+          "lineNumber": "50",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "50",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 30,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 33,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 36,
+            "length": 1
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\tdefer t.Stop()",
+         "matchingRanges": {
+          "lineNumber": "51"
+         },
+         "lineNumber": "51",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CCESAggBOIrj5N6D3oCdxQFAAEgh"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/http/pprof/pprof.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tt := time.NewTimer(time.Duration(sec) * time.Second)",
+         "matchingRanges": {
+          "lineNumber": "300",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "300",
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\tdefer t.Stop()",
+         "matchingRanges": {
+          "lineNumber": "301"
+         },
+         "lineNumber": "301",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CCISAggBOIbPz-_5id6ea0AASCI"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/database/sql/sql_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tconst timeout = 5 * time.Second",
+         "matchingRanges": {
+          "lineNumber": "2672"
+         },
+         "lineNumber": "2672",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 17,
+            "length": 1
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tto := time.NewTimer(timeout)",
+         "matchingRanges": {
+          "lineNumber": "2673",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "2673",
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\tdefer to.Stop()",
+         "matchingRanges": {
+          "lineNumber": "2674"
+         },
+         "lineNumber": "2674",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CCMSAggBOLD4uvCsvP3uVEAASCM"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/os/signal/signal_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tstart := time.Now()",
+         "matchingRanges": {
+          "lineNumber": "81"
+         },
+         "lineNumber": "81"
+        },
+        {
+         "lineText": "\ttimer := time.NewTimer(settleTime / 10)",
+         "matchingRanges": {
+          "lineNumber": "82",
+          "columnRanges": [
+           {
+            "startIndex": 15,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "82",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 37,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 15,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\tdefer timer.Stop()",
+         "matchingRanges": {
+          "lineNumber": "83"
+         },
+         "lineNumber": "83",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CCQSAggBOMTxprDKr6f5nwFAAEgk"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/syscall/exec_unix_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\ttimer := time.NewTimer(30 * time.Second)",
+         "matchingRanges": {
+          "lineNumber": "260",
+          "columnRanges": [
+           {
+            "startIndex": 15,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "260",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 24,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 15,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\tdefer timer.Stop()",
+         "matchingRanges": {
+          "lineNumber": "261"
+         },
+         "lineNumber": "261",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CCUSAggBOPD8xJqm_LfxcEAASCU"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/go/internal/lockedfile/lockedfile_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\ttimer := time.NewTimer(quiescent)",
+         "matchingRanges": {
+          "lineNumber": "36",
+          "columnRanges": [
+           {
+            "startIndex": 15,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "36",
+         "ranges": [
+          {
+           "startIndex": 15,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\tdefer timer.Stop()",
+         "matchingRanges": {
+          "lineNumber": "37"
+         },
+         "lineNumber": "37",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\treturn func(t *testing.T) {",
+         "matchingRanges": {
+          "lineNumber": "44"
+         },
+         "lineNumber": "44",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tlogTimer := time.NewTimer(quiescent)",
+         "matchingRanges": {
+          "lineNumber": "45",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "45",
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tdefer logTimer.Stop()",
+         "matchingRanges": {
+          "lineNumber": "46"
+         },
+         "lineNumber": "46",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t}",
+         "matchingRanges": {
+          "lineNumber": "235"
+         },
+         "lineNumber": "235"
+        },
+        {
+         "lineText": "\t\ttimer := time.NewTimer(1 * time.Millisecond)",
+         "matchingRanges": {
+          "lineNumber": "236",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "236",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 25,
+            "length": 1
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tselect {",
+         "matchingRanges": {
+          "lineNumber": "237"
+         },
+         "lineNumber": "237",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CCYSAggBOPTg2IHt18uyDEAASCY"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/http/transport_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\ttooSlow := time.NewTimer(timeout * 10)",
+         "matchingRanges": {
+          "lineNumber": "6294",
+          "columnRanges": [
+           {
+            "startIndex": 18,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "6294",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 37,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 18,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tselect {",
+         "matchingRanges": {
+          "lineNumber": "6295"
+         },
+         "lineNumber": "6295",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CCcSAggBOIK2tauQy4vGV0AASCc"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "api/go1.txt",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "pkg time, func NewTicker(Duration) *Ticker",
+         "matchingRanges": {
+          "lineNumber": "30549"
+         },
+         "lineNumber": "30549"
+        },
+        {
+         "lineText": "pkg time, func NewTimer(Duration) *Timer",
+         "matchingRanges": {
+          "lineNumber": "30550",
+          "columnRanges": [
+           {
+            "startIndex": 15,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "30550",
+         "ranges": [
+          {
+           "startIndex": 15,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "pkg time, func Now() Time",
+         "matchingRanges": {
+          "lineNumber": "30551"
+         },
+         "lineNumber": "30551"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CCgSAggBOOjf65ehl6OAuQFAAEgo"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/database/sql/fakedb_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\tif stmt.wait \u003e 0 {",
+         "matchingRanges": {
+          "lineNumber": "693"
+         },
+         "lineNumber": "693",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 17,
+            "length": 1
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\twait := time.NewTimer(stmt.wait)",
+         "matchingRanges": {
+          "lineNumber": "694",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "694",
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\tselect {",
+         "matchingRanges": {
+          "lineNumber": "695"
+         },
+         "lineNumber": "695",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 3,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CCkSAggBOKqv6_qOxPHa7gFAAEgp"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/time/tick.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// Note: The runtime knows the layout of struct Ticker, since newTimer allocates it.",
+         "matchingRanges": {
+          "lineNumber": "9",
+          "columnRanges": [
+           {
+            "startIndex": 62,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "9",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 84
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 62,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "// Note also that Ticker and Timer have the same layout, so that newTimer can handle both.",
+         "matchingRanges": {
+          "lineNumber": "10",
+          "columnRanges": [
+           {
+            "startIndex": 65,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "10",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 90
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 65,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "// The initTimer and initTicker fields are named differently so that",
+         "matchingRanges": {
+          "lineNumber": "11"
+         },
+         "lineNumber": "11",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 68
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tc := make(chan Time, 1)",
+         "matchingRanges": {
+          "lineNumber": "43"
+         },
+         "lineNumber": "43",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 11,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 22,
+            "length": 1
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tt := (*Ticker)(unsafe.Pointer(newTimer(when(d), int64(d), sendTime, c, syncTimer(c))))",
+         "matchingRanges": {
+          "lineNumber": "44",
+          "columnRanges": [
+           {
+            "startIndex": 31,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "44",
+         "ranges": [
+          {
+           "startIndex": 31,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\tt.C = c",
+         "matchingRanges": {
+          "lineNumber": "45"
+         },
+         "lineNumber": "45"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CCoSAggBON6N1fr028eT2gFAAEgq"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/crypto/tls/handshake_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tfor i := 0; i \u003c 5; i++ {",
+         "matchingRanges": {
+          "lineNumber": "356"
+         },
+         "lineNumber": "356",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 10,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 17,
+            "length": 1
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\ttooSlow := time.NewTimer(1 * time.Second)",
+         "matchingRanges": {
+          "lineNumber": "357",
+          "columnRanges": [
+           {
+            "startIndex": 18,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "357",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 27,
+            "length": 1
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 18,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tdefer tooSlow.Stop()",
+         "matchingRanges": {
+          "lineNumber": "358"
+         },
+         "lineNumber": "358",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CCsSAggBOLi3q8KFmNCWngFAAEgr"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/cgo/internal/testcshared/testdata/libgo5/libgo5.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "func SawSIGIO() bool {",
+         "matchingRanges": {
+          "lineNumber": "44"
+         },
+         "lineNumber": "44",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\ttimer := time.NewTimer(100 * time.Millisecond)",
+         "matchingRanges": {
+          "lineNumber": "45",
+          "columnRanges": [
+           {
+            "startIndex": 15,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "45",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 24,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 15,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\tselect {",
+         "matchingRanges": {
+          "lineNumber": "46"
+         },
+         "lineNumber": "46",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CCwSAggBOIjyicDy4trwqQFAAEgs"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/vendor/golang.org/x/tools/internal/stdlib/manifest.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t{\"NewTicker\", Func, 0, \"func(d Duration) *Ticker\"},",
+         "matchingRanges": {
+          "lineNumber": "17916"
+         },
+         "lineNumber": "17916",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 3,
+            "length": 11
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 22,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 25,
+            "length": 26
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t{\"NewTimer\", Func, 0, \"func(d Duration) *Timer\"},",
+         "matchingRanges": {
+          "lineNumber": "17917",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "17917",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 3,
+            "length": 10
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 21,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 24,
+            "length": 25
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t{\"November\", Const, 0, \"\"},",
+         "matchingRanges": {
+          "lineNumber": "17918"
+         },
+         "lineNumber": "17918",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 3,
+            "length": 10
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 22,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 25,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CC0SAggBOJrA-rfNvvHiBUAASC0"
+   }
+  ],
+  "estimatedResultCount": "50",
+  "exhaustive": true,
+  "requestToken": "CghOZXdUaW1lchIdKCBnaXQ6Z28vZ29AbWFzdGVyIGNhc2U6eWVzICkaDAiRuqjRBhDzx_-xAyAMKgAyAEgB"
+ }
+}

@@ -1,0 +1,3478 @@
+{
+ "query": "\"Invalid label\"",
+ "oss_project": "bazel",
+ "repo_name": "bazel",
+ "page_size": 50,
+ "fetched_at": "2026-06-11T22:28:43Z",
+ "response": {
+  "searchResults": [
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/cmdline/LabelValidator.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    if (!isAbsolute(absName)) {",
+         "matchingRanges": {
+          "lineNumber": "273"
+         },
+         "lineNumber": "273",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "      throw new BadLabelException(\"invalid label: \" + absName);",
+         "matchingRanges": {
+          "lineNumber": "274",
+          "columnRanges": [
+           {
+            "startIndex": 35,
+            "length": 13
+           }
+          ]
+         },
+         "lineNumber": "274",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 34,
+            "length": 17
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 35,
+           "length": 13
+          }
+         ]
+        },
+        {
+         "lineText": "    }",
+         "matchingRanges": {
+          "lineNumber": "275"
+         },
+         "lineNumber": "275"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAASAggBOOy63Y2Rv7XeO0AASAA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/rules/config/ConfigSetting.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "   * \u003cp\u003eThe value is returned as a string because it's subsequently fed through the flag's type",
+         "matchingRanges": {
+          "lineNumber": "817"
+         },
+         "lineNumber": "817",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 95
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "   * converter (which maps a string to the final type). Invalid labels are treated no differently",
+         "matchingRanges": {
+          "lineNumber": "818",
+          "columnRanges": [
+           {
+            "startIndex": 56,
+            "length": 13
+           }
+          ]
+         },
+         "lineNumber": "818",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 97
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 56,
+           "length": 13
+          }
+         ]
+        },
+        {
+         "lineText": "   * (they don't trigger special errors here) because the type converter will also handle that.",
+         "matchingRanges": {
+          "lineNumber": "819"
+         },
+         "lineNumber": "819",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 95
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAESAggBOKCk0Me4jPLO7QFAAEgB"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/cmdline/Label.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    if (!getRepository().isVisible()) {",
+         "matchingRanges": {
+          "lineNumber": "740"
+         },
+         "lineNumber": "740",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "      throw Starlark.errorf(\"'%s' is not allowed on invalid Label %s\", method, this);",
+         "matchingRanges": {
+          "lineNumber": "741",
+          "columnRanges": [
+           {
+            "startIndex": 52,
+            "length": 13
+           }
+          ]
+         },
+         "lineNumber": "741",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 28,
+            "length": 41
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 79,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 52,
+           "length": 13
+          }
+         ]
+        },
+        {
+         "lineText": "    }",
+         "matchingRanges": {
+          "lineNumber": "742"
+         },
+         "lineNumber": "742"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAISAggBOLq3uYXXj6T-zQFAAEgC"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/analysis/LabelExpander.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "   * \u003cp\u003eSince this pass is heuristic, references to non-existent labels (such as arbitrary words) or",
+         "matchingRanges": {
+          "lineNumber": "74"
+         },
+         "lineNumber": "74",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 100
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "   * invalid labels are simply ignored and are unchanged in the output. However, if the heuristic",
+         "matchingRanges": {
+          "lineNumber": "75",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 13
+           }
+          ]
+         },
+         "lineNumber": "75",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 97
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 13
+          }
+         ]
+        },
+        {
+         "lineText": "   * discovers a label, which identifies an existing target producing zero or multiple files, an",
+         "matchingRanges": {
+          "lineNumber": "76"
+         },
+         "lineNumber": "76",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 96
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "   * Resolves a string to a label text. Uses {@code labelResolver} to do so. The result is either",
+         "matchingRanges": {
+          "lineNumber": "158"
+         },
+         "lineNumber": "158",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 97
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "   * relative to {@code labelResolver} or is an absolute label. In case of an invalid label text,",
+         "matchingRanges": {
+          "lineNumber": "159",
+          "columnRanges": [
+           {
+            "startIndex": 78,
+            "length": 13
+           }
+          ]
+         },
+         "lineNumber": "159",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 97
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 78,
+           "length": 13
+          }
+         ]
+        },
+        {
+         "lineText": "   * the return value is null.",
+         "matchingRanges": {
+          "lineNumber": "160"
+         },
+         "lineNumber": "160",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 30
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAMSAggBOKCy8Lnaz--FUEAASAM"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/cmdline/LabelParser.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "      if (!pkgIsAbsolute()) {",
+         "matchingRanges": {
+          "lineNumber": "193"
+         },
+         "lineNumber": "193",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "        throw syntaxErrorf(\"invalid label '%s': absolute label must begin with '@' or '//'\", raw());",
+         "matchingRanges": {
+          "lineNumber": "194",
+          "columnRanges": [
+           {
+            "startIndex": 28,
+            "length": 13
+           }
+          ]
+         },
+         "lineNumber": "194",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 27,
+            "length": 64
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 28,
+           "length": 13
+          }
+         ]
+        },
+        {
+         "lineText": "      }",
+         "matchingRanges": {
+          "lineNumber": "195"
+         },
+         "lineNumber": "195"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "      if (pkgEndsWithTripleDots()) {",
+         "matchingRanges": {
+          "lineNumber": "199"
+         },
+         "lineNumber": "199",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "        throw syntaxErrorf(\"invalid label '%s': package name cannot contain '...'\", raw());",
+         "matchingRanges": {
+          "lineNumber": "200",
+          "columnRanges": [
+           {
+            "startIndex": 28,
+            "length": 13
+           }
+          ]
+         },
+         "lineNumber": "200",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 27,
+            "length": 55
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 28,
+           "length": 13
+          }
+         ]
+        },
+        {
+         "lineText": "      }",
+         "matchingRanges": {
+          "lineNumber": "201"
+         },
+         "lineNumber": "201"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAQSAggBOPSAhaXg4eruEkAASAQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/analysis/starlark/StarlarkRuleClassFunctions.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    } catch (LabelSyntaxException e) {",
+         "matchingRanges": {
+          "lineNumber": "2131"
+         },
+         "lineNumber": "2131",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "      throw Starlark.errorf(\"invalid label in Label(): %s\", e.getMessage());",
+         "matchingRanges": {
+          "lineNumber": "2132",
+          "columnRanges": [
+           {
+            "startIndex": 29,
+            "length": 13
+           }
+          ]
+         },
+         "lineNumber": "2132",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 28,
+            "length": 30
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 29,
+           "length": 13
+          }
+         ]
+        },
+        {
+         "lineText": "    }",
+         "matchingRanges": {
+          "lineNumber": "2133"
+         },
+         "lineNumber": "2133"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAUSAggBOKqSzKGWxs_VWUAASAU"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/analysis/starlark/StarlarkRuleContext.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    } catch (LabelSyntaxException e) {",
+         "matchingRanges": {
+          "lineNumber": "1231"
+         },
+         "lineNumber": "1231",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "      throw Starlark.errorf(\"invalid label in ctx.package_relative_label: %s\", e.getMessage());",
+         "matchingRanges": {
+          "lineNumber": "1232",
+          "columnRanges": [
+           {
+            "startIndex": 29,
+            "length": 13
+           }
+          ]
+         },
+         "lineNumber": "1232",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 28,
+            "length": 49
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 29,
+           "length": 13
+          }
+         ]
+        },
+        {
+         "lineText": "    }",
+         "matchingRanges": {
+          "lineNumber": "1233"
+         },
+         "lineNumber": "1233"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAYSAggBONy-16Lay72EE0AASAY"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/starlark/StarlarkRuleClassFunctionsTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    ev.checkEvalErrorContains(",
+         "matchingRanges": {
+          "lineNumber": "1338"
+         },
+         "lineNumber": "1338"
+        },
+        {
+         "lineText": "        \"invalid label '/foo:bar' in parameter 'default' of attribute 'label': \"",
+         "matchingRanges": {
+          "lineNumber": "1339",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 13
+           }
+          ]
+         },
+         "lineNumber": "1339",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 72
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 13
+          }
+         ]
+        },
+        {
+         "lineText": "            + \"invalid package name '/foo': package names may not start with '/'\",",
+         "matchingRanges": {
+          "lineNumber": "1340"
+         },
+         "lineNumber": "1340",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 14,
+            "length": 67
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    ev.checkEvalErrorContains(",
+         "matchingRanges": {
+          "lineNumber": "1343"
+         },
+         "lineNumber": "1343"
+        },
+        {
+         "lineText": "        \"invalid label '/bar:foo' in element 1 of parameter 'default' of attribute \"",
+         "matchingRanges": {
+          "lineNumber": "1344",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 13
+           }
+          ]
+         },
+         "lineNumber": "1344",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 76
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 13
+          }
+         ]
+        },
+        {
+         "lineText": "            + \"'label_list': invalid package name '/bar': package names may not start with '/'\",",
+         "matchingRanges": {
+          "lineNumber": "1345"
+         },
+         "lineNumber": "1345",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 14,
+            "length": 81
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    ev.checkEvalErrorContains(",
+         "matchingRanges": {
+          "lineNumber": "1348"
+         },
+         "lineNumber": "1348"
+        },
+        {
+         "lineText": "        \"invalid label '/bar:foo' in dict key element: invalid package name '/bar': \"",
+         "matchingRanges": {
+          "lineNumber": "1349",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 13
+           }
+          ]
+         },
+         "lineNumber": "1349",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 77
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 13
+          }
+         ]
+        },
+        {
+         "lineText": "            + \"package names may not start with '/'\",",
+         "matchingRanges": {
+          "lineNumber": "1350"
+         },
+         "lineNumber": "1350",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 14,
+            "length": 38
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 6
+    },
+    "resultToken": "CAcSAggBOJDdnobKyrHMsAFAAEgH"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/bazel/bzlmod/ModuleFileGlobals.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    } catch (LabelSyntaxException e) {",
+         "matchingRanges": {
+          "lineNumber": "507"
+         },
+         "lineNumber": "507",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "      throw Starlark.errorf(\"invalid label \\\"%s\\\": %s\", rawExtensionBzlFile, e.getMessage());",
+         "matchingRanges": {
+          "lineNumber": "508",
+          "columnRanges": [
+           {
+            "startIndex": 29,
+            "length": 13
+           }
+          ]
+         },
+         "lineNumber": "508",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 28,
+            "length": 26
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 29,
+           "length": 13
+          }
+         ]
+        },
+        {
+         "lineText": "    }",
+         "matchingRanges": {
+          "lineNumber": "509"
+         },
+         "lineNumber": "509"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    } catch (LabelSyntaxException e) {",
+         "matchingRanges": {
+          "lineNumber": "534"
+         },
+         "lineNumber": "534",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "      throw Starlark.errorf(\"invalid label \\\"%s\\\" in 'patches': %s\", rawLabel, e.getMessage());",
+         "matchingRanges": {
+          "lineNumber": "535",
+          "columnRanges": [
+           {
+            "startIndex": 29,
+            "length": 13
+           }
+          ]
+         },
+         "lineNumber": "535",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 28,
+            "length": 39
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 29,
+           "length": 13
+          }
+         ]
+        },
+        {
+         "lineText": "    }",
+         "matchingRanges": {
+          "lineNumber": "536"
+         },
+         "lineNumber": "536"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "      throw Starlark.errorf(",
+         "matchingRanges": {
+          "lineNumber": "538"
+         },
+         "lineNumber": "538",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "          \"invalid label in 'patches': only patches in the main repository can be applied, not from\"",
+         "matchingRanges": {
+          "lineNumber": "539",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 13
+           }
+          ]
+         },
+         "lineNumber": "539",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 10,
+            "length": 90
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 13
+          }
+         ]
+        },
+        {
+         "lineText": "              + \" '@%s'\",",
+         "matchingRanges": {
+          "lineNumber": "540"
+         },
+         "lineNumber": "540",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 16,
+            "length": 8
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CAgSAggBOMyk58uzjODe4wFAAEgI"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/bazel/bzlmod/BazelDepGraphFunction.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "              e,",
+         "matchingRanges": {
+          "lineNumber": "122"
+         },
+         "lineNumber": "122"
+        },
+        {
+         "lineText": "              \"invalid label for module extension found at %s\",",
+         "matchingRanges": {
+          "lineNumber": "123",
+          "columnRanges": [
+           {
+            "startIndex": 15,
+            "length": 13
+           }
+          ]
+         },
+         "lineNumber": "123",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 14,
+            "length": 48
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 15,
+           "length": 13
+          }
+         ]
+        },
+        {
+         "lineText": "              usage.getProxies().getFirst().getLocation());",
+         "matchingRanges": {
+          "lineNumber": "124"
+         },
+         "lineNumber": "124"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "              Code.BAD_MODULE,",
+         "matchingRanges": {
+          "lineNumber": "128"
+         },
+         "lineNumber": "128"
+        },
+        {
+         "lineText": "              \"invalid label for module extension found at %s: no repo visible as '@%s' here\",",
+         "matchingRanges": {
+          "lineNumber": "129",
+          "columnRanges": [
+           {
+            "startIndex": 15,
+            "length": 13
+           }
+          ]
+         },
+         "lineNumber": "129",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 14,
+            "length": 79
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 15,
+           "length": 13
+          }
+         ]
+        },
+        {
+         "lineText": "              usage.getProxies().getFirst().getLocation(),",
+         "matchingRanges": {
+          "lineNumber": "130"
+         },
+         "lineNumber": "130"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAkSAggBOPC7ioiz-eS42QFAAEgJ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/packages/SelectorList.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "      } catch (LabelSyntaxException e) {",
+         "matchingRanges": {
+          "lineNumber": "306"
+         },
+         "lineNumber": "306",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "        throw Starlark.errorf(\"invalid label in select(): %s\", e.getMessage());",
+         "matchingRanges": {
+          "lineNumber": "307",
+          "columnRanges": [
+           {
+            "startIndex": 31,
+            "length": 13
+           }
+          ]
+         },
+         "lineNumber": "307",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 30,
+            "length": 31
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 31,
+           "length": 13
+          }
+         ]
+        },
+        {
+         "lineText": "      }",
+         "matchingRanges": {
+          "lineNumber": "308"
+         },
+         "lineNumber": "308"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAoSAggBOMbc2cOTksfeUUAASAo"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/starlark/StarlarkAspectsToolchainPropagationTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "        () -\u003e update(ImmutableList.of(\"//test:defs.bzl%toolchain_aspect\"), \"//test:t1\"));",
+         "matchingRanges": {
+          "lineNumber": "2583"
+         },
+         "lineNumber": "2583",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 38,
+            "length": 34
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 75,
+            "length": 11
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    assertContainsEvent(\"invalid label in Label(): invalid repository name ':'\");",
+         "matchingRanges": {
+          "lineNumber": "2584",
+          "columnRanges": [
+           {
+            "startIndex": 25,
+            "length": 13
+           }
+          ]
+         },
+         "lineNumber": "2584",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 24,
+            "length": 55
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 25,
+           "length": 13
+          }
+         ]
+        },
+        {
+         "lineText": "  }",
+         "matchingRanges": {
+          "lineNumber": "2585"
+         },
+         "lineNumber": "2585"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAsSAggBOIjEgZTKm7qMxgFAAEgL"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/analysis/LocationExpander.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "            String.format(",
+         "matchingRanges": {
+          "lineNumber": "286"
+         },
+         "lineNumber": "286"
+        },
+        {
+         "lineText": "                \"invalid label in %s expression: %s\", functionName(), e.getMessage()), e);",
+         "matchingRanges": {
+          "lineNumber": "287",
+          "columnRanges": [
+           {
+            "startIndex": 17,
+            "length": 13
+           }
+          ]
+         },
+         "lineNumber": "287",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 16,
+            "length": 36
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 17,
+           "length": 13
+          }
+         ]
+        },
+        {
+         "lineText": "      }",
+         "matchingRanges": {
+          "lineNumber": "288"
+         },
+         "lineNumber": "288"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAwSAggBOMq_7N-a2YfyTkAASAw"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/analysis/AutoExecGroupsTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    assertContainsEvent(",
+         "matchingRanges": {
+          "lineNumber": "913"
+         },
+         "lineNumber": "913"
+        },
+        {
+         "lineText": "        \"invalid label 'rule:toolchain_type_1': absolute label must begin with '@'\" + \" or '//'\");",
+         "matchingRanges": {
+          "lineNumber": "914",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 13
+           }
+          ]
+         },
+         "lineNumber": "914",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 75
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 86,
+            "length": 10
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 13
+          }
+         ]
+        },
+        {
+         "lineText": "  }",
+         "matchingRanges": {
+          "lineNumber": "915"
+         },
+         "lineNumber": "915"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CA0SAggBOPiPzLC-6qxIQABIDQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/packages/StarlarkNativeModule.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    } catch (LabelSyntaxException e) {",
+         "matchingRanges": {
+          "lineNumber": "664"
+         },
+         "lineNumber": "664",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "      throw Starlark.errorf(\"invalid label in native.package_relative_label: %s\", e.getMessage());",
+         "matchingRanges": {
+          "lineNumber": "665",
+          "columnRanges": [
+           {
+            "startIndex": 29,
+            "length": 13
+           }
+          ]
+         },
+         "lineNumber": "665",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 28,
+            "length": 52
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 29,
+           "length": 13
+          }
+         ]
+        },
+        {
+         "lineText": "    }",
+         "matchingRanges": {
+          "lineNumber": "666"
+         },
+         "lineNumber": "666"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CA4SAggBOJjr9d73xNjpvwFAAEgO"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/cmdline/PackageIdentifier.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "   *",
+         "matchingRanges": {
+          "lineNumber": "94"
+         },
+         "lineNumber": "94",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "   * \u003cp\u003eReturns {@link Optional#empty()} if the path corresponds to an invalid label (e.g. with a",
+         "matchingRanges": {
+          "lineNumber": "95",
+          "columnRanges": [
+           {
+            "startIndex": 71,
+            "length": 13
+           }
+          ]
+         },
+         "lineNumber": "95",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 97
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 71,
+           "length": 13
+          }
+         ]
+        },
+        {
+         "lineText": "   * malformed repo name).",
+         "matchingRanges": {
+          "lineNumber": "96"
+         },
+         "lineNumber": "96",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 26
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "      } catch (LabelSyntaxException e) {",
+         "matchingRanges": {
+          "lineNumber": "116"
+         },
+         "lineNumber": "116",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "        // The path corresponds to an invalid label.",
+         "matchingRanges": {
+          "lineNumber": "117",
+          "columnRanges": [
+           {
+            "startIndex": 38,
+            "length": 13
+           }
+          ]
+         },
+         "lineNumber": "117",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 8,
+            "length": 44
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 38,
+           "length": 13
+          }
+         ]
+        },
+        {
+         "lineText": "        return Optional.empty();",
+         "matchingRanges": {
+          "lineNumber": "118"
+         },
+         "lineNumber": "118",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CA8SAggBOIDqlfaxqt6xGUAASA8"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/query2/common/QueryPreloadingTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    assertContainsEvent(",
+         "matchingRanges": {
+          "lineNumber": "390"
+         },
+         "lineNumber": "390"
+        },
+        {
+         "lineText": "        \"//foo:x: invalid label '//foo//y' in element 0 of attribute \"",
+         "matchingRanges": {
+          "lineNumber": "391",
+          "columnRanges": [
+           {
+            "startIndex": 18,
+            "length": 13
+           }
+          ]
+         },
+         "lineNumber": "391",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 62
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 18,
+           "length": 13
+          }
+         ]
+        },
+        {
+         "lineText": "            + \"'deps' of 'foo_library': invalid package name 'foo//y': \"",
+         "matchingRanges": {
+          "lineNumber": "392"
+         },
+         "lineNumber": "392",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 14,
+            "length": 58
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBASAggBOOzKtYm3-br56gFAAEgQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/bazel/bzlmod/ModuleFileFunctionTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    assertContainsEvent(",
+         "matchingRanges": {
+          "lineNumber": "1733"
+         },
+         "lineNumber": "1733"
+        },
+        {
+         "lineText": "        \"Error in single_version_override: invalid label in 'patches': only patches in the main\"",
+         "matchingRanges": {
+          "lineNumber": "1734",
+          "columnRanges": [
+           {
+            "startIndex": 43,
+            "length": 13
+           }
+          ]
+         },
+         "lineNumber": "1734",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 88
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 43,
+           "length": 13
+          }
+         ]
+        },
+        {
+         "lineText": "            + \" repository can be applied, not from '@unknown_repo'\");",
+         "matchingRanges": {
+          "lineNumber": "1735"
+         },
+         "lineNumber": "1735",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 14,
+            "length": 54
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    assertContainsEvent(",
+         "matchingRanges": {
+          "lineNumber": "1755"
+         },
+         "lineNumber": "1755"
+        },
+        {
+         "lineText": "        \"Error in archive_override: invalid label in 'patches': only patches in the main\"",
+         "matchingRanges": {
+          "lineNumber": "1756",
+          "columnRanges": [
+           {
+            "startIndex": 36,
+            "length": 13
+           }
+          ]
+         },
+         "lineNumber": "1756",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 81
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 36,
+           "length": 13
+          }
+         ]
+        },
+        {
+         "lineText": "            + \" repository can be applied, not from '@unknown_repo'\");",
+         "matchingRanges": {
+          "lineNumber": "1757"
+         },
+         "lineNumber": "1757",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 14,
+            "length": 54
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    assertContainsEvent(",
+         "matchingRanges": {
+          "lineNumber": "1778"
+         },
+         "lineNumber": "1778"
+        },
+        {
+         "lineText": "        \"Error in git_override: invalid label in 'patches': only patches in the main\"",
+         "matchingRanges": {
+          "lineNumber": "1779",
+          "columnRanges": [
+           {
+            "startIndex": 32,
+            "length": 13
+           }
+          ]
+         },
+         "lineNumber": "1779",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 77
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 32,
+           "length": 13
+          }
+         ]
+        },
+        {
+         "lineText": "            + \" repository can be applied, not from '@unknown_repo'\");",
+         "matchingRanges": {
+          "lineNumber": "1780"
+         },
+         "lineNumber": "1780",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 14,
+            "length": 54
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 4
+    },
+    "resultToken": "CBESAggBOPbKnZKEkov6X0AASBE"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/bazel/rules/genrule/GenRuleCommandSubstitutionTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    assertExpansionFails(",
+         "matchingRanges": {
+          "lineNumber": "96"
+         },
+         "lineNumber": "96"
+        },
+        {
+         "lineText": "        \"invalid label in $(location) expression: invalid target name '': empty target name\",",
+         "matchingRanges": {
+          "lineNumber": "97",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 13
+           }
+          ]
+         },
+         "lineNumber": "97",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 84
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 13
+          }
+         ]
+        },
+        {
+         "lineText": "        \"//test\");",
+         "matchingRanges": {
+          "lineNumber": "98"
+         },
+         "lineNumber": "98",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 8
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    assertExpansionFails(",
+         "matchingRanges": {
+          "lineNumber": "262"
+         },
+         "lineNumber": "262"
+        },
+        {
+         "lineText": "        \"invalid label in $(locations) expression: invalid target name '': empty target name\",",
+         "matchingRanges": {
+          "lineNumber": "263",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 13
+           }
+          ]
+         },
+         "lineNumber": "263",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 85
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 13
+          }
+         ]
+        },
+        {
+         "lineText": "        \"//test\");",
+         "matchingRanges": {
+          "lineNumber": "264"
+         },
+         "lineNumber": "264",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 8
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CBISAggBOMCPxtDH6Mb6d0AASBI"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/packages/TypeTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "        .isEqualTo(",
+         "matchingRanges": {
+          "lineNumber": "355"
+         },
+         "lineNumber": "355"
+        },
+        {
+         "lineText": "            \"invalid label '//foo:bar/..' in element 0 of myexpr: \"",
+         "matchingRanges": {
+          "lineNumber": "356",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 13
+           }
+          ]
+         },
+         "lineNumber": "356",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 12,
+            "length": 55
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 13
+          }
+         ]
+        },
+        {
+         "lineText": "                + \"invalid target name 'bar/..': \"",
+         "matchingRanges": {
+          "lineNumber": "357"
+         },
+         "lineNumber": "357",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 18,
+            "length": 32
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBMSAggBOIjGzLzn4u-giAFAAEgT"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/packages/BuildType.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "        throw new ConversionException(",
+         "matchingRanges": {
+          "lineNumber": "427"
+         },
+         "lineNumber": "427",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 14,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "            \"invalid label '\" + x + \"' in \" + what + \": \" + e.getMessage());",
+         "matchingRanges": {
+          "lineNumber": "428",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 13
+           }
+          ]
+         },
+         "lineNumber": "428",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 12,
+            "length": 17
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 36,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 53,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 13
+          }
+         ]
+        },
+        {
+         "lineText": "      }",
+         "matchingRanges": {
+          "lineNumber": "429"
+         },
+         "lineNumber": "429"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBQSAggBOMSEybrT3qTc7QFAAEgU"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/py/bazel/bzlmod/bazel_module_test.py",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    self.assertIn(",
+         "matchingRanges": {
+          "lineNumber": "330"
+         },
+         "lineNumber": "330"
+        },
+        {
+         "lineText": "        \"Error in archive_override: invalid label in 'patches': only patches in\"",
+         "matchingRanges": {
+          "lineNumber": "331",
+          "columnRanges": [
+           {
+            "startIndex": 36,
+            "length": 13
+           }
+          ]
+         },
+         "lineNumber": "331",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 72
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 36,
+           "length": 13
+          }
+         ]
+        },
+        {
+         "lineText": "        \" the main repository can be applied, not from '@bbb'\",",
+         "matchingRanges": {
+          "lineNumber": "332"
+         },
+         "lineNumber": "332",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 54
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBUSAggBOKjwqtqqw62ZXEAASBU"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/packages/BuildTypeTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "        .isEqualTo(",
+         "matchingRanges": {
+          "lineNumber": "164"
+         },
+         "lineNumber": "164"
+        },
+        {
+         "lineText": "            \"invalid label '//uplevel/references/are:../../forbidden' in \"",
+         "matchingRanges": {
+          "lineNumber": "165",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 13
+           }
+          ]
+         },
+         "lineNumber": "165",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 12,
+            "length": 62
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 13
+          }
+         ]
+        },
+        {
+         "lineText": "                + \"dict key element: invalid target name '../../forbidden': \"",
+         "matchingRanges": {
+          "lineNumber": "166"
+         },
+         "lineNumber": "166",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 18,
+            "length": 59
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "            () -\u003e new Selector\u003c\u003e(input, null, labelConverter, BuildType.LABEL));",
+         "matchingRanges": {
+          "lineNumber": "296"
+         },
+         "lineNumber": "296",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 18,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    assertThat(e).hasMessageThat().contains(\"invalid label 'not a/../label'\");",
+         "matchingRanges": {
+          "lineNumber": "297",
+          "columnRanges": [
+           {
+            "startIndex": 45,
+            "length": 13
+           }
+          ]
+         },
+         "lineNumber": "297",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 44,
+            "length": 32
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 45,
+           "length": 13
+          }
+         ]
+        },
+        {
+         "lineText": "  }",
+         "matchingRanges": {
+          "lineNumber": "298"
+         },
+         "lineNumber": "298"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "            () -\u003e new Selector\u003c\u003e(input, null, labelConverter, BuildType.LABEL));",
+         "matchingRanges": {
+          "lineNumber": "309"
+         },
+         "lineNumber": "309",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 18,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    assertThat(e).hasMessageThat().contains(\"invalid label 'not a/../label'\");",
+         "matchingRanges": {
+          "lineNumber": "310",
+          "columnRanges": [
+           {
+            "startIndex": 45,
+            "length": 13
+           }
+          ]
+         },
+         "lineNumber": "310",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 44,
+            "length": 32
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 45,
+           "length": 13
+          }
+         ]
+        },
+        {
+         "lineText": "  }",
+         "matchingRanges": {
+          "lineNumber": "311"
+         },
+         "lineNumber": "311"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CBYSAggBONzCstbe05XAe0AASBY"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "CHANGELOG.md",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "+ Fix handling of non-ASCII characters in archive entry file names (#19765)",
+         "matchingRanges": {
+          "lineNumber": "3164"
+         },
+         "lineNumber": "3164"
+        },
+        {
+         "lineText": "+ Raise an early error on invalid labels in transitions inputs/outputs (#19764)",
+         "matchingRanges": {
+          "lineNumber": "3165",
+          "columnRanges": [
+           {
+            "startIndex": 26,
+            "length": 13
+           }
+          ]
+         },
+         "lineNumber": "3165",
+         "ranges": [
+          {
+           "startIndex": 26,
+           "length": 13
+          }
+         ]
+        },
+        {
+         "lineText": "+ Handle synthetic method parameters entries that don't have names (#19758)",
+         "matchingRanges": {
+          "lineNumber": "3166"
+         },
+         "lineNumber": "3166"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBcSAggBOM6Q6oHo3avs2AFAAEgX"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/packages/OutputFileTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    getTarget(\"//bad_out_name:BUILD\");",
+         "matchingRanges": {
+          "lineNumber": "159"
+         },
+         "lineNumber": "159",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 14,
+            "length": 22
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    assertContainsEvent(\"invalid label '!@#:'\");",
+         "matchingRanges": {
+          "lineNumber": "160",
+          "columnRanges": [
+           {
+            "startIndex": 25,
+            "length": 13
+           }
+          ]
+         },
+         "lineNumber": "160",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 24,
+            "length": 22
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 25,
+           "length": 13
+          }
+         ]
+        },
+        {
+         "lineText": "  }",
+         "matchingRanges": {
+          "lineNumber": "161"
+         },
+         "lineNumber": "161"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBgSAggBOJTKpojl1vbTYkAASBg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/shell/integration/loading_phase_posix_test.sh",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    bazel query \"//$pkg:*\" \u003e\u0026 $TEST_log \u0026\u0026 fail \"Expected failure\"",
+         "matchingRanges": {
+          "lineNumber": "70"
+         },
+         "lineNumber": "70"
+        },
+        {
+         "lineText": "    expect_log 'invalid label'",
+         "matchingRanges": {
+          "lineNumber": "71",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 13
+           }
+          ]
+         },
+         "lineNumber": "71",
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 13
+          }
+         ]
+        },
+        {
+         "lineText": "  done",
+         "matchingRanges": {
+          "lineNumber": "72"
+         },
+         "lineNumber": "72"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBkSAggBOPDTivufx5ztzQFAAEgZ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "site/en/concepts/dependencies.md",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "then explicit enumeration of files, or use of the",
+         "matchingRanges": {
+          "lineNumber": "340"
+         },
+         "lineNumber": "340"
+        },
+        {
+         "lineText": "[`glob()`](/reference/be/functions#glob) function produces an invalid labels",
+         "matchingRanges": {
+          "lineNumber": "341",
+          "columnRanges": [
+           {
+            "startIndex": 62,
+            "length": 13
+           }
+          ]
+         },
+         "lineNumber": "341",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "length": 40
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 62,
+           "length": 13
+          }
+         ]
+        },
+        {
+         "lineText": "error. You must use directory labels in this case, but beware of the",
+         "matchingRanges": {
+          "lineNumber": "342"
+         },
+         "lineNumber": "342"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBoSAggBONKjjYT0sNPe-QFAAEga"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/concepts/dependencies.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "then explicit enumeration of files, or use of the",
+         "matchingRanges": {
+          "lineNumber": "344"
+         },
+         "lineNumber": "344"
+        },
+        {
+         "lineText": "[`glob()`](/reference/be/functions#glob) function produces an invalid labels",
+         "matchingRanges": {
+          "lineNumber": "345",
+          "columnRanges": [
+           {
+            "startIndex": 62,
+            "length": 13
+           }
+          ]
+         },
+         "lineNumber": "345",
+         "ranges": [
+          {
+           "startIndex": 62,
+           "length": 13
+          }
+         ]
+        },
+        {
+         "lineText": "error. You must use directory labels in this case, but beware of the",
+         "matchingRanges": {
+          "lineNumber": "346"
+         },
+         "lineNumber": "346"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBsSAggBOOz5tPSKt47qjwFAAEgb"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/8.6.0/concepts/dependencies.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "then explicit enumeration of files, or use of the",
+         "matchingRanges": {
+          "lineNumber": "344"
+         },
+         "lineNumber": "344"
+        },
+        {
+         "lineText": "[`glob()`](/versions/8.6.0/reference/be/functions#glob) function produces an invalid labels",
+         "matchingRanges": {
+          "lineNumber": "345",
+          "columnRanges": [
+           {
+            "startIndex": 77,
+            "length": 13
+           }
+          ]
+         },
+         "lineNumber": "345",
+         "ranges": [
+          {
+           "startIndex": 77,
+           "length": 13
+          }
+         ]
+        },
+        {
+         "lineText": "error. You must use directory labels in this case, but beware of the",
+         "matchingRanges": {
+          "lineNumber": "346"
+         },
+         "lineNumber": "346"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBwSAggBOKDfj63p94uDBkAASBw"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/8.3.1/concepts/dependencies.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "then explicit enumeration of files, or use of the",
+         "matchingRanges": {
+          "lineNumber": "327"
+         },
+         "lineNumber": "327"
+        },
+        {
+         "lineText": "[`glob()`](/versions/8.3.1/reference/be/functions#glob) function produces an invalid labels",
+         "matchingRanges": {
+          "lineNumber": "328",
+          "columnRanges": [
+           {
+            "startIndex": 77,
+            "length": 13
+           }
+          ]
+         },
+         "lineNumber": "328",
+         "ranges": [
+          {
+           "startIndex": 77,
+           "length": 13
+          }
+         ]
+        },
+        {
+         "lineText": "error. You must use directory labels in this case, but beware of the",
+         "matchingRanges": {
+          "lineNumber": "329"
+         },
+         "lineNumber": "329"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CB0SAggBOJjm8PHVp6LLNUAASB0"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/8.5.1/concepts/dependencies.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "then explicit enumeration of files, or use of the",
+         "matchingRanges": {
+          "lineNumber": "330"
+         },
+         "lineNumber": "330"
+        },
+        {
+         "lineText": "[`glob()`](/versions/8.5.1/reference/be/functions#glob) function produces an invalid labels",
+         "matchingRanges": {
+          "lineNumber": "331",
+          "columnRanges": [
+           {
+            "startIndex": 77,
+            "length": 13
+           }
+          ]
+         },
+         "lineNumber": "331",
+         "ranges": [
+          {
+           "startIndex": 77,
+           "length": 13
+          }
+         ]
+        },
+        {
+         "lineText": "error. You must use directory labels in this case, but beware of the",
+         "matchingRanges": {
+          "lineNumber": "332"
+         },
+         "lineNumber": "332"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CB4SAggBOJaokuuIwsXrPEAASB4"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/8.2.1/concepts/dependencies.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "then explicit enumeration of files, or use of the",
+         "matchingRanges": {
+          "lineNumber": "330"
+         },
+         "lineNumber": "330"
+        },
+        {
+         "lineText": "[`glob()`](/versions/8.2.1/reference/be/functions#glob) function produces an invalid labels",
+         "matchingRanges": {
+          "lineNumber": "331",
+          "columnRanges": [
+           {
+            "startIndex": 77,
+            "length": 13
+           }
+          ]
+         },
+         "lineNumber": "331",
+         "ranges": [
+          {
+           "startIndex": 77,
+           "length": 13
+          }
+         ]
+        },
+        {
+         "lineText": "error. You must use directory labels in this case, but beware of the",
+         "matchingRanges": {
+          "lineNumber": "332"
+         },
+         "lineNumber": "332"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CB8SAggBOIam2dPnmOKwP0AASB8"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/8.0.1/concepts/dependencies.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "then explicit enumeration of files, or use of the",
+         "matchingRanges": {
+          "lineNumber": "274"
+         },
+         "lineNumber": "274"
+        },
+        {
+         "lineText": "[`glob()`](/versions/8.0.1/reference/be/functions#glob) function produces an invalid labels",
+         "matchingRanges": {
+          "lineNumber": "275",
+          "columnRanges": [
+           {
+            "startIndex": 77,
+            "length": 13
+           }
+          ]
+         },
+         "lineNumber": "275",
+         "ranges": [
+          {
+           "startIndex": 77,
+           "length": 13
+          }
+         ]
+        },
+        {
+         "lineText": "error. You must use directory labels in this case, but beware of the",
+         "matchingRanges": {
+          "lineNumber": "276"
+         },
+         "lineNumber": "276"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CCASAggBOOKKpJ2Sq4eLRUAASCA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/9.0.0/concepts/dependencies.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "then explicit enumeration of files, or use of the",
+         "matchingRanges": {
+          "lineNumber": "330"
+         },
+         "lineNumber": "330"
+        },
+        {
+         "lineText": "[`glob()`](/versions/9.0.0/reference/be/functions#glob) function produces an invalid labels",
+         "matchingRanges": {
+          "lineNumber": "331",
+          "columnRanges": [
+           {
+            "startIndex": 77,
+            "length": 13
+           }
+          ]
+         },
+         "lineNumber": "331",
+         "ranges": [
+          {
+           "startIndex": 77,
+           "length": 13
+          }
+         ]
+        },
+        {
+         "lineText": "error. You must use directory labels in this case, but beware of the",
+         "matchingRanges": {
+          "lineNumber": "332"
+         },
+         "lineNumber": "332"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CCESAggBOK7b7u3Ts8f1ggFAAEgh"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/7.7.1/concepts/dependencies.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "then explicit enumeration of files, or use of the",
+         "matchingRanges": {
+          "lineNumber": "303"
+         },
+         "lineNumber": "303"
+        },
+        {
+         "lineText": "[`glob()`](/versions/7.7.1/reference/be/functions#glob) function produces an invalid labels",
+         "matchingRanges": {
+          "lineNumber": "304",
+          "columnRanges": [
+           {
+            "startIndex": 77,
+            "length": 13
+           }
+          ]
+         },
+         "lineNumber": "304",
+         "ranges": [
+          {
+           "startIndex": 77,
+           "length": 13
+          }
+         ]
+        },
+        {
+         "lineText": "error. You must use directory labels in this case, but beware of the",
+         "matchingRanges": {
+          "lineNumber": "305"
+         },
+         "lineNumber": "305"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CCISAggBOITBgpijxpu0lAFAAEgi"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/7.6.1/concepts/dependencies.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "then explicit enumeration of files, or use of the",
+         "matchingRanges": {
+          "lineNumber": "325"
+         },
+         "lineNumber": "325"
+        },
+        {
+         "lineText": "[`glob()`](/versions/7.6.1/reference/be/functions#glob) function produces an invalid labels",
+         "matchingRanges": {
+          "lineNumber": "326",
+          "columnRanges": [
+           {
+            "startIndex": 77,
+            "length": 13
+           }
+          ]
+         },
+         "lineNumber": "326",
+         "ranges": [
+          {
+           "startIndex": 77,
+           "length": 13
+          }
+         ]
+        },
+        {
+         "lineText": "error. You must use directory labels in this case, but beware of the",
+         "matchingRanges": {
+          "lineNumber": "327"
+         },
+         "lineNumber": "327"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CCMSAggBOObY4fnWttDCuQFAAEgj"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/9.1.0/concepts/dependencies.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "then explicit enumeration of files, or use of the",
+         "matchingRanges": {
+          "lineNumber": "342"
+         },
+         "lineNumber": "342"
+        },
+        {
+         "lineText": "[`glob()`](/versions/9.1.0/reference/be/functions#glob) function produces an invalid labels",
+         "matchingRanges": {
+          "lineNumber": "343",
+          "columnRanges": [
+           {
+            "startIndex": 77,
+            "length": 13
+           }
+          ]
+         },
+         "lineNumber": "343",
+         "ranges": [
+          {
+           "startIndex": 77,
+           "length": 13
+          }
+         ]
+        },
+        {
+         "lineText": "error. You must use directory labels in this case, but beware of the",
+         "matchingRanges": {
+          "lineNumber": "344"
+         },
+         "lineNumber": "344"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CCQSAggBOMbt2-2upKv42AFAAEgk"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/8.1.1/concepts/dependencies.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "then explicit enumeration of files, or use of the",
+         "matchingRanges": {
+          "lineNumber": "315"
+         },
+         "lineNumber": "315"
+        },
+        {
+         "lineText": "[`glob()`](/versions/8.1.1/reference/be/functions#glob) function produces an invalid labels",
+         "matchingRanges": {
+          "lineNumber": "316",
+          "columnRanges": [
+           {
+            "startIndex": 77,
+            "length": 13
+           }
+          ]
+         },
+         "lineNumber": "316",
+         "ranges": [
+          {
+           "startIndex": 77,
+           "length": 13
+          }
+         ]
+        },
+        {
+         "lineText": "error. You must use directory labels in this case, but beware of the",
+         "matchingRanges": {
+          "lineNumber": "317"
+         },
+         "lineNumber": "317"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CCUSAggBOLqBranU_qGO8wFAAEgl"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/8.4.2/concepts/dependencies.mdx",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "then explicit enumeration of files, or use of the",
+         "matchingRanges": {
+          "lineNumber": "310"
+         },
+         "lineNumber": "310"
+        },
+        {
+         "lineText": "[`glob()`](/versions/8.4.2/reference/be/functions#glob) function produces an invalid labels",
+         "matchingRanges": {
+          "lineNumber": "311",
+          "columnRanges": [
+           {
+            "startIndex": 77,
+            "length": 13
+           }
+          ]
+         },
+         "lineNumber": "311",
+         "ranges": [
+          {
+           "startIndex": 77,
+           "length": 13
+          }
+         ]
+        },
+        {
+         "lineText": "error. You must use directory labels in this case, but beware of the",
+         "matchingRanges": {
+          "lineNumber": "312"
+         },
+         "lineNumber": "312"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CCYSAggBOJzX4bOv4Mnp9AFAAEgm"
+   }
+  ],
+  "estimatedResultCount": "41",
+  "exhaustive": true,
+  "requestToken": "Cg8iSW52YWxpZCBsYWJlbCISIyggZ2l0OmJhemVsL2JhemVsQG1hc3RlciBjYXNlOnllcyApGgwIm-2s0QYQ8YXyyAEgDCoAMgBIAQ"
+ }
+}

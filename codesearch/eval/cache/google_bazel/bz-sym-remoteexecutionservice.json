@@ -1,0 +1,2366 @@
+{
+ "query": "RemoteExecutionService",
+ "oss_project": "bazel",
+ "repo_name": "bazel",
+ "page_size": 50,
+ "fetched_at": "2026-06-11T22:27:14Z",
+ "response": {
+  "searchResults": [
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/remote/RemoteExecutionService.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import com.google.devtools.build.lib.remote.CombinedCache.CachedActionResult;",
+         "matchingRanges": {
+          "lineNumber": "92"
+         },
+         "lineNumber": "92",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.remote.RemoteExecutionService.ActionResultMetadata.DirectoryMetadata;",
+         "matchingRanges": {
+          "lineNumber": "93",
+          "columnRanges": [
+           {
+            "startIndex": 44,
+            "length": 22
+           }
+          ]
+         },
+         "lineNumber": "93",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 44,
+           "length": 22
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.remote.RemoteExecutionService.ActionResultMetadata.FileMetadata;",
+         "matchingRanges": {
+          "lineNumber": "94",
+          "columnRanges": [
+           {
+            "startIndex": 44,
+            "length": 22
+           }
+          ]
+         },
+         "lineNumber": "94",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 44,
+           "length": 22
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.remote.RemoteExecutionService.ActionResultMetadata.SymlinkMetadata;",
+         "matchingRanges": {
+          "lineNumber": "95",
+          "columnRanges": [
+           {
+            "startIndex": 44,
+            "length": 22
+           }
+          ]
+         },
+         "lineNumber": "95",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 44,
+           "length": 22
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.remote.Scrubber.SpawnScrubber;",
+         "matchingRanges": {
+          "lineNumber": "96"
+         },
+         "lineNumber": "96",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": " */",
+         "matchingRanges": {
+          "lineNumber": "166"
+         },
+         "lineNumber": "166",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "public class RemoteExecutionService {",
+         "matchingRanges": {
+          "lineNumber": "167",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 22
+           }
+          ]
+         },
+         "lineNumber": "167",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 22
+          }
+         ]
+        },
+        {
+         "lineText": "  private static final Comparator\u003cString\u003e PROTO_STRING_COMPARATOR =",
+         "matchingRanges": {
+          "lineNumber": "168"
+         },
+         "lineNumber": "168",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 17,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  public RemoteExecutionService(",
+         "matchingRanges": {
+          "lineNumber": "209",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 22
+           }
+          ]
+         },
+         "lineNumber": "209",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 22
+          }
+         ]
+        },
+        {
+         "lineText": "      Reporter reporter,",
+         "matchingRanges": {
+          "lineNumber": "210"
+         },
+         "lineNumber": "210"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 5
+    },
+    "resultToken": "CAASBAgBIAE40vr-0d6YgsJ7QABIAA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/remote/RemoteExecutionServiceTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import com.google.devtools.build.lib.remote.CombinedCache.CachedActionResult;",
+         "matchingRanges": {
+          "lineNumber": "104"
+         },
+         "lineNumber": "104",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.remote.RemoteExecutionService.RemoteActionResult;",
+         "matchingRanges": {
+          "lineNumber": "105",
+          "columnRanges": [
+           {
+            "startIndex": 44,
+            "length": 22
+           }
+          ]
+         },
+         "lineNumber": "105",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 44,
+           "length": 22
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.remote.RemoteScrubbing.Config;",
+         "matchingRanges": {
+          "lineNumber": "106"
+         },
+         "lineNumber": "106",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "/** Tests for {@link RemoteExecutionService}. */",
+         "matchingRanges": {
+          "lineNumber": "172",
+          "columnRanges": [
+           {
+            "startIndex": 21,
+            "length": 22
+           }
+          ]
+         },
+         "lineNumber": "172",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 48
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 21,
+           "length": 22
+          }
+         ]
+        },
+        {
+         "lineText": "@RunWith(TestParameterInjector.class)",
+         "matchingRanges": {
+          "lineNumber": "173"
+         },
+         "lineNumber": "173",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 31,
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "public class RemoteExecutionServiceTest {",
+         "matchingRanges": {
+          "lineNumber": "174",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 22
+           }
+          ]
+         },
+         "lineNumber": "174",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 22
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  private RemoteExecutionService newRemoteExecutionService() {",
+         "matchingRanges": {
+          "lineNumber": "3138",
+          "columnRanges": [
+           {
+            "startIndex": 36,
+            "length": 22
+           }
+          ]
+         },
+         "lineNumber": "3138",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 36,
+           "length": 22
+          }
+         ]
+        },
+        {
+         "lineText": "    return newRemoteExecutionService(remoteOptions);",
+         "matchingRanges": {
+          "lineNumber": "3139"
+         },
+         "lineNumber": "3139",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  private RemoteExecutionService newRemoteExecutionService(RemoteOptions remoteOptions) {",
+         "matchingRanges": {
+          "lineNumber": "3142",
+          "columnRanges": [
+           {
+            "startIndex": 36,
+            "length": 22
+           }
+          ]
+         },
+         "lineNumber": "3142",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 36,
+           "length": 22
+          }
+         ]
+        },
+        {
+         "lineText": "    return new RemoteExecutionService(",
+         "matchingRanges": {
+          "lineNumber": "3143"
+         },
+         "lineNumber": "3143",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 11,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 24
+    },
+    "resultToken": "CAESBAgBIAE4nPXv9fG_gf9pQABIAQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/remote/RemoteActionContextProvider.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  private TempPathGenerator tempPathGenerator;",
+         "matchingRanges": {
+          "lineNumber": "48"
+         },
+         "lineNumber": "48",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  private RemoteExecutionService remoteExecutionService;",
+         "matchingRanges": {
+          "lineNumber": "49",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 22
+           },
+           {
+            "startIndex": 33,
+            "length": 22
+           }
+          ]
+         },
+         "lineNumber": "49",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 22
+          },
+          {
+           "startIndex": 33,
+           "length": 22
+          }
+         ]
+        },
+        {
+         "lineText": "  @Nullable private RemoteActionInputFetcher actionInputFetcher;",
+         "matchingRanges": {
+          "lineNumber": "50"
+         },
+         "lineNumber": "50",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 7
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  private RemoteExecutionService getRemoteExecutionService() {",
+         "matchingRanges": {
+          "lineNumber": "157",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 22
+           },
+           {
+            "startIndex": 36,
+            "length": 22
+           }
+          ]
+         },
+         "lineNumber": "157",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 22
+          },
+          {
+           "startIndex": 36,
+           "length": 22
+          }
+         ]
+        },
+        {
+         "lineText": "    if (remoteExecutionService == null) {",
+         "matchingRanges": {
+          "lineNumber": "158",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 22
+           }
+          ]
+         },
+         "lineNumber": "158",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 22
+          }
+         ]
+        },
+        {
+         "lineText": "      Path workingDirectory = env.getWorkingDirectory();",
+         "matchingRanges": {
+          "lineNumber": "159"
+         },
+         "lineNumber": "159"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "          checkNotNull(env.getOptions().getOptions(ExecutionOptions.class)).getVerboseFailures();",
+         "matchingRanges": {
+          "lineNumber": "169"
+         },
+         "lineNumber": "169",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 68,
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "      remoteExecutionService =",
+         "matchingRanges": {
+          "lineNumber": "170",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 22
+           }
+          ]
+         },
+         "lineNumber": "170",
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 22
+          }
+         ]
+        },
+        {
+         "lineText": "          new RemoteExecutionService(",
+         "matchingRanges": {
+          "lineNumber": "171",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 22
+           }
+          ]
+         },
+         "lineNumber": "171",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 22
+          }
+         ]
+        },
+        {
+         "lineText": "              env.getReporter(),",
+         "matchingRanges": {
+          "lineNumber": "172"
+         },
+         "lineNumber": "172"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 11
+    },
+    "resultToken": "CAISBAgBIAE4-rvy_-vn4L8tQABIAg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/remote/RemoteSpawnRunnerWithGrpcRemoteExecutorTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "            /* chunkingEnabled= */ false);",
+         "matchingRanges": {
+          "lineNumber": "346"
+         },
+         "lineNumber": "346",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 12,
+            "length": 22
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    RemoteExecutionService remoteExecutionService =",
+         "matchingRanges": {
+          "lineNumber": "347",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 22
+           },
+           {
+            "startIndex": 27,
+            "length": 22
+           }
+          ]
+         },
+         "lineNumber": "347",
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 22
+          },
+          {
+           "startIndex": 27,
+           "length": 22
+          }
+         ]
+        },
+        {
+         "lineText": "        new RemoteExecutionService(",
+         "matchingRanges": {
+          "lineNumber": "348",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 22
+           }
+          ]
+         },
+         "lineNumber": "348",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 22
+          }
+         ]
+        },
+        {
+         "lineText": "            reporter,",
+         "matchingRanges": {
+          "lineNumber": "349"
+         },
+         "lineNumber": "349"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "            logDir,",
+         "matchingRanges": {
+          "lineNumber": "372"
+         },
+         "lineNumber": "372"
+        },
+        {
+         "lineText": "            remoteExecutionService,",
+         "matchingRanges": {
+          "lineNumber": "373",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 22
+           }
+          ]
+         },
+         "lineNumber": "373",
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 22
+          }
+         ]
+        },
+        {
+         "lineText": "            DIGEST_UTIL);",
+         "matchingRanges": {
+          "lineNumber": "374"
+         },
+         "lineNumber": "374"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CAMSAggBONik2PXS1_-gWkAASAM"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/remote/RemoteSpawnRunner.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import com.google.devtools.build.lib.profiler.SilentCloseable;",
+         "matchingRanges": {
+          "lineNumber": "57"
+         },
+         "lineNumber": "57",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.remote.RemoteExecutionService.RemoteActionResult;",
+         "matchingRanges": {
+          "lineNumber": "58",
+          "columnRanges": [
+           {
+            "startIndex": 44,
+            "length": 22
+           }
+          ]
+         },
+         "lineNumber": "58",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 44,
+           "length": 22
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.remote.RemoteExecutionService.ServerLogs;",
+         "matchingRanges": {
+          "lineNumber": "59",
+          "columnRanges": [
+           {
+            "startIndex": 44,
+            "length": 22
+           }
+          ]
+         },
+         "lineNumber": "59",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 44,
+           "length": 22
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.remote.circuitbreaker.CircuitBreakerFactory;",
+         "matchingRanges": {
+          "lineNumber": "60"
+         },
+         "lineNumber": "60",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  private final Path logDir;",
+         "matchingRanges": {
+          "lineNumber": "106"
+         },
+         "lineNumber": "106",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  private final RemoteExecutionService remoteExecutionService;",
+         "matchingRanges": {
+          "lineNumber": "107",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 22
+           },
+           {
+            "startIndex": 39,
+            "length": 22
+           }
+          ]
+         },
+         "lineNumber": "107",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 22
+          },
+          {
+           "startIndex": 39,
+           "length": 22
+          }
+         ]
+        },
+        {
+         "lineText": "  private final DigestUtil digestUtil;",
+         "matchingRanges": {
+          "lineNumber": "108"
+         },
+         "lineNumber": "108",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  @VisibleForTesting",
+         "matchingRanges": {
+          "lineNumber": "130"
+         },
+         "lineNumber": "130"
+        },
+        {
+         "lineText": "  RemoteExecutionService getRemoteExecutionService() {",
+         "matchingRanges": {
+          "lineNumber": "131",
+          "columnRanges": [
+           {
+            "startIndex": 2,
+            "length": 22
+           },
+           {
+            "startIndex": 28,
+            "length": 22
+           }
+          ]
+         },
+         "lineNumber": "131",
+         "ranges": [
+          {
+           "startIndex": 2,
+           "length": 22
+          },
+          {
+           "startIndex": 28,
+           "length": 22
+          }
+         ]
+        },
+        {
+         "lineText": "    return remoteExecutionService;",
+         "matchingRanges": {
+          "lineNumber": "132",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 22
+           }
+          ]
+         },
+         "lineNumber": "132",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 22
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 20
+    },
+    "resultToken": "CAQSBAgBIAE4qJSm4b-RoqGlAUAASAQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/remote/RemoteSpawnCache.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import com.google.devtools.build.lib.profiler.SilentCloseable;",
+         "matchingRanges": {
+          "lineNumber": "35"
+         },
+         "lineNumber": "35",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.remote.RemoteExecutionService.LocalExecution;",
+         "matchingRanges": {
+          "lineNumber": "36",
+          "columnRanges": [
+           {
+            "startIndex": 44,
+            "length": 22
+           }
+          ]
+         },
+         "lineNumber": "36",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 44,
+           "length": 22
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.remote.RemoteExecutionService.RemoteActionResult;",
+         "matchingRanges": {
+          "lineNumber": "37",
+          "columnRanges": [
+           {
+            "startIndex": 44,
+            "length": 22
+           }
+          ]
+         },
+         "lineNumber": "37",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 44,
+           "length": 22
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.remote.common.ActionKey;",
+         "matchingRanges": {
+          "lineNumber": "38"
+         },
+         "lineNumber": "38",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  private final RemoteOptions options;",
+         "matchingRanges": {
+          "lineNumber": "55"
+         },
+         "lineNumber": "55",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  private final RemoteExecutionService remoteExecutionService;",
+         "matchingRanges": {
+          "lineNumber": "56",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 22
+           },
+           {
+            "startIndex": 39,
+            "length": 22
+           }
+          ]
+         },
+         "lineNumber": "56",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 22
+          },
+          {
+           "startIndex": 39,
+           "length": 22
+          }
+         ]
+        },
+        {
+         "lineText": "  private final DigestUtil digestUtil;",
+         "matchingRanges": {
+          "lineNumber": "57"
+         },
+         "lineNumber": "57",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  @VisibleForTesting",
+         "matchingRanges": {
+          "lineNumber": "73"
+         },
+         "lineNumber": "73"
+        },
+        {
+         "lineText": "  RemoteExecutionService getRemoteExecutionService() {",
+         "matchingRanges": {
+          "lineNumber": "74",
+          "columnRanges": [
+           {
+            "startIndex": 2,
+            "length": 22
+           },
+           {
+            "startIndex": 28,
+            "length": 22
+           }
+          ]
+         },
+         "lineNumber": "74",
+         "ranges": [
+          {
+           "startIndex": 2,
+           "length": 22
+          },
+          {
+           "startIndex": 28,
+           "length": 22
+          }
+         ]
+        },
+        {
+         "lineText": "    return remoteExecutionService;",
+         "matchingRanges": {
+          "lineNumber": "75",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 22
+           }
+          ]
+         },
+         "lineNumber": "75",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 22
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 18
+    },
+    "resultToken": "CAUSBAgBIAE4spPU_-bQ6ewoQABIBQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/remote/BazelOutputServiceTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import com.google.devtools.build.lib.remote.BazelOutputServiceProto.StartBuildResponse;",
+         "matchingRanges": {
+          "lineNumber": "34"
+         },
+         "lineNumber": "34",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.remote.RemoteExecutionService.ActionResultMetadata.FileMetadata;",
+         "matchingRanges": {
+          "lineNumber": "35",
+          "columnRanges": [
+           {
+            "startIndex": 44,
+            "length": 22
+           }
+          ]
+         },
+         "lineNumber": "35",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 44,
+           "length": 22
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.remote.util.DigestUtil;",
+         "matchingRanges": {
+          "lineNumber": "36"
+         },
+         "lineNumber": "36",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAYSAggBOMr-1o_65ZvgdkAASAY"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/remote/RemoteOutputChecker.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "   *",
+         "matchingRanges": {
+          "lineNumber": "261"
+         },
+         "lineNumber": "261",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "   * \u003cp\u003eThis is used by {@link RemoteExecutionService} to skip downloading in-memory outputs.",
+         "matchingRanges": {
+          "lineNumber": "262",
+          "columnRanges": [
+           {
+            "startIndex": 31,
+            "length": 22
+           }
+          ]
+         },
+         "lineNumber": "262",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 93
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 31,
+           "length": 22
+          }
+         ]
+        },
+        {
+         "lineText": "   *",
+         "matchingRanges": {
+          "lineNumber": "263"
+         },
+         "lineNumber": "263",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAcSAggBOIjpz9SAsefcUkAASAc"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/remote/BazelOutputService.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import com.google.devtools.build.lib.remote.BazelOutputServiceREv2Proto.StartBuildArgs;",
+         "matchingRanges": {
+          "lineNumber": "44"
+         },
+         "lineNumber": "44",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.remote.RemoteExecutionService.ActionResultMetadata.FileMetadata;",
+         "matchingRanges": {
+          "lineNumber": "45",
+          "columnRanges": [
+           {
+            "startIndex": 44,
+            "length": 22
+           }
+          ]
+         },
+         "lineNumber": "45",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 44,
+           "length": 22
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.remote.util.DigestUtil;",
+         "matchingRanges": {
+          "lineNumber": "46"
+         },
+         "lineNumber": "46",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAgSAggBOO6DpcvPq6i1dUAASAg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/remote/RemoteSpawnRunnerTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import com.google.devtools.build.lib.remote.CombinedCache.CachedActionResult;",
+         "matchingRanges": {
+          "lineNumber": "88"
+         },
+         "lineNumber": "88",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.remote.RemoteExecutionService.RemoteActionResult;",
+         "matchingRanges": {
+          "lineNumber": "89",
+          "columnRanges": [
+           {
+            "startIndex": 44,
+            "length": 22
+           }
+          ]
+         },
+         "lineNumber": "89",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 44,
+           "length": 22
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.remote.common.ActionKey;",
+         "matchingRanges": {
+          "lineNumber": "90"
+         },
+         "lineNumber": "90",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    RemoteSpawnRunner runner = newSpawnRunner();",
+         "matchingRanges": {
+          "lineNumber": "232"
+         },
+         "lineNumber": "232"
+        },
+        {
+         "lineText": "    RemoteExecutionService service = runner.getRemoteExecutionService();",
+         "matchingRanges": {
+          "lineNumber": "233",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 22
+           },
+           {
+            "startIndex": 47,
+            "length": 22
+           }
+          ]
+         },
+         "lineNumber": "233",
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 22
+          },
+          {
+           "startIndex": 47,
+           "length": 22
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "234"
+         },
+         "lineNumber": "234"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    RemoteSpawnRunner runner = spy(newSpawnRunner());",
+         "matchingRanges": {
+          "lineNumber": "337"
+         },
+         "lineNumber": "337"
+        },
+        {
+         "lineText": "    RemoteExecutionService service = runner.getRemoteExecutionService();",
+         "matchingRanges": {
+          "lineNumber": "338",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 22
+           },
+           {
+            "startIndex": 47,
+            "length": 22
+           }
+          ]
+         },
+         "lineNumber": "338",
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 22
+          },
+          {
+           "startIndex": 47,
+           "length": 22
+          }
+         ]
+        },
+        {
+         "lineText": "    doNothing().when(service).uploadOutputs(any(), any(), any(), any());",
+         "matchingRanges": {
+          "lineNumber": "339"
+         },
+         "lineNumber": "339"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 22
+    },
+    "resultToken": "CAkSAggBOK6u4Z_Ph-rbe0AASAk"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/remote/RemoteSpawnCacheTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import com.google.devtools.build.lib.remote.CombinedCache.CachedActionResult;",
+         "matchingRanges": {
+          "lineNumber": "79"
+         },
+         "lineNumber": "79",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.remote.RemoteExecutionService.RemoteActionResult;",
+         "matchingRanges": {
+          "lineNumber": "80",
+          "columnRanges": [
+           {
+            "startIndex": 44,
+            "length": 22
+           }
+          ]
+         },
+         "lineNumber": "80",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 44,
+           "length": 22
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.remote.common.ActionKey;",
+         "matchingRanges": {
+          "lineNumber": "81"
+         },
+         "lineNumber": "81",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "      RemoteOptions options, ExecutionOptions executionOptions) {",
+         "matchingRanges": {
+          "lineNumber": "305"
+         },
+         "lineNumber": "305"
+        },
+        {
+         "lineText": "    RemoteExecutionService service =",
+         "matchingRanges": {
+          "lineNumber": "306",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 22
+           }
+          ]
+         },
+         "lineNumber": "306",
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 22
+          }
+         ]
+        },
+        {
+         "lineText": "        spy(",
+         "matchingRanges": {
+          "lineNumber": "307"
+         },
+         "lineNumber": "307"
+        },
+        {
+         "lineText": "            new RemoteExecutionService(",
+         "matchingRanges": {
+          "lineNumber": "308",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 22
+           }
+          ]
+         },
+         "lineNumber": "308",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 22
+          }
+         ]
+        },
+        {
+         "lineText": "                reporter,",
+         "matchingRanges": {
+          "lineNumber": "309"
+         },
+         "lineNumber": "309"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    RemoteExecutionService remoteExecutionService = cache.getRemoteExecutionService();",
+         "matchingRanges": {
+          "lineNumber": "818",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 22
+           },
+           {
+            "startIndex": 27,
+            "length": 22
+           },
+           {
+            "startIndex": 61,
+            "length": 22
+           }
+          ]
+         },
+         "lineNumber": "818",
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 22
+          },
+          {
+           "startIndex": 27,
+           "length": 22
+          },
+          {
+           "startIndex": 61,
+           "length": 22
+          }
+         ]
+        },
+        {
+         "lineText": "    Mockito.doCallRealMethod().when(remoteExecutionService).waitForAndReuseOutputs(any(), any());",
+         "matchingRanges": {
+          "lineNumber": "819",
+          "columnRanges": [
+           {
+            "startIndex": 36,
+            "length": 22
+           }
+          ]
+         },
+         "lineNumber": "819",
+         "ranges": [
+          {
+           "startIndex": 36,
+           "length": 22
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 26
+    },
+    "resultToken": "CAoSAggBOIDZ6_ytoa2aqAFAAEgK"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/remote/BUILD",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "        \"BazelOutputService.java\",",
+         "matchingRanges": {
+          "lineNumber": "968"
+         },
+         "lineNumber": "968",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 25
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "        \"RemoteExecutionService.java\",",
+         "matchingRanges": {
+          "lineNumber": "969",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 22
+           }
+          ]
+         },
+         "lineNumber": "969",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 29
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 22
+          }
+         ]
+        },
+        {
+         "lineText": "    ],",
+         "matchingRanges": {
+          "lineNumber": "970"
+         },
+         "lineNumber": "970"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAsSAggBOLy__rKpitWx4AFAAEgL"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "CHANGELOG.md",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "+ Add ServerCapabilities into RemoteExecutionClient (#18442)",
+         "matchingRanges": {
+          "lineNumber": "3517"
+         },
+         "lineNumber": "3517"
+        },
+        {
+         "lineText": "+ RemoteExecutionService: support output_symlinks in ActionResult (#18441)",
+         "matchingRanges": {
+          "lineNumber": "3518",
+          "columnRanges": [
+           {
+            "startIndex": 2,
+            "length": 22
+           }
+          ]
+         },
+         "lineNumber": "3518",
+         "ranges": [
+          {
+           "startIndex": 2,
+           "length": 22
+          }
+         ]
+        },
+        {
+         "lineText": "+ RemoteExecutionService: Action.Command to set output_paths (#18440)",
+         "matchingRanges": {
+          "lineNumber": "3519",
+          "columnRanges": [
+           {
+            "startIndex": 2,
+            "length": 22
+           }
+          ]
+         },
+         "lineNumber": "3519",
+         "ranges": [
+          {
+           "startIndex": 2,
+           "length": 22
+          }
+         ]
+        },
+        {
+         "lineText": "+ Use local_termination_grace_seconds when testing LinuxSandbox availability (#18568)",
+         "matchingRanges": {
+          "lineNumber": "3520"
+         },
+         "lineNumber": "3520"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "   + ae53991f2e207edacd1352ba94261e2473b79f14:",
+         "matchingRanges": {
+          "lineNumber": "5673"
+         },
+         "lineNumber": "5673"
+        },
+        {
+         "lineText": "     Remote: Add RemoteExecutionService as a layer between spawn",
+         "matchingRanges": {
+          "lineNumber": "5674",
+          "columnRanges": [
+           {
+            "startIndex": 17,
+            "length": 22
+           }
+          ]
+         },
+         "lineNumber": "5674",
+         "ranges": [
+          {
+           "startIndex": 17,
+           "length": 22
+          }
+         ]
+        },
+        {
+         "lineText": "     execution and remote execution.",
+         "matchingRanges": {
+          "lineNumber": "5675"
+         },
+         "lineNumber": "5675"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "   + d35f923b098e4dc9c90b1ab66b413c216bdee638:",
+         "matchingRanges": {
+          "lineNumber": "6326"
+         },
+         "lineNumber": "6326"
+        },
+        {
+         "lineText": "     RemoteExecutionService: fix outputs not being uploaded",
+         "matchingRanges": {
+          "lineNumber": "6327",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 22
+           }
+          ]
+         },
+         "lineNumber": "6327",
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 22
+          }
+         ]
+        },
+        {
+         "lineText": "   + 78af34f9f25b0c8fbf597a794a5162f0014629c5:",
+         "matchingRanges": {
+          "lineNumber": "6328"
+         },
+         "lineNumber": "6328"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 12
+    },
+    "resultToken": "CAwSAggBOM6Q6oHo3avs2AFAAEgM"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/remote/merkletree/MerkleTree.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "   * \u003cp\u003eSee {@link",
+         "matchingRanges": {
+          "lineNumber": "90"
+         },
+         "lineNumber": "90",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 18
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "   * com.google.devtools.build.lib.remote.RemoteExecutionServiceTest#buildRemoteAction_goldenTest}",
+         "matchingRanges": {
+          "lineNumber": "91",
+          "columnRanges": [
+           {
+            "startIndex": 42,
+            "length": 22
+           }
+          ]
+         },
+         "lineNumber": "91",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 98
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 42,
+           "length": 22
+          }
+         ]
+        },
+        {
+         "lineText": "   * for a test that verifies the memory footprint of this class. Since there can be thousands of",
+         "matchingRanges": {
+          "lineNumber": "92"
+         },
+         "lineNumber": "92",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 97
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CA0SAggBOMTo8KCP-L6HnAFAAEgN"
+   }
+  ],
+  "estimatedResultCount": "19",
+  "exhaustive": true,
+  "requestToken": "ChZSZW1vdGVFeGVjdXRpb25TZXJ2aWNlEiMoIGdpdDpiYXplbC9iYXplbEBtYXN0ZXIgY2FzZTp5ZXMgKRoLCMLsrNEGELX8nTIgDCoAMgBIAQ"
+ }
+}

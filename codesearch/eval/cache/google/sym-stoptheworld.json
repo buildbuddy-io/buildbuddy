@@ -1,0 +1,1965 @@
+{
+ "query": "stopTheWorld",
+ "oss_project": "go",
+ "repo_name": "go",
+ "page_size": 50,
+ "fetched_at": "2026-06-11T02:27:59Z",
+ "response": {
+  "searchResults": [
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/proc.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// passed to startTheWorld.",
+         "matchingRanges": {
+          "lineNumber": "1537"
+         },
+         "lineNumber": "1537",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 27
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "func stopTheWorld(reason stwReason) worldStop {",
+         "matchingRanges": {
+          "lineNumber": "1538",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "1538",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "\tsemacquire(\u0026worldsema)",
+         "matchingRanges": {
+          "lineNumber": "1539"
+         },
+         "lineNumber": "1539"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// until startTheWorldGC is called.",
+         "matchingRanges": {
+          "lineNumber": "1577"
+         },
+         "lineNumber": "1577",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 35
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "func stopTheWorldGC(reason stwReason) worldStop {",
+         "matchingRanges": {
+          "lineNumber": "1578",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "1578",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "\tsemacquire(\u0026gcsema)",
+         "matchingRanges": {
+          "lineNumber": "1579"
+         },
+         "lineNumber": "1579"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "//go:systemstack",
+         "matchingRanges": {
+          "lineNumber": "1633"
+         },
+         "lineNumber": "1633",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 16
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "func stopTheWorldWithSema(reason stwReason) worldStop {",
+         "matchingRanges": {
+          "lineNumber": "1634",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "1634",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "\t// Mark the goroutine which called stopTheWorld preemptible so its",
+         "matchingRanges": {
+          "lineNumber": "1635",
+          "columnRanges": [
+           {
+            "startIndex": 36,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "1635",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 66
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 36,
+           "length": 12
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 33
+    },
+    "resultToken": "CAASBAgBIAE4sListvyNuYpaQABIAA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/export_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "func CountPagesInUse() (pagesInUse, counted uintptr) {",
+         "matchingRanges": {
+          "lineNumber": "260"
+         },
+         "lineNumber": "260",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tstw := stopTheWorld(stwForTestCountPagesInUse)",
+         "matchingRanges": {
+          "lineNumber": "261",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "261",
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "262"
+         },
+         "lineNumber": "262"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func ReadMetricsSlow(memStats *MemStats, samplesp unsafe.Pointer, len, cap int) {",
+         "matchingRanges": {
+          "lineNumber": "313"
+         },
+         "lineNumber": "313",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tstw := stopTheWorld(stwForTestReadMetricsSlow)",
+         "matchingRanges": {
+          "lineNumber": "314",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "314",
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "315"
+         },
+         "lineNumber": "315"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func ReadMemStatsSlow() (base, slow MemStats) {",
+         "matchingRanges": {
+          "lineNumber": "356"
+         },
+         "lineNumber": "356",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tstw := stopTheWorld(stwForTestReadMemStatsSlow)",
+         "matchingRanges": {
+          "lineNumber": "357",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "357",
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "358"
+         },
+         "lineNumber": "358"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 4
+    },
+    "resultToken": "CAESAggBOLb-9K2D67Wp7QFAAEgB"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/export_debuglog_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "func ResetDebugLog() {",
+         "matchingRanges": {
+          "lineNumber": "41"
+         },
+         "lineNumber": "41",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tstw := stopTheWorld(stwForTestResetDebugLog)",
+         "matchingRanges": {
+          "lineNumber": "42",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "42",
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "\tfor l := allDloggers; l != nil; l = l.allLink {",
+         "matchingRanges": {
+          "lineNumber": "43"
+         },
+         "lineNumber": "43",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "func CountDebugLog() int {",
+         "matchingRanges": {
+          "lineNumber": "52"
+         },
+         "lineNumber": "52",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tstw := stopTheWorld(stwForTestResetDebugLog)",
+         "matchingRanges": {
+          "lineNumber": "53",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "53",
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "\ti := 0",
+         "matchingRanges": {
+          "lineNumber": "54"
+         },
+         "lineNumber": "54",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 6,
+            "length": 1
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAISAggBOOawgYDY_L_HpQFAAEgC"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/mstats.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t_ = m.Alloc // nil check test before we switch stacks, see issue 61158",
+         "matchingRanges": {
+          "lineNumber": "357"
+         },
+         "lineNumber": "357",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 13,
+            "length": 58
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tstw := stopTheWorld(stwReadMemStats)",
+         "matchingRanges": {
+          "lineNumber": "358",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "358",
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "359"
+         },
+         "lineNumber": "359"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAMSAggBOKzm1syB9OD3ywFAAEgD"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/heapdump.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "func runtime_debug_WriteHeapDump(fd uintptr) {",
+         "matchingRanges": {
+          "lineNumber": "22"
+         },
+         "lineNumber": "22",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tstw := stopTheWorld(stwWriteHeapDump)",
+         "matchingRanges": {
+          "lineNumber": "23",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "23",
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "24"
+         },
+         "lineNumber": "24"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAQSAggBOOL_kZyX1dPcEEAASAQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/mgc.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t// with globally-synchronizing events like forEachP and",
+         "matchingRanges": {
+          "lineNumber": "485"
+         },
+         "lineNumber": "485",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 55
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t// stopTheWorld.",
+         "matchingRanges": {
+          "lineNumber": "486",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "486",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 16
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tblock bool",
+         "matchingRanges": {
+          "lineNumber": "487"
+         },
+         "lineNumber": "487"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tsystemstack(func() {",
+         "matchingRanges": {
+          "lineNumber": "834"
+         },
+         "lineNumber": "834",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 13,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tstw = stopTheWorldWithSema(stwGCSweepTerm)",
+         "matchingRanges": {
+          "lineNumber": "835",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "835",
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "\t})",
+         "matchingRanges": {
+          "lineNumber": "836"
+         },
+         "lineNumber": "836"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tsystemstack(func() {",
+         "matchingRanges": {
+          "lineNumber": "1065"
+         },
+         "lineNumber": "1065",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 13,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tstw = stopTheWorldWithSema(stwGCMarkTerm)",
+         "matchingRanges": {
+          "lineNumber": "1066",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "1066",
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "\t})",
+         "matchingRanges": {
+          "lineNumber": "1067"
+         },
+         "lineNumber": "1067"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 8
+    },
+    "resultToken": "CAUSAggBOKDm5Yy0s6iKE0AASAU"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/mprof.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tpcbuf := makeProfStack() // see saveg() for explanation",
+         "matchingRanges": {
+          "lineNumber": "1358"
+         },
+         "lineNumber": "1358",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 26,
+            "length": 30
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tstw := stopTheWorld(stwGoroutineProfile)",
+         "matchingRanges": {
+          "lineNumber": "1359",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "1359",
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "\t// Using gcount while the world is stopped should give us a consistent view",
+         "matchingRanges": {
+          "lineNumber": "1360"
+         },
+         "lineNumber": "1360",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 75
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tstw = stopTheWorld(stwGoroutineProfileCleanup)",
+         "matchingRanges": {
+          "lineNumber": "1419",
+          "columnRanges": [
+           {
+            "startIndex": 7,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "1419",
+         "ranges": [
+          {
+           "startIndex": 7,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "\tendOffset := goroutineProfile.offset.Swap(0)",
+         "matchingRanges": {
+          "lineNumber": "1420"
+         },
+         "lineNumber": "1420",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 43,
+            "length": 1
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tpcbuf := makeProfStack() // see saveg() for explanation",
+         "matchingRanges": {
+          "lineNumber": "1580"
+         },
+         "lineNumber": "1580",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 26,
+            "length": 30
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tstw := stopTheWorld(stwGoroutineProfile)",
+         "matchingRanges": {
+          "lineNumber": "1581",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "1581",
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "1582"
+         },
+         "lineNumber": "1582"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 4
+    },
+    "resultToken": "CAYSAggBOK7Wq-br5PqQ4AFAAEgG"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/trace.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// the world and see an unpaired sweep 'end' event. Other parts of the tracer rely on this.",
+         "matchingRanges": {
+          "lineNumber": "368"
+         },
+         "lineNumber": "368",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 91
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tstw := stopTheWorld(stwStartTrace)",
+         "matchingRanges": {
+          "lineNumber": "369",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "369",
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "370"
+         },
+         "lineNumber": "370"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAcSAggBOIC32PGNqoOTiwFAAEgH"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/secret.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// doAllThreadsSyscall does",
+         "matchingRanges": {
+          "lineNumber": "120"
+         },
+         "lineNumber": "120",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 27
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tstw := stopTheWorld(stwAllThreadsSyscall)",
+         "matchingRanges": {
+          "lineNumber": "121",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "121",
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "\tallocmLock.lock()",
+         "matchingRanges": {
+          "lineNumber": "122"
+         },
+         "lineNumber": "122"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAgSAggBOMzIzv_lhKu6CUAASAg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/os_linux.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// expectations, per above.",
+         "matchingRanges": {
+          "lineNumber": "749"
+         },
+         "lineNumber": "749",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 27
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tstw := stopTheWorld(stwAllThreadsSyscall)",
+         "matchingRanges": {
+          "lineNumber": "750",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "750",
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "751"
+         },
+         "lineNumber": "751"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAkSAggBOLSw3tX60LWoEUAASAk"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/debug.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tstw := stopTheWorldGC(stwGOMAXPROCS)",
+         "matchingRanges": {
+          "lineNumber": "96",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "96",
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "97"
+         },
+         "lineNumber": "97"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tstw := stopTheWorldGC(stwGOMAXPROCS)",
+         "matchingRanges": {
+          "lineNumber": "135",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "135",
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "136"
+         },
+         "lineNumber": "136"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAoSAggBOOCO4vaN_9vqc0AASAo"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/runtime2.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// stwStoppingTimeGC/Other are distributions of stop-the-world stopping",
+         "matchingRanges": {
+          "lineNumber": "1031"
+         },
+         "lineNumber": "1031",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 71
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t// latencies, defined as the time taken by stopTheWorldWithSema to get",
+         "matchingRanges": {
+          "lineNumber": "1032",
+          "columnRanges": [
+           {
+            "startIndex": 44,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "1032",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 70
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 44,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "\t// all Ps to stop. stwStoppingTimeGC covers all GC-related STWs,",
+         "matchingRanges": {
+          "lineNumber": "1033"
+         },
+         "lineNumber": "1033",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 64
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// stwTotalTimeGC/Other are distributions of stop-the-world total",
+         "matchingRanges": {
+          "lineNumber": "1038"
+         },
+         "lineNumber": "1038",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 65
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t// latencies, defined as the total time from stopTheWorldWithSema to",
+         "matchingRanges": {
+          "lineNumber": "1039",
+          "columnRanges": [
+           {
+            "startIndex": 46,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "1039",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 68
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 46,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "\t// startTheWorldWithSema. This is a superset of",
+         "matchingRanges": {
+          "lineNumber": "1040"
+         },
+         "lineNumber": "1040",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 47
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t//",
+         "matchingRanges": {
+          "lineNumber": "1429"
+         },
+         "lineNumber": "1429",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t// N.B., procresize takes ownership of all Ps in stopTheWorldWithSema.",
+         "matchingRanges": {
+          "lineNumber": "1430",
+          "columnRanges": [
+           {
+            "startIndex": 50,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "1430",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 70
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 50,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "\tidlepMask pMask",
+         "matchingRanges": {
+          "lineNumber": "1431"
+         },
+         "lineNumber": "1431"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CAsSAggBOOrurqjI8qiIPkAASAs"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/dist/test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tif !t.compileOnly \u0026\u0026 !t.short {",
+         "matchingRanges": {
+          "lineNumber": "801"
+         },
+         "lineNumber": "801",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tt.registerTest(\"GODEBUG=gcstoptheworld=2 archive/zip\",",
+         "matchingRanges": {
+          "lineNumber": "802",
+          "columnRanges": [
+           {
+            "startIndex": 28,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "802",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 17,
+            "length": 38
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 28,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t\u0026goTest{",
+         "matchingRanges": {
+          "lineNumber": "803"
+         },
+         "lineNumber": "803"
+        },
+        {
+         "lineText": "\t\t\t\tvariant: \"gcstoptheworld2\",",
+         "matchingRanges": {
+          "lineNumber": "804",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "804",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 13,
+            "length": 17
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t\ttimeout: 300 * time.Second,",
+         "matchingRanges": {
+          "lineNumber": "805"
+         },
+         "lineNumber": "805",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 13,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t\tshort:   true,",
+         "matchingRanges": {
+          "lineNumber": "806"
+         },
+         "lineNumber": "806"
+        },
+        {
+         "lineText": "\t\t\t\tenv:     []string{\"GODEBUG=gcstoptheworld=2\"},",
+         "matchingRanges": {
+          "lineNumber": "807",
+          "columnRanges": [
+           {
+            "startIndex": 33,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "807",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 22,
+            "length": 26
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 33,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t\tpkg:     \"archive/zip\",",
+         "matchingRanges": {
+          "lineNumber": "808"
+         },
+         "lineNumber": "808",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 13,
+            "length": 13
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CAwSAggBOK7h7aba89uDjgFAAEgM"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/proc_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "func TestStopTheWorldDeadlock(t *testing.T) {",
+         "matchingRanges": {
+          "lineNumber": "38",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "38",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "\tif runtime.GOARCH == \"wasm\" {",
+         "matchingRanges": {
+          "lineNumber": "39"
+         },
+         "lineNumber": "39",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 22,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CA0SBAgBIAE4ttyu9uf3hompAUAASA0"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/extern.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tgcstoptheworld: setting gcstoptheworld=1 disables concurrent garbage collection,",
+         "matchingRanges": {
+          "lineNumber": "110",
+          "columnRanges": [
+           {
+            "startIndex": 3,
+            "length": 12
+           },
+           {
+            "startIndex": 27,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "110",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 81
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 3,
+           "length": 12
+          },
+          {
+           "startIndex": 27,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "\tmaking every garbage collection a stop-the-world event. Setting gcstoptheworld=2",
+         "matchingRanges": {
+          "lineNumber": "111",
+          "columnRanges": [
+           {
+            "startIndex": 67,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "111",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 81
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 67,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "\talso disables concurrent sweeping after the garbage collection finishes.",
+         "matchingRanges": {
+          "lineNumber": "112"
+         },
+         "lineNumber": "112",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 73
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CA4SAggBOOKVpPncq4W6H0AASA4"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/runtime1.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tgcshrinkstackoff         int32",
+         "matchingRanges": {
+          "lineNumber": "313"
+         },
+         "lineNumber": "313"
+        },
+        {
+         "lineText": "\tgcstoptheworld           int32",
+         "matchingRanges": {
+          "lineNumber": "314",
+          "columnRanges": [
+           {
+            "startIndex": 3,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "314",
+         "ranges": [
+          {
+           "startIndex": 3,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "\tgctrace                  int32",
+         "matchingRanges": {
+          "lineNumber": "315"
+         },
+         "lineNumber": "315"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t{name: \"gcshrinkstackoff\", value: \u0026debug.gcshrinkstackoff},",
+         "matchingRanges": {
+          "lineNumber": "370"
+         },
+         "lineNumber": "370",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 18
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t{name: \"gcstoptheworld\", value: \u0026debug.gcstoptheworld},",
+         "matchingRanges": {
+          "lineNumber": "371",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 12
+           },
+           {
+            "startIndex": 42,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "371",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 16
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 12
+          },
+          {
+           "startIndex": 42,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "\t{name: \"gctrace\", value: \u0026debug.gctrace},",
+         "matchingRanges": {
+          "lineNumber": "372"
+         },
+         "lineNumber": "372",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 9
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CA8SAggBOJjZ65ChzfzAwgFAAEgP"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/mgcpacer.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// In STW mode, we just want dedicated workers.",
+         "matchingRanges": {
+          "lineNumber": "421"
+         },
+         "lineNumber": "421",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 47
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tif debug.gcstoptheworld \u003e 0 {",
+         "matchingRanges": {
+          "lineNumber": "422",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "422",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 27,
+            "length": 1
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tdedicatedMarkWorkersNeeded = int64(procs)",
+         "matchingRanges": {
+          "lineNumber": "423"
+         },
+         "lineNumber": "423"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBASAggBOI7ZguKkvPLE8QFAAEgQ"
+   }
+  ],
+  "estimatedResultCount": "18",
+  "exhaustive": true,
+  "requestToken": "CgxzdG9wVGhlV29ybGQSHSggZ2l0OmdvL2dvQG1hc3RlciBjYXNlOnllcyApGgwIrrqo0QYQwN2_hQMgDCoAMgBIAQ"
+ }
+}

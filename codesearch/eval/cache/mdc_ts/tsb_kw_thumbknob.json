@@ -1,0 +1,815 @@
+{
+ "query": "mdc-slider__thumb-knob",
+ "oss_project": "material-components",
+ "repo_name": "material-components-web",
+ "page_size": 50,
+ "fetched_at": "2026-06-17T23:23:28Z",
+ "response": {
+  "searchResults": [
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "material-components-web",
+        "ossProject": "material-components"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "packages/mdc-slider/_slider.scss",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    \u0026--top .mdc-slider__thumb-knob,",
+         "matchingRanges": {
+          "lineNumber": "226",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 22
+           }
+          ]
+         },
+         "lineNumber": "226",
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 22
+          }
+         ]
+        },
+        {
+         "lineText": "    \u0026--top.mdc-slider__thumb:hover .mdc-slider__thumb-knob,",
+         "matchingRanges": {
+          "lineNumber": "227",
+          "columnRanges": [
+           {
+            "startIndex": 36,
+            "length": 22
+           }
+          ]
+         },
+         "lineNumber": "227",
+         "ranges": [
+          {
+           "startIndex": 36,
+           "length": 22
+          }
+         ]
+        },
+        {
+         "lineText": "    \u0026--top.mdc-slider__thumb--focused .mdc-slider__thumb-knob {",
+         "matchingRanges": {
+          "lineNumber": "228",
+          "columnRanges": [
+           {
+            "startIndex": 39,
+            "length": 22
+           }
+          ]
+         },
+         "lineNumber": "228",
+         "ranges": [
+          {
+           "startIndex": 39,
+           "length": 22
+          }
+         ]
+        },
+        {
+         "lineText": "      @include feature-targeting.targets($feat-structure) {",
+         "matchingRanges": {
+          "lineNumber": "229"
+         },
+         "lineNumber": "229",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 8
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  .mdc-slider__thumb-knob {",
+         "matchingRanges": {
+          "lineNumber": "237",
+          "columnRanges": [
+           {
+            "startIndex": 3,
+            "length": 22
+           }
+          ]
+         },
+         "lineNumber": "237",
+         "ranges": [
+          {
+           "startIndex": 3,
+           "length": 22
+          }
+         ]
+        },
+        {
+         "lineText": "    @include feature-targeting.targets($feat-structure) {",
+         "matchingRanges": {
+          "lineNumber": "238"
+         },
+         "lineNumber": "238",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 8
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 4
+    },
+    "resultToken": "CAASAggBOL7wweXx7LiPxQFAAEgA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "material-components-web",
+        "ossProject": "material-components"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "packages/mdc-slider/_slider-theme.scss",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  @include feature-targeting.targets($feat-color) {",
+         "matchingRanges": {
+          "lineNumber": "343"
+         },
+         "lineNumber": "343",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 8
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    .mdc-slider__thumb-knob {",
+         "matchingRanges": {
+          "lineNumber": "344",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 22
+           }
+          ]
+         },
+         "lineNumber": "344",
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 22
+          }
+         ]
+        },
+        {
+         "lineText": "      @include theme.property(background-color, $color);",
+         "matchingRanges": {
+          "lineNumber": "345"
+         },
+         "lineNumber": "345",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 8
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    .mdc-slider__thumb--top {",
+         "matchingRanges": {
+          "lineNumber": "349"
+         },
+         "lineNumber": "349"
+        },
+        {
+         "lineText": "      .mdc-slider__thumb-knob,",
+         "matchingRanges": {
+          "lineNumber": "350",
+          "columnRanges": [
+           {
+            "startIndex": 7,
+            "length": 22
+           }
+          ]
+         },
+         "lineNumber": "350",
+         "ranges": [
+          {
+           "startIndex": 7,
+           "length": 22
+          }
+         ]
+        },
+        {
+         "lineText": "      \u0026.mdc-slider__thumb:hover .mdc-slider__thumb-knob,",
+         "matchingRanges": {
+          "lineNumber": "351",
+          "columnRanges": [
+           {
+            "startIndex": 33,
+            "length": 22
+           }
+          ]
+         },
+         "lineNumber": "351",
+         "ranges": [
+          {
+           "startIndex": 33,
+           "length": 22
+          }
+         ]
+        },
+        {
+         "lineText": "      \u0026.mdc-slider__thumb--focused .mdc-slider__thumb-knob {",
+         "matchingRanges": {
+          "lineNumber": "352",
+          "columnRanges": [
+           {
+            "startIndex": 36,
+            "length": 22
+           }
+          ]
+         },
+         "lineNumber": "352",
+         "ranges": [
+          {
+           "startIndex": 36,
+           "length": 22
+          }
+         ]
+        },
+        {
+         "lineText": "        border-color: #fff;",
+         "matchingRanges": {
+          "lineNumber": "353"
+         },
+         "lineNumber": "353"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  .mdc-slider__thumb-knob {",
+         "matchingRanges": {
+          "lineNumber": "571",
+          "columnRanges": [
+           {
+            "startIndex": 3,
+            "length": 22
+           }
+          ]
+         },
+         "lineNumber": "571",
+         "ranges": [
+          {
+           "startIndex": 3,
+           "length": 22
+          }
+         ]
+        },
+        {
+         "lineText": "    @include feature-targeting.targets($query) {",
+         "matchingRanges": {
+          "lineNumber": "572"
+         },
+         "lineNumber": "572",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 8
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 10
+    },
+    "resultToken": "CAESAggBOPqzkYnezLjpgQFAAEgB"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "material-components-web",
+        "ossProject": "material-components"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "packages/mdc-slider/README.md",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  \u003cdiv class=\"mdc-slider__thumb\"\u003e",
+         "matchingRanges": {
+          "lineNumber": "101"
+         },
+         "lineNumber": "101"
+        },
+        {
+         "lineText": "    \u003cdiv class=\"mdc-slider__thumb-knob\"\u003e\u003c/div\u003e",
+         "matchingRanges": {
+          "lineNumber": "102",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 22
+           }
+          ]
+         },
+         "lineNumber": "102",
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 22
+          }
+         ]
+        },
+        {
+         "lineText": "    \u003cinput class=\"mdc-slider__input\" type=\"range\" min=\"0\" max=\"100\" value=\"50\" name=\"volume\" aria-label=\"Continuous slider demo\"\u003e",
+         "matchingRanges": {
+          "lineNumber": "103"
+         },
+         "lineNumber": "103"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  \u003cdiv class=\"mdc-slider__thumb\"\u003e",
+         "matchingRanges": {
+          "lineNumber": "124"
+         },
+         "lineNumber": "124"
+        },
+        {
+         "lineText": "    \u003cdiv class=\"mdc-slider__thumb-knob\"\u003e\u003c/div\u003e",
+         "matchingRanges": {
+          "lineNumber": "125",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 22
+           }
+          ]
+         },
+         "lineNumber": "125",
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 22
+          }
+         ]
+        },
+        {
+         "lineText": "    \u003cinput class=\"mdc-slider__input\" type=\"range\" min=\"0\" max=\"60\" value=\"30\" name=\"rangeStart\" aria-label=\"Continuous range slider demo\"\u003e",
+         "matchingRanges": {
+          "lineNumber": "126"
+         },
+         "lineNumber": "126"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  \u003cdiv class=\"mdc-slider__thumb\"\u003e",
+         "matchingRanges": {
+          "lineNumber": "128"
+         },
+         "lineNumber": "128"
+        },
+        {
+         "lineText": "    \u003cdiv class=\"mdc-slider__thumb-knob\"\u003e\u003c/div\u003e",
+         "matchingRanges": {
+          "lineNumber": "129",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 22
+           }
+          ]
+         },
+         "lineNumber": "129",
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 22
+          }
+         ]
+        },
+        {
+         "lineText": "    \u003cinput class=\"mdc-slider__input\" type=\"range\" min=\"40\" max=\"100\" value=\"70\" name=\"rangeEnd\" aria-label=\"Continuous range slider demo\"\u003e",
+         "matchingRanges": {
+          "lineNumber": "130"
+         },
+         "lineNumber": "130"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 10
+    },
+    "resultToken": "CAISAggBOISK-qyxk_nSvwFAAEgC"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "material-components-web",
+        "ossProject": "material-components"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "packages/mdc-slider/test/slider-theme.test.scss",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "          .mdc-slider__thumb-knob {",
+         "matchingRanges": {
+          "lineNumber": "191",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 22
+           }
+          ]
+         },
+         "lineNumber": "191",
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 22
+          }
+         ]
+        },
+        {
+         "lineText": "            background-color: blue;",
+         "matchingRanges": {
+          "lineNumber": "192"
+         },
+         "lineNumber": "192"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAMSAggBOMTKuYb696zUywFAAEgD"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "material-components-web",
+        "ossProject": "material-components"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "packages/mdc-slider/constants.ts",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  THUMB_FOCUSED: 'mdc-slider__thumb--focused',",
+         "matchingRanges": {
+          "lineNumber": "32"
+         },
+         "lineNumber": "32",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 17,
+            "length": 28
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  THUMB_KNOB: 'mdc-slider__thumb-knob',",
+         "matchingRanges": {
+          "lineNumber": "33",
+          "columnRanges": [
+           {
+            "startIndex": 15,
+            "length": 22
+           }
+          ]
+         },
+         "lineNumber": "33",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 14,
+            "length": 24
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 15,
+           "length": 22
+          }
+         ]
+        },
+        {
+         "lineText": "  // Class added to the top thumb (for overlapping thumbs in range slider).",
+         "matchingRanges": {
+          "lineNumber": "34"
+         },
+         "lineNumber": "34",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 73
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAQSAggBOKjWwvTb_fTz3wFAAEgE"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "material-components-web",
+        "ossProject": "material-components"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "packages/mdc-slider/test/component.test.ts",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "            \u003c/div\u003e",
+         "matchingRanges": {
+          "lineNumber": "542"
+         },
+         "lineNumber": "542",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "length": 18
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "            \u003cdiv class=\"mdc-slider__thumb-knob\"\u003e\u003c/div\u003e",
+         "matchingRanges": {
+          "lineNumber": "543",
+          "columnRanges": [
+           {
+            "startIndex": 24,
+            "length": 22
+           }
+          ]
+         },
+         "lineNumber": "543",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "length": 54
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 24,
+           "length": 22
+          }
+         ]
+        },
+        {
+         "lineText": "          \u003c/div\u003e",
+         "matchingRanges": {
+          "lineNumber": "544"
+         },
+         "lineNumber": "544",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "length": 16
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "        ${valueIndicatorStart}",
+         "matchingRanges": {
+          "lineNumber": "644"
+         },
+         "lineNumber": "644",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "length": 10
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 29,
+            "length": 1
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "        \u003cdiv class=\"mdc-slider__thumb-knob\"\u003e\u003c/div\u003e",
+         "matchingRanges": {
+          "lineNumber": "645",
+          "columnRanges": [
+           {
+            "startIndex": 20,
+            "length": 22
+           }
+          ]
+         },
+         "lineNumber": "645",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "length": 50
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 20,
+           "length": 22
+          }
+         ]
+        },
+        {
+         "lineText": "      \u003c/div\u003e` :",
+         "matchingRanges": {
+          "lineNumber": "646"
+         },
+         "lineNumber": "646",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "length": 13
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "        ${valueIndicatorEnd}",
+         "matchingRanges": {
+          "lineNumber": "661"
+         },
+         "lineNumber": "661",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "length": 10
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 27,
+            "length": 1
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "        \u003cdiv class=\"mdc-slider__thumb-knob\"\u003e\u003c/div\u003e",
+         "matchingRanges": {
+          "lineNumber": "662",
+          "columnRanges": [
+           {
+            "startIndex": 20,
+            "length": 22
+           }
+          ]
+         },
+         "lineNumber": "662",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "length": 50
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 20,
+           "length": 22
+          }
+         ]
+        },
+        {
+         "lineText": "      \u003c/div\u003e",
+         "matchingRanges": {
+          "lineNumber": "663"
+         },
+         "lineNumber": "663",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "length": 12
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CAUSAggBON77jYD6jZXN2wFAAEgF"
+   }
+  ],
+  "estimatedResultCount": "6",
+  "exhaustive": true,
+  "requestToken": "ChZtZGMtc2xpZGVyX190aHVtYi1rbm9iEkooIGdpdDpnaXRodWIvbWF0ZXJpYWwtY29tcG9uZW50cy9tYXRlcmlhbC1jb21wb25lbnRzLXdlYkBtYXN0ZXIgY2FzZTp5ZXMgKRoMCPDYzNEGEK_JyZUBIAwqADIASAE"
+ }
+}

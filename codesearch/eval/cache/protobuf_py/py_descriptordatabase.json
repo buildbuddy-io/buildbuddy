@@ -1,0 +1,4761 @@
+{
+ "query": "DescriptorDatabase",
+ "oss_project": "protobuf",
+ "repo_name": "protobuf",
+ "page_size": 50,
+ "fetched_at": "2026-06-17T22:22:51Z",
+ "response": {
+  "searchResults": [
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "protobuf",
+        "ossProject": "protobuf"
+       },
+       "refSpec": "refs/heads/main"
+      },
+      "path": "python/google/protobuf/descriptor_database.py",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "class DescriptorDatabaseConflictingDefinitionError(Error):",
+         "matchingRanges": {
+          "lineNumber": "19",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "19",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "lineText": "  \"\"\"Raised when a proto is added with the same name \u0026 different descriptor.\"\"\"",
+         "matchingRanges": {
+          "lineNumber": "20"
+         },
+         "lineNumber": "20",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 77
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "class DescriptorDatabase(object):",
+         "matchingRanges": {
+          "lineNumber": "23",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "23",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "lineText": "  \"\"\"A container accepting FileDescriptorProtos and maps DescriptorProtos.\"\"\"",
+         "matchingRanges": {
+          "lineNumber": "24"
+         },
+         "lineNumber": "24",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 75
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    Raises:",
+         "matchingRanges": {
+          "lineNumber": "40"
+         },
+         "lineNumber": "40",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "length": 11
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "      DescriptorDatabaseConflictingDefinitionError: if an attempt is made to",
+         "matchingRanges": {
+          "lineNumber": "41",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "41",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "length": 76
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "lineText": "        add a proto with the same name but different definition than an",
+         "matchingRanges": {
+          "lineNumber": "42"
+         },
+         "lineNumber": "42",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "length": 71
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    elif self._file_desc_protos_by_file[proto_name] != file_desc_proto:",
+         "matchingRanges": {
+          "lineNumber": "48"
+         },
+         "lineNumber": "48",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "      raise DescriptorDatabaseConflictingDefinitionError(",
+         "matchingRanges": {
+          "lineNumber": "49",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "49",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "lineText": "          '%s already added, but with different descriptor.' % proto_name",
+         "matchingRanges": {
+          "lineNumber": "50"
+         },
+         "lineNumber": "50",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 10,
+            "length": 50
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 4
+    },
+    "resultToken": "CAASBAgBIAE4hqOZyqSW5_wPQABIAA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "protobuf",
+        "ossProject": "protobuf"
+       },
+       "refSpec": "refs/heads/main"
+      },
+      "path": "src/google/protobuf/descriptor_database.h",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// can be created which wraps a DescriptorDatabase and only builds particular",
+         "matchingRanges": {
+          "lineNumber": "51",
+          "columnRanges": [
+           {
+            "startIndex": 32,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "51",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 77
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 32,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "lineText": "// descriptors when they are needed.",
+         "matchingRanges": {
+          "lineNumber": "52"
+         },
+         "lineNumber": "52",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 36
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "class PROTOBUF_EXPORT DescriptorDatabase {",
+         "matchingRanges": {
+          "lineNumber": "53",
+          "columnRanges": [
+           {
+            "startIndex": 22,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "53",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 22,
+           "length": 18
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// yourself, or are calling compiler::Parser directly.",
+         "matchingRanges": {
+          "lineNumber": "158"
+         },
+         "lineNumber": "158",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 54
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "class PROTOBUF_EXPORT SimpleDescriptorDatabase : public DescriptorDatabase {",
+         "matchingRanges": {
+          "lineNumber": "159",
+          "columnRanges": [
+           {
+            "startIndex": 28,
+            "length": 18
+           },
+           {
+            "startIndex": 56,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "159",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 49,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 28,
+           "length": 18
+          },
+          {
+           "startIndex": 56,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "lineText": " public:",
+         "matchingRanges": {
+          "lineNumber": "160"
+         },
+         "lineNumber": "160",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// first database and, if that fails, tries the second, and so on.",
+         "matchingRanges": {
+          "lineNumber": "377"
+         },
+         "lineNumber": "377",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 66
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "class PROTOBUF_EXPORT MergedDescriptorDatabase : public DescriptorDatabase {",
+         "matchingRanges": {
+          "lineNumber": "378",
+          "columnRanges": [
+           {
+            "startIndex": 28,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "378",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 49,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 28,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "lineText": " public:",
+         "matchingRanges": {
+          "lineNumber": "379"
+         },
+         "lineNumber": "379",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 32
+    },
+    "resultToken": "CAESBAgBIAE4rtuwqpmxmf9yQABIAQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "protobuf",
+        "ossProject": "protobuf"
+       },
+       "refSpec": "refs/heads/main"
+      },
+      "path": "src/google/protobuf/descriptor_database.cc",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "DescriptorDatabase::~DescriptorDatabase() = default;",
+         "matchingRanges": {
+          "lineNumber": "90",
+          "columnRanges": [
+           {
+            "length": 18
+           },
+           {
+            "startIndex": 21,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "90",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 44,
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "length": 18
+          },
+          {
+           "startIndex": 21,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "91"
+         },
+         "lineNumber": "91"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "bool SimpleDescriptorDatabase::Add(const FileDescriptorProto\u0026 file) {",
+         "matchingRanges": {
+          "lineNumber": "351",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "351",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 35,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "lineText": "  FileDescriptorProto* new_file = new FileDescriptorProto;",
+         "matchingRanges": {
+          "lineNumber": "352"
+         },
+         "lineNumber": "352",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 34,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "bool SimpleDescriptorDatabase::FindAllExtensionNumbers(",
+         "matchingRanges": {
+          "lineNumber": "385",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "385",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "lineText": "    absl::string_view extendee_type, std::vector\u003cint\u003e* output) {",
+         "matchingRanges": {
+          "lineNumber": "386"
+         },
+         "lineNumber": "386",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 49,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "class EncodedDescriptorDatabase::DescriptorIndex {",
+         "matchingRanges": {
+          "lineNumber": "407",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "407",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "lineText": " public:",
+         "matchingRanges": {
+          "lineNumber": "408"
+         },
+         "lineNumber": "408",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "bool MergedDescriptorDatabase::FindAllExtensionNumbers(",
+         "matchingRanges": {
+          "lineNumber": "1065",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "1065",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "lineText": "    absl::string_view extendee_type, std::vector\u003cint\u003e* output) {",
+         "matchingRanges": {
+          "lineNumber": "1066"
+         },
+         "lineNumber": "1066",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 49,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 49
+    },
+    "resultToken": "CAISBAgBIAE4-qL_juns58htQABIAg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "protobuf",
+        "ossProject": "protobuf"
+       },
+       "refSpec": "refs/heads/main"
+      },
+      "path": "src/google/protobuf/descriptor_database_unittest.cc",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// implementations for each of the three classes we want to test.",
+         "matchingRanges": {
+          "lineNumber": "60"
+         },
+         "lineNumber": "60",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 65
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "class DescriptorDatabaseTestCase {",
+         "matchingRanges": {
+          "lineNumber": "61",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "61",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "lineText": " public:",
+         "matchingRanges": {
+          "lineNumber": "62"
+         },
+         "lineNumber": "62",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  virtual ~DescriptorDatabaseTestCase() {}",
+         "matchingRanges": {
+          "lineNumber": "63",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "63",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "64"
+         },
+         "lineNumber": "64"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "class DescriptorDatabaseTest",
+         "matchingRanges": {
+          "lineNumber": "132",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "132",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "lineText": "    : public testing::TestWithParam\u003cDescriptorDatabaseTestCaseFactory*\u003e {",
+         "matchingRanges": {
+          "lineNumber": "133",
+          "columnRanges": [
+           {
+            "startIndex": 36,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "133",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 36,
+           "length": 18
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "class MergedDescriptorDatabaseTest : public testing::Test {",
+         "matchingRanges": {
+          "lineNumber": "647",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "647",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 37,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "lineText": " protected:",
+         "matchingRanges": {
+          "lineNumber": "648"
+         },
+         "lineNumber": "648",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 9
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 38
+    },
+    "resultToken": "CAMSBAgBIAE40J-2-q727J-TAUAASAM"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "protobuf",
+        "ossProject": "protobuf"
+       },
+       "refSpec": "refs/heads/main"
+      },
+      "path": "python/google/protobuf/pyext/descriptor_database.h",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "class PyDescriptorDatabase : public DescriptorDatabase {",
+         "matchingRanges": {
+          "lineNumber": "24",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 18
+           },
+           {
+            "startIndex": 36,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "24",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 29,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 18
+          },
+          {
+           "startIndex": 36,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "lineText": " public:",
+         "matchingRanges": {
+          "lineNumber": "25"
+         },
+         "lineNumber": "25",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  explicit PyDescriptorDatabase(PyObject* py_database);",
+         "matchingRanges": {
+          "lineNumber": "26",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "26",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 8
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "lineText": "  ~PyDescriptorDatabase() override;",
+         "matchingRanges": {
+          "lineNumber": "27",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "27",
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "28"
+         },
+         "lineNumber": "28"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CAQSBAgBIAE4lsDr88yn86nsAUAASAQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "protobuf",
+        "ossProject": "protobuf"
+       },
+       "refSpec": "refs/heads/main"
+      },
+      "path": "python/google/protobuf/internal/descriptor_database_test.py",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "@testing_refleaks.TestCase",
+         "matchingRanges": {
+          "lineNumber": "24"
+         },
+         "lineNumber": "24"
+        },
+        {
+         "lineText": "class DescriptorDatabaseTest(unittest.TestCase):",
+         "matchingRanges": {
+          "lineNumber": "25",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "25",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "26"
+         },
+         "lineNumber": "26"
+        },
+        {
+         "lineText": "  def testAdd(self):",
+         "matchingRanges": {
+          "lineNumber": "27"
+         },
+         "lineNumber": "27",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    db = descriptor_database.DescriptorDatabase()",
+         "matchingRanges": {
+          "lineNumber": "28",
+          "columnRanges": [
+           {
+            "startIndex": 29,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "28",
+         "ranges": [
+          {
+           "startIndex": 29,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "lineText": "    file_desc_proto = descriptor_pb2.FileDescriptorProto.FromString(",
+         "matchingRanges": {
+          "lineNumber": "29"
+         },
+         "lineNumber": "29"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  def testConflictRegister(self):",
+         "matchingRanges": {
+          "lineNumber": "159"
+         },
+         "lineNumber": "159",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    db = descriptor_database.DescriptorDatabase()",
+         "matchingRanges": {
+          "lineNumber": "160",
+          "columnRanges": [
+           {
+            "startIndex": 29,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "160",
+         "ranges": [
+          {
+           "startIndex": 29,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "lineText": "    unittest_fd = descriptor_pb2.FileDescriptorProto.FromString(",
+         "matchingRanges": {
+          "lineNumber": "161"
+         },
+         "lineNumber": "161"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CAUSBAgBIAE4os3ItOzY46zkAUAASAU"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "protobuf",
+        "ossProject": "protobuf"
+       },
+       "refSpec": "refs/heads/main"
+      },
+      "path": "python/google/protobuf/pyext/descriptor_database.cc",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "PyDescriptorDatabase::PyDescriptorDatabase(PyObject* py_database)",
+         "matchingRanges": {
+          "lineNumber": "30",
+          "columnRanges": [
+           {
+            "startIndex": 2,
+            "length": 18
+           },
+           {
+            "startIndex": 24,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "30",
+         "ranges": [
+          {
+           "startIndex": 2,
+           "length": 18
+          },
+          {
+           "startIndex": 24,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "lineText": "    : py_database_(py_database) {",
+         "matchingRanges": {
+          "lineNumber": "31"
+         },
+         "lineNumber": "31"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "PyDescriptorDatabase::~PyDescriptorDatabase() { Py_DECREF(py_database_); }",
+         "matchingRanges": {
+          "lineNumber": "35",
+          "columnRanges": [
+           {
+            "startIndex": 2,
+            "length": 18
+           },
+           {
+            "startIndex": 25,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "35",
+         "ranges": [
+          {
+           "startIndex": 2,
+           "length": 18
+          },
+          {
+           "startIndex": 25,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "36"
+         },
+         "lineNumber": "36"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// Find a file by file name.",
+         "matchingRanges": {
+          "lineNumber": "94"
+         },
+         "lineNumber": "94",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 28
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "bool PyDescriptorDatabase::FindFileByName(absl::string_view filename,",
+         "matchingRanges": {
+          "lineNumber": "95",
+          "columnRanges": [
+           {
+            "startIndex": 7,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "95",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 7,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "lineText": "                                          FileDescriptorProto* output) {",
+         "matchingRanges": {
+          "lineNumber": "96"
+         },
+         "lineNumber": "96"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// Python DescriptorDatabases are not required to implement this method.",
+         "matchingRanges": {
+          "lineNumber": "133",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "133",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 72
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "lineText": "bool PyDescriptorDatabase::FindAllExtensionNumbers(",
+         "matchingRanges": {
+          "lineNumber": "134",
+          "columnRanges": [
+           {
+            "startIndex": 7,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "134",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 7,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "lineText": "    absl::string_view containing_type, std::vector\u003cint\u003e* output) {",
+         "matchingRanges": {
+          "lineNumber": "135"
+         },
+         "lineNumber": "135",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 51,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 13
+    },
+    "resultToken": "CAYSBAgBIAE4iuXdhoDd4rrVAUAASAY"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "protobuf",
+        "ossProject": "protobuf"
+       },
+       "refSpec": "refs/heads/main"
+      },
+      "path": "src/google/protobuf/descriptor_unittest.cc",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  // dependency that finds it. In the event that the pool is backed by a",
+         "matchingRanges": {
+          "lineNumber": "4213"
+         },
+         "lineNumber": "4213",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 70
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  // DescriptorDatabase, the pool will attempt to find the symbol in the",
+         "matchingRanges": {
+          "lineNumber": "4214",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "4214",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 70
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "lineText": "  // database. If successful, it will build the undeclared dependency to verify",
+         "matchingRanges": {
+          "lineNumber": "4215"
+         },
+         "lineNumber": "4215",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 77
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  // need an actual mock DescriptorDatabase to test errors.",
+         "matchingRanges": {
+          "lineNumber": "15362",
+          "columnRanges": [
+           {
+            "startIndex": 25,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "15362",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 57
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 25,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "lineText": "  class ErrorDescriptorDatabase : public DescriptorDatabase {",
+         "matchingRanges": {
+          "lineNumber": "15363",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 18
+           },
+           {
+            "startIndex": 41,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "15363",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 34,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 18
+          },
+          {
+           "startIndex": 41,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "lineText": "   public:",
+         "matchingRanges": {
+          "lineNumber": "15364"
+         },
+         "lineNumber": "15364",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 3,
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    ErrorDescriptorDatabase() = default;",
+         "matchingRanges": {
+          "lineNumber": "15365",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "15365",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 32,
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "lineText": "    ~ErrorDescriptorDatabase() override = default;",
+         "matchingRanges": {
+          "lineNumber": "15366",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "15366",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 42,
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "15367"
+         },
+         "lineNumber": "15367"
+        },
+        {
+         "lineText": "    // implements DescriptorDatabase ---------------------------------",
+         "matchingRanges": {
+          "lineNumber": "15368",
+          "columnRanges": [
+           {
+            "startIndex": 18,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "15368",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 66
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 18,
+           "length": 18
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 32
+    },
+    "resultToken": "CAcSBAgBIAE4vJrd36HyuZGLAUAASAc"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "protobuf",
+        "ossProject": "protobuf"
+       },
+       "refSpec": "refs/heads/main"
+      },
+      "path": "python/descriptor_pool.c",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  // clang-format on",
+         "matchingRanges": {
+          "lineNumber": "29"
+         },
+         "lineNumber": "29",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 18
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  PyObject* db;  // The DescriptorDatabase underlying this pool.  May be NULL.",
+         "matchingRanges": {
+          "lineNumber": "30",
+          "columnRanges": [
+           {
+            "startIndex": 24,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "30",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 17,
+            "length": 61
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 24,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "lineText": "} PyUpb_DescriptorPool;",
+         "matchingRanges": {
+          "lineNumber": "31"
+         },
+         "lineNumber": "31"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "        \"Cannot call AddSerializedFile on a DescriptorPool that uses a \"",
+         "matchingRanges": {
+          "lineNumber": "331"
+         },
+         "lineNumber": "331",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 64
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "        \"DescriptorDatabase. Add your file to the underlying database.\");",
+         "matchingRanges": {
+          "lineNumber": "332",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "332",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 63
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "lineText": "    return NULL;",
+         "matchingRanges": {
+          "lineNumber": "333"
+         },
+         "lineNumber": "333",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "        PyExc_ValueError,",
+         "matchingRanges": {
+          "lineNumber": "343"
+         },
+         "lineNumber": "343"
+        },
+        {
+         "lineText": "        \"Cannot call Add on a DescriptorPool that uses a DescriptorDatabase. \"",
+         "matchingRanges": {
+          "lineNumber": "344",
+          "columnRanges": [
+           {
+            "startIndex": 57,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "344",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 70
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 57,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "lineText": "        \"Add your file to the underlying database.\");",
+         "matchingRanges": {
+          "lineNumber": "345"
+         },
+         "lineNumber": "345",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 43
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CAgSAggBOIbskZCV57ryoAFAAEgI"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "protobuf",
+        "ossProject": "protobuf"
+       },
+       "refSpec": "refs/heads/main"
+      },
+      "path": "src/google/protobuf/descriptor.h",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "class FileDescriptor;",
+         "matchingRanges": {
+          "lineNumber": "82"
+         },
+         "lineNumber": "82",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "class DescriptorDatabase;",
+         "matchingRanges": {
+          "lineNumber": "83",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "83",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "lineText": "class DescriptorPool;",
+         "matchingRanges": {
+          "lineNumber": "84"
+         },
+         "lineNumber": "84",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  // descriptors already in the pool, looks for it in the given",
+         "matchingRanges": {
+          "lineNumber": "2308"
+         },
+         "lineNumber": "2308",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 61
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  // DescriptorDatabase.",
+         "matchingRanges": {
+          "lineNumber": "2309",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "2309",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 22
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "lineText": "  // Notes:",
+         "matchingRanges": {
+          "lineNumber": "2310"
+         },
+         "lineNumber": "2310",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 9
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  // - The Find*By*() methods may block the calling thread if the",
+         "matchingRanges": {
+          "lineNumber": "2314"
+         },
+         "lineNumber": "2314",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 63
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  //   DescriptorDatabase blocks.  This in turn means that parsing messages",
+         "matchingRanges": {
+          "lineNumber": "2315",
+          "columnRanges": [
+           {
+            "startIndex": 7,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "2315",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 73
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 7,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "lineText": "  //   may block if they need to look up extensions.",
+         "matchingRanges": {
+          "lineNumber": "2316"
+         },
+         "lineNumber": "2316",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 50
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 10
+    },
+    "resultToken": "CAkSAggBONKX77HhzIyXuQFAAEgJ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "protobuf",
+        "ossProject": "protobuf"
+       },
+       "refSpec": "refs/heads/main"
+      },
+      "path": "src/google/protobuf/descriptor.cc",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  // The stack of files which are currently being built.  Used to detect",
+         "matchingRanges": {
+          "lineNumber": "1867"
+         },
+         "lineNumber": "1867",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 70
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  // cyclic dependencies when loading files from a DescriptorDatabase.  Not",
+         "matchingRanges": {
+          "lineNumber": "1868",
+          "columnRanges": [
+           {
+            "startIndex": 51,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "1868",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 73
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 51,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "lineText": "  // used when fallback_database_ == nullptr.",
+         "matchingRanges": {
+          "lineNumber": "1869"
+         },
+         "lineNumber": "1869",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 43
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "DescriptorPool::DescriptorPool(DescriptorDatabase* fallback_database,",
+         "matchingRanges": {
+          "lineNumber": "2520",
+          "columnRanges": [
+           {
+            "startIndex": 31,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "2520",
+         "ranges": [
+          {
+           "startIndex": 31,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "lineText": "                               ErrorCollector* error_collector)",
+         "matchingRanges": {
+          "lineNumber": "2521"
+         },
+         "lineNumber": "2521"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "DescriptorDatabase* DescriptorPool::internal_generated_database() {",
+         "matchingRanges": {
+          "lineNumber": "2610",
+          "columnRanges": [
+           {
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "2610",
+         "ranges": [
+          {
+           "length": 18
+          }
+         ]
+        },
+        {
+         "lineText": "  return GeneratedDatabase();",
+         "matchingRanges": {
+          "lineNumber": "2611"
+         },
+         "lineNumber": "2611",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  // NOINLINE to reduce the stack cost of the operation in the caller.",
+         "matchingRanges": {
+          "lineNumber": "3119"
+         },
+         "lineNumber": "3119",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 68
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  const auto find_file = [](DescriptorDatabase\u0026 database,",
+         "matchingRanges": {
+          "lineNumber": "3120",
+          "columnRanges": [
+           {
+            "startIndex": 28,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "3120",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 8,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 28,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "lineText": "                            absl::string_view filename,",
+         "matchingRanges": {
+          "lineNumber": "3121"
+         },
+         "lineNumber": "3121"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 11
+    },
+    "resultToken": "CAoSAggBOKjAkqX98djGogFAAEgK"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "protobuf",
+        "ossProject": "protobuf"
+       },
+       "refSpec": "refs/heads/main"
+      },
+      "path": "python/google/protobuf/descriptor_pool.py",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "The DescriptorPool is used in conjection with a DescriptorDatabase to maintain",
+         "matchingRanges": {
+          "lineNumber": "9",
+          "columnRanges": [
+           {
+            "startIndex": 48,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "9",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "length": 78
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 48,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "lineText": "a collection of protocol buffer descriptors for use when dynamically creating",
+         "matchingRanges": {
+          "lineNumber": "10"
+         },
+         "lineNumber": "10",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "length": 77
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    self._internal_db = descriptor_database.DescriptorDatabase()",
+         "matchingRanges": {
+          "lineNumber": "112",
+          "columnRanges": [
+           {
+            "startIndex": 44,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "112",
+         "ranges": [
+          {
+           "startIndex": 44,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "lineText": "    self._descriptor_db = descriptor_db",
+         "matchingRanges": {
+          "lineNumber": "113"
+         },
+         "lineNumber": "113"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "      # and top-level extensions unless the FileDescriptorProto is added to",
+         "matchingRanges": {
+          "lineNumber": "560"
+         },
+         "lineNumber": "560",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 6,
+            "length": 69
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "      # the DescriptorDatabase, but this can impact memory usage.",
+         "matchingRanges": {
+          "lineNumber": "561",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "561",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 6,
+            "length": 59
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "lineText": "      # So we registered these extensions by name explicitly.",
+         "matchingRanges": {
+          "lineNumber": "562"
+         },
+         "lineNumber": "562",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 6,
+            "length": 55
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CAsSAggBONC15c3Ph56ZK0AASAs"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "protobuf",
+        "ossProject": "protobuf"
+       },
+       "refSpec": "refs/heads/main"
+      },
+      "path": "python/google/protobuf/pyext/descriptor_pool.h",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  // This pointer is owned.",
+         "matchingRanges": {
+          "lineNumber": "61"
+         },
+         "lineNumber": "61",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 25
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  const DescriptorDatabase* database;",
+         "matchingRanges": {
+          "lineNumber": "62",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "62",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "63"
+         },
+         "lineNumber": "63"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// DescriptorPool that wraps it.",
+         "matchingRanges": {
+          "lineNumber": "130"
+         },
+         "lineNumber": "130",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 32
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "// If set, the DescriptorDatabase is also managed by the returned object.",
+         "matchingRanges": {
+          "lineNumber": "131",
+          "columnRanges": [
+           {
+            "startIndex": 15,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "131",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 73
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 15,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "lineText": "PyObject* PyDescriptorPool_FromPool(",
+         "matchingRanges": {
+          "lineNumber": "132"
+         },
+         "lineNumber": "132"
+        },
+        {
+         "lineText": "    std::unique_ptr\u003cconst google::protobuf::DescriptorPool\u003e pool,",
+         "matchingRanges": {
+          "lineNumber": "133"
+         },
+         "lineNumber": "133",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 20,
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    std::unique_ptr\u003cconst google::protobuf::DescriptorDatabase\u003e database);",
+         "matchingRanges": {
+          "lineNumber": "134",
+          "columnRanges": [
+           {
+            "startIndex": 44,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "134",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 20,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 44,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "135"
+         },
+         "lineNumber": "135"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CAwSAggBOKCig5-G3eWtE0AASAw"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "protobuf",
+        "ossProject": "protobuf"
+       },
+       "refSpec": "refs/heads/main"
+      },
+      "path": "python/google/protobuf/pyext/descriptor_pool.cc",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "static PyDescriptorPool* PyDescriptorPool_NewWithDatabase(",
+         "matchingRanges": {
+          "lineNumber": "151"
+         },
+         "lineNumber": "151",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    DescriptorDatabase* database) {",
+         "matchingRanges": {
+          "lineNumber": "152",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "152",
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "lineText": "  PyDescriptorPool* cpool = _CreateDescriptorPool();",
+         "matchingRanges": {
+          "lineNumber": "153"
+         },
+         "lineNumber": "153"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  DescriptorDatabase* database = nullptr;",
+         "matchingRanges": {
+          "lineNumber": "192",
+          "columnRanges": [
+           {
+            "startIndex": 2,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "192",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 33,
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 2,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "lineText": "  if (py_database \u0026\u0026 py_database != Py_None) {",
+         "matchingRanges": {
+          "lineNumber": "193"
+         },
+         "lineNumber": "193",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    database = new PyDescriptorDatabase(py_database);",
+         "matchingRanges": {
+          "lineNumber": "194",
+          "columnRanges": [
+           {
+            "startIndex": 21,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "194",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 15,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 21,
+           "length": 18
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "        PyExc_ValueError,",
+         "matchingRanges": {
+          "lineNumber": "503"
+         },
+         "lineNumber": "503"
+        },
+        {
+         "lineText": "        \"Cannot call Add on a DescriptorPool that uses a DescriptorDatabase. \"",
+         "matchingRanges": {
+          "lineNumber": "504",
+          "columnRanges": [
+           {
+            "startIndex": 57,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "504",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 70
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 57,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "lineText": "        \"Add your file to the underlying database.\");",
+         "matchingRanges": {
+          "lineNumber": "505"
+         },
+         "lineNumber": "505",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 43
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 5
+    },
+    "resultToken": "CA0SAggBOOap28Gvm5Sp6wFAAEgN"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "protobuf",
+        "ossProject": "protobuf"
+       },
+       "refSpec": "refs/heads/main"
+      },
+      "path": "python/google/protobuf/internal/descriptor_pool_test.py",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  def testUserDefinedDB(self):",
+         "matchingRanges": {
+          "lineNumber": "567"
+         },
+         "lineNumber": "567",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    db = descriptor_database.DescriptorDatabase()",
+         "matchingRanges": {
+          "lineNumber": "568",
+          "columnRanges": [
+           {
+            "startIndex": 29,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "568",
+         "ranges": [
+          {
+           "startIndex": 29,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "lineText": "    self.pool = descriptor_pool.DescriptorPool(db)",
+         "matchingRanges": {
+          "lineNumber": "569"
+         },
+         "lineNumber": "569"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "        # Cpp extension cannot call Add on a DescriptorPool",
+         "matchingRanges": {
+          "lineNumber": "577"
+         },
+         "lineNumber": "577",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 8,
+            "length": 51
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "        # that uses a DescriptorDatabase.",
+         "matchingRanges": {
+          "lineNumber": "578",
+          "columnRanges": [
+           {
+            "startIndex": 22,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "578",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 8,
+            "length": 33
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 22,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "lineText": "        # TODO: Fix python and cpp extension diff.",
+         "matchingRanges": {
+          "lineNumber": "579"
+         },
+         "lineNumber": "579",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 8,
+            "length": 42
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "        # Cpp extension cannot call Add on a DescriptorPool",
+         "matchingRanges": {
+          "lineNumber": "609"
+         },
+         "lineNumber": "609",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 8,
+            "length": 51
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "        # that uses a DescriptorDatabase.",
+         "matchingRanges": {
+          "lineNumber": "610",
+          "columnRanges": [
+           {
+            "startIndex": 22,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "610",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 8,
+            "length": 33
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 22,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "lineText": "        # TODO: Fix python and cpp extension diff.",
+         "matchingRanges": {
+          "lineNumber": "611"
+         },
+         "lineNumber": "611",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 8,
+            "length": 42
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 12
+    },
+    "resultToken": "CA4SAggBOLadkOL7qJi7wgFAAEgO"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "protobuf",
+        "ossProject": "protobuf"
+       },
+       "refSpec": "refs/heads/main"
+      },
+      "path": "python/google/protobuf/pyext/message_module.cc",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "class ProtoAPIDescriptorDatabase : public google::protobuf::DescriptorDatabase {",
+         "matchingRanges": {
+          "lineNumber": "35",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 18
+           },
+           {
+            "startIndex": 60,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "35",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 35,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 18
+          },
+          {
+           "startIndex": 60,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "lineText": " public:",
+         "matchingRanges": {
+          "lineNumber": "36"
+         },
+         "lineNumber": "36",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  ProtoAPIDescriptorDatabase(PyObject* py_pool) : pool_(py_pool) {};",
+         "matchingRanges": {
+          "lineNumber": "37",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "37",
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "38"
+         },
+         "lineNumber": "38"
+        },
+        {
+         "lineText": "  ~ProtoAPIDescriptorDatabase() {};",
+         "matchingRanges": {
+          "lineNumber": "39",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "39",
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "40"
+         },
+         "lineNumber": "40"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "      std::unique_ptr\u003cconst google::protobuf::DescriptorPool\u003e pool,",
+         "matchingRanges": {
+          "lineNumber": "391"
+         },
+         "lineNumber": "391",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 22,
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "      std::unique_ptr\u003cconst google::protobuf::DescriptorDatabase\u003e database)",
+         "matchingRanges": {
+          "lineNumber": "392",
+          "columnRanges": [
+           {
+            "startIndex": 46,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "392",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 22,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 46,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "lineText": "      const override {",
+         "matchingRanges": {
+          "lineNumber": "393"
+         },
+         "lineNumber": "393",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 6
+    },
+    "resultToken": "CA8SBAgBIAE4ouuXhaOesdShAUAASA8"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "protobuf",
+        "ossProject": "protobuf"
+       },
+       "refSpec": "refs/heads/main"
+      },
+      "path": "src/google/protobuf/compiler/importer.h",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// An implementation of DescriptorDatabase which loads files from a SourceTree",
+         "matchingRanges": {
+          "lineNumber": "46",
+          "columnRanges": [
+           {
+            "startIndex": 24,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "46",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 78
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 24,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "lineText": "// and parses them.",
+         "matchingRanges": {
+          "lineNumber": "47"
+         },
+         "lineNumber": "47",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 19
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "//   code locations for error reporting.  However, when a DescriptorPool wraps",
+         "matchingRanges": {
+          "lineNumber": "50"
+         },
+         "lineNumber": "50",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 78
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "//   a DescriptorDatabase, it uses mutex locking to make sure only one method",
+         "matchingRanges": {
+          "lineNumber": "51",
+          "columnRanges": [
+           {
+            "startIndex": 7,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "51",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 77
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 7,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "lineText": "//   of the database is called at a time, even if the DescriptorPool is used",
+         "matchingRanges": {
+          "lineNumber": "52"
+         },
+         "lineNumber": "52",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 76
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "class PROTOBUF_EXPORT SourceTreeDescriptorDatabase : public DescriptorDatabase {",
+         "matchingRanges": {
+          "lineNumber": "59",
+          "columnRanges": [
+           {
+            "startIndex": 32,
+            "length": 18
+           },
+           {
+            "startIndex": 60,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "59",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 53,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 32,
+           "length": 18
+          },
+          {
+           "startIndex": 60,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "lineText": " public:",
+         "matchingRanges": {
+          "lineNumber": "60"
+         },
+         "lineNumber": "60",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  SourceTreeDescriptorDatabase(SourceTree* source_tree);",
+         "matchingRanges": {
+          "lineNumber": "61",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "61",
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 18
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  // implements DescriptorDatabase -----------------------------------",
+         "matchingRanges": {
+          "lineNumber": "103",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "103",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 68
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "lineText": "  bool FindFileByName(absl::string_view filename,",
+         "matchingRanges": {
+          "lineNumber": "104"
+         },
+         "lineNumber": "104",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 18
+    },
+    "resultToken": "CBASBAgBIAE4xtuo14G-z8EcQABIEA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "protobuf",
+        "ossProject": "protobuf"
+       },
+       "refSpec": "refs/heads/main"
+      },
+      "path": "src/google/protobuf/compiler/importer_unittest.cc",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "class SourceTreeDescriptorDatabaseTest : public testing::Test {",
+         "matchingRanges": {
+          "lineNumber": "520",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "520",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 41,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "lineText": " protected:",
+         "matchingRanges": {
+          "lineNumber": "521"
+         },
+         "lineNumber": "521",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 9
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "TEST_F(SourceTreeDescriptorDatabaseTest, ExtensionDeclarations) {",
+         "matchingRanges": {
+          "lineNumber": "536",
+          "columnRanges": [
+           {
+            "startIndex": 17,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "536",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "startIndex": 7,
+            "length": 32
+           }
+          },
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "startIndex": 41,
+            "length": 21
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 17,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "lineText": "  source_tree_.AddFile(\"extension_declarations1.txtpb\", R\"pb(",
+         "matchingRanges": {
+          "lineNumber": "537"
+         },
+         "lineNumber": "537",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 23,
+            "length": 31
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 56,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "TEST_F(SourceTreeDescriptorDatabaseTest, ExtensionDeclarationsMissing) {",
+         "matchingRanges": {
+          "lineNumber": "588",
+          "columnRanges": [
+           {
+            "startIndex": 17,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "588",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "startIndex": 7,
+            "length": 32
+           }
+          },
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "startIndex": 41,
+            "length": 28
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 17,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "lineText": "  SourceTreeDescriptorDatabase database(\u0026source_tree_);",
+         "matchingRanges": {
+          "lineNumber": "589",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "589",
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 18
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "TEST_F(SourceTreeDescriptorDatabaseTest, ExtensionDeclarationsSyntaxError) {",
+         "matchingRanges": {
+          "lineNumber": "604",
+          "columnRanges": [
+           {
+            "startIndex": 17,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "604",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "startIndex": 7,
+            "length": 32
+           }
+          },
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "startIndex": 41,
+            "length": 32
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 17,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "lineText": "  source_tree_.AddFile(\"extension_declarations.txtpb\", R\"pb(",
+         "matchingRanges": {
+          "lineNumber": "605"
+         },
+         "lineNumber": "605",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 23,
+            "length": 30
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 55,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 55,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "TEST_F(SourceTreeDescriptorDatabaseTest, ExtensionDeclarationsRangeNotFound) {",
+         "matchingRanges": {
+          "lineNumber": "643",
+          "columnRanges": [
+           {
+            "startIndex": 17,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "643",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "startIndex": 7,
+            "length": 32
+           }
+          },
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "startIndex": 41,
+            "length": 34
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 17,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "lineText": "  source_tree_.AddFile(\"extension_declarations.txtpb\", R\"pb(",
+         "matchingRanges": {
+          "lineNumber": "644"
+         },
+         "lineNumber": "644",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 23,
+            "length": 30
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 55,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 14
+    },
+    "resultToken": "CBESBAgBIAE4kuP_m-zC3JSkAUAASBE"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "protobuf",
+        "ossProject": "protobuf"
+       },
+       "refSpec": "refs/heads/main"
+      },
+      "path": "src/google/protobuf/compiler/importer.cc",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// - It lets us check if any errors have occurred.",
+         "matchingRanges": {
+          "lineNumber": "77"
+         },
+         "lineNumber": "77",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 50
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "class SourceTreeDescriptorDatabase::SingleFileErrorCollector",
+         "matchingRanges": {
+          "lineNumber": "78",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "78",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "lineText": "    : public io::ErrorCollector {",
+         "matchingRanges": {
+          "lineNumber": "79"
+         },
+         "lineNumber": "79",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "SourceTreeDescriptorDatabase::~SourceTreeDescriptorDatabase() = default;",
+         "matchingRanges": {
+          "lineNumber": "130",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 18
+           },
+           {
+            "startIndex": 41,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "130",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 64,
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 18
+          },
+          {
+           "startIndex": 41,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "131"
+         },
+         "lineNumber": "131"
+        },
+        {
+         "lineText": "bool SourceTreeDescriptorDatabase::FindFileByName(absl::string_view filename,",
+         "matchingRanges": {
+          "lineNumber": "132",
+          "columnRanges": [
+           {
+            "startIndex": 15,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "132",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 15,
+           "length": 18
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "bool SourceTreeDescriptorDatabase::FindFileContainingSymbol(",
+         "matchingRanges": {
+          "lineNumber": "166",
+          "columnRanges": [
+           {
+            "startIndex": 15,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "166",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 15,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "lineText": "    absl::string_view symbol_name, FileDescriptorProto* output) {",
+         "matchingRanges": {
+          "lineNumber": "167"
+         },
+         "lineNumber": "167"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "bool SourceTreeDescriptorDatabase::ReadExtensionDeclarations(",
+         "matchingRanges": {
+          "lineNumber": "205",
+          "columnRanges": [
+           {
+            "startIndex": 15,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "205",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 15,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "lineText": "    absl::string_view filename, FileDescriptorProto* output) const {",
+         "matchingRanges": {
+          "lineNumber": "206"
+         },
+         "lineNumber": "206",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 61,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 14
+    },
+    "resultToken": "CBISBAgBIAE4jvDl2Zrzt5JAQABIEg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "protobuf",
+        "ossProject": "protobuf"
+       },
+       "refSpec": "refs/heads/main"
+      },
+      "path": "python/google/protobuf/internal/message_factory_test.py",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  def testGetMessageClass(self):",
+         "matchingRanges": {
+          "lineNumber": "72"
+         },
+         "lineNumber": "72",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    db = descriptor_database.DescriptorDatabase()",
+         "matchingRanges": {
+          "lineNumber": "73",
+          "columnRanges": [
+           {
+            "startIndex": 29,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "73",
+         "ranges": [
+          {
+           "startIndex": 29,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "lineText": "    pool = descriptor_pool.DescriptorPool(db)",
+         "matchingRanges": {
+          "lineNumber": "74"
+         },
+         "lineNumber": "74"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBMSAggBOKiN--fyueujUkAASBM"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "protobuf",
+        "ossProject": "protobuf"
+       },
+       "refSpec": "refs/heads/main"
+      },
+      "path": "src/google/protobuf/compiler/command_line_interface.cc",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "namespace {",
+         "matchingRanges": {
+          "lineNumber": "1157"
+         },
+         "lineNumber": "1157",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 9
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "std::unique_ptr\u003cSimpleDescriptorDatabase\u003e",
+         "matchingRanges": {
+          "lineNumber": "1158",
+          "columnRanges": [
+           {
+            "startIndex": 22,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "1158",
+         "ranges": [
+          {
+           "startIndex": 22,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "lineText": "PopulateSingleSimpleDescriptorDatabase(const std::string\u0026 descriptor_set_name);",
+         "matchingRanges": {
+          "lineNumber": "1159",
+          "columnRanges": [
+           {
+            "startIndex": 20,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "1159",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 39,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 20,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "1160"
+         },
+         "lineNumber": "1160"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    std::vector\u003cDescriptorDatabase*\u003e raw_databases_per_descriptor_set;",
+         "matchingRanges": {
+          "lineNumber": "1344",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "1344",
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "lineText": "    raw_databases_per_descriptor_set.reserve(",
+         "matchingRanges": {
+          "lineNumber": "1345"
+         },
+         "lineNumber": "1345"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "namespace {",
+         "matchingRanges": {
+          "lineNumber": "1600"
+         },
+         "lineNumber": "1600",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 9
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "std::unique_ptr\u003cSimpleDescriptorDatabase\u003e",
+         "matchingRanges": {
+          "lineNumber": "1601",
+          "columnRanges": [
+           {
+            "startIndex": 22,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "1601",
+         "ranges": [
+          {
+           "startIndex": 22,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "lineText": "PopulateSingleSimpleDescriptorDatabase(const std::string\u0026 descriptor_set_name) {",
+         "matchingRanges": {
+          "lineNumber": "1602",
+          "columnRanges": [
+           {
+            "startIndex": 20,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "1602",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 39,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 20,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "lineText": "  int fd;",
+         "matchingRanges": {
+          "lineNumber": "1603"
+         },
+         "lineNumber": "1603",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 21
+    },
+    "resultToken": "CBQSBAgBIAE41Me08OubmafSAUAASBQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "protobuf",
+        "ossProject": "protobuf"
+       },
+       "refSpec": "refs/heads/main"
+      },
+      "path": "python/google/protobuf/proto_api.h",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  // that wraps it.",
+         "matchingRanges": {
+          "lineNumber": "153"
+         },
+         "lineNumber": "153",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 17
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  // The optional google::protobuf::DescriptorDatabase will also be owned by the Python",
+         "matchingRanges": {
+          "lineNumber": "154",
+          "columnRanges": [
+           {
+            "startIndex": 36,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "154",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 85
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 36,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "lineText": "  // DescriptorPool: use it when the C++ DescriptorPool was built with this",
+         "matchingRanges": {
+          "lineNumber": "155"
+         },
+         "lineNumber": "155",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 73
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "      std::unique_ptr\u003cconst google::protobuf::DescriptorPool\u003e pool,",
+         "matchingRanges": {
+          "lineNumber": "159"
+         },
+         "lineNumber": "159",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 22,
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "      std::unique_ptr\u003cconst google::protobuf::DescriptorDatabase\u003e database) const = 0;",
+         "matchingRanges": {
+          "lineNumber": "160",
+          "columnRanges": [
+           {
+            "startIndex": 46,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "160",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 22,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 76,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 84,
+            "length": 1
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 46,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "161"
+         },
+         "lineNumber": "161"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CBUSAggBOPi5w5rH5fzwCkAASBU"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "protobuf",
+        "ossProject": "protobuf"
+       },
+       "refSpec": "refs/heads/main"
+      },
+      "path": "src/google/protobuf/lazily_build_dependencies_test.cc",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": " protected:",
+         "matchingRanges": {
+          "lineNumber": "82"
+         },
+         "lineNumber": "82",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 9
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  SimpleDescriptorDatabase db_;",
+         "matchingRanges": {
+          "lineNumber": "83",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "83",
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "lineText": "  DescriptorPool pool_;",
+         "matchingRanges": {
+          "lineNumber": "84"
+         },
+         "lineNumber": "84"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBYSAggBOIjlkbKt4rOFV0AASBY"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "protobuf",
+        "ossProject": "protobuf"
+       },
+       "refSpec": "refs/heads/main"
+      },
+      "path": "src/google/protobuf/compiler/command_line_interface.h",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "class Descriptor;           // descriptor.h",
+         "matchingRanges": {
+          "lineNumber": "41"
+         },
+         "lineNumber": "41",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 28,
+            "length": 15
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "class DescriptorDatabase;   // descriptor_database.h",
+         "matchingRanges": {
+          "lineNumber": "42",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "42",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 28,
+            "length": 24
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "lineText": "class DescriptorPool;       // descriptor.h",
+         "matchingRanges": {
+          "lineNumber": "43"
+         },
+         "lineNumber": "43",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 28,
+            "length": 15
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "                                  std::string* proto,",
+         "matchingRanges": {
+          "lineNumber": "220"
+         },
+         "lineNumber": "220"
+        },
+        {
+         "lineText": "                                  DescriptorDatabase* fallback_database);",
+         "matchingRanges": {
+          "lineNumber": "221",
+          "columnRanges": [
+           {
+            "startIndex": 34,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "221",
+         "ranges": [
+          {
+           "startIndex": 34,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "222"
+         },
+         "lineNumber": "222"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  bool MakeInputsBeProtoPathRelative(DiskSourceTree* source_tree,",
+         "matchingRanges": {
+          "lineNumber": "225"
+         },
+         "lineNumber": "225",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "                                     DescriptorDatabase* fallback_database);",
+         "matchingRanges": {
+          "lineNumber": "226",
+          "columnRanges": [
+           {
+            "startIndex": 37,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "226",
+         "ranges": [
+          {
+           "startIndex": 37,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "227"
+         },
+         "lineNumber": "227"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 6
+    },
+    "resultToken": "CBcSAggBOKyx7pKgj56XhQFAAEgX"
+   }
+  ],
+  "estimatedResultCount": "26",
+  "exhaustive": true,
+  "requestToken": "ChJEZXNjcmlwdG9yRGF0YWJhc2USNSggZ2l0OmdpdGh1Yi9wcm90b2NvbGJ1ZmZlcnMvcHJvdG9idWZAbWFpbiBjYXNlOnllcyApGgwIu7zM0QYQsa7X9AIgDCoAMgBIAQ"
+ }
+}

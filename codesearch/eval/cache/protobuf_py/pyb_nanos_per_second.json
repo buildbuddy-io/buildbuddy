@@ -1,0 +1,498 @@
+{
+ "query": "_nanos_per_second",
+ "oss_project": "protobuf",
+ "repo_name": "protobuf",
+ "page_size": 50,
+ "fetched_at": "2026-06-17T23:21:41Z",
+ "response": {
+  "searchResults": [
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "protobuf",
+        "ossProject": "protobuf"
+       },
+       "refSpec": "refs/heads/main"
+      },
+      "path": "python/google/protobuf/internal/well_known_types.py",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "_TIMESTAMPFORMAT = '%Y-%m-%dT%H:%M:%S'",
+         "matchingRanges": {
+          "lineNumber": "28"
+         },
+         "lineNumber": "28",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 19,
+            "length": 19
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "_NANOS_PER_SECOND = 1000000000",
+         "matchingRanges": {
+          "lineNumber": "29",
+          "columnRanges": [
+           {
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "29",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 10
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "_NANOS_PER_MILLISECOND = 1000000",
+         "matchingRanges": {
+          "lineNumber": "30"
+         },
+         "lineNumber": "30",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 25,
+            "length": 7
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    _CheckTimestampValid(self.seconds, self.nanos)",
+         "matchingRanges": {
+          "lineNumber": "187"
+         },
+         "lineNumber": "187"
+        },
+        {
+         "lineText": "    return self.seconds * _NANOS_PER_SECOND + self.nanos",
+         "matchingRanges": {
+          "lineNumber": "188",
+          "columnRanges": [
+           {
+            "startIndex": 26,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "188",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 26,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "189"
+         },
+         "lineNumber": "189"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    \"\"\"Converts nanoseconds since epoch to Timestamp.\"\"\"",
+         "matchingRanges": {
+          "lineNumber": "210"
+         },
+         "lineNumber": "210",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 4,
+            "length": 52
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    seconds = nanos // _NANOS_PER_SECOND",
+         "matchingRanges": {
+          "lineNumber": "211",
+          "columnRanges": [
+           {
+            "startIndex": 23,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "211",
+         "ranges": [
+          {
+           "startIndex": 23,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "    nanos = nanos % _NANOS_PER_SECOND",
+         "matchingRanges": {
+          "lineNumber": "212",
+          "columnRanges": [
+           {
+            "startIndex": 20,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "212",
+         "ranges": [
+          {
+           "startIndex": 20,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "    _CheckTimestampValid(seconds, nanos)",
+         "matchingRanges": {
+          "lineNumber": "213"
+         },
+         "lineNumber": "213"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "        '[-62135596800, 253402300799].'.format(seconds))",
+         "matchingRanges": {
+          "lineNumber": "325"
+         },
+         "lineNumber": "325",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 31
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  if nanos \u003c 0 or nanos \u003e= _NANOS_PER_SECOND:",
+         "matchingRanges": {
+          "lineNumber": "326",
+          "columnRanges": [
+           {
+            "startIndex": 27,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "326",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 13,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 15,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 27,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "    raise ValueError(",
+         "matchingRanges": {
+          "lineNumber": "327"
+         },
+         "lineNumber": "327",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    \"\"\"Converts a Duration to nanoseconds.\"\"\"",
+         "matchingRanges": {
+          "lineNumber": "403"
+         },
+         "lineNumber": "403",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 4,
+            "length": 41
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    return self.seconds * _NANOS_PER_SECOND + self.nanos",
+         "matchingRanges": {
+          "lineNumber": "404",
+          "columnRanges": [
+           {
+            "startIndex": 26,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "404",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 26,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "405"
+         },
+         "lineNumber": "405"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    self._NormalizeDuration(",
+         "matchingRanges": {
+          "lineNumber": "422"
+         },
+         "lineNumber": "422"
+        },
+        {
+         "lineText": "        nanos // _NANOS_PER_SECOND, nanos % _NANOS_PER_SECOND",
+         "matchingRanges": {
+          "lineNumber": "423",
+          "columnRanges": [
+           {
+            "startIndex": 17,
+            "length": 17
+           },
+           {
+            "startIndex": 44,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "423",
+         "ranges": [
+          {
+           "startIndex": 17,
+           "length": 17
+          },
+          {
+           "startIndex": 44,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "    )",
+         "matchingRanges": {
+          "lineNumber": "424"
+         },
+         "lineNumber": "424"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "      seconds += 1",
+         "matchingRanges": {
+          "lineNumber": "479"
+         },
+         "lineNumber": "479",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 17,
+            "length": 1
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "      nanos -= _NANOS_PER_SECOND",
+         "matchingRanges": {
+          "lineNumber": "480",
+          "columnRanges": [
+           {
+            "startIndex": 15,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "480",
+         "ranges": [
+          {
+           "startIndex": 15,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "    self.seconds = seconds",
+         "matchingRanges": {
+          "lineNumber": "481"
+         },
+         "lineNumber": "481"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    )",
+         "matchingRanges": {
+          "lineNumber": "503"
+         },
+         "lineNumber": "503"
+        },
+        {
+         "lineText": "  if nanos \u003c= -_NANOS_PER_SECOND or nanos \u003e= _NANOS_PER_SECOND:",
+         "matchingRanges": {
+          "lineNumber": "504",
+          "columnRanges": [
+           {
+            "startIndex": 15,
+            "length": 17
+           },
+           {
+            "startIndex": 45,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "504",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 33,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 15,
+           "length": 17
+          },
+          {
+           "startIndex": 45,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "    raise ValueError(",
+         "matchingRanges": {
+          "lineNumber": "505"
+         },
+         "lineNumber": "505",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 9
+    },
+    "resultToken": "CAASBAgBIAE4sOS1xZPW8dnVAUAASAA"
+   }
+  ],
+  "estimatedResultCount": "1",
+  "exhaustive": true,
+  "requestToken": "ChFfbmFub3NfcGVyX3NlY29uZBI1KCBnaXQ6Z2l0aHViL3Byb3RvY29sYnVmZmVycy9wcm90b2J1ZkBtYWluIGNhc2U6eWVzICkaDAiF2MzRBhCV793IAiAMIA8qADIASAE"
+ }
+}

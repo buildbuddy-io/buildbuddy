@@ -1,0 +1,897 @@
+{
+ "query": "AllowableFw",
+ "oss_project": "opentitan",
+ "repo_name": "manticore",
+ "page_size": 50,
+ "fetched_at": "2026-06-17T22:58:15Z",
+ "response": {
+  "searchResults": [
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "manticore",
+        "ossProject": "opentitan"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/manifest/owned/pfm.rs",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    },",
+         "matchingRanges": {
+          "lineNumber": "41"
+         },
+         "lineNumber": "41"
+        },
+        {
+         "lineText": "    AllowableFw {",
+         "matchingRanges": {
+          "lineNumber": "42",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "42",
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": "        #[cfg_attr(feature = \"serde\", serde(with = \"crate::serde::dec\"))]",
+         "matchingRanges": {
+          "lineNumber": "43"
+         },
+         "lineNumber": "43",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 29,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 51,
+            "length": 19
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "            Self::FlashDevice { .. } =\u003e pfm::ElementType::FlashDevice.into(),",
+         "matchingRanges": {
+          "lineNumber": "104"
+         },
+         "lineNumber": "104",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "            Self::AllowableFw { .. } =\u003e pfm::ElementType::AllowableFw.into(),",
+         "matchingRanges": {
+          "lineNumber": "105",
+          "columnRanges": [
+           {
+            "startIndex": 18,
+            "length": 11
+           },
+           {
+            "startIndex": 58,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "105",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 18,
+           "length": 11
+          },
+          {
+           "startIndex": 58,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": "            Self::FwVersion { .. } =\u003e pfm::ElementType::FwVersion.into(),",
+         "matchingRanges": {
+          "lineNumber": "106"
+         },
+         "lineNumber": "106",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "            }",
+         "matchingRanges": {
+          "lineNumber": "116"
+         },
+         "lineNumber": "116"
+        },
+        {
+         "lineText": "            Self::AllowableFw {",
+         "matchingRanges": {
+          "lineNumber": "117",
+          "columnRanges": [
+           {
+            "startIndex": 18,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "117",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 18,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": "                version_count,",
+         "matchingRanges": {
+          "lineNumber": "118"
+         },
+         "lineNumber": "118"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "            let mut node = owned::Node {",
+         "matchingRanges": {
+          "lineNumber": "259"
+         },
+         "lineNumber": "259",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 16,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "                element: Element::AllowableFw {",
+         "matchingRanges": {
+          "lineNumber": "260",
+          "columnRanges": [
+           {
+            "startIndex": 34,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "260",
+         "ranges": [
+          {
+           "startIndex": 34,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": "                    version_count: allowable_fw.firmware_count() as u8,",
+         "matchingRanges": {
+          "lineNumber": "261"
+         },
+         "lineNumber": "261",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 65,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "                    owned::Node {",
+         "matchingRanges": {
+          "lineNumber": "435"
+         },
+         "lineNumber": "435"
+        },
+        {
+         "lineText": "                        element: Element::AllowableFw {",
+         "matchingRanges": {
+          "lineNumber": "436",
+          "columnRanges": [
+           {
+            "startIndex": 42,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "436",
+         "ranges": [
+          {
+           "startIndex": 42,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": "                            version_count: 1,",
+         "matchingRanges": {
+          "lineNumber": "437"
+         },
+         "lineNumber": "437",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 43,
+            "length": 1
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "                owned::Node {",
+         "matchingRanges": {
+          "lineNumber": "498"
+         },
+         "lineNumber": "498"
+        },
+        {
+         "lineText": "                    element: Element::AllowableFw {",
+         "matchingRanges": {
+          "lineNumber": "499",
+          "columnRanges": [
+           {
+            "startIndex": 38,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "499",
+         "ranges": [
+          {
+           "startIndex": 38,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": "                        version_count: 1,",
+         "matchingRanges": {
+          "lineNumber": "500"
+         },
+         "lineNumber": "500",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 39,
+            "length": 1
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 6
+    },
+    "resultToken": "CAASAggBOIC5qMqRv9KsaEAASAA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "manticore",
+        "ossProject": "opentitan"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/manifest/pfm.rs",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "      /// policy on the flash device a particular PFM describes.",
+         "matchingRanges": {
+          "lineNumber": "55"
+         },
+         "lineNumber": "55",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 6,
+            "length": 58
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "      AllowableFw = 0x11,",
+         "matchingRanges": {
+          "lineNumber": "56",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "56",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "57"
+         },
+         "lineNumber": "57"
+        },
+        {
+         "lineText": "      /// A firmware version, as a subelement of an `AllowableFw`.",
+         "matchingRanges": {
+          "lineNumber": "58",
+          "columnRanges": [
+           {
+            "startIndex": 53,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "58",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 6,
+            "length": 60
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 53,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": "      FwVersion = 0x12,",
+         "matchingRanges": {
+          "lineNumber": "59"
+         },
+         "lineNumber": "59",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 18,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    /// Returns an iterator over the `AllowableFw` elements of this PFM.",
+         "matchingRanges": {
+          "lineNumber": "160",
+          "columnRanges": [
+           {
+            "startIndex": 38,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "160",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 68
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 38,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": "    ///",
+         "matchingRanges": {
+          "lineNumber": "161"
+         },
+         "lineNumber": "161",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "            .toc()",
+         "matchingRanges": {
+          "lineNumber": "168"
+         },
+         "lineNumber": "168"
+        },
+        {
+         "lineText": "            .entries_of(ElementType::AllowableFw.into())",
+         "matchingRanges": {
+          "lineNumber": "169",
+          "columnRanges": [
+           {
+            "startIndex": 37,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "169",
+         "ranges": [
+          {
+           "startIndex": 37,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": "            .map(move |entry| AllowableFwEntry { pfm: self, entry })",
+         "matchingRanges": {
+          "lineNumber": "170",
+          "columnRanges": [
+           {
+            "startIndex": 30,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "170",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 17,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 30,
+           "length": 11
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "///",
+         "matchingRanges": {
+          "lineNumber": "200"
+         },
+         "lineNumber": "200",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "/// This type allows for lazily reading the [`AllowableFw`] described by this",
+         "matchingRanges": {
+          "lineNumber": "201",
+          "columnRanges": [
+           {
+            "startIndex": 46,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "201",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 77
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 46,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": "/// entry, as obtained from [`ParsedPfm::allowable_fws()`].",
+         "matchingRanges": {
+          "lineNumber": "202"
+         },
+         "lineNumber": "202",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 59
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "        arena: \u0026'pfm dyn Arena,",
+         "matchingRanges": {
+          "lineNumber": "222"
+         },
+         "lineNumber": "222",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 21,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    ) -\u003e Result\u003cAllowableFw\u003c'a, 'pfm, P\u003e, Error\u003e {",
+         "matchingRanges": {
+          "lineNumber": "223",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "223",
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": "        #[derive(Copy, Clone, FromBytes, AsBytes)]",
+         "matchingRanges": {
+          "lineNumber": "224"
+         },
+         "lineNumber": "224"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "        Ok(AllowableFw {",
+         "matchingRanges": {
+          "lineNumber": "242",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "242",
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": "            entry: self,",
+         "matchingRanges": {
+          "lineNumber": "243"
+         },
+         "lineNumber": "243"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "/// [`AllowableFwEntry::read()`].",
+         "matchingRanges": {
+          "lineNumber": "255",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "255",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 33
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": "pub struct AllowableFw\u003c'a, 'pfm, Provenance = provenance::Signed\u003e {",
+         "matchingRanges": {
+          "lineNumber": "256",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "256",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": "    entry: AllowableFwEntry\u003c'a, 'pfm, Provenance\u003e,",
+         "matchingRanges": {
+          "lineNumber": "257",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "257",
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 11
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "impl\u003c'a, 'pfm, P\u003e AllowableFw\u003c'a, 'pfm, P\u003e {",
+         "matchingRanges": {
+          "lineNumber": "263",
+          "columnRanges": [
+           {
+            "startIndex": 18,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "263",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 18,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": "    /// Returns the `Toc` entry defining this element.",
+         "matchingRanges": {
+          "lineNumber": "264"
+         },
+         "lineNumber": "264",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 50
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    /// Returns an iterator over the `FwVersion` subelements of this `AllowableFw`.",
+         "matchingRanges": {
+          "lineNumber": "288",
+          "columnRanges": [
+           {
+            "startIndex": 70,
+            "length": 11
+           }
+          ]
+         },
+         "lineNumber": "288",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 79
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 70,
+           "length": 11
+          }
+         ]
+        },
+        {
+         "lineText": "    ///",
+         "matchingRanges": {
+          "lineNumber": "289"
+         },
+         "lineNumber": "289",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 19
+    },
+    "resultToken": "CAESAggBOKTr0a_4ssiIrAFAAEgB"
+   }
+  ],
+  "estimatedResultCount": "2",
+  "exhaustive": true,
+  "requestToken": "CgtBbGxvd2FibGVGdxIwKCBnaXQ6Z2l0aHViL2xvd1JJU0MvbWFudGljb3JlQG1hc3RlciBjYXNlOnllcyApGgwIh83M0QYQy7msyQEgDCoAMgBIAQ"
+ }
+}

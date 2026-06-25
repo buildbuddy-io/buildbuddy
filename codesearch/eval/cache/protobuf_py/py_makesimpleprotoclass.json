@@ -1,0 +1,459 @@
+{
+ "query": "MakeSimpleProtoClass",
+ "oss_project": "protobuf",
+ "repo_name": "protobuf",
+ "page_size": 50,
+ "fetched_at": "2026-06-17T22:23:01Z",
+ "response": {
+  "searchResults": [
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "protobuf",
+        "ossProject": "protobuf"
+       },
+       "refSpec": "refs/heads/main"
+      },
+      "path": "python/google/protobuf/proto_builder.py",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "def MakeSimpleProtoClass(fields, full_name=None, pool=None):",
+         "matchingRanges": {
+          "lineNumber": "36",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "36",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 43,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 54,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "  \"\"\"Create a Protobuf class whose fields are basic types.",
+         "matchingRanges": {
+          "lineNumber": "37"
+         },
+         "lineNumber": "37",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 56
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAASBAgBIAE4nKDEkJPOh5lKQABIAA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "protobuf",
+        "ossProject": "protobuf"
+       },
+       "refSpec": "refs/heads/main"
+      },
+      "path": "python/google/protobuf/internal/proto_builder_test.py",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  def testMakeSimpleProtoClass(self):",
+         "matchingRanges": {
+          "lineNumber": "33",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "33",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "    \"\"\"Test that we can create a proto class.\"\"\"",
+         "matchingRanges": {
+          "lineNumber": "34"
+         },
+         "lineNumber": "34",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 4,
+            "length": 44
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    proto_cls = proto_builder.MakeSimpleProtoClass(",
+         "matchingRanges": {
+          "lineNumber": "35",
+          "columnRanges": [
+           {
+            "startIndex": 30,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "35",
+         "ranges": [
+          {
+           "startIndex": 30,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "        self._fields,",
+         "matchingRanges": {
+          "lineNumber": "36"
+         },
+         "lineNumber": "36"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    \"\"\"Test that the field order is maintained when given an OrderedDict.\"\"\"",
+         "matchingRanges": {
+          "lineNumber": "47"
+         },
+         "lineNumber": "47",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 4,
+            "length": 72
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    proto_cls = proto_builder.MakeSimpleProtoClass(",
+         "matchingRanges": {
+          "lineNumber": "48",
+          "columnRanges": [
+           {
+            "startIndex": 30,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "48",
+         "ranges": [
+          {
+           "startIndex": 30,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "        self.ordered_fields,",
+         "matchingRanges": {
+          "lineNumber": "49"
+         },
+         "lineNumber": "49"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    pool = descriptor_pool.DescriptorPool()",
+         "matchingRanges": {
+          "lineNumber": "61"
+         },
+         "lineNumber": "61"
+        },
+        {
+         "lineText": "    proto_cls1 = proto_builder.MakeSimpleProtoClass(",
+         "matchingRanges": {
+          "lineNumber": "62",
+          "columnRanges": [
+           {
+            "startIndex": 31,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "62",
+         "ranges": [
+          {
+           "startIndex": 31,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "        self._fields,",
+         "matchingRanges": {
+          "lineNumber": "63"
+         },
+         "lineNumber": "63"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    )",
+         "matchingRanges": {
+          "lineNumber": "66"
+         },
+         "lineNumber": "66"
+        },
+        {
+         "lineText": "    proto_cls2 = proto_builder.MakeSimpleProtoClass(",
+         "matchingRanges": {
+          "lineNumber": "67",
+          "columnRanges": [
+           {
+            "startIndex": 31,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "67",
+         "ranges": [
+          {
+           "startIndex": 31,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "        self._fields,",
+         "matchingRanges": {
+          "lineNumber": "68"
+         },
+         "lineNumber": "68"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  def testMakeSimpleProtoClassUsesNonSecuritySha1(self):",
+         "matchingRanges": {
+          "lineNumber": "74",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "74",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "    pool = descriptor_pool.DescriptorPool()",
+         "matchingRanges": {
+          "lineNumber": "75"
+         },
+         "lineNumber": "75"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    ) as sha1:",
+         "matchingRanges": {
+          "lineNumber": "80"
+         },
+         "lineNumber": "80",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "      proto_builder.MakeSimpleProtoClass(",
+         "matchingRanges": {
+          "lineNumber": "81",
+          "columnRanges": [
+           {
+            "startIndex": 20,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "81",
+         "ranges": [
+          {
+           "startIndex": 20,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "          self._fields,",
+         "matchingRanges": {
+          "lineNumber": "82"
+         },
+         "lineNumber": "82"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "      ):",
+         "matchingRanges": {
+          "lineNumber": "99"
+         },
+         "lineNumber": "99"
+        },
+        {
+         "lineText": "        proto_cls = proto_builder.MakeSimpleProtoClass(",
+         "matchingRanges": {
+          "lineNumber": "100",
+          "columnRanges": [
+           {
+            "startIndex": 34,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "100",
+         "ranges": [
+          {
+           "startIndex": 34,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "            fields,",
+         "matchingRanges": {
+          "lineNumber": "101"
+         },
+         "lineNumber": "101"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    proto_cls = proto_builder.MakeSimpleProtoClass(",
+         "matchingRanges": {
+          "lineNumber": "108",
+          "columnRanges": [
+           {
+            "startIndex": 30,
+            "length": 20
+           }
+          ]
+         },
+         "lineNumber": "108",
+         "ranges": [
+          {
+           "startIndex": 30,
+           "length": 20
+          }
+         ]
+        },
+        {
+         "lineText": "        fields,",
+         "matchingRanges": {
+          "lineNumber": "109"
+         },
+         "lineNumber": "109"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 9
+    },
+    "resultToken": "CAESBAgBIAE41Kuz9a3i3PjHAUAASAE"
+   }
+  ],
+  "estimatedResultCount": "2",
+  "exhaustive": true,
+  "requestToken": "ChRNYWtlU2ltcGxlUHJvdG9DbGFzcxI1KCBnaXQ6Z2l0aHViL3Byb3RvY29sYnVmZmVycy9wcm90b2J1ZkBtYWluIGNhc2U6eWVzICkaDAjFvMzRBhCXo8DEASAMKgAyAEgB"
+ }
+}

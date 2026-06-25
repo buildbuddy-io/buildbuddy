@@ -1,0 +1,855 @@
+{
+ "query": "EnumTypeWrapper",
+ "oss_project": "protobuf",
+ "repo_name": "protobuf",
+ "page_size": 50,
+ "fetched_at": "2026-06-17T22:22:58Z",
+ "response": {
+  "searchResults": [
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "protobuf",
+        "ossProject": "protobuf"
+       },
+       "refSpec": "refs/heads/main"
+      },
+      "path": "python/google/protobuf/internal/enum_type_wrapper.py",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "class EnumTypeWrapper(object):",
+         "matchingRanges": {
+          "lineNumber": "18",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "18",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "lineText": "  \"\"\"A utility for finding the names of enum values.\"\"\"",
+         "matchingRanges": {
+          "lineNumber": "19"
+         },
+         "lineNumber": "19",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 53
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  def __init__(self, enum_type):",
+         "matchingRanges": {
+          "lineNumber": "32"
+         },
+         "lineNumber": "32",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    \"\"\"Inits EnumTypeWrapper with an EnumDescriptor.\"\"\"",
+         "matchingRanges": {
+          "lineNumber": "33",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "33",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 4,
+            "length": 51
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "lineText": "    self._enum_type = enum_type",
+         "matchingRanges": {
+          "lineNumber": "34"
+         },
+         "lineNumber": "34"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "      return (",
+         "matchingRanges": {
+          "lineNumber": "107"
+         },
+         "lineNumber": "107",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "          super(EnumTypeWrapper, self)",
+         "matchingRanges": {
+          "lineNumber": "108",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "108",
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "lineText": "          .__getattribute__('_enum_type')",
+         "matchingRanges": {
+          "lineNumber": "109"
+         },
+         "lineNumber": "109",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 28,
+            "length": 12
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CAASBAgBIAE4lNeMlNTai4kKQABIAA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "protobuf",
+        "ossProject": "protobuf"
+       },
+       "refSpec": "refs/heads/main"
+      },
+      "path": "python/google/protobuf/pyext/message.cc",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "static PyObject* kMessageFactory;",
+         "matchingRanges": {
+          "lineNumber": "118"
+         },
+         "lineNumber": "118",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "PyObject* EnumTypeWrapper_class;",
+         "matchingRanges": {
+          "lineNumber": "119",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "119",
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "lineText": "static PyObject* PythonMessage_class;",
+         "matchingRanges": {
+          "lineNumber": "120"
+         },
+         "lineNumber": "120",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  // For each enum set cls.\u003cenum name\u003e = EnumTypeWrapper(\u003cenum descriptor\u003e).",
+         "matchingRanges": {
+          "lineNumber": "153",
+          "columnRanges": [
+           {
+            "startIndex": 41,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "153",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 74
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 41,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "lineText": "  for (int i = 0; i \u003c descriptor-\u003eenum_type_count(); ++i) {",
+         "matchingRanges": {
+          "lineNumber": "154"
+         },
+         "lineNumber": "154",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 15,
+            "length": 1
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  }",
+         "matchingRanges": {
+          "lineNumber": "3240"
+         },
+         "lineNumber": "3240"
+        },
+        {
+         "lineText": "  EnumTypeWrapper_class =",
+         "matchingRanges": {
+          "lineNumber": "3241",
+          "columnRanges": [
+           {
+            "startIndex": 2,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "3241",
+         "ranges": [
+          {
+           "startIndex": 2,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "lineText": "      PyObject_GetAttrString(enum_type_wrapper, \"EnumTypeWrapper\");",
+         "matchingRanges": {
+          "lineNumber": "3242",
+          "columnRanges": [
+           {
+            "startIndex": 49,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "3242",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 48,
+            "length": 17
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 49,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "lineText": "  Py_DECREF(enum_type_wrapper);",
+         "matchingRanges": {
+          "lineNumber": "3243"
+         },
+         "lineNumber": "3243"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 5
+    },
+    "resultToken": "CAESBAgBIAE4nPbz7cWx6aR3QABIAQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "protobuf",
+        "ossProject": "protobuf"
+       },
+       "refSpec": "refs/heads/main"
+      },
+      "path": "src/google/protobuf/compiler/python/pyi_generator.cc",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  printer_-\u003ePrint(",
+         "matchingRanges": {
+          "lineNumber": "326"
+         },
+         "lineNumber": "326"
+        },
+        {
+         "lineText": "      \"class $enum_name$(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):\\n\"",
+         "matchingRanges": {
+          "lineNumber": "327",
+          "columnRanges": [
+           {
+            "startIndex": 59,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "327",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 6,
+            "length": 73
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 59,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "lineText": "      \"    __slots__ = ()\\n\",",
+         "matchingRanges": {
+          "lineNumber": "328"
+         },
+         "lineNumber": "328",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 6,
+            "length": 22
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAISAggBOKaGrfHGmOOgaUAASAI"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "protobuf",
+        "ossProject": "protobuf"
+       },
+       "refSpec": "refs/heads/main"
+      },
+      "path": "python/message.c",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  state-\u003eenum_type_wrapper_class =",
+         "matchingRanges": {
+          "lineNumber": "2180"
+         },
+         "lineNumber": "2180"
+        },
+        {
+         "lineText": "      PyObject_GetAttrString(enum_type_wrapper, \"EnumTypeWrapper\");",
+         "matchingRanges": {
+          "lineNumber": "2181",
+          "columnRanges": [
+           {
+            "startIndex": 49,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "2181",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 48,
+            "length": 17
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 49,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "lineText": "  Py_DECREF(enum_type_wrapper);",
+         "matchingRanges": {
+          "lineNumber": "2182"
+         },
+         "lineNumber": "2182"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAMSAggBOK7_7J-k_oOIqgFAAEgD"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "protobuf",
+        "ossProject": "protobuf"
+       },
+       "refSpec": "refs/heads/main"
+      },
+      "path": "python/google/protobuf/internal/builder.py",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    module['_' + name.upper()] = enum_des",
+         "matchingRanges": {
+          "lineNumber": "74"
+         },
+         "lineNumber": "74",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    module[name] = enum_type_wrapper.EnumTypeWrapper(enum_des)",
+         "matchingRanges": {
+          "lineNumber": "75",
+          "columnRanges": [
+           {
+            "startIndex": 37,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "75",
+         "ranges": [
+          {
+           "startIndex": 37,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "lineText": "    for enum_value in enum_des.values:",
+         "matchingRanges": {
+          "lineNumber": "76"
+         },
+         "lineNumber": "76",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 19,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAQSAggBOLrUvMuNvuCs1wFAAEgE"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "protobuf",
+        "ossProject": "protobuf"
+       },
+       "refSpec": "refs/heads/main"
+      },
+      "path": "python/google/protobuf/internal/message_test.py",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "      return",
+         "matchingRanges": {
+          "lineNumber": "1738"
+         },
+         "lineNumber": "1738",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    enum_type = enum_type_wrapper.EnumTypeWrapper(",
+         "matchingRanges": {
+          "lineNumber": "1739",
+          "columnRanges": [
+           {
+            "startIndex": 34,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "1739",
+         "ranges": [
+          {
+           "startIndex": 34,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "lineText": "        message_module.TestAllTypes.NestedEnum.DESCRIPTOR",
+         "matchingRanges": {
+          "lineNumber": "1740"
+         },
+         "lineNumber": "1740"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    union = get_union()",
+         "matchingRanges": {
+          "lineNumber": "1748"
+         },
+         "lineNumber": "1748"
+        },
+        {
+         "lineText": "    self.assertIsInstance(union, enum_type_wrapper.EnumTypeWrapper)",
+         "matchingRanges": {
+          "lineNumber": "1749",
+          "columnRanges": [
+           {
+            "startIndex": 51,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "1749",
+         "ranges": [
+          {
+           "startIndex": 51,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "lineText": "    self.assertEqual(",
+         "matchingRanges": {
+          "lineNumber": "1750"
+         },
+         "lineNumber": "1750"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAUSAggBOKaq-MaCmoXV5AFAAEgF"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "protobuf",
+        "ossProject": "protobuf"
+       },
+       "refSpec": "refs/heads/main"
+      },
+      "path": "python/google/protobuf/internal/python_message.py",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  for enum_type in descriptor.enum_types:",
+         "matchingRanges": {
+          "lineNumber": "433"
+         },
+         "lineNumber": "433",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 16,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    setattr(cls, enum_type.name, enum_type_wrapper.EnumTypeWrapper(enum_type))",
+         "matchingRanges": {
+          "lineNumber": "434",
+          "columnRanges": [
+           {
+            "startIndex": 51,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "434",
+         "ranges": [
+          {
+           "startIndex": 51,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "lineText": "    for enum_value in enum_type.values:",
+         "matchingRanges": {
+          "lineNumber": "435"
+         },
+         "lineNumber": "435",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 19,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAYSAggBONj13f6BvYCbtQFAAEgG"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "protobuf",
+        "ossProject": "protobuf"
+       },
+       "refSpec": "refs/heads/main"
+      },
+      "path": "CONTRIBUTORS.txt",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  Nipunn Koorapati \u003cnipunn1313@gmail.com\u003e",
+         "matchingRanges": {
+          "lineNumber": "103"
+         },
+         "lineNumber": "103"
+        },
+        {
+         "lineText": "    * Provide a type alias field ValueType on EnumTypeWrapper",
+         "matchingRanges": {
+          "lineNumber": "104",
+          "columnRanges": [
+           {
+            "startIndex": 46,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "104",
+         "ranges": [
+          {
+           "startIndex": 46,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "lineText": "    * Match service argument names to abstract interface",
+         "matchingRanges": {
+          "lineNumber": "105"
+         },
+         "lineNumber": "105"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAcSAggBOJ7y3evJxaWxR0AASAc"
+   }
+  ],
+  "estimatedResultCount": "8",
+  "exhaustive": true,
+  "requestToken": "Cg9FbnVtVHlwZVdyYXBwZXISNSggZ2l0OmdpdGh1Yi9wcm90b2NvbGJ1ZmZlcnMvcHJvdG9idWZAbWFpbiBjYXNlOnllcyApGgwIwrzM0QYQs7vonQEgDCoAMgBIAQ"
+ }
+}

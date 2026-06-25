@@ -1,0 +1,959 @@
+{
+ "query": "MessageToString",
+ "oss_project": "protobuf",
+ "repo_name": "protobuf",
+ "page_size": 50,
+ "fetched_at": "2026-06-17T22:22:42Z",
+ "response": {
+  "searchResults": [
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "protobuf",
+        "ossProject": "protobuf"
+       },
+       "refSpec": "refs/heads/main"
+      },
+      "path": "python/google/protobuf/text_format.py",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  message = my_proto_pb2.MyMessage(foo='bar')",
+         "matchingRanges": {
+          "lineNumber": "23"
+         },
+         "lineNumber": "23",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "length": 45
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  text_proto = text_format.MessageToString(message)",
+         "matchingRanges": {
+          "lineNumber": "24",
+          "columnRanges": [
+           {
+            "startIndex": 27,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "24",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "length": 51
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 27,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "25"
+         },
+         "lineNumber": "25",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {}
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "__all__ = [",
+         "matchingRanges": {
+          "lineNumber": "48"
+         },
+         "lineNumber": "48"
+        },
+        {
+         "lineText": "    'MessageToString',",
+         "matchingRanges": {
+          "lineNumber": "49",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "49",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 4,
+            "length": 17
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "lineText": "    'Parse',",
+         "matchingRanges": {
+          "lineNumber": "50"
+         },
+         "lineNumber": "50",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 4,
+            "length": 7
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "def MessageToString(",
+         "matchingRanges": {
+          "lineNumber": "118",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "118",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "lineText": "    message,",
+         "matchingRanges": {
+          "lineNumber": "119"
+         },
+         "lineNumber": "119"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 5
+    },
+    "resultToken": "CAASBAgBIAE4zL6thomHyseQAUAASAA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "protobuf",
+        "ossProject": "protobuf"
+       },
+       "refSpec": "refs/heads/main"
+      },
+      "path": "python/google/protobuf/internal/python_message.py",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  def __str__(self):",
+         "matchingRanges": {
+          "lineNumber": "1184"
+         },
+         "lineNumber": "1184",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    return text_format.MessageToString(self)",
+         "matchingRanges": {
+          "lineNumber": "1185",
+          "columnRanges": [
+           {
+            "startIndex": 23,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "1185",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 23,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "1186"
+         },
+         "lineNumber": "1186"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  def __repr__(self):",
+         "matchingRanges": {
+          "lineNumber": "1193"
+         },
+         "lineNumber": "1193",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    return text_format.MessageToString(self)",
+         "matchingRanges": {
+          "lineNumber": "1194",
+          "columnRanges": [
+           {
+            "startIndex": 23,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "1194",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 23,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "1195"
+         },
+         "lineNumber": "1195"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  def __unicode__(self):",
+         "matchingRanges": {
+          "lineNumber": "1202"
+         },
+         "lineNumber": "1202",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    return text_format.MessageToString(self, as_utf8=True).decode('utf-8')",
+         "matchingRanges": {
+          "lineNumber": "1203",
+          "columnRanges": [
+           {
+            "startIndex": 23,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "1203",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 53,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 66,
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 23,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "1204"
+         },
+         "lineNumber": "1204"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CAESAggBONj13f6BvYCbtQFAAEgB"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "protobuf",
+        "ossProject": "protobuf"
+       },
+       "refSpec": "refs/heads/main"
+      },
+      "path": "python/google/protobuf/pyext/message.cc",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  }",
+         "matchingRanges": {
+          "lineNumber": "2538"
+         },
+         "lineNumber": "2538"
+        },
+        {
+         "lineText": "  ScopedPyObjectPtr method_name(PyUnicode_FromString(\"MessageToString\"));",
+         "matchingRanges": {
+          "lineNumber": "2539",
+          "columnRanges": [
+           {
+            "startIndex": 54,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "2539",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 53,
+            "length": 17
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 54,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "lineText": "  if (method_name == nullptr) {",
+         "matchingRanges": {
+          "lineNumber": "2540"
+         },
+         "lineNumber": "2540",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 21,
+            "length": 7
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAISAggBOJz28-3Fsemkd0AASAI"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "protobuf",
+        "ossProject": "protobuf"
+       },
+       "refSpec": "refs/heads/main"
+      },
+      "path": "python/google/protobuf/internal/text_format_test.py",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "@parameterized.parameters(unittest_pb2, unittest_proto3_arena_pb2)",
+         "matchingRanges": {
+          "lineNumber": "83"
+         },
+         "lineNumber": "83"
+        },
+        {
+         "lineText": "class TextFormatMessageToStringTests(TextFormatBase):",
+         "matchingRanges": {
+          "lineNumber": "84",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "84",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "85"
+         },
+         "lineNumber": "85"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  def testMessageToString(self, message_module):",
+         "matchingRanges": {
+          "lineNumber": "439",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "439",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "lineText": "    message = message_module.ForeignMessage()",
+         "matchingRanges": {
+          "lineNumber": "440"
+         },
+         "lineNumber": "440"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  def testMessageToString(self):",
+         "matchingRanges": {
+          "lineNumber": "3388",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "3388",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "lineText": "    self.CompareToGoldenText(",
+         "matchingRanges": {
+          "lineNumber": "3389"
+         },
+         "lineNumber": "3389"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "class OptionalColonMessageToStringTest(unittest.TestCase):",
+         "matchingRanges": {
+          "lineNumber": "3439",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "3439",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "3440"
+         },
+         "lineNumber": "3440"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 42
+    },
+    "resultToken": "CAMSBAgBIAE4yoKxj_eVuMjWAUAASAM"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "protobuf",
+        "ossProject": "protobuf"
+       },
+       "refSpec": "refs/heads/main"
+      },
+      "path": "python/google/protobuf/internal/proto_builder_test.py",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    self.assertMultiLineEqual(",
+         "matchingRanges": {
+          "lineNumber": "42"
+         },
+         "lineNumber": "42"
+        },
+        {
+         "lineText": "        'bar: \"asdf\"\\nfoo: 12345\\n', text_format.MessageToString(proto)",
+         "matchingRanges": {
+          "lineNumber": "43",
+          "columnRanges": [
+           {
+            "startIndex": 49,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "43",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 27
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 49,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "lineText": "    )",
+         "matchingRanges": {
+          "lineNumber": "44"
+         },
+         "lineNumber": "44"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    self.assertMultiLineEqual(",
+         "matchingRanges": {
+          "lineNumber": "55"
+         },
+         "lineNumber": "55"
+        },
+        {
+         "lineText": "        'foo: 12345\\nbar: \"asdf\"\\n', text_format.MessageToString(proto)",
+         "matchingRanges": {
+          "lineNumber": "56",
+          "columnRanges": [
+           {
+            "startIndex": 49,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "56",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 27
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 49,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "lineText": "    )",
+         "matchingRanges": {
+          "lineNumber": "57"
+         },
+         "lineNumber": "57"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAQSAggBONSrs_Wt4tz4xwFAAEgE"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "protobuf",
+        "ossProject": "protobuf"
+       },
+       "refSpec": "refs/heads/main"
+      },
+      "path": "python/google/protobuf/internal/unknown_fields_test.py",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    self.assertNotIn(",
+         "matchingRanges": {
+          "lineNumber": "164"
+         },
+         "lineNumber": "164"
+        },
+        {
+         "lineText": "        'discard', text_format.MessageToString(msg, print_unknown_fields=True)",
+         "matchingRanges": {
+          "lineNumber": "165",
+          "columnRanges": [
+           {
+            "startIndex": 31,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "165",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 8,
+            "length": 9
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 73,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 31,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "lineText": "    )",
+         "matchingRanges": {
+          "lineNumber": "166"
+         },
+         "lineNumber": "166"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAUSAggBOIj9jNar1Yy5EUAASAU"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "protobuf",
+        "ossProject": "protobuf"
+       },
+       "refSpec": "refs/heads/main"
+      },
+      "path": "conformance/conformance_python.py",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "    elif request.requested_output_format == conformance_pb2.TEXT_FORMAT:",
+         "matchingRanges": {
+          "lineNumber": "107"
+         },
+         "lineNumber": "107",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "      response.text_payload = text_format.MessageToString(",
+         "matchingRanges": {
+          "lineNumber": "108",
+          "columnRanges": [
+           {
+            "startIndex": 42,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "108",
+         "ranges": [
+          {
+           "startIndex": 42,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "lineText": "          test_message, print_unknown_fields=request.print_unknown_fields",
+         "matchingRanges": {
+          "lineNumber": "109"
+         },
+         "lineNumber": "109"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAYSAggBOPjPsIaXlMq6twFAAEgG"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "protobuf",
+        "ossProject": "protobuf"
+       },
+       "refSpec": "refs/heads/main"
+      },
+      "path": "python/google/protobuf/proto_text.py",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  \"\"\"",
+         "matchingRanges": {
+          "lineNumber": "64"
+         },
+         "lineNumber": "64",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  return text_format.MessageToString(",
+         "matchingRanges": {
+          "lineNumber": "65",
+          "columnRanges": [
+           {
+            "startIndex": 21,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "65",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 21,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "lineText": "      message=message,",
+         "matchingRanges": {
+          "lineNumber": "66"
+         },
+         "lineNumber": "66"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAcSAggBOKS4i-rtzt6qaUAASAc"
+   }
+  ],
+  "estimatedResultCount": "8",
+  "exhaustive": true,
+  "requestToken": "Cg9NZXNzYWdlVG9TdHJpbmcSNSggZ2l0OmdpdGh1Yi9wcm90b2NvbGJ1ZmZlcnMvcHJvdG9idWZAbWFpbiBjYXNlOnllcyApGgsIsrzM0QYQ8qTqdCAMKgAyAEgB"
+ }
+}

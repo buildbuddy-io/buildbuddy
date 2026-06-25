@@ -1,0 +1,1811 @@
+{
+ "query": "Hijacker",
+ "oss_project": "go",
+ "repo_name": "go",
+ "page_size": 50,
+ "fetched_at": "2026-06-11T02:27:46Z",
+ "response": {
+  "searchResults": [
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/http/server.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t// the underlying connection has been hijacked using the",
+         "matchingRanges": {
+          "lineNumber": "47"
+         },
+         "lineNumber": "47",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 56
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t// Hijacker interface. A zero-byte write on a hijacked",
+         "matchingRanges": {
+          "lineNumber": "48",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "48",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 54
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t// connection will return ErrHijacked without any other side",
+         "matchingRanges": {
+          "lineNumber": "49"
+         },
+         "lineNumber": "49",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 1,
+            "length": 60
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// The Hijacker interface is implemented by ResponseWriters that allow",
+         "matchingRanges": {
+          "lineNumber": "180",
+          "columnRanges": [
+           {
+            "startIndex": 7,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "180",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 70
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 7,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "// an HTTP handler to take over the connection.",
+         "matchingRanges": {
+          "lineNumber": "181"
+         },
+         "lineNumber": "181",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 47
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// Hijacker, but HTTP/2 connections intentionally do not.",
+         "matchingRanges": {
+          "lineNumber": "184",
+          "columnRanges": [
+           {
+            "startIndex": 3,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "184",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 57
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 3,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "// ResponseWriter wrappers may also not support Hijacker. Handlers",
+         "matchingRanges": {
+          "lineNumber": "185",
+          "columnRanges": [
+           {
+            "startIndex": 48,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "185",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 66
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 48,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "// should always test for this ability at runtime.",
+         "matchingRanges": {
+          "lineNumber": "186"
+         },
+         "lineNumber": "186",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 50
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "type Hijacker interface {",
+         "matchingRanges": {
+          "lineNumber": "187",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "187",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 14,
+            "length": 9
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 8
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 10
+    },
+    "resultToken": "CAASBAgBIAE4qrDQwN-Bgv1IQABIAA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/rpc/server.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t}",
+         "matchingRanges": {
+          "lineNumber": "703"
+         },
+         "lineNumber": "703"
+        },
+        {
+         "lineText": "\tconn, _, err := w.(http.Hijacker).Hijack()",
+         "matchingRanges": {
+          "lineNumber": "704",
+          "columnRanges": [
+           {
+            "startIndex": 25,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "704",
+         "ranges": [
+          {
+           "startIndex": 25,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\tif err != nil {",
+         "matchingRanges": {
+          "lineNumber": "705"
+         },
+         "lineNumber": "705",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAESAggBOJaDzun_t5j7QkAASAE"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/http/example_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "func ExampleHijacker() {",
+         "matchingRanges": {
+          "lineNumber": "18",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "18",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\thttp.HandleFunc(\"/hijack\", func(w http.ResponseWriter, r *http.Request) {",
+         "matchingRanges": {
+          "lineNumber": "19"
+         },
+         "lineNumber": "19",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 17,
+            "length": 9
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 28,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\thj, ok := w.(http.Hijacker)",
+         "matchingRanges": {
+          "lineNumber": "20",
+          "columnRanges": [
+           {
+            "startIndex": 20,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "20",
+         "ranges": [
+          {
+           "startIndex": 20,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tif !ok {",
+         "matchingRanges": {
+          "lineNumber": "21"
+         },
+         "lineNumber": "21",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAISBAgBIAE4jsKX9te5stE7QABIAg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/http/clientserver_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t}",
+         "matchingRanges": {
+          "lineNumber": "1622"
+         },
+         "lineNumber": "1622"
+        },
+        {
+         "lineText": "\t\tc, _, err := w.(Hijacker).Hijack()",
+         "matchingRanges": {
+          "lineNumber": "1623",
+          "columnRanges": [
+           {
+            "startIndex": 18,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "1623",
+         "ranges": [
+          {
+           "startIndex": 18,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tif err != nil {",
+         "matchingRanges": {
+          "lineNumber": "1624"
+         },
+         "lineNumber": "1624",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\tif hijack {",
+         "matchingRanges": {
+          "lineNumber": "1689"
+         },
+         "lineNumber": "1689",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\tconn, _, _ := w.(Hijacker).Hijack()",
+         "matchingRanges": {
+          "lineNumber": "1690",
+          "columnRanges": [
+           {
+            "startIndex": 20,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "1690",
+         "ranges": [
+          {
+           "startIndex": 20,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\tdefer conn.Close()",
+         "matchingRanges": {
+          "lineNumber": "1691"
+         },
+         "lineNumber": "1691",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 3,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAMSAggBOOzequ7Cwoq4ZkAASAM"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/http/httptest/server_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\tdefer close(hijacked)",
+         "matchingRanges": {
+          "lineNumber": "236"
+         },
+         "lineNumber": "236",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\thj, ok := w.(http.Hijacker)",
+         "matchingRanges": {
+          "lineNumber": "237",
+          "columnRanges": [
+           {
+            "startIndex": 20,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "237",
+         "ranges": [
+          {
+           "startIndex": 20,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tif !ok {",
+         "matchingRanges": {
+          "lineNumber": "238"
+         },
+         "lineNumber": "238",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAQSAggBONDUleLj_fS3DEAASAQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/http/serve_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\tif withHijack {",
+         "matchingRanges": {
+          "lineNumber": "3130"
+         },
+         "lineNumber": "3130",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\trwc, _, err := w.(Hijacker).Hijack()",
+         "matchingRanges": {
+          "lineNumber": "3131",
+          "columnRanges": [
+           {
+            "startIndex": 21,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "3131",
+         "ranges": [
+          {
+           "startIndex": 21,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\tif err != nil {",
+         "matchingRanges": {
+          "lineNumber": "3132"
+         },
+         "lineNumber": "3132",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 3,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\tw.(Flusher).Flush()",
+         "matchingRanges": {
+          "lineNumber": "3186"
+         },
+         "lineNumber": "3186"
+        },
+        {
+         "lineText": "\t\tconn, _, err := w.(Hijacker).Hijack()",
+         "matchingRanges": {
+          "lineNumber": "3187",
+          "columnRanges": [
+           {
+            "startIndex": 21,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "3187",
+         "ranges": [
+          {
+           "startIndex": 21,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tif err != nil {",
+         "matchingRanges": {
+          "lineNumber": "3188"
+         },
+         "lineNumber": "3188",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\tcase \"hijack\":",
+         "matchingRanges": {
+          "lineNumber": "3730"
+         },
+         "lineNumber": "3730",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 7,
+            "length": 8
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\tc, _, err := w.(Hijacker).Hijack()",
+         "matchingRanges": {
+          "lineNumber": "3731",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "3731",
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\tif err != nil {",
+         "matchingRanges": {
+          "lineNumber": "3732"
+         },
+         "lineNumber": "3732",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 3,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 15
+    },
+    "resultToken": "CAUSAggBOL7d1bbArPSgzwFAAEgF"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/http/responsecontroller.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// Hijack lets the caller take over the connection.",
+         "matchingRanges": {
+          "lineNumber": "64"
+         },
+         "lineNumber": "64",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 51
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "// See the [Hijacker] interface for details.",
+         "matchingRanges": {
+          "lineNumber": "65",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "65",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 44
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "func (c *ResponseController) Hijack() (net.Conn, *bufio.ReadWriter, error) {",
+         "matchingRanges": {
+          "lineNumber": "66"
+         },
+         "lineNumber": "66",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\tswitch t := rw.(type) {",
+         "matchingRanges": {
+          "lineNumber": "69"
+         },
+         "lineNumber": "69",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 18,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tcase Hijacker:",
+         "matchingRanges": {
+          "lineNumber": "70",
+          "columnRanges": [
+           {
+            "startIndex": 7,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "70",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 7,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\treturn t.Hijack()",
+         "matchingRanges": {
+          "lineNumber": "71"
+         },
+         "lineNumber": "71",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 3,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAYSAggBOJL93szX-6C0H0AASAY"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/http/httputil/reverseproxy.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\trc := http.NewResponseController(rw)",
+         "matchingRanges": {
+          "lineNumber": "838"
+         },
+         "lineNumber": "838"
+        },
+        {
+         "lineText": "\tconn, brw, hijackErr := rc.Hijack()",
+         "matchingRanges": {
+          "lineNumber": "839",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "839",
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\tif errors.Is(hijackErr, http.ErrNotSupported) {",
+         "matchingRanges": {
+          "lineNumber": "840",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "840",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tp.getErrorHandler()(rw, req, fmt.Errorf(\"can't switch protocols using non-Hijacker ResponseWriter type %T\", rw))",
+         "matchingRanges": {
+          "lineNumber": "841",
+          "columnRanges": [
+           {
+            "startIndex": 76,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "841",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 42,
+            "length": 66
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 76,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t\treturn",
+         "matchingRanges": {
+          "lineNumber": "842"
+         },
+         "lineNumber": "842",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tif hijackErr != nil {",
+         "matchingRanges": {
+          "lineNumber": "857",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "857",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tp.getErrorHandler()(rw, req, fmt.Errorf(\"Hijack failed on protocol switch: %v\", hijackErr))",
+         "matchingRanges": {
+          "lineNumber": "858",
+          "columnRanges": [
+           {
+            "startIndex": 82,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "858",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 42,
+            "length": 38
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 82,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t\treturn",
+         "matchingRanges": {
+          "lineNumber": "859"
+         },
+         "lineNumber": "859",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 5
+    },
+    "resultToken": "CAcSAggBOMCD27Ha6o3O-gFAAEgH"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/http/httputil/reverseproxy_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\tif r.Method == \"GET\" \u0026\u0026 r.FormValue(\"mode\") == \"hangup\" {",
+         "matchingRanges": {
+          "lineNumber": "46"
+         },
+         "lineNumber": "46",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 17,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 38,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 49,
+            "length": 8
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\tc, _, _ := w.(http.Hijacker).Hijack()",
+         "matchingRanges": {
+          "lineNumber": "47",
+          "columnRanges": [
+           {
+            "startIndex": 22,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "47",
+         "ranges": [
+          {
+           "startIndex": 22,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\tc.Close()",
+         "matchingRanges": {
+          "lineNumber": "48"
+         },
+         "lineNumber": "48"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t}",
+         "matchingRanges": {
+          "lineNumber": "1345"
+         },
+         "lineNumber": "1345"
+        },
+        {
+         "lineText": "\t\tc, _, err := w.(http.Hijacker).Hijack()",
+         "matchingRanges": {
+          "lineNumber": "1346",
+          "columnRanges": [
+           {
+            "startIndex": 23,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "1346",
+         "ranges": [
+          {
+           "startIndex": 23,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tif err != nil {",
+         "matchingRanges": {
+          "lineNumber": "1347"
+         },
+         "lineNumber": "1347",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t}",
+         "matchingRanges": {
+          "lineNumber": "1438"
+         },
+         "lineNumber": "1438"
+        },
+        {
+         "lineText": "\t\tconn, bufrw, err := w.(http.Hijacker).Hijack()",
+         "matchingRanges": {
+          "lineNumber": "1439",
+          "columnRanges": [
+           {
+            "startIndex": 30,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "1439",
+         "ranges": [
+          {
+           "startIndex": 30,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tif err != nil {",
+         "matchingRanges": {
+          "lineNumber": "1440"
+         },
+         "lineNumber": "1440",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 4
+    },
+    "resultToken": "CAgSAggBOJ6rl73j9dysmgFAAEgI"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/net/http/transport_test.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\tw.(Flusher).Flush()",
+         "matchingRanges": {
+          "lineNumber": "1012"
+         },
+         "lineNumber": "1012"
+        },
+        {
+         "lineText": "\t\tconn, buf, _ := w.(Hijacker).Hijack()",
+         "matchingRanges": {
+          "lineNumber": "1013",
+          "columnRanges": [
+           {
+            "startIndex": 21,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "1013",
+         "ranges": [
+          {
+           "startIndex": 21,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t\tbuf.Flush()",
+         "matchingRanges": {
+          "lineNumber": "1014"
+         },
+         "lineNumber": "1014"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t\t\tif r.Method == \"CONNECT\" {",
+         "matchingRanges": {
+          "lineNumber": "1561"
+         },
+         "lineNumber": "1561",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 19,
+            "length": 9
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t\t\thijacker, ok := w.(Hijacker)",
+         "matchingRanges": {
+          "lineNumber": "1562",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 8
+           },
+           {
+            "startIndex": 24,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "1562",
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 8
+          },
+          {
+           "startIndex": 24,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t\t\tif !ok {",
+         "matchingRanges": {
+          "lineNumber": "1563"
+         },
+         "lineNumber": "1563",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 5,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t\t\t}",
+         "matchingRanges": {
+          "lineNumber": "1750"
+         },
+         "lineNumber": "1750"
+        },
+        {
+         "lineText": "\t\t\t\thijacker, ok := w.(Hijacker)",
+         "matchingRanges": {
+          "lineNumber": "1751",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 8
+           },
+           {
+            "startIndex": 23,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "1751",
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 8
+          },
+          {
+           "startIndex": 23,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t\t\tif !ok {",
+         "matchingRanges": {
+          "lineNumber": "1752"
+         },
+         "lineNumber": "1752",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 20
+    },
+    "resultToken": "CAkSAggBOIK2tauQy4vGV0AASAk"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "api/go1.txt",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "pkg net/http, type Header map[string][]string",
+         "matchingRanges": {
+          "lineNumber": "4777"
+         },
+         "lineNumber": "4777"
+        },
+        {
+         "lineText": "pkg net/http, type Hijacker interface { Hijack }",
+         "matchingRanges": {
+          "lineNumber": "4778",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "4778",
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "pkg net/http, type Hijacker interface, Hijack() (net.Conn, *bufio.ReadWriter, error)",
+         "matchingRanges": {
+          "lineNumber": "4779",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "4779",
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "pkg net/http, type ProtocolError struct",
+         "matchingRanges": {
+          "lineNumber": "4780"
+         },
+         "lineNumber": "4780"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAoSAggBOOjf65ehl6OAuQFAAEgK"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/vendor/golang.org/x/tools/internal/stdlib/manifest.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t{\"(Header).WriteSubset\", Method, 0, \"\"},",
+         "matchingRanges": {
+          "lineNumber": "8867"
+         },
+         "lineNumber": "8867",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 3,
+            "length": 22
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 35,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 38,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t{\"(Hijacker).Hijack\", Method, 0, \"\"},",
+         "matchingRanges": {
+          "lineNumber": "8868",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "8868",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 3,
+            "length": 19
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 32,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 35,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t{\"(Protocols).HTTP1\", Method, 24, \"\"},",
+         "matchingRanges": {
+          "lineNumber": "8869"
+         },
+         "lineNumber": "8869",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 3,
+            "length": 19
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 32,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 36,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\t{\"Header\", Type, 0, \"\"},",
+         "matchingRanges": {
+          "lineNumber": "8960"
+         },
+         "lineNumber": "8960",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 3,
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 19,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 22,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t{\"Hijacker\", Type, 0, \"\"},",
+         "matchingRanges": {
+          "lineNumber": "8961",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 8
+           }
+          ]
+         },
+         "lineNumber": "8961",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 3,
+            "length": 10
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 21,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 24,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 8
+          }
+         ]
+        },
+        {
+         "lineText": "\t\t{\"ListenAndServe\", Func, 0, \"func(addr string, handler Handler) error\"},",
+         "matchingRanges": {
+          "lineNumber": "8962"
+         },
+         "lineNumber": "8962",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 3,
+            "length": 16
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 27,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 30,
+            "length": 42
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAsSAggBOJrA-rfNvvHiBUAASAs"
+   }
+  ],
+  "estimatedResultCount": "13",
+  "exhaustive": true,
+  "requestToken": "CghIaWphY2tlchIdKCBnaXQ6Z28vZ29AbWFzdGVyIGNhc2U6eWVzICkaCwiiuqjRBhCmlrZCIAwqADIASAE"
+ }
+}

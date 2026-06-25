@@ -1,0 +1,5160 @@
+{
+ "query": "rule",
+ "oss_project": "bazel",
+ "repo_name": "bazel",
+ "page_size": 50,
+ "fetched_at": "2026-06-11T22:29:40Z",
+ "response": {
+  "searchResults": [
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/packages/Rule.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// Non-final only for mocking in tests. Do not subclass!",
+         "matchingRanges": {
+          "lineNumber": "75"
+         },
+         "lineNumber": "75",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 56
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "public class Rule extends RuleOrMacroInstance implements Target {",
+         "matchingRanges": {
+          "lineNumber": "76",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 4
+           },
+           {
+            "startIndex": 26,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "76",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 18,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 46,
+            "length": 10
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 4
+          },
+          {
+           "startIndex": 26,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "77"
+         },
+         "lineNumber": "77"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  Rule(",
+         "matchingRanges": {
+          "lineNumber": "108",
+          "columnRanges": [
+           {
+            "startIndex": 2,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "108",
+         "ranges": [
+          {
+           "startIndex": 2,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "      Packageoid pkg,",
+         "matchingRanges": {
+          "lineNumber": "109"
+         },
+         "lineNumber": "109"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  @VisibleForSerialization // (private) allows RuleDataCodec visibility",
+         "matchingRanges": {
+          "lineNumber": "903"
+         },
+         "lineNumber": "903",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 27,
+            "length": 44
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  static class RuleData implements TargetData {",
+         "matchingRanges": {
+          "lineNumber": "904",
+          "columnRanges": [
+           {
+            "startIndex": 15,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "904",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 24,
+            "length": 10
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 15,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "    private final RuleClassData ruleClassData;",
+         "matchingRanges": {
+          "lineNumber": "905",
+          "columnRanges": [
+           {
+            "startIndex": 32,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "905",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 32,
+           "length": 4
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 48
+    },
+    "resultToken": "CAASBAgBIAE4iI2I0rn61M94QABIAA"
+   },
+   {
+    "directorySearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/rules/",
+      "type": "DIRECTORY"
+     },
+     "childEntries": [
+      {
+       "path": "docs/rules/build-graph-aspects.png",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/rules/build-graph.png",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/rules/bzl-style.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/rules/challenges.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/rules/deploying.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/rules/errors/",
+       "type": "DIRECTORY"
+      },
+      {
+       "path": "docs/rules/faq.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/rules/index.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/rules/language.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/rules/legacy-macro-tutorial.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/rules/macro-tutorial.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/rules/performance.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/rules/profile.png",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/rules/rules-tutorial.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/rules/scalability-graph.png",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/rules/testing.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/rules/validation_action.svg",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/rules/validation_action_historical.svg",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/rules/verbs-tutorial.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/rules/windows.mdx",
+       "type": "FILE"
+      }
+     ]
+    },
+    "resultToken": "CAESADjC5PmM7I7p1sUBQABIAQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "third_party/jarjar/java/com/tonicsystems/jarjar/Rule.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "public class Rule extends PatternElement {",
+         "matchingRanges": {
+          "lineNumber": "19",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "19",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 18,
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "  private String result;",
+         "matchingRanges": {
+          "lineNumber": "20"
+         },
+         "lineNumber": "20",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAISBAgBIAE49oCbzvWpzoFDQABIAg"
+   },
+   {
+    "directorySearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "site/en/rules/",
+      "type": "DIRECTORY"
+     },
+     "childEntries": [
+      {
+       "path": "site/en/rules/build-graph-aspect.svg",
+       "type": "FILE"
+      },
+      {
+       "path": "site/en/rules/build-graph-aspects.png",
+       "type": "FILE"
+      },
+      {
+       "path": "site/en/rules/build-graph.png",
+       "type": "FILE"
+      },
+      {
+       "path": "site/en/rules/build-graph.svg",
+       "type": "FILE"
+      },
+      {
+       "path": "site/en/rules/bzl-style.md",
+       "type": "FILE"
+      },
+      {
+       "path": "site/en/rules/challenges.md",
+       "type": "FILE"
+      },
+      {
+       "path": "site/en/rules/deploying.md",
+       "type": "FILE"
+      },
+      {
+       "path": "site/en/rules/errors/",
+       "type": "DIRECTORY"
+      },
+      {
+       "path": "site/en/rules/faq.md",
+       "type": "FILE"
+      },
+      {
+       "path": "site/en/rules/index.md",
+       "type": "FILE"
+      },
+      {
+       "path": "site/en/rules/language.md",
+       "type": "FILE"
+      },
+      {
+       "path": "site/en/rules/legacy-macro-tutorial.md",
+       "type": "FILE"
+      },
+      {
+       "path": "site/en/rules/macro-tutorial.md",
+       "type": "FILE"
+      },
+      {
+       "path": "site/en/rules/performance.md",
+       "type": "FILE"
+      },
+      {
+       "path": "site/en/rules/profile.png",
+       "type": "FILE"
+      },
+      {
+       "path": "site/en/rules/rules-tutorial.md",
+       "type": "FILE"
+      },
+      {
+       "path": "site/en/rules/scalability-graph.png",
+       "type": "FILE"
+      },
+      {
+       "path": "site/en/rules/testing.md",
+       "type": "FILE"
+      },
+      {
+       "path": "site/en/rules/validation_action.svg",
+       "type": "FILE"
+      },
+      {
+       "path": "site/en/rules/validation_action_historical.svg",
+       "type": "FILE"
+      },
+      {
+       "path": "site/en/rules/verbs-tutorial.md",
+       "type": "FILE"
+      },
+      {
+       "path": "site/en/rules/windows.md",
+       "type": "FILE"
+      }
+     ]
+    },
+    "resultToken": "CAMSADiyxvnWoY_BjhdAAEgD"
+   },
+   {
+    "directorySearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/rules/errors/",
+      "type": "DIRECTORY"
+     },
+     "childEntries": [
+      {
+       "path": "docs/rules/errors/read-only-variable.mdx",
+       "type": "FILE"
+      }
+     ]
+    },
+    "resultToken": "CAQSADiOo5LP7ZOk0EZAAEgE"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/protobuf/remote_scrubbing.proto",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  message Matcher {",
+         "matchingRanges": {
+          "lineNumber": "25"
+         },
+         "lineNumber": "25",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    // A regex matching the rule kind of the action owner.",
+         "matchingRanges": {
+          "lineNumber": "26",
+          "columnRanges": [
+           {
+            "startIndex": 28,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "26",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 54
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 28,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "    // Use .* if a partial match is desired.",
+         "matchingRanges": {
+          "lineNumber": "27"
+         },
+         "lineNumber": "27",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 40
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  message Rule {",
+         "matchingRanges": {
+          "lineNumber": "70",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "70",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "    // A matcher for actions this rule applies to.",
+         "matchingRanges": {
+          "lineNumber": "71",
+          "columnRanges": [
+           {
+            "startIndex": 34,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "71",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 46
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 34,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "    Matcher matcher = 1;",
+         "matchingRanges": {
+          "lineNumber": "72"
+         },
+         "lineNumber": "72",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 22,
+            "length": 1
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    // The transformation applied by this rule.",
+         "matchingRanges": {
+          "lineNumber": "73",
+          "columnRanges": [
+           {
+            "startIndex": 42,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "73",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 43
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 42,
+           "length": 4
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  // so a large number of rules containing costly regexes may have a noticeable",
+         "matchingRanges": {
+          "lineNumber": "83",
+          "columnRanges": [
+           {
+            "startIndex": 26,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "83",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 77
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 26,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "  // impact on build performance.",
+         "matchingRanges": {
+          "lineNumber": "84"
+         },
+         "lineNumber": "84",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 31
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  repeated Rule rules = 1;",
+         "matchingRanges": {
+          "lineNumber": "85",
+          "columnRanges": [
+           {
+            "startIndex": 11,
+            "length": 4
+           },
+           {
+            "startIndex": 16,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "85",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 24,
+            "length": 1
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 11,
+           "length": 4
+          },
+          {
+           "startIndex": 16,
+           "length": 4
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 9
+    },
+    "resultToken": "CAUSBAgBIAE4-J2l7YK4hehQQABIBQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/analysis/RuleContext.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  private final Rule rule;",
+         "matchingRanges": {
+          "lineNumber": "172",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 4
+           },
+           {
+            "startIndex": 21,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "172",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 4
+          },
+          {
+           "startIndex": 21,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "173"
+         },
+         "lineNumber": "173"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  public Rule getRule() {",
+         "matchingRanges": {
+          "lineNumber": "352",
+          "columnRanges": [
+           {
+            "startIndex": 17,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "352",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 17,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "    return rule;",
+         "matchingRanges": {
+          "lineNumber": "353"
+         },
+         "lineNumber": "353",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    public Rule getRule() {",
+         "matchingRanges": {
+          "lineNumber": "1905",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "1905",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "      return target.getAssociatedRule();",
+         "matchingRanges": {
+          "lineNumber": "1906"
+         },
+         "lineNumber": "1906",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "      implements RuleErrorConsumer {",
+         "matchingRanges": {
+          "lineNumber": "2189"
+         },
+         "lineNumber": "2189",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 10
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    private final Rule rule;",
+         "matchingRanges": {
+          "lineNumber": "2190",
+          "columnRanges": [
+           {
+            "startIndex": 23,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "2190",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 23,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "    private final BuildConfigurationValue configuration;",
+         "matchingRanges": {
+          "lineNumber": "2191"
+         },
+         "lineNumber": "2191",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 12,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 56
+    },
+    "resultToken": "CAYSBAgBIAE4rKq8jsbTgad1QABIBg"
+   },
+   {
+    "directorySearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/9.1.0/rules/",
+      "type": "DIRECTORY"
+     },
+     "childEntries": [
+      {
+       "path": "docs/versions/9.1.0/rules/build-graph-aspects.png",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/9.1.0/rules/build-graph.png",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/9.1.0/rules/bzl-style.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/9.1.0/rules/challenges.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/9.1.0/rules/deploying.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/9.1.0/rules/errors/",
+       "type": "DIRECTORY"
+      },
+      {
+       "path": "docs/versions/9.1.0/rules/faq.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/9.1.0/rules/index.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/9.1.0/rules/language.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/9.1.0/rules/legacy-macro-tutorial.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/9.1.0/rules/lib/",
+       "type": "DIRECTORY"
+      },
+      {
+       "path": "docs/versions/9.1.0/rules/macro-tutorial.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/9.1.0/rules/performance.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/9.1.0/rules/profile.png",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/9.1.0/rules/rules-tutorial.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/9.1.0/rules/scalability-graph.png",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/9.1.0/rules/testing.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/9.1.0/rules/validation_action.svg",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/9.1.0/rules/validation_action_historical.svg",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/9.1.0/rules/verbs-tutorial.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/9.1.0/rules/windows.mdx",
+       "type": "FILE"
+      }
+     ]
+    },
+    "resultToken": "CAcSADik3fLsmK7piQhAAEgH"
+   },
+   {
+    "directorySearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/7.6.1/rules/",
+      "type": "DIRECTORY"
+     },
+     "childEntries": [
+      {
+       "path": "docs/versions/7.6.1/rules/build-graph-aspects.png",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/7.6.1/rules/build-graph.png",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/7.6.1/rules/bzl-style.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/7.6.1/rules/challenges.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/7.6.1/rules/deploying.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/7.6.1/rules/errors/",
+       "type": "DIRECTORY"
+      },
+      {
+       "path": "docs/versions/7.6.1/rules/faq.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/7.6.1/rules/index.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/7.6.1/rules/language.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/7.6.1/rules/lib/",
+       "type": "DIRECTORY"
+      },
+      {
+       "path": "docs/versions/7.6.1/rules/macro-tutorial.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/7.6.1/rules/performance.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/7.6.1/rules/profile.png",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/7.6.1/rules/rules-tutorial.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/7.6.1/rules/scalability-graph.png",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/7.6.1/rules/testing.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/7.6.1/rules/validation_action.svg",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/7.6.1/rules/validation_action_historical.svg",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/7.6.1/rules/verbs-tutorial.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/7.6.1/rules/windows.mdx",
+       "type": "FILE"
+      }
+     ]
+    },
+    "resultToken": "CAgSADjevJSIz-qtgxhAAEgI"
+   },
+   {
+    "directorySearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/8.0.1/rules/",
+      "type": "DIRECTORY"
+     },
+     "childEntries": [
+      {
+       "path": "docs/versions/8.0.1/rules/build-graph-aspects.png",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.0.1/rules/build-graph.png",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.0.1/rules/bzl-style.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.0.1/rules/challenges.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.0.1/rules/deploying.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.0.1/rules/errors/",
+       "type": "DIRECTORY"
+      },
+      {
+       "path": "docs/versions/8.0.1/rules/faq.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.0.1/rules/index.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.0.1/rules/language.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.0.1/rules/legacy-macro-tutorial.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.0.1/rules/lib/",
+       "type": "DIRECTORY"
+      },
+      {
+       "path": "docs/versions/8.0.1/rules/macro-tutorial.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.0.1/rules/performance.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.0.1/rules/profile.png",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.0.1/rules/rules-tutorial.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.0.1/rules/scalability-graph.png",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.0.1/rules/testing.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.0.1/rules/validation_action.svg",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.0.1/rules/validation_action_historical.svg",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.0.1/rules/verbs-tutorial.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.0.1/rules/windows.mdx",
+       "type": "FILE"
+      }
+     ]
+    },
+    "resultToken": "CAkSADiO-6vSgfKBlDlAAEgJ"
+   },
+   {
+    "directorySearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/8.1.1/rules/",
+      "type": "DIRECTORY"
+     },
+     "childEntries": [
+      {
+       "path": "docs/versions/8.1.1/rules/build-graph-aspects.png",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.1.1/rules/build-graph.png",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.1.1/rules/bzl-style.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.1.1/rules/challenges.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.1.1/rules/deploying.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.1.1/rules/errors/",
+       "type": "DIRECTORY"
+      },
+      {
+       "path": "docs/versions/8.1.1/rules/faq.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.1.1/rules/index.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.1.1/rules/language.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.1.1/rules/legacy-macro-tutorial.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.1.1/rules/lib/",
+       "type": "DIRECTORY"
+      },
+      {
+       "path": "docs/versions/8.1.1/rules/macro-tutorial.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.1.1/rules/performance.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.1.1/rules/profile.png",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.1.1/rules/rules-tutorial.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.1.1/rules/scalability-graph.png",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.1.1/rules/testing.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.1.1/rules/validation_action.svg",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.1.1/rules/validation_action_historical.svg",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.1.1/rules/verbs-tutorial.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.1.1/rules/windows.mdx",
+       "type": "FILE"
+      }
+     ]
+    },
+    "resultToken": "CAoSADj2hZGz4tCdhp0BQABICg"
+   },
+   {
+    "directorySearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/8.2.1/rules/",
+      "type": "DIRECTORY"
+     },
+     "childEntries": [
+      {
+       "path": "docs/versions/8.2.1/rules/build-graph-aspects.png",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.2.1/rules/build-graph.png",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.2.1/rules/bzl-style.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.2.1/rules/challenges.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.2.1/rules/deploying.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.2.1/rules/errors/",
+       "type": "DIRECTORY"
+      },
+      {
+       "path": "docs/versions/8.2.1/rules/faq.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.2.1/rules/index.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.2.1/rules/language.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.2.1/rules/legacy-macro-tutorial.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.2.1/rules/lib/",
+       "type": "DIRECTORY"
+      },
+      {
+       "path": "docs/versions/8.2.1/rules/macro-tutorial.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.2.1/rules/performance.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.2.1/rules/profile.png",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.2.1/rules/rules-tutorial.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.2.1/rules/scalability-graph.png",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.2.1/rules/testing.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.2.1/rules/validation_action.svg",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.2.1/rules/validation_action_historical.svg",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.2.1/rules/verbs-tutorial.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.2.1/rules/windows.mdx",
+       "type": "FILE"
+      }
+     ]
+    },
+    "resultToken": "CAsSADiSzJfwucy2vawBQABICw"
+   },
+   {
+    "directorySearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/8.5.1/rules/",
+      "type": "DIRECTORY"
+     },
+     "childEntries": [
+      {
+       "path": "docs/versions/8.5.1/rules/build-graph-aspects.png",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.5.1/rules/build-graph.png",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.5.1/rules/bzl-style.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.5.1/rules/challenges.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.5.1/rules/deploying.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.5.1/rules/errors/",
+       "type": "DIRECTORY"
+      },
+      {
+       "path": "docs/versions/8.5.1/rules/faq.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.5.1/rules/index.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.5.1/rules/language.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.5.1/rules/legacy-macro-tutorial.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.5.1/rules/lib/",
+       "type": "DIRECTORY"
+      },
+      {
+       "path": "docs/versions/8.5.1/rules/macro-tutorial.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.5.1/rules/performance.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.5.1/rules/profile.png",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.5.1/rules/rules-tutorial.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.5.1/rules/scalability-graph.png",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.5.1/rules/testing.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.5.1/rules/validation_action.svg",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.5.1/rules/validation_action_historical.svg",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.5.1/rules/verbs-tutorial.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.5.1/rules/windows.mdx",
+       "type": "FILE"
+      }
+     ]
+    },
+    "resultToken": "CAwSADiO9te817XsjtYBQABIDA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/protobuf/build.proto",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// A rule instance (e.g., cc_library foo, java_binary bar).",
+         "matchingRanges": {
+          "lineNumber": "284",
+          "columnRanges": [
+           {
+            "startIndex": 5,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "284",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 59
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 5,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "message Rule {",
+         "matchingRanges": {
+          "lineNumber": "285",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "285",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "  reserved 8, 11;",
+         "matchingRanges": {
+          "lineNumber": "286"
+         },
+         "lineNumber": "286",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 1
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 14,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// including optional location of target in BUILD file.",
+         "matchingRanges": {
+          "lineNumber": "406"
+         },
+         "lineNumber": "406",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 55
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "message RuleSummary {",
+         "matchingRanges": {
+          "lineNumber": "407",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "407",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "  required Rule rule = 1;",
+         "matchingRanges": {
+          "lineNumber": "408",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "408",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 23,
+            "length": 1
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "  repeated Rule dependency = 2;",
+         "matchingRanges": {
+          "lineNumber": "409"
+         },
+         "lineNumber": "409",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 29,
+            "length": 1
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  // If this target represents a rule, the rule is stored here.",
+         "matchingRanges": {
+          "lineNumber": "508"
+         },
+         "lineNumber": "508",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 61
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  optional Rule rule = 2;",
+         "matchingRanges": {
+          "lineNumber": "509",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "509",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 23,
+            "length": 1
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "510"
+         },
+         "lineNumber": "510"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 52
+    },
+    "resultToken": "CA0SBAgBIAE4ssak_s6f9-KPAUAASA0"
+   },
+   {
+    "directorySearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/bazel/rules/genrule/",
+      "type": "DIRECTORY"
+     },
+     "childEntries": [
+      {
+       "path": "src/test/java/com/google/devtools/build/lib/bazel/rules/genrule/BUILD",
+       "type": "FILE"
+      },
+      {
+       "path": "src/test/java/com/google/devtools/build/lib/bazel/rules/genrule/GenRuleCommandSubstitutionTest.java",
+       "type": "FILE"
+      },
+      {
+       "path": "src/test/java/com/google/devtools/build/lib/bazel/rules/genrule/GenRuleConfiguredTargetTest.java",
+       "type": "FILE"
+      },
+      {
+       "path": "src/test/java/com/google/devtools/build/lib/bazel/rules/genrule/GenRuleIntegrationTest.java",
+       "type": "FILE"
+      },
+      {
+       "path": "src/test/java/com/google/devtools/build/lib/bazel/rules/genrule/GenRuleWindowsConfiguredTargetTest.java",
+       "type": "FILE"
+      }
+     ]
+    },
+    "resultToken": "CA4SADjq7OvRuqK2ljdAAEgO"
+   },
+   {
+    "directorySearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/bazel/rules/genrule/",
+      "type": "DIRECTORY"
+     },
+     "childEntries": [
+      {
+       "path": "src/main/java/com/google/devtools/build/lib/bazel/rules/genrule/BUILD",
+       "type": "FILE"
+      },
+      {
+       "path": "src/main/java/com/google/devtools/build/lib/bazel/rules/genrule/BazelGenRule.java",
+       "type": "FILE"
+      },
+      {
+       "path": "src/main/java/com/google/devtools/build/lib/bazel/rules/genrule/BazelGenRuleRule.java",
+       "type": "FILE"
+      }
+     ]
+    },
+    "resultToken": "CA8SADjs8dWkvMKjp9cBQABIDw"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/analysis/starlark/StarlarkRuleContext.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": " */",
+         "matchingRanges": {
+          "lineNumber": "126"
+         },
+         "lineNumber": "126",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "public final class StarlarkRuleContext",
+         "matchingRanges": {
+          "lineNumber": "127",
+          "columnRanges": [
+           {
+            "startIndex": 27,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "127",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 13,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 27,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "    implements StarlarkRuleContextApi\u003cConstraintValueInfo\u003e, StarlarkActionContext {",
+         "matchingRanges": {
+          "lineNumber": "128",
+          "columnRanges": [
+           {
+            "startIndex": 23,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "128",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 10
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 23,
+           "length": 4
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  @Override",
+         "matchingRanges": {
+          "lineNumber": "600"
+         },
+         "lineNumber": "600"
+        },
+        {
+         "lineText": "  public RuleContext getRuleContext() {",
+         "matchingRanges": {
+          "lineNumber": "601",
+          "columnRanges": [
+           {
+            "startIndex": 24,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "601",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 24,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "    return ruleContext;",
+         "matchingRanges": {
+          "lineNumber": "602"
+         },
+         "lineNumber": "602",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  @Override",
+         "matchingRanges": {
+          "lineNumber": "809"
+         },
+         "lineNumber": "809"
+        },
+        {
+         "lineText": "  public StarlarkAttributesCollection rule() throws EvalException {",
+         "matchingRanges": {
+          "lineNumber": "810",
+          "columnRanges": [
+           {
+            "startIndex": 38,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "810",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 45,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 38,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "    checkMutable(\"rule\");",
+         "matchingRanges": {
+          "lineNumber": "811"
+         },
+         "lineNumber": "811",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 17,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 37
+    },
+    "resultToken": "CBASBAgBIAE43L7XotrLvYQTQABIEA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/packages/RuleAttributeStorageTest.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "/** Tests for {@link Rule}'s attribute storage behavior. */",
+         "matchingRanges": {
+          "lineNumber": "38",
+          "columnRanges": [
+           {
+            "startIndex": 21,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "38",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 59
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 21,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "@RunWith(TestParameterInjector.class)",
+         "matchingRanges": {
+          "lineNumber": "39"
+         },
+         "lineNumber": "39",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 31,
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "public final class RuleAttributeStorageTest extends BuildViewTestCase {",
+         "matchingRanges": {
+          "lineNumber": "40",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "40",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 13,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 44,
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "41"
+         },
+         "lineNumber": "41"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  private Rule rule;",
+         "matchingRanges": {
+          "lineNumber": "59",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 4
+           },
+           {
+            "startIndex": 15,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "59",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 4
+          },
+          {
+           "startIndex": 15,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "  private int firstCustomAttrIndex;",
+         "matchingRanges": {
+          "lineNumber": "60"
+         },
+         "lineNumber": "60",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  @Before",
+         "matchingRanges": {
+          "lineNumber": "110"
+         },
+         "lineNumber": "110"
+        },
+        {
+         "lineText": "  public void setUpForRule() throws Exception {",
+         "matchingRanges": {
+          "lineNumber": "111",
+          "columnRanges": [
+           {
+            "startIndex": 22,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "111",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 29,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 22,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "    scratch.file(\"foo/BUILD\", \"example_rule(name = 'example')\");",
+         "matchingRanges": {
+          "lineNumber": "112",
+          "columnRanges": [
+           {
+            "startIndex": 39,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "112",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 17,
+            "length": 11
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 30,
+            "length": 32
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 39,
+           "length": 4
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 31
+    },
+    "resultToken": "CBESBAgBIAE4ioPCntSGm_WaAUAASBE"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/starlarkbuildapi/StarlarkRuleContextApi.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "/** Interface for a context object given to rule implementation functions. */",
+         "matchingRanges": {
+          "lineNumber": "41",
+          "columnRanges": [
+           {
+            "startIndex": 44,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "41",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 77
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 44,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "@StarlarkBuiltin(",
+         "matchingRanges": {
+          "lineNumber": "42"
+         },
+         "lineNumber": "42"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "            + \" associated function. See the \u003ca\"",
+         "matchingRanges": {
+          "lineNumber": "53"
+         },
+         "lineNumber": "53",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 14,
+            "length": 34
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "            + \" href='https://bazel.build/extending/rules#implementation_function'\u003eRules page\u003c/a\u003e\"",
+         "matchingRanges": {
+          "lineNumber": "54",
+          "columnRanges": [
+           {
+            "startIndex": 52,
+            "length": 4
+           },
+           {
+            "startIndex": 83,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "54",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 14,
+            "length": 84
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 52,
+           "length": 4
+          },
+          {
+           "startIndex": 83,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "            + \" for more information.\")",
+         "matchingRanges": {
+          "lineNumber": "55"
+         },
+         "lineNumber": "55",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 14,
+            "length": 24
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "public interface StarlarkRuleContextApi\u003cConstraintValueT extends ConstraintValueInfoApi\u003e",
+         "matchingRanges": {
+          "lineNumber": "56",
+          "columnRanges": [
+           {
+            "startIndex": 25,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "56",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 9
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 57,
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 25,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "    extends StarlarkValue {",
+         "matchingRanges": {
+          "lineNumber": "57"
+         },
+         "lineNumber": "57",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 7
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "              + \" Only available in aspect implementation functions.\")",
+         "matchingRanges": {
+          "lineNumber": "286"
+         },
+         "lineNumber": "286",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 16,
+            "length": 53
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  StarlarkAttributesCollectionApi rule() throws EvalException;",
+         "matchingRanges": {
+          "lineNumber": "287",
+          "columnRanges": [
+           {
+            "startIndex": 34,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "287",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 41,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 34,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "288"
+         },
+         "lineNumber": "288"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 35
+    },
+    "resultToken": "CBISBAgBIAE40r_Dr-uW_J1uQABIEg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/starlarkbuildapi/StarlarkRuleFunctionsApi.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "      useStarlarkThread = true)",
+         "matchingRanges": {
+          "lineNumber": "766"
+         },
+         "lineNumber": "766"
+        },
+        {
+         "lineText": "  StarlarkCallable rule(",
+         "matchingRanges": {
+          "lineNumber": "767",
+          "columnRanges": [
+           {
+            "startIndex": 19,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "767",
+         "ranges": [
+          {
+           "startIndex": 19,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "      StarlarkFunction implementation,",
+         "matchingRanges": {
+          "lineNumber": "768"
+         },
+         "lineNumber": "768"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "      useStarlarkThread = true)",
+         "matchingRanges": {
+          "lineNumber": "1152"
+         },
+         "lineNumber": "1152"
+        },
+        {
+         "lineText": "  StarlarkSubruleApi subrule(",
+         "matchingRanges": {
+          "lineNumber": "1153",
+          "columnRanges": [
+           {
+            "startIndex": 24,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "1153",
+         "ranges": [
+          {
+           "startIndex": 24,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "      StarlarkFunction implementation,",
+         "matchingRanges": {
+          "lineNumber": "1154"
+         },
+         "lineNumber": "1154"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "      useStarlarkThread = true)",
+         "matchingRanges": {
+          "lineNumber": "1228"
+         },
+         "lineNumber": "1228"
+        },
+        {
+         "lineText": "  StarlarkCallable materializerRule(",
+         "matchingRanges": {
+          "lineNumber": "1229",
+          "columnRanges": [
+           {
+            "startIndex": 31,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "1229",
+         "ranges": [
+          {
+           "startIndex": 31,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "      StarlarkFunction implementation,",
+         "matchingRanges": {
+          "lineNumber": "1230"
+         },
+         "lineNumber": "1230"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 39
+    },
+    "resultToken": "CBMSBAgBIAE4lpfpssfryImiAUAASBM"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/analysis/starlark/StarlarkRuleClassFunctions.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  /** Parent rule class for non-executable non-test Starlark rules. */",
+         "matchingRanges": {
+          "lineNumber": "157",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 4
+           },
+           {
+            "startIndex": 61,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "157",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 68
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 4
+          },
+          {
+           "startIndex": 61,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "  public static final RuleClass baseRule =",
+         "matchingRanges": {
+          "lineNumber": "158",
+          "columnRanges": [
+           {
+            "startIndex": 22,
+            "length": 4
+           },
+           {
+            "startIndex": 36,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "158",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 16,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 22,
+           "length": 4
+          },
+          {
+           "startIndex": 36,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "      BaseRuleClasses.commonCoreAndStarlarkAttributes(",
+         "matchingRanges": {
+          "lineNumber": "159",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "159",
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 4
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  @Override",
+         "matchingRanges": {
+          "lineNumber": "546"
+         },
+         "lineNumber": "546"
+        },
+        {
+         "lineText": "  public StarlarkRuleFunction rule(",
+         "matchingRanges": {
+          "lineNumber": "547",
+          "columnRanges": [
+           {
+            "startIndex": 30,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "547",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 30,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "      StarlarkFunction implementation,",
+         "matchingRanges": {
+          "lineNumber": "548"
+         },
+         "lineNumber": "548"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "   */",
+         "matchingRanges": {
+          "lineNumber": "714"
+         },
+         "lineNumber": "714",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  public static StarlarkRuleFunction createRule(",
+         "matchingRanges": {
+          "lineNumber": "715",
+          "columnRanges": [
+           {
+            "startIndex": 43,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "715",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 9,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 43,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "      // Contextual parameters.",
+         "matchingRanges": {
+          "lineNumber": "716"
+         },
+         "lineNumber": "716",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 6,
+            "length": 25
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 52
+    },
+    "resultToken": "CBQSBAgBIAE4qpLMoZbGz9VZQABIFA"
+   },
+   {
+    "directorySearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/7.6.1/rules/lib/toplevel/",
+      "type": "DIRECTORY"
+     },
+     "childEntries": [
+      {
+       "path": "docs/versions/7.6.1/rules/lib/toplevel/apple_common.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/7.6.1/rules/lib/toplevel/attr.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/7.6.1/rules/lib/toplevel/cc_common.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/7.6.1/rules/lib/toplevel/config.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/7.6.1/rules/lib/toplevel/config_common.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/7.6.1/rules/lib/toplevel/coverage_common.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/7.6.1/rules/lib/toplevel/java_common.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/7.6.1/rules/lib/toplevel/native.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/7.6.1/rules/lib/toplevel/platform_common.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/7.6.1/rules/lib/toplevel/proto.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/7.6.1/rules/lib/toplevel/proto_common.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/7.6.1/rules/lib/toplevel/testing.mdx",
+       "type": "FILE"
+      }
+     ]
+    },
+    "resultToken": "CBUSADiqta6p4vvBqRtAAEgV"
+   },
+   {
+    "directorySearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/7.7.1/rules/lib/toplevel/",
+      "type": "DIRECTORY"
+     },
+     "childEntries": [
+      {
+       "path": "docs/versions/7.7.1/rules/lib/toplevel/apple_common.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/7.7.1/rules/lib/toplevel/attr.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/7.7.1/rules/lib/toplevel/cc_common.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/7.7.1/rules/lib/toplevel/config.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/7.7.1/rules/lib/toplevel/config_common.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/7.7.1/rules/lib/toplevel/coverage_common.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/7.7.1/rules/lib/toplevel/java_common.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/7.7.1/rules/lib/toplevel/native.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/7.7.1/rules/lib/toplevel/platform_common.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/7.7.1/rules/lib/toplevel/proto.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/7.7.1/rules/lib/toplevel/proto_common.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/7.7.1/rules/lib/toplevel/testing.mdx",
+       "type": "FILE"
+      }
+     ]
+    },
+    "resultToken": "CBYSADiypILzr66ExyZAAEgW"
+   },
+   {
+    "directorySearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/9.0.0/rules/lib/toplevel/",
+      "type": "DIRECTORY"
+     },
+     "childEntries": [
+      {
+       "path": "docs/versions/9.0.0/rules/lib/toplevel/apple_common.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/9.0.0/rules/lib/toplevel/attr.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/9.0.0/rules/lib/toplevel/cc_common.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/9.0.0/rules/lib/toplevel/config.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/9.0.0/rules/lib/toplevel/config_common.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/9.0.0/rules/lib/toplevel/coverage_common.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/9.0.0/rules/lib/toplevel/java_common.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/9.0.0/rules/lib/toplevel/native.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/9.0.0/rules/lib/toplevel/platform_common.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/9.0.0/rules/lib/toplevel/proto.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/9.0.0/rules/lib/toplevel/testing.mdx",
+       "type": "FILE"
+      }
+     ]
+    },
+    "resultToken": "CBcSADj00qyEus3mkDtAAEgX"
+   },
+   {
+    "directorySearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/8.5.1/rules/lib/toplevel/",
+      "type": "DIRECTORY"
+     },
+     "childEntries": [
+      {
+       "path": "docs/versions/8.5.1/rules/lib/toplevel/apple_common.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.5.1/rules/lib/toplevel/attr.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.5.1/rules/lib/toplevel/cc_common.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.5.1/rules/lib/toplevel/config.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.5.1/rules/lib/toplevel/config_common.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.5.1/rules/lib/toplevel/coverage_common.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.5.1/rules/lib/toplevel/java_common.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.5.1/rules/lib/toplevel/native.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.5.1/rules/lib/toplevel/platform_common.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.5.1/rules/lib/toplevel/proto.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.5.1/rules/lib/toplevel/proto_common.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.5.1/rules/lib/toplevel/testing.mdx",
+       "type": "FILE"
+      }
+     ]
+    },
+    "resultToken": "CBgSADjwj9aVtNuL05IBQABIGA"
+   },
+   {
+    "directorySearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/8.1.1/rules/lib/toplevel/",
+      "type": "DIRECTORY"
+     },
+     "childEntries": [
+      {
+       "path": "docs/versions/8.1.1/rules/lib/toplevel/apple_common.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.1.1/rules/lib/toplevel/attr.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.1.1/rules/lib/toplevel/cc_common.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.1.1/rules/lib/toplevel/config.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.1.1/rules/lib/toplevel/config_common.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.1.1/rules/lib/toplevel/coverage_common.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.1.1/rules/lib/toplevel/java_common.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.1.1/rules/lib/toplevel/native.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.1.1/rules/lib/toplevel/platform_common.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.1.1/rules/lib/toplevel/proto.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.1.1/rules/lib/toplevel/proto_common.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.1.1/rules/lib/toplevel/testing.mdx",
+       "type": "FILE"
+      }
+     ]
+    },
+    "resultToken": "CBkSADiywJXB3K6VpqABQABIGQ"
+   },
+   {
+    "directorySearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/8.3.1/rules/lib/toplevel/",
+      "type": "DIRECTORY"
+     },
+     "childEntries": [
+      {
+       "path": "docs/versions/8.3.1/rules/lib/toplevel/apple_common.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.3.1/rules/lib/toplevel/attr.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.3.1/rules/lib/toplevel/cc_common.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.3.1/rules/lib/toplevel/config.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.3.1/rules/lib/toplevel/config_common.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.3.1/rules/lib/toplevel/coverage_common.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.3.1/rules/lib/toplevel/java_common.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.3.1/rules/lib/toplevel/native.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.3.1/rules/lib/toplevel/platform_common.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.3.1/rules/lib/toplevel/proto.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.3.1/rules/lib/toplevel/proto_common.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.3.1/rules/lib/toplevel/testing.mdx",
+       "type": "FILE"
+      }
+     ]
+    },
+    "resultToken": "CBoSADjm_PyHxdLyjrUBQABIGg"
+   },
+   {
+    "directorySearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/9.1.0/rules/lib/toplevel/",
+      "type": "DIRECTORY"
+     },
+     "childEntries": [
+      {
+       "path": "docs/versions/9.1.0/rules/lib/toplevel/apple_common.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/9.1.0/rules/lib/toplevel/attr.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/9.1.0/rules/lib/toplevel/cc_common.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/9.1.0/rules/lib/toplevel/config.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/9.1.0/rules/lib/toplevel/config_common.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/9.1.0/rules/lib/toplevel/coverage_common.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/9.1.0/rules/lib/toplevel/java_common.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/9.1.0/rules/lib/toplevel/native.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/9.1.0/rules/lib/toplevel/platform_common.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/9.1.0/rules/lib/toplevel/proto.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/9.1.0/rules/lib/toplevel/testing.mdx",
+       "type": "FILE"
+      }
+     ]
+    },
+    "resultToken": "CBsSADi-38uY1Nyvo8cBQABIGw"
+   },
+   {
+    "directorySearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/8.0.1/rules/lib/toplevel/",
+      "type": "DIRECTORY"
+     },
+     "childEntries": [
+      {
+       "path": "docs/versions/8.0.1/rules/lib/toplevel/apple_common.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.0.1/rules/lib/toplevel/attr.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.0.1/rules/lib/toplevel/cc_common.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.0.1/rules/lib/toplevel/config.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.0.1/rules/lib/toplevel/config_common.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.0.1/rules/lib/toplevel/coverage_common.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.0.1/rules/lib/toplevel/java_common.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.0.1/rules/lib/toplevel/native.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.0.1/rules/lib/toplevel/platform_common.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.0.1/rules/lib/toplevel/proto.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.0.1/rules/lib/toplevel/proto_common.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.0.1/rules/lib/toplevel/testing.mdx",
+       "type": "FILE"
+      }
+     ]
+    },
+    "resultToken": "CBwSADiE7vnc5KqKieIBQABIHA"
+   },
+   {
+    "directorySearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/8.4.2/rules/lib/",
+      "type": "DIRECTORY"
+     },
+     "childEntries": [
+      {
+       "path": "docs/versions/8.4.2/rules/lib/builtins.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.4.2/rules/lib/builtins/",
+       "type": "DIRECTORY"
+      },
+      {
+       "path": "docs/versions/8.4.2/rules/lib/core.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.4.2/rules/lib/core/",
+       "type": "DIRECTORY"
+      },
+      {
+       "path": "docs/versions/8.4.2/rules/lib/fragments.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.4.2/rules/lib/fragments/",
+       "type": "DIRECTORY"
+      },
+      {
+       "path": "docs/versions/8.4.2/rules/lib/globals.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.4.2/rules/lib/globals/",
+       "type": "DIRECTORY"
+      },
+      {
+       "path": "docs/versions/8.4.2/rules/lib/overview.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.4.2/rules/lib/providers.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.4.2/rules/lib/providers/",
+       "type": "DIRECTORY"
+      },
+      {
+       "path": "docs/versions/8.4.2/rules/lib/repo/",
+       "type": "DIRECTORY"
+      },
+      {
+       "path": "docs/versions/8.4.2/rules/lib/toplevel.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.4.2/rules/lib/toplevel/",
+       "type": "DIRECTORY"
+      }
+     ]
+    },
+    "resultToken": "CB0SADju8syP57XrzTRAAEgd"
+   },
+   {
+    "directorySearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/8.3.1/rules/lib/",
+      "type": "DIRECTORY"
+     },
+     "childEntries": [
+      {
+       "path": "docs/versions/8.3.1/rules/lib/builtins.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.3.1/rules/lib/builtins/",
+       "type": "DIRECTORY"
+      },
+      {
+       "path": "docs/versions/8.3.1/rules/lib/core.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.3.1/rules/lib/core/",
+       "type": "DIRECTORY"
+      },
+      {
+       "path": "docs/versions/8.3.1/rules/lib/fragments.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.3.1/rules/lib/fragments/",
+       "type": "DIRECTORY"
+      },
+      {
+       "path": "docs/versions/8.3.1/rules/lib/globals.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.3.1/rules/lib/globals/",
+       "type": "DIRECTORY"
+      },
+      {
+       "path": "docs/versions/8.3.1/rules/lib/overview.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.3.1/rules/lib/providers.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.3.1/rules/lib/providers/",
+       "type": "DIRECTORY"
+      },
+      {
+       "path": "docs/versions/8.3.1/rules/lib/repo/",
+       "type": "DIRECTORY"
+      },
+      {
+       "path": "docs/versions/8.3.1/rules/lib/toplevel.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.3.1/rules/lib/toplevel/",
+       "type": "DIRECTORY"
+      }
+     ]
+    },
+    "resultToken": "CB4SADiupvWRgoOvqjhAAEge"
+   },
+   {
+    "directorySearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/8.2.1/rules/lib/",
+      "type": "DIRECTORY"
+     },
+     "childEntries": [
+      {
+       "path": "docs/versions/8.2.1/rules/lib/builtins.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.2.1/rules/lib/builtins/",
+       "type": "DIRECTORY"
+      },
+      {
+       "path": "docs/versions/8.2.1/rules/lib/core.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.2.1/rules/lib/core/",
+       "type": "DIRECTORY"
+      },
+      {
+       "path": "docs/versions/8.2.1/rules/lib/fragments.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.2.1/rules/lib/fragments/",
+       "type": "DIRECTORY"
+      },
+      {
+       "path": "docs/versions/8.2.1/rules/lib/globals.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.2.1/rules/lib/globals/",
+       "type": "DIRECTORY"
+      },
+      {
+       "path": "docs/versions/8.2.1/rules/lib/overview.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.2.1/rules/lib/providers.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.2.1/rules/lib/providers/",
+       "type": "DIRECTORY"
+      },
+      {
+       "path": "docs/versions/8.2.1/rules/lib/repo/",
+       "type": "DIRECTORY"
+      },
+      {
+       "path": "docs/versions/8.2.1/rules/lib/toplevel.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.2.1/rules/lib/toplevel/",
+       "type": "DIRECTORY"
+      }
+     ]
+    },
+    "resultToken": "CB8SADjKxJHY8frWgmxAAEgf"
+   },
+   {
+    "directorySearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/8.1.1/rules/lib/",
+      "type": "DIRECTORY"
+     },
+     "childEntries": [
+      {
+       "path": "docs/versions/8.1.1/rules/lib/builtins.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.1.1/rules/lib/builtins/",
+       "type": "DIRECTORY"
+      },
+      {
+       "path": "docs/versions/8.1.1/rules/lib/core.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.1.1/rules/lib/core/",
+       "type": "DIRECTORY"
+      },
+      {
+       "path": "docs/versions/8.1.1/rules/lib/fragments.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.1.1/rules/lib/fragments/",
+       "type": "DIRECTORY"
+      },
+      {
+       "path": "docs/versions/8.1.1/rules/lib/globals.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.1.1/rules/lib/globals/",
+       "type": "DIRECTORY"
+      },
+      {
+       "path": "docs/versions/8.1.1/rules/lib/overview.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.1.1/rules/lib/providers.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.1.1/rules/lib/providers/",
+       "type": "DIRECTORY"
+      },
+      {
+       "path": "docs/versions/8.1.1/rules/lib/repo/",
+       "type": "DIRECTORY"
+      },
+      {
+       "path": "docs/versions/8.1.1/rules/lib/toplevel.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.1.1/rules/lib/toplevel/",
+       "type": "DIRECTORY"
+      }
+     ]
+    },
+    "resultToken": "CCASADiytof936S6vIMBQABIIA"
+   },
+   {
+    "directorySearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/8.0.1/rules/lib/",
+      "type": "DIRECTORY"
+     },
+     "childEntries": [
+      {
+       "path": "docs/versions/8.0.1/rules/lib/builtins.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.0.1/rules/lib/builtins/",
+       "type": "DIRECTORY"
+      },
+      {
+       "path": "docs/versions/8.0.1/rules/lib/core.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.0.1/rules/lib/core/",
+       "type": "DIRECTORY"
+      },
+      {
+       "path": "docs/versions/8.0.1/rules/lib/fragments.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.0.1/rules/lib/fragments/",
+       "type": "DIRECTORY"
+      },
+      {
+       "path": "docs/versions/8.0.1/rules/lib/globals.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.0.1/rules/lib/globals/",
+       "type": "DIRECTORY"
+      },
+      {
+       "path": "docs/versions/8.0.1/rules/lib/overview.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.0.1/rules/lib/providers.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.0.1/rules/lib/providers/",
+       "type": "DIRECTORY"
+      },
+      {
+       "path": "docs/versions/8.0.1/rules/lib/repo/",
+       "type": "DIRECTORY"
+      },
+      {
+       "path": "docs/versions/8.0.1/rules/lib/toplevel.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.0.1/rules/lib/toplevel/",
+       "type": "DIRECTORY"
+      }
+     ]
+    },
+    "resultToken": "CCESADj8_fib68iix5QBQABIIQ"
+   },
+   {
+    "directorySearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/9.0.0/rules/lib/",
+      "type": "DIRECTORY"
+     },
+     "childEntries": [
+      {
+       "path": "docs/versions/9.0.0/rules/lib/builtins.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/9.0.0/rules/lib/builtins/",
+       "type": "DIRECTORY"
+      },
+      {
+       "path": "docs/versions/9.0.0/rules/lib/core.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/9.0.0/rules/lib/core/",
+       "type": "DIRECTORY"
+      },
+      {
+       "path": "docs/versions/9.0.0/rules/lib/fragments.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/9.0.0/rules/lib/fragments/",
+       "type": "DIRECTORY"
+      },
+      {
+       "path": "docs/versions/9.0.0/rules/lib/globals.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/9.0.0/rules/lib/globals/",
+       "type": "DIRECTORY"
+      },
+      {
+       "path": "docs/versions/9.0.0/rules/lib/overview.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/9.0.0/rules/lib/providers.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/9.0.0/rules/lib/providers/",
+       "type": "DIRECTORY"
+      },
+      {
+       "path": "docs/versions/9.0.0/rules/lib/repo/",
+       "type": "DIRECTORY"
+      },
+      {
+       "path": "docs/versions/9.0.0/rules/lib/toplevel.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/9.0.0/rules/lib/toplevel/",
+       "type": "DIRECTORY"
+      }
+     ]
+    },
+    "resultToken": "CCISADiEgoPYtJKnhrcBQABIIg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/rules/genrule/GenRuleBaseRule.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import com.google.devtools.build.lib.packages.Rule;",
+         "matchingRanges": {
+          "lineNumber": "33",
+          "columnRanges": [
+           {
+            "startIndex": 46,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "33",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 46,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.packages.RuleClass;",
+         "matchingRanges": {
+          "lineNumber": "34",
+          "columnRanges": [
+           {
+            "startIndex": 46,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "34",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 46,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.packages.RuleClass.AutoExecGroupsMode;",
+         "matchingRanges": {
+          "lineNumber": "35",
+          "columnRanges": [
+           {
+            "startIndex": 46,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "35",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 46,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.packages.RuleClass.Builder.RuleClassType;",
+         "matchingRanges": {
+          "lineNumber": "36",
+          "columnRanges": [
+           {
+            "startIndex": 46,
+            "length": 4
+           },
+           {
+            "startIndex": 64,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "36",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 46,
+           "length": 4
+          },
+          {
+           "startIndex": 64,
+           "length": 4
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "/**",
+         "matchingRanges": {
+          "lineNumber": "39"
+         },
+         "lineNumber": "39",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": " * Rule definition for the genrule rule, intended to be inherited by specific GenRule",
+         "matchingRanges": {
+          "lineNumber": "40",
+          "columnRanges": [
+           {
+            "startIndex": 3,
+            "length": 4
+           },
+           {
+            "startIndex": 30,
+            "length": 4
+           },
+           {
+            "startIndex": 35,
+            "length": 4
+           },
+           {
+            "startIndex": 81,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "40",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 85
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 85
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 3,
+           "length": 4
+          },
+          {
+           "startIndex": 30,
+           "length": 4
+          },
+          {
+           "startIndex": 35,
+           "length": 4
+          },
+          {
+           "startIndex": 81,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": " * implementations. Implementations will need to include any needed additional dependencies, such",
+         "matchingRanges": {
+          "lineNumber": "41"
+         },
+         "lineNumber": "41",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 97
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 97
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": " */",
+         "matchingRanges": {
+          "lineNumber": "43"
+         },
+         "lineNumber": "43",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "public class GenRuleBaseRule implements RuleDefinition {",
+         "matchingRanges": {
+          "lineNumber": "44",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 4
+           },
+           {
+            "startIndex": 24,
+            "length": 4
+           },
+           {
+            "startIndex": 40,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "44",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 29,
+            "length": 10
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 4
+          },
+          {
+           "startIndex": 24,
+           "length": 4
+          },
+          {
+           "startIndex": 40,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "45"
+         },
+         "lineNumber": "45"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 28
+    },
+    "resultToken": "CCMSBAgBIAE4tIKa2IHu9_K8AUAASCM"
+   },
+   {
+    "directorySearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/8.4.2/rules/errors/",
+      "type": "DIRECTORY"
+     },
+     "childEntries": [
+      {
+       "path": "docs/versions/8.4.2/rules/errors/read-only-variable.mdx",
+       "type": "FILE"
+      }
+     ]
+    },
+    "resultToken": "CCQSADj-kO6pzc2jrB5AAEgk"
+   },
+   {
+    "directorySearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/8.1.1/rules/errors/",
+      "type": "DIRECTORY"
+     },
+     "childEntries": [
+      {
+       "path": "docs/versions/8.1.1/rules/errors/read-only-variable.mdx",
+       "type": "FILE"
+      }
+     ]
+    },
+    "resultToken": "CCUSADjclfGmmOOghndAAEgl"
+   },
+   {
+    "directorySearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/7.7.1/rules/errors/",
+      "type": "DIRECTORY"
+     },
+     "childEntries": [
+      {
+       "path": "docs/versions/7.7.1/rules/errors/read-only-variable.mdx",
+       "type": "FILE"
+      }
+     ]
+    },
+    "resultToken": "CCYSADigw664jpGEgXtAAEgm"
+   },
+   {
+    "directorySearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/8.5.1/rules/errors/",
+      "type": "DIRECTORY"
+     },
+     "childEntries": [
+      {
+       "path": "docs/versions/8.5.1/rules/errors/read-only-variable.mdx",
+       "type": "FILE"
+      }
+     ]
+    },
+    "resultToken": "CCcSADjWqenetbmShIUBQABIJw"
+   },
+   {
+    "directorySearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/9.1.0/rules/errors/",
+      "type": "DIRECTORY"
+     },
+     "childEntries": [
+      {
+       "path": "docs/versions/9.1.0/rules/errors/read-only-variable.mdx",
+       "type": "FILE"
+      }
+     ]
+    },
+    "resultToken": "CCgSADjQiqrLpbmdh5gBQABIKA"
+   },
+   {
+    "directorySearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/8.0.1/rules/errors/",
+      "type": "DIRECTORY"
+     },
+     "childEntries": [
+      {
+       "path": "docs/versions/8.0.1/rules/errors/read-only-variable.mdx",
+       "type": "FILE"
+      }
+     ]
+    },
+    "resultToken": "CCkSADiC7saT3s70rLYBQABIKQ"
+   },
+   {
+    "directorySearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/8.2.1/rules/errors/",
+      "type": "DIRECTORY"
+     },
+     "childEntries": [
+      {
+       "path": "docs/versions/8.2.1/rules/errors/read-only-variable.mdx",
+       "type": "FILE"
+      }
+     ]
+    },
+    "resultToken": "CCoSADiosJmu8ay36NwBQABIKg"
+   },
+   {
+    "directorySearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/7.6.1/rules/errors/",
+      "type": "DIRECTORY"
+     },
+     "childEntries": [
+      {
+       "path": "docs/versions/7.6.1/rules/errors/read-only-variable.mdx",
+       "type": "FILE"
+      }
+     ]
+    },
+    "resultToken": "CCsSADiqirP254umlOwBQABIKw"
+   },
+   {
+    "directorySearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/rules/apple/",
+      "type": "DIRECTORY"
+     },
+     "childEntries": [
+      {
+       "path": "src/test/java/com/google/devtools/build/lib/rules/apple/AppleFragmentTest.java",
+       "type": "FILE"
+      },
+      {
+       "path": "src/test/java/com/google/devtools/build/lib/rules/apple/AppleRulesTest.java",
+       "type": "FILE"
+      },
+      {
+       "path": "src/test/java/com/google/devtools/build/lib/rules/apple/AvailableXcodesTest.java",
+       "type": "FILE"
+      },
+      {
+       "path": "src/test/java/com/google/devtools/build/lib/rules/apple/BUILD",
+       "type": "FILE"
+      },
+      {
+       "path": "src/test/java/com/google/devtools/build/lib/rules/apple/ComparatorTester.java",
+       "type": "FILE"
+      },
+      {
+       "path": "src/test/java/com/google/devtools/build/lib/rules/apple/DottedVersionTest.java",
+       "type": "FILE"
+      }
+     ]
+    },
+    "resultToken": "CCwSADji1vatpMDciihAAEgs"
+   },
+   {
+    "directorySearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/rules/apple/",
+      "type": "DIRECTORY"
+     },
+     "childEntries": [
+      {
+       "path": "src/main/java/com/google/devtools/build/lib/rules/apple/AppleCommandLineOptions.java",
+       "type": "FILE"
+      },
+      {
+       "path": "src/main/java/com/google/devtools/build/lib/rules/apple/AppleConfiguration.java",
+       "type": "FILE"
+      },
+      {
+       "path": "src/main/java/com/google/devtools/build/lib/rules/apple/ApplePlatform.java",
+       "type": "FILE"
+      },
+      {
+       "path": "src/main/java/com/google/devtools/build/lib/rules/apple/BUILD",
+       "type": "FILE"
+      },
+      {
+       "path": "src/main/java/com/google/devtools/build/lib/rules/apple/DottedVersion.java",
+       "type": "FILE"
+      },
+      {
+       "path": "src/main/java/com/google/devtools/build/lib/rules/apple/DottedVersionConverter.java",
+       "type": "FILE"
+      }
+     ]
+    },
+    "resultToken": "CC0SADjmm8TJ6a2Pi0FAAEgt"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/bazel/rules/genrule/BazelGenRuleRule.java",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "import com.google.devtools.build.lib.analysis.RuleDefinition;",
+         "matchingRanges": {
+          "lineNumber": "20",
+          "columnRanges": [
+           {
+            "startIndex": 46,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "20",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 46,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.analysis.RuleDefinitionEnvironment;",
+         "matchingRanges": {
+          "lineNumber": "21",
+          "columnRanges": [
+           {
+            "startIndex": 46,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "21",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 46,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.analysis.config.ExecutionTransitionFactory;",
+         "matchingRanges": {
+          "lineNumber": "22"
+         },
+         "lineNumber": "22",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "import com.google.devtools.build.lib.packages.RuleClass;",
+         "matchingRanges": {
+          "lineNumber": "23",
+          "columnRanges": [
+           {
+            "startIndex": 46,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "23",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 46,
+           "length": 4
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "/**",
+         "matchingRanges": {
+          "lineNumber": "27"
+         },
+         "lineNumber": "27",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": " * Rule definition for genrule for Bazel.",
+         "matchingRanges": {
+          "lineNumber": "28",
+          "columnRanges": [
+           {
+            "startIndex": 3,
+            "length": 4
+           },
+           {
+            "startIndex": 26,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "28",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 41
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 3,
+           "length": 4
+          },
+          {
+           "startIndex": 26,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": " */",
+         "matchingRanges": {
+          "lineNumber": "29"
+         },
+         "lineNumber": "29",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "public final class BazelGenRuleRule implements RuleDefinition {",
+         "matchingRanges": {
+          "lineNumber": "30",
+          "columnRanges": [
+           {
+            "startIndex": 27,
+            "length": 8
+           },
+           {
+            "startIndex": 47,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "30",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 13,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 36,
+            "length": 10
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 27,
+           "length": 8
+          },
+          {
+           "startIndex": 47,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "lineText": "  private static final String GENRULE_SETUP_LABEL = \"//tools/genrule:genrule-setup.sh\";",
+         "matchingRanges": {
+          "lineNumber": "31",
+          "columnRanges": [
+           {
+            "startIndex": 33,
+            "length": 4
+           },
+           {
+            "startIndex": 64,
+            "length": 4
+           },
+           {
+            "startIndex": 72,
+            "length": 4
+           }
+          ]
+         },
+         "lineNumber": "31",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 10,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 17,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 52,
+            "length": 34
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 33,
+           "length": 4
+          },
+          {
+           "startIndex": 64,
+           "length": 4
+          },
+          {
+           "startIndex": 72,
+           "length": 4
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "32"
+         },
+         "lineNumber": "32"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 23
+    },
+    "resultToken": "CC4SBAgBIAE4yKumyMCb6Yy5AUAASC4"
+   },
+   {
+    "directorySearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/9.1.0/rules/lib/core/",
+      "type": "DIRECTORY"
+     },
+     "childEntries": [
+      {
+       "path": "docs/versions/9.1.0/rules/lib/core/bool.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/9.1.0/rules/lib/core/builtin_function_or_method.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/9.1.0/rules/lib/core/dict.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/9.1.0/rules/lib/core/float.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/9.1.0/rules/lib/core/function.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/9.1.0/rules/lib/core/int.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/9.1.0/rules/lib/core/json.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/9.1.0/rules/lib/core/list.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/9.1.0/rules/lib/core/range.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/9.1.0/rules/lib/core/set.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/9.1.0/rules/lib/core/string.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/9.1.0/rules/lib/core/tuple.mdx",
+       "type": "FILE"
+      }
+     ]
+    },
+    "resultToken": "CC8SADjC6pr31fWKw9cBQABILw"
+   },
+   {
+    "directorySearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/8.1.1/rules/lib/repo/",
+      "type": "DIRECTORY"
+     },
+     "childEntries": [
+      {
+       "path": "docs/versions/8.1.1/rules/lib/repo/cache.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.1.1/rules/lib/repo/git.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.1.1/rules/lib/repo/http.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.1.1/rules/lib/repo/index.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.1.1/rules/lib/repo/local.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/8.1.1/rules/lib/repo/utils.mdx",
+       "type": "FILE"
+      }
+     ]
+    },
+    "resultToken": "CDASADjK4LHc3Mjcm9kBQABIMA"
+   },
+   {
+    "directorySearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "docs/versions/7.6.1/rules/lib/core/",
+      "type": "DIRECTORY"
+     },
+     "childEntries": [
+      {
+       "path": "docs/versions/7.6.1/rules/lib/core/bool.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/7.6.1/rules/lib/core/builtin_function_or_method.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/7.6.1/rules/lib/core/dict.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/7.6.1/rules/lib/core/float.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/7.6.1/rules/lib/core/function.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/7.6.1/rules/lib/core/int.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/7.6.1/rules/lib/core/json.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/7.6.1/rules/lib/core/list.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/7.6.1/rules/lib/core/range.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/7.6.1/rules/lib/core/string.mdx",
+       "type": "FILE"
+      },
+      {
+       "path": "docs/versions/7.6.1/rules/lib/core/tuple.mdx",
+       "type": "FILE"
+      }
+     ]
+    },
+    "resultToken": "CDESADjwwa6hy5Lm2dkBQABIMQ"
+   }
+  ],
+  "estimatedResultCount": "4920",
+  "nextPageToken": "CKTd8uyYrumJCAjcvtei2su9hBMIssb51qGPwY4XCN68lIjP6q2DGAiqta6p4vvBqRsI/pDuqc3No6weCLKkgvOvroTHJgji1vatpMDciigI7vLMj+e16800COrs69G6oraWNwiupvWRgoOvqjgIjvur0oHygZQ5CPTSrIS6zeaQOwjmm8TJ6a2Pi0EI9oCbzvWpzoFDCI6jks/tk6TQRgj4naXtgriF6FAIqpLMoZbGz9VZCMrEkdjx+taCbAjSv8Ov65b8nW4IrKq8jsbTgad1CNyV8aaY46CGdwiIjYjSufrUz3gIoMOuuI6RhIF7CLK2h/3fpLq8gwEI1qnp3rW5koSFAQiyxqT+zp/34o8BCPCP1pW024vTkgEI/P34m+vIoseUAQjQiqrLpbmdh5gBCIqDwp7Uhpv1mgEI9oWRs+LQnYadAQiywJXB3K6VpqABCJaX6bLH68iJogEIksyX8LnMtr2sAQjm/PyHxdLyjrUBCILuxpPezvSstgEIhIKD2LSSp4a3AQjIq6bIwJvpjLkBCLSCmtiB7vfyvAEIwuT5jOyO6dbFAQi+38uY1Nyvo8cBCI7217zXteyO1gEI7PHVpLzCo6fXAQjC6pr31fWKw9cBCMrgsdzcyNyb2QEI8MGuocuS5tnZAQiosJmu8ay36NwBCITu+dzkqoqJ4gEIqoqz9ueLppTsAQ==",
+  "requestToken": "CgRydWxlEiMoIGdpdDpiYXplbC9iYXplbEBtYXN0ZXIgY2FzZTp5ZXMgKRoLCNTtrNEGEJii-xMgDCoAMgBIAQ"
+ }
+}

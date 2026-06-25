@@ -1,0 +1,684 @@
+{
+ "query": "\"according to ProtoJSON spec\"",
+ "oss_project": "protobuf",
+ "repo_name": "protobuf",
+ "page_size": 50,
+ "fetched_at": "2026-06-17T23:21:55Z",
+ "response": {
+  "searchResults": [
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "protobuf",
+        "ossProject": "protobuf"
+       },
+       "refSpec": "refs/heads/main"
+      },
+      "path": "python/google/protobuf/internal/field_mask.py",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  def ToJsonString(self):",
+         "matchingRanges": {
+          "lineNumber": "17"
+         },
+         "lineNumber": "17",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    \"\"\"Converts FieldMask to string according to ProtoJSON spec.\"\"\"",
+         "matchingRanges": {
+          "lineNumber": "18",
+          "columnRanges": [
+           {
+            "startIndex": 36,
+            "length": 27
+           }
+          ]
+         },
+         "lineNumber": "18",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 4,
+            "length": 63
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 36,
+           "length": 27
+          }
+         ]
+        },
+        {
+         "lineText": "    camelcase_paths = []",
+         "matchingRanges": {
+          "lineNumber": "19"
+         },
+         "lineNumber": "19"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  def FromJsonString(self, value):",
+         "matchingRanges": {
+          "lineNumber": "24"
+         },
+         "lineNumber": "24",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    \"\"\"Converts string to FieldMask according to ProtoJSON spec.\"\"\"",
+         "matchingRanges": {
+          "lineNumber": "25",
+          "columnRanges": [
+           {
+            "startIndex": 36,
+            "length": 27
+           }
+          ]
+         },
+         "lineNumber": "25",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 4,
+            "length": 63
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 36,
+           "length": 27
+          }
+         ]
+        },
+        {
+         "lineText": "    if not isinstance(value, str):",
+         "matchingRanges": {
+          "lineNumber": "26"
+         },
+         "lineNumber": "26",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAASAggBONyFqPmr5N_aGkAASAA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "protobuf",
+        "ossProject": "protobuf"
+       },
+       "refSpec": "refs/heads/main"
+      },
+      "path": "python/google/protobuf/json_format.py",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  def _MessageToJsonObject(self, message):",
+         "matchingRanges": {
+          "lineNumber": "204"
+         },
+         "lineNumber": "204",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    \"\"\"Converts message to an object according to ProtoJSON Specification.\"\"\"",
+         "matchingRanges": {
+          "lineNumber": "205",
+          "columnRanges": [
+           {
+            "startIndex": 37,
+            "length": 27
+           }
+          ]
+         },
+         "lineNumber": "205",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 4,
+            "length": 73
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 37,
+           "length": 27
+          }
+         ]
+        },
+        {
+         "lineText": "    message_descriptor = message.DESCRIPTOR",
+         "matchingRanges": {
+          "lineNumber": "206"
+         },
+         "lineNumber": "206"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  def _RegularMessageToJsonObject(self, message, js):",
+         "matchingRanges": {
+          "lineNumber": "215"
+         },
+         "lineNumber": "215",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    \"\"\"Converts normal message according to ProtoJSON Specification.\"\"\"",
+         "matchingRanges": {
+          "lineNumber": "216",
+          "columnRanges": [
+           {
+            "startIndex": 31,
+            "length": 27
+           }
+          ]
+         },
+         "lineNumber": "216",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 4,
+            "length": 67
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 31,
+           "length": 27
+          }
+         ]
+        },
+        {
+         "lineText": "    fields = message.ListFields()",
+         "matchingRanges": {
+          "lineNumber": "217"
+         },
+         "lineNumber": "217"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  def _FieldToJsonObject(self, field, value):",
+         "matchingRanges": {
+          "lineNumber": "281"
+         },
+         "lineNumber": "281",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    \"\"\"Converts field value according to ProtoJSON Specification.\"\"\"",
+         "matchingRanges": {
+          "lineNumber": "282",
+          "columnRanges": [
+           {
+            "startIndex": 28,
+            "length": 27
+           }
+          ]
+         },
+         "lineNumber": "282",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 4,
+            "length": 64
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 28,
+           "length": 27
+          }
+         ]
+        },
+        {
+         "lineText": "    if field.cpp_type == descriptor.FieldDescriptor.CPPTYPE_MESSAGE:",
+         "matchingRanges": {
+          "lineNumber": "283"
+         },
+         "lineNumber": "283",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  def _AnyMessageToJsonObject(self, message):",
+         "matchingRanges": {
+          "lineNumber": "330"
+         },
+         "lineNumber": "330",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    \"\"\"Converts Any message according to ProtoJSON Specification.\"\"\"",
+         "matchingRanges": {
+          "lineNumber": "331",
+          "columnRanges": [
+           {
+            "startIndex": 28,
+            "length": 27
+           }
+          ]
+         },
+         "lineNumber": "331",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 4,
+            "length": 64
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 28,
+           "length": 27
+          }
+         ]
+        },
+        {
+         "lineText": "    if not message.ListFields():",
+         "matchingRanges": {
+          "lineNumber": "332"
+         },
+         "lineNumber": "332",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  def _GenericMessageToJsonObject(self, message):",
+         "matchingRanges": {
+          "lineNumber": "352"
+         },
+         "lineNumber": "352",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    \"\"\"Converts message according to ProtoJSON Specification.\"\"\"",
+         "matchingRanges": {
+          "lineNumber": "353",
+          "columnRanges": [
+           {
+            "startIndex": 24,
+            "length": 27
+           }
+          ]
+         },
+         "lineNumber": "353",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 4,
+            "length": 60
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 24,
+           "length": 27
+          }
+         ]
+        },
+        {
+         "lineText": "    # Duration, Timestamp and FieldMask have ToJsonString method to do the",
+         "matchingRanges": {
+          "lineNumber": "354"
+         },
+         "lineNumber": "354",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 4,
+            "length": 70
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  def _ValueMessageToJsonObject(self, message):",
+         "matchingRanges": {
+          "lineNumber": "358"
+         },
+         "lineNumber": "358",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    \"\"\"Converts Value message according to ProtoJSON Specification.\"\"\"",
+         "matchingRanges": {
+          "lineNumber": "359",
+          "columnRanges": [
+           {
+            "startIndex": 30,
+            "length": 27
+           }
+          ]
+         },
+         "lineNumber": "359",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 4,
+            "length": 66
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 30,
+           "length": 27
+          }
+         ]
+        },
+        {
+         "lineText": "    which = message.WhichOneof('kind')",
+         "matchingRanges": {
+          "lineNumber": "360"
+         },
+         "lineNumber": "360",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 31,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  def _ListValueMessageToJsonObject(self, message):",
+         "matchingRanges": {
+          "lineNumber": "384"
+         },
+         "lineNumber": "384",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    \"\"\"Converts ListValue message according to ProtoJSON Specification.\"\"\"",
+         "matchingRanges": {
+          "lineNumber": "385",
+          "columnRanges": [
+           {
+            "startIndex": 34,
+            "length": 27
+           }
+          ]
+         },
+         "lineNumber": "385",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 4,
+            "length": 70
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 34,
+           "length": 27
+          }
+         ]
+        },
+        {
+         "lineText": "    return [self._ValueMessageToJsonObject(value) for value in message.values]",
+         "matchingRanges": {
+          "lineNumber": "386"
+         },
+         "lineNumber": "386",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 50,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 60,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  def _StructMessageToJsonObject(self, message):",
+         "matchingRanges": {
+          "lineNumber": "388"
+         },
+         "lineNumber": "388",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    \"\"\"Converts Struct message according to ProtoJSON Specification.\"\"\"",
+         "matchingRanges": {
+          "lineNumber": "389",
+          "columnRanges": [
+           {
+            "startIndex": 31,
+            "length": 27
+           }
+          ]
+         },
+         "lineNumber": "389",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 4,
+            "length": 67
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 31,
+           "length": 27
+          }
+         ]
+        },
+        {
+         "lineText": "    fields = message.fields",
+         "matchingRanges": {
+          "lineNumber": "390"
+         },
+         "lineNumber": "390"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 8
+    },
+    "resultToken": "CAESAggBOJ6Y7NCpo_D5C0AASAE"
+   }
+  ],
+  "estimatedResultCount": "2",
+  "exhaustive": true,
+  "requestToken": "Ch0iYWNjb3JkaW5nIHRvIFByb3RvSlNPTiBzcGVjIhI1KCBnaXQ6Z2l0aHViL3Byb3RvY29sYnVmZmVycy9wcm90b2J1ZkBtYWluIGNhc2U6eWVzICkaDAiT2MzRBhCl19_oASAMKgAyAEgB"
+ }
+}

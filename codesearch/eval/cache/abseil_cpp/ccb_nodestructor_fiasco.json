@@ -1,0 +1,94 @@
+{
+ "query": "\"static initialization order fiasco\"",
+ "oss_project": "abseil",
+ "repo_name": "abseil-cpp",
+ "page_size": 50,
+ "fetched_at": "2026-06-17T23:23:09Z",
+ "response": {
+  "searchResults": [
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "abseil-cpp",
+        "ossProject": "abseil"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "absl/base/no_destructor.h",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// duration but its type has a non-trivial destructor. Global constructors are",
+         "matchingRanges": {
+          "lineNumber": "25"
+         },
+         "lineNumber": "25",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 78
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "// not recommended because of the C++'s static initialization order fiasco (See",
+         "matchingRanges": {
+          "lineNumber": "26",
+          "columnRanges": [
+           {
+            "startIndex": 40,
+            "length": 34
+           }
+          ]
+         },
+         "lineNumber": "26",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 79
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 40,
+           "length": 34
+          }
+         ]
+        },
+        {
+         "lineText": "// https://en.cppreference.com/w/cpp/language/siof). Global destructors are not",
+         "matchingRanges": {
+          "lineNumber": "27"
+         },
+         "lineNumber": "27",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 79
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAASAggBOJiRwIzqs--8igFAAEgA"
+   }
+  ],
+  "estimatedResultCount": "1",
+  "exhaustive": true,
+  "requestToken": "CiQic3RhdGljIGluaXRpYWxpemF0aW9uIG9yZGVyIGZpYXNjbyISMCggZ2l0OmdpdGh1Yi9hYnNlaWwvYWJzZWlsLWNwcEBtYXN0ZXIgY2FzZTp5ZXMgKRoLCN3YzNEGENLUwCsgDCAPKgAyAEgB"
+ }
+}

@@ -1,0 +1,452 @@
+{
+ "query": "__builtin_expect\\(false \\|\\| \\(x\\)",
+ "oss_project": "abseil",
+ "repo_name": "abseil-cpp",
+ "page_size": 50,
+ "fetched_at": "2026-06-17T23:23:17Z",
+ "response": {
+  "searchResults": [
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "abseil-cpp",
+        "ossProject": "abseil"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "absl/base/optimization.h",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// Cache line alignment",
+         "matchingRanges": {
+          "lineNumber": "87"
+         },
+         "lineNumber": "87",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 23
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "#if defined(__i386__) || defined(__x86_64__)",
+         "matchingRanges": {
+          "lineNumber": "88",
+          "columnRanges": [
+           {
+            "startIndex": 22,
+            "length": 2
+           }
+          ]
+         },
+         "lineNumber": "88",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 22,
+           "length": 2
+          }
+         ]
+        },
+        {
+         "lineText": "#define ABSL_CACHELINE_SIZE 64",
+         "matchingRanges": {
+          "lineNumber": "89"
+         },
+         "lineNumber": "89",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 28,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "//    applying it to types. This tends to localize the effect.",
+         "matchingRanges": {
+          "lineNumber": "157"
+         },
+         "lineNumber": "157",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 62
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "#if defined(__clang__) || defined(__GNUC__)",
+         "matchingRanges": {
+          "lineNumber": "158",
+          "columnRanges": [
+           {
+            "startIndex": 23,
+            "length": 2
+           }
+          ]
+         },
+         "lineNumber": "158",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 23,
+           "length": 2
+          }
+         ]
+        },
+        {
+         "lineText": "#define ABSL_CACHELINE_ALIGNED __attribute__((aligned(ABSL_CACHELINE_SIZE)))",
+         "matchingRanges": {
+          "lineNumber": "159"
+         },
+         "lineNumber": "159",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 31,
+            "length": 13
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "// to yield performance improvements.",
+         "matchingRanges": {
+          "lineNumber": "187"
+         },
+         "lineNumber": "187",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 37
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "#if ABSL_HAVE_BUILTIN(__builtin_expect) || \\",
+         "matchingRanges": {
+          "lineNumber": "188",
+          "columnRanges": [
+           {
+            "startIndex": 40,
+            "length": 2
+           }
+          ]
+         },
+         "lineNumber": "188",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 40,
+           "length": 2
+          }
+         ]
+        },
+        {
+         "lineText": "    (defined(__GNUC__) \u0026\u0026 !defined(__clang__))",
+         "matchingRanges": {
+          "lineNumber": "189"
+         },
+         "lineNumber": "189"
+        },
+        {
+         "lineText": "#define ABSL_PREDICT_FALSE(x) (__builtin_expect(false || (x), false))",
+         "matchingRanges": {
+          "lineNumber": "190",
+          "columnRanges": [
+           {
+            "startIndex": 26,
+            "length": 3
+           },
+           {
+            "startIndex": 31,
+            "length": 22
+           },
+           {
+            "startIndex": 54,
+            "length": 2
+           },
+           {
+            "startIndex": 57,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "190",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 48,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 62,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 26,
+           "length": 3
+          },
+          {
+           "startIndex": 31,
+           "length": 22
+          },
+          {
+           "startIndex": 54,
+           "length": 2
+          },
+          {
+           "startIndex": 57,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "#define ABSL_PREDICT_TRUE(x) (__builtin_expect(false || (x), true))",
+         "matchingRanges": {
+          "lineNumber": "191",
+          "columnRanges": [
+           {
+            "startIndex": 25,
+            "length": 3
+           },
+           {
+            "startIndex": 30,
+            "length": 22
+           },
+           {
+            "startIndex": 53,
+            "length": 2
+           },
+           {
+            "startIndex": 56,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "191",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "length": 7
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 47,
+            "length": 5
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 61,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 25,
+           "length": 3
+          },
+          {
+           "startIndex": 30,
+           "length": 22
+          },
+          {
+           "startIndex": 53,
+           "length": 2
+          },
+          {
+           "startIndex": 56,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "#else",
+         "matchingRanges": {
+          "lineNumber": "192"
+         },
+         "lineNumber": "192",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "#define ABSL_PREDICT_FALSE(x) (x)",
+         "matchingRanges": {
+          "lineNumber": "193",
+          "columnRanges": [
+           {
+            "startIndex": 26,
+            "length": 3
+           },
+           {
+            "startIndex": 30,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "193",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 26,
+           "length": 3
+          },
+          {
+           "startIndex": 30,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "#define ABSL_PREDICT_TRUE(x) (x)",
+         "matchingRanges": {
+          "lineNumber": "194",
+          "columnRanges": [
+           {
+            "startIndex": 25,
+            "length": 3
+           },
+           {
+            "startIndex": 29,
+            "length": 3
+           }
+          ]
+         },
+         "lineNumber": "194",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "length": 7
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 25,
+           "length": 3
+          },
+          {
+           "startIndex": 29,
+           "length": 3
+          }
+         ]
+        },
+        {
+         "lineText": "#endif",
+         "matchingRanges": {
+          "lineNumber": "195"
+         },
+         "lineNumber": "195",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 13
+    },
+    "resultToken": "CAASAggBOOSg25Wn-ruJWEAASAA"
+   }
+  ],
+  "estimatedResultCount": "1",
+  "exhaustive": true,
+  "requestToken": "CiJfX2J1aWx0aW5fZXhwZWN0XChmYWxzZSBcfFx8IFwoeFwpEjAoIGdpdDpnaXRodWIvYWJzZWlsL2Fic2VpbC1jcHBAbWFzdGVyIGNhc2U6eWVzICkaDAjl2MzRBhCble68ASAMIA8qADIASAE"
+ }
+}

@@ -1,0 +1,22 @@
+{"id":"cc_cord","category":"symbol","query":"Cord","targets":["absl/strings/cord.h"]}
+{"id":"cc_cordbuffer","category":"symbol","query":"CordBuffer","targets":["absl/strings/cord_buffer.h"]}
+{"id":"cc_inlinedvector","category":"symbol","query":"InlinedVector","targets":["absl/container/inlined_vector.h"]}
+{"id":"cc_fixedarray","category":"symbol","query":"FixedArray","targets":["absl/container/fixed_array.h"]}
+{"id":"cc_mutex","category":"symbol","query":"Mutex","targets":["absl/synchronization/mutex.h"]}
+{"id":"cc_notification","category":"symbol","query":"Notification","targets":["absl/synchronization/notification.h"]}
+{"id":"cc_blockingcounter","category":"symbol","query":"BlockingCounter","targets":["absl/synchronization/blocking_counter.h"]}
+{"id":"cc_status","category":"symbol","query":"StatusOr","targets":["absl/status/statusor.h"]}
+{"id":"cc_commandlineflag","category":"symbol","query":"CommandLineFlag","targets":["absl/flags/commandlineflag.h"]}
+{"id":"cc_statusclass","category":"symbol","query":"Status","targets":["absl/status/status.h"]}
+{"id":"ccb_crc32c","category":"keyword","query":"crc32c","targets":["absl/crc/crc32c.h"]}
+{"id":"ccb_leakcheckdisabler","category":"keyword","query":"leakcheckdisabler","targets":["absl/debugging/leak_check.h"]}
+{"id":"ccb_zipf","category":"keyword","query":"zipf_distribution","targets":["absl/random/zipf_distribution.h"]}
+{"id":"ccb_dieifnull","category":"keyword","query":"die_if_null","targets":["absl/log/die_if_null.h"]}
+{"id":"ccb_spinlockholder","category":"keyword","query":"spinlockholder","targets":["absl/base/internal/spinlock.h"]}
+{"id":"ccb_cord_chunks","category":"phrase","query":"\"separate, reference-counted\"","targets":["absl/strings/cord.h"]}
+{"id":"ccb_strformat_typesafe","category":"phrase","query":"\"type-safe replacement\"","targets":["absl/strings/str_format.h"]}
+{"id":"ccb_nodestructor_fiasco","category":"phrase","query":"\"static initialization order fiasco\"","targets":["absl/base/no_destructor.h"]}
+{"id":"ccb_int128_types","category":"phrase","query":"\"128-bit integer types\"","targets":["absl/numeric/int128.h"]}
+{"id":"ccb_int128_operators","category":"regex","query":"constexpr uint128 operator(<<|>>|\\+|-|\\*)","targets":["absl/numeric/int128.h"]}
+{"id":"ccb_predict_macro","category":"regex","query":"__builtin_expect\\(false \\|\\| \\(x\\)","targets":["absl/base/optimization.h"]}
+{"id":"ccb_dieifnull_macro","category":"regex","query":"#define ABSL_DIE_IF_NULL\\(val\\)","targets":["absl/log/die_if_null.h"]}

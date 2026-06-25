@@ -1,0 +1,817 @@
+{
+ "query": "class \\w+ValueChecker",
+ "oss_project": "protobuf",
+ "repo_name": "protobuf",
+ "page_size": 50,
+ "fetched_at": "2026-06-17T23:22:07Z",
+ "response": {
+  "searchResults": [
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "protobuf",
+        "ossProject": "protobuf"
+       },
+       "refSpec": "refs/heads/main"
+      },
+      "path": "python/google/protobuf/internal/type_checkers.py",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "# themselves in the foot in obvious ways.",
+         "matchingRanges": {
+          "lineNumber": "82"
+         },
+         "lineNumber": "82",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 41
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "class TypeChecker(object):",
+         "matchingRanges": {
+          "lineNumber": "83",
+          "columnRanges": [
+           {
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "83",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "length": 5
+          }
+         ]
+        },
+        {
+         "lineText": "  \"\"\"Type checker used to catch type errors as early as possible",
+         "matchingRanges": {
+          "lineNumber": "84"
+         },
+         "lineNumber": "84",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 62
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "class TypeCheckerWithDefault(TypeChecker):",
+         "matchingRanges": {
+          "lineNumber": "107",
+          "columnRanges": [
+           {
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "107",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "length": 5
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "108"
+         },
+         "lineNumber": "108"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "class BoolValueChecker(object):",
+         "matchingRanges": {
+          "lineNumber": "117",
+          "columnRanges": [
+           {
+            "length": 5
+           },
+           {
+            "startIndex": 6,
+            "length": 16
+           }
+          ]
+         },
+         "lineNumber": "117",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "length": 5
+          },
+          {
+           "startIndex": 6,
+           "length": 16
+          }
+         ]
+        },
+        {
+         "lineText": "  \"\"\"Type checker used for bool fields.\"\"\"",
+         "matchingRanges": {
+          "lineNumber": "118"
+         },
+         "lineNumber": "118",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 40
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "# and bounds-checks.",
+         "matchingRanges": {
+          "lineNumber": "153"
+         },
+         "lineNumber": "153",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 20
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "class IntValueChecker(object):",
+         "matchingRanges": {
+          "lineNumber": "154",
+          "columnRanges": [
+           {
+            "length": 5
+           },
+           {
+            "startIndex": 6,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "154",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "length": 5
+          },
+          {
+           "startIndex": 6,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "lineText": "  \"\"\"Checker used for integer fields.  Performs type-check and range check.\"\"\"",
+         "matchingRanges": {
+          "lineNumber": "155"
+         },
+         "lineNumber": "155",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 76
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "class EnumValueChecker(object):",
+         "matchingRanges": {
+          "lineNumber": "190",
+          "columnRanges": [
+           {
+            "length": 5
+           },
+           {
+            "startIndex": 6,
+            "length": 16
+           }
+          ]
+         },
+         "lineNumber": "190",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "length": 5
+          },
+          {
+           "startIndex": 6,
+           "length": 16
+          }
+         ]
+        },
+        {
+         "lineText": "  \"\"\"Checker used for enum fields.  Performs type-check and range check.\"\"\"",
+         "matchingRanges": {
+          "lineNumber": "191"
+         },
+         "lineNumber": "191",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 73
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "class UnicodeValueChecker(object):",
+         "matchingRanges": {
+          "lineNumber": "222",
+          "columnRanges": [
+           {
+            "length": 5
+           },
+           {
+            "startIndex": 6,
+            "length": 19
+           }
+          ]
+         },
+         "lineNumber": "222",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "length": 5
+          },
+          {
+           "startIndex": 6,
+           "length": 19
+          }
+         ]
+        },
+        {
+         "lineText": "  \"\"\"Checker used for string fields.",
+         "matchingRanges": {
+          "lineNumber": "223"
+         },
+         "lineNumber": "223",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 34
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "class Int32ValueChecker(IntValueChecker):",
+         "matchingRanges": {
+          "lineNumber": "262",
+          "columnRanges": [
+           {
+            "length": 5
+           },
+           {
+            "startIndex": 6,
+            "length": 17
+           },
+           {
+            "startIndex": 24,
+            "length": 15
+           }
+          ]
+         },
+         "lineNumber": "262",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "length": 5
+          },
+          {
+           "startIndex": 6,
+           "length": 17
+          },
+          {
+           "startIndex": 24,
+           "length": 15
+          }
+         ]
+        },
+        {
+         "lineText": "  # We're sure to use ints instead of longs here since comparison may be more",
+         "matchingRanges": {
+          "lineNumber": "263"
+         },
+         "lineNumber": "263",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 2,
+            "length": 75
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 23
+    },
+    "resultToken": "CAASAggBOMaw78ik97fA6gFAAEgA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "protobuf",
+        "ossProject": "protobuf"
+       },
+       "refSpec": "refs/heads/main"
+      },
+      "path": "python/google/protobuf/text_format.py",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "_INTEGER_CHECKERS = (",
+         "matchingRanges": {
+          "lineNumber": "58"
+         },
+         "lineNumber": "58"
+        },
+        {
+         "lineText": "    type_checkers.Uint32ValueChecker(),",
+         "matchingRanges": {
+          "lineNumber": "59",
+          "columnRanges": [
+           {
+            "startIndex": 18,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "59",
+         "ranges": [
+          {
+           "startIndex": 18,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "lineText": "    type_checkers.Int32ValueChecker(),",
+         "matchingRanges": {
+          "lineNumber": "60",
+          "columnRanges": [
+           {
+            "startIndex": 18,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "60",
+         "ranges": [
+          {
+           "startIndex": 18,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": "    type_checkers.Uint64ValueChecker(),",
+         "matchingRanges": {
+          "lineNumber": "61",
+          "columnRanges": [
+           {
+            "startIndex": 18,
+            "length": 18
+           }
+          ]
+         },
+         "lineNumber": "61",
+         "ranges": [
+          {
+           "startIndex": 18,
+           "length": 18
+          }
+         ]
+        },
+        {
+         "lineText": "    type_checkers.Int64ValueChecker(),",
+         "matchingRanges": {
+          "lineNumber": "62",
+          "columnRanges": [
+           {
+            "startIndex": 18,
+            "length": 17
+           }
+          ]
+         },
+         "lineNumber": "62",
+         "ranges": [
+          {
+           "startIndex": 18,
+           "length": 17
+          }
+         ]
+        },
+        {
+         "lineText": ")",
+         "matchingRanges": {
+          "lineNumber": "63"
+         },
+         "lineNumber": "63"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "class Error(Exception):",
+         "matchingRanges": {
+          "lineNumber": "76",
+          "columnRanges": [
+           {
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "76",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "length": 5
+          }
+         ]
+        },
+        {
+         "lineText": "  \"\"\"Top-level module error for text_format.\"\"\"",
+         "matchingRanges": {
+          "lineNumber": "77"
+         },
+         "lineNumber": "77",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 45
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "class ParseError(Error):",
+         "matchingRanges": {
+          "lineNumber": "80",
+          "columnRanges": [
+           {
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "80",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "length": 5
+          }
+         ]
+        },
+        {
+         "lineText": "  \"\"\"Thrown in case of text parsing or tokenizing error.\"\"\"",
+         "matchingRanges": {
+          "lineNumber": "81"
+         },
+         "lineNumber": "81",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 57
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "class TextWriter(object):",
+         "matchingRanges": {
+          "lineNumber": "103",
+          "columnRanges": [
+           {
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "103",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "length": 5
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "104"
+         },
+         "lineNumber": "104"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    return None",
+         "matchingRanges": {
+          "lineNumber": "366"
+         },
+         "lineNumber": "366",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 11,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  message_type = message_factory.GetMessageClass(message_descriptor)",
+         "matchingRanges": {
+          "lineNumber": "367",
+          "columnRanges": [
+           {
+            "startIndex": 43,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "367",
+         "ranges": [
+          {
+           "startIndex": 43,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "lineText": "  return message_type()",
+         "matchingRanges": {
+          "lineNumber": "368"
+         },
+         "lineNumber": "368",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "          # TODO: refactor and optimize if this becomes an issue.",
+         "matchingRanges": {
+          "lineNumber": "482"
+         },
+         "lineNumber": "482",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 10,
+            "length": 55
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "          entry_submsg = value.GetEntryClass()(key=key, value=value[key])",
+         "matchingRanges": {
+          "lineNumber": "483",
+          "columnRanges": [
+           {
+            "startIndex": 39,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "483",
+         "ranges": [
+          {
+           "startIndex": 39,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "lineText": "          self.PrintField(field, entry_submsg)",
+         "matchingRanges": {
+          "lineNumber": "484"
+         },
+         "lineNumber": "484"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "      elif is_map_entry:",
+         "matchingRanges": {
+          "lineNumber": "1223"
+         },
+         "lineNumber": "1223",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "        sub_message = getattr(message, field.name).GetEntryClass()()",
+         "matchingRanges": {
+          "lineNumber": "1224",
+          "columnRanges": [
+           {
+            "startIndex": 59,
+            "length": 5
+           }
+          ]
+         },
+         "lineNumber": "1224",
+         "ranges": [
+          {
+           "startIndex": 59,
+           "length": 5
+          }
+         ]
+        },
+        {
+         "lineText": "      else:",
+         "matchingRanges": {
+          "lineNumber": "1225"
+         },
+         "lineNumber": "1225",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 14
+    },
+    "resultToken": "CAESAggBOMy-rYaJh8rHkAFAAEgB"
+   }
+  ],
+  "estimatedResultCount": "2",
+  "exhaustive": true,
+  "requestToken": "ChVjbGFzcyBcdytWYWx1ZUNoZWNrZXISNSggZ2l0OmdpdGh1Yi9wcm90b2NvbGJ1ZmZlcnMvcHJvdG9idWZAbWFpbiBjYXNlOnllcyApGgsIn9jM0QYQ1NaLTyAMKgAyAEgB"
+ }
+}

@@ -1,0 +1,5365 @@
+{
+ "query": "case:yes SIGSEGV",
+ "oss_project": "go",
+ "repo_name": "go",
+ "page_size": 50,
+ "fetched_at": "2026-06-11T02:31:09Z",
+ "response": {
+  "searchResults": [
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/defs_linux.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tSIGUSR1   = C.SIGUSR1",
+         "matchingRanges": {
+          "lineNumber": "72"
+         },
+         "lineNumber": "72"
+        },
+        {
+         "lineText": "\tSIGSEGV   = C.SIGSEGV",
+         "matchingRanges": {
+          "lineNumber": "73",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 7
+           },
+           {
+            "startIndex": 15,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "73",
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 7
+          },
+          {
+           "startIndex": 15,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tSIGUSR2   = C.SIGUSR2",
+         "matchingRanges": {
+          "lineNumber": "74"
+         },
+         "lineNumber": "74"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAASBAgBIAE4jpi8-q-f26cRQABIAA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/defs2_linux.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tSIGUSR1   = C.SIGUSR1",
+         "matchingRanges": {
+          "lineNumber": "81"
+         },
+         "lineNumber": "81"
+        },
+        {
+         "lineText": "\tSIGSEGV   = C.SIGSEGV",
+         "matchingRanges": {
+          "lineNumber": "82",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 7
+           },
+           {
+            "startIndex": 15,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "82",
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 7
+          },
+          {
+           "startIndex": 15,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tSIGUSR2   = C.SIGUSR2",
+         "matchingRanges": {
+          "lineNumber": "83"
+         },
+         "lineNumber": "83"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAESBAgBIAE4mvCyotv9k4SCAUAASAE"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/defs_netbsd.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tSIGBUS    = C.SIGBUS",
+         "matchingRanges": {
+          "lineNumber": "68"
+         },
+         "lineNumber": "68"
+        },
+        {
+         "lineText": "\tSIGSEGV   = C.SIGSEGV",
+         "matchingRanges": {
+          "lineNumber": "69",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 7
+           },
+           {
+            "startIndex": 15,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "69",
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 7
+          },
+          {
+           "startIndex": 15,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tSIGSYS    = C.SIGSYS",
+         "matchingRanges": {
+          "lineNumber": "70"
+         },
+         "lineNumber": "70"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAISBAgBIAE49MzVyY6MkuWYAUAASAI"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/defs_darwin.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tSIGBUS    = C.SIGBUS",
+         "matchingRanges": {
+          "lineNumber": "64"
+         },
+         "lineNumber": "64"
+        },
+        {
+         "lineText": "\tSIGSEGV   = C.SIGSEGV",
+         "matchingRanges": {
+          "lineNumber": "65",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 7
+           },
+           {
+            "startIndex": 15,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "65",
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 7
+          },
+          {
+           "startIndex": 15,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tSIGSYS    = C.SIGSYS",
+         "matchingRanges": {
+          "lineNumber": "66"
+         },
+         "lineNumber": "66"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAMSBAgBIAE49oPkz7eO_Pb7AUAASAM"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/defs_solaris.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tSIGBUS    = C.SIGBUS",
+         "matchingRanges": {
+          "lineNumber": "72"
+         },
+         "lineNumber": "72"
+        },
+        {
+         "lineText": "\tSIGSEGV   = C.SIGSEGV",
+         "matchingRanges": {
+          "lineNumber": "73",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 7
+           },
+           {
+            "startIndex": 15,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "73",
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 7
+          },
+          {
+           "startIndex": 15,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tSIGSYS    = C.SIGSYS",
+         "matchingRanges": {
+          "lineNumber": "74"
+         },
+         "lineNumber": "74"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAQSBAgBIAE4rrvE67-e9dsbQABIBA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/defs_openbsd.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tSIGBUS    = C.SIGBUS",
+         "matchingRanges": {
+          "lineNumber": "69"
+         },
+         "lineNumber": "69"
+        },
+        {
+         "lineText": "\tSIGSEGV   = C.SIGSEGV",
+         "matchingRanges": {
+          "lineNumber": "70",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 7
+           },
+           {
+            "startIndex": 15,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "70",
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 7
+          },
+          {
+           "startIndex": 15,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tSIGSYS    = C.SIGSYS",
+         "matchingRanges": {
+          "lineNumber": "71"
+         },
+         "lineNumber": "71"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAUSBAgBIAE41rOTl_bCvvgyQABIBQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/defs_freebsd.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tSIGBUS    = C.SIGBUS",
+         "matchingRanges": {
+          "lineNumber": "94"
+         },
+         "lineNumber": "94"
+        },
+        {
+         "lineText": "\tSIGSEGV   = C.SIGSEGV",
+         "matchingRanges": {
+          "lineNumber": "95",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 7
+           },
+           {
+            "startIndex": 15,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "95",
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 7
+          },
+          {
+           "startIndex": 15,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tSIGSYS    = C.SIGSYS",
+         "matchingRanges": {
+          "lineNumber": "96"
+         },
+         "lineNumber": "96"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAYSBAgBIAE4rNnIjY-n1ulxQABIBg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/syscall/types_windows.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tSIGKILL = Signal(0x9)",
+         "matchingRanges": {
+          "lineNumber": "70"
+         },
+         "lineNumber": "70",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 18,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tSIGSEGV = Signal(0xb)",
+         "matchingRanges": {
+          "lineNumber": "71",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "71",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 18,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tSIGPIPE = Signal(0xd)",
+         "matchingRanges": {
+          "lineNumber": "72"
+         },
+         "lineNumber": "72",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 18,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAcSBAgBIAE45LHot-WrwtQ2QABIBw"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/syscall/syscall_wasip1.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tSIGUSR1",
+         "matchingRanges": {
+          "lineNumber": "114"
+         },
+         "lineNumber": "114"
+        },
+        {
+         "lineText": "\tSIGSEGV",
+         "matchingRanges": {
+          "lineNumber": "115",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "115",
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tSIGUSR2",
+         "matchingRanges": {
+          "lineNumber": "116"
+         },
+         "lineNumber": "116"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t\treturn \"user defined signal 1\"",
+         "matchingRanges": {
+          "lineNumber": "162"
+         },
+         "lineNumber": "162",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 9,
+            "length": 23
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tcase SIGSEGV:",
+         "matchingRanges": {
+          "lineNumber": "163",
+          "columnRanges": [
+           {
+            "startIndex": 6,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "163",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 1,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 6,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\t\treturn \"segmentation fault\"",
+         "matchingRanges": {
+          "lineNumber": "164"
+         },
+         "lineNumber": "164",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 9,
+            "length": 20
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAgSBAgBIAE4mpqq08XE474mQABICA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/defs_dragonfly.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tSIGBUS    = C.SIGBUS",
+         "matchingRanges": {
+          "lineNumber": "67"
+         },
+         "lineNumber": "67"
+        },
+        {
+         "lineText": "\tSIGSEGV   = C.SIGSEGV",
+         "matchingRanges": {
+          "lineNumber": "68",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 7
+           },
+           {
+            "startIndex": 15,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "68",
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 7
+          },
+          {
+           "startIndex": 15,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tSIGSYS    = C.SIGSYS",
+         "matchingRanges": {
+          "lineNumber": "69"
+         },
+         "lineNumber": "69"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAkSBAgBIAE4moTo8_T68_e9AUAASAk"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/runtime/defs_arm_linux.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tSIGUSR1   = C.SIGUSR1",
+         "matchingRanges": {
+          "lineNumber": "74"
+         },
+         "lineNumber": "74"
+        },
+        {
+         "lineText": "\tSIGSEGV   = C.SIGSEGV",
+         "matchingRanges": {
+          "lineNumber": "75",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 7
+           },
+           {
+            "startIndex": 15,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "75",
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 7
+          },
+          {
+           "startIndex": 15,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tSIGUSR2   = C.SIGUSR2",
+         "matchingRanges": {
+          "lineNumber": "76"
+         },
+         "lineNumber": "76"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAoSBAgBIAE4-texqfz7mcLnAUAASAo"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/syscall/zerrors_linux_arm.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tPR_TSC_ENABLE                    = 0x1",
+         "matchingRanges": {
+          "lineNumber": "726"
+         },
+         "lineNumber": "726",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 36,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tPR_TSC_SIGSEGV                   = 0x2",
+         "matchingRanges": {
+          "lineNumber": "727",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "727",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 36,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tPR_UNALIGN_NOPRINT               = 0x1",
+         "matchingRanges": {
+          "lineNumber": "728"
+         },
+         "lineNumber": "728",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 36,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tSIGQUIT   = Signal(0x3)",
+         "matchingRanges": {
+          "lineNumber": "1348"
+         },
+         "lineNumber": "1348",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tSIGSEGV   = Signal(0xb)",
+         "matchingRanges": {
+          "lineNumber": "1349",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "1349",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tSIGSTKFLT = Signal(0x10)",
+         "matchingRanges": {
+          "lineNumber": "1350"
+         },
+         "lineNumber": "1350",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAsSBAgBIAE4ko25_O_n3sZHQABICw"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/syscall/zerrors_linux_386.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tPR_TSC_ENABLE                    = 0x1",
+         "matchingRanges": {
+          "lineNumber": "721"
+         },
+         "lineNumber": "721",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 36,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tPR_TSC_SIGSEGV                   = 0x2",
+         "matchingRanges": {
+          "lineNumber": "722",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "722",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 36,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tPR_UNALIGN_NOPRINT               = 0x1",
+         "matchingRanges": {
+          "lineNumber": "723"
+         },
+         "lineNumber": "723",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 36,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tSIGQUIT   = Signal(0x3)",
+         "matchingRanges": {
+          "lineNumber": "1335"
+         },
+         "lineNumber": "1335",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tSIGSEGV   = Signal(0xb)",
+         "matchingRanges": {
+          "lineNumber": "1336",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "1336",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tSIGSTKFLT = Signal(0x10)",
+         "matchingRanges": {
+          "lineNumber": "1337"
+         },
+         "lineNumber": "1337",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAwSBAgBIAE43pit-dqurZdeQABIDA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/syscall/zerrors_aix_ppc64.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tSIGSAK      = Signal(0x3f)",
+         "matchingRanges": {
+          "lineNumber": "1132"
+         },
+         "lineNumber": "1132",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 22,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tSIGSEGV     = Signal(0xb)",
+         "matchingRanges": {
+          "lineNumber": "1133",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "1133",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 22,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tSIGSOUND    = Signal(0x3e)",
+         "matchingRanges": {
+          "lineNumber": "1134"
+         },
+         "lineNumber": "1134",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 22,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CA0SBAgBIAE48MvA9_zDot3FAUAASA0"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/syscall/zerrors_linux_mips.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tPR_TSC_ENABLE                    = 0x1",
+         "matchingRanges": {
+          "lineNumber": "920"
+         },
+         "lineNumber": "920",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 36,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tPR_TSC_SIGSEGV                   = 0x2",
+         "matchingRanges": {
+          "lineNumber": "921",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "921",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 36,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tPR_UNALIGN_NOPRINT               = 0x1",
+         "matchingRanges": {
+          "lineNumber": "922"
+         },
+         "lineNumber": "922",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 36,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tSIGQUIT   = Signal(0x3)",
+         "matchingRanges": {
+          "lineNumber": "1623"
+         },
+         "lineNumber": "1623",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tSIGSEGV   = Signal(0xb)",
+         "matchingRanges": {
+          "lineNumber": "1624",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "1624",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tSIGSTOP   = Signal(0x17)",
+         "matchingRanges": {
+          "lineNumber": "1625"
+         },
+         "lineNumber": "1625",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CA4SBAgBIAE4lOnV45fisMxxQABIDg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/syscall/zerrors_netbsd_386.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tSIGQUIT   = Signal(0x3)",
+         "matchingRanges": {
+          "lineNumber": "1557"
+         },
+         "lineNumber": "1557",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tSIGSEGV   = Signal(0xb)",
+         "matchingRanges": {
+          "lineNumber": "1558",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "1558",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tSIGSTOP   = Signal(0x11)",
+         "matchingRanges": {
+          "lineNumber": "1559"
+         },
+         "lineNumber": "1559",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CA8SBAgBIAE4opP23a__6vV0QABIDw"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/syscall/zerrors_netbsd_arm.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tSIGQUIT   = Signal(0x3)",
+         "matchingRanges": {
+          "lineNumber": "1533"
+         },
+         "lineNumber": "1533",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tSIGSEGV   = Signal(0xb)",
+         "matchingRanges": {
+          "lineNumber": "1534",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "1534",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tSIGSTOP   = Signal(0x11)",
+         "matchingRanges": {
+          "lineNumber": "1535"
+         },
+         "lineNumber": "1535",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBASBAgBIAE4iMrn-ufTt6aLAUAASBA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/syscall/zerrors_linux_arm64.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tPR_TSC_ENABLE                    = 0x1",
+         "matchingRanges": {
+          "lineNumber": "930"
+         },
+         "lineNumber": "930",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 36,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tPR_TSC_SIGSEGV                   = 0x2",
+         "matchingRanges": {
+          "lineNumber": "931",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "931",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 36,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tPR_UNALIGN_NOPRINT               = 0x1",
+         "matchingRanges": {
+          "lineNumber": "932"
+         },
+         "lineNumber": "932",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 36,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tSIGQUIT   = Signal(0x3)",
+         "matchingRanges": {
+          "lineNumber": "1612"
+         },
+         "lineNumber": "1612",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tSIGSEGV   = Signal(0xb)",
+         "matchingRanges": {
+          "lineNumber": "1613",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "1613",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tSIGSTKFLT = Signal(0x10)",
+         "matchingRanges": {
+          "lineNumber": "1614"
+         },
+         "lineNumber": "1614",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CBESBAgBIAE49P-Zs474-LQzQABIEQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/syscall/zerrors_linux_ppc64.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tPR_TSC_ENABLE                    = 0x1",
+         "matchingRanges": {
+          "lineNumber": "926"
+         },
+         "lineNumber": "926",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 36,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tPR_TSC_SIGSEGV                   = 0x2",
+         "matchingRanges": {
+          "lineNumber": "927",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "927",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 36,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tPR_UNALIGN_NOPRINT               = 0x1",
+         "matchingRanges": {
+          "lineNumber": "928"
+         },
+         "lineNumber": "928",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 36,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tSIGQUIT   = Signal(0x3)",
+         "matchingRanges": {
+          "lineNumber": "1667"
+         },
+         "lineNumber": "1667",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tSIGSEGV   = Signal(0xb)",
+         "matchingRanges": {
+          "lineNumber": "1668",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "1668",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tSIGSTKFLT = Signal(0x10)",
+         "matchingRanges": {
+          "lineNumber": "1669"
+         },
+         "lineNumber": "1669",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CBISBAgBIAE4qLWXmLGP54idAUAASBI"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/syscall/zerrors_linux_amd64.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tPR_TSC_ENABLE                    = 0x1",
+         "matchingRanges": {
+          "lineNumber": "721"
+         },
+         "lineNumber": "721",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 36,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tPR_TSC_SIGSEGV                   = 0x2",
+         "matchingRanges": {
+          "lineNumber": "722",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "722",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 36,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tPR_UNALIGN_NOPRINT               = 0x1",
+         "matchingRanges": {
+          "lineNumber": "723"
+         },
+         "lineNumber": "723",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 36,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tSIGQUIT   = Signal(0x3)",
+         "matchingRanges": {
+          "lineNumber": "1336"
+         },
+         "lineNumber": "1336",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tSIGSEGV   = Signal(0xb)",
+         "matchingRanges": {
+          "lineNumber": "1337",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "1337",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tSIGSTKFLT = Signal(0x10)",
+         "matchingRanges": {
+          "lineNumber": "1338"
+         },
+         "lineNumber": "1338",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CBMSBAgBIAE4hOiBtLCWvLTRAUAASBM"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/syscall/zerrors_linux_s390x.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tPR_TSC_ENABLE                    = 0x1",
+         "matchingRanges": {
+          "lineNumber": "954"
+         },
+         "lineNumber": "954",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 36,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tPR_TSC_SIGSEGV                   = 0x2",
+         "matchingRanges": {
+          "lineNumber": "955",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "955",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 36,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tPR_UNALIGN_NOPRINT               = 0x1",
+         "matchingRanges": {
+          "lineNumber": "956"
+         },
+         "lineNumber": "956",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 36,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tSIGQUIT   = Signal(0x3)",
+         "matchingRanges": {
+          "lineNumber": "1729"
+         },
+         "lineNumber": "1729",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tSIGSEGV   = Signal(0xb)",
+         "matchingRanges": {
+          "lineNumber": "1730",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "1730",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tSIGSTKFLT = Signal(0x10)",
+         "matchingRanges": {
+          "lineNumber": "1731"
+         },
+         "lineNumber": "1731",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CBQSBAgBIAE4zu3G7t-Y1b_aAUAASBQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/syscall/zerrors_openbsd_386.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tSIGQUIT   = Signal(0x3)",
+         "matchingRanges": {
+          "lineNumber": "1439"
+         },
+         "lineNumber": "1439",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tSIGSEGV   = Signal(0xb)",
+         "matchingRanges": {
+          "lineNumber": "1440",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "1440",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tSIGSTOP   = Signal(0x11)",
+         "matchingRanges": {
+          "lineNumber": "1441"
+         },
+         "lineNumber": "1441",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBUSBAgBIAE4wPCvqfOCz4ouQABIFQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/syscall/zerrors_freebsd_386.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tSIGQUIT   = Signal(0x3)",
+         "matchingRanges": {
+          "lineNumber": "1561"
+         },
+         "lineNumber": "1561",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tSIGSEGV   = Signal(0xb)",
+         "matchingRanges": {
+          "lineNumber": "1562",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "1562",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tSIGSTOP   = Signal(0x11)",
+         "matchingRanges": {
+          "lineNumber": "1563"
+         },
+         "lineNumber": "1563",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBYSBAgBIAE46OqA7aHg6Z2hAUAASBY"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/syscall/zerrors_freebsd_arm.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tSIGQUIT   = Signal(0x3)",
+         "matchingRanges": {
+          "lineNumber": "1561"
+         },
+         "lineNumber": "1561",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tSIGSEGV   = Signal(0xb)",
+         "matchingRanges": {
+          "lineNumber": "1562",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "1562",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tSIGSTOP   = Signal(0x11)",
+         "matchingRanges": {
+          "lineNumber": "1563"
+         },
+         "lineNumber": "1563",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBcSBAgBIAE4tLyJkqGwi8OuAUAASBc"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/syscall/zerrors_openbsd_arm.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tSIGQUIT   = Signal(0x3)",
+         "matchingRanges": {
+          "lineNumber": "1438"
+         },
+         "lineNumber": "1438",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tSIGSEGV   = Signal(0xb)",
+         "matchingRanges": {
+          "lineNumber": "1439",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "1439",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tSIGSTOP   = Signal(0x11)",
+         "matchingRanges": {
+          "lineNumber": "1440"
+         },
+         "lineNumber": "1440",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBgSBAgBIAE4osm6vMWcj6_GAUAASBg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/syscall/zerrors_linux_mipsle.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tPR_TSC_ENABLE                    = 0x1",
+         "matchingRanges": {
+          "lineNumber": "920"
+         },
+         "lineNumber": "920",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 36,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tPR_TSC_SIGSEGV                   = 0x2",
+         "matchingRanges": {
+          "lineNumber": "921",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "921",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 36,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tPR_UNALIGN_NOPRINT               = 0x1",
+         "matchingRanges": {
+          "lineNumber": "922"
+         },
+         "lineNumber": "922",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 36,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tSIGQUIT   = Signal(0x3)",
+         "matchingRanges": {
+          "lineNumber": "1623"
+         },
+         "lineNumber": "1623",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tSIGSEGV   = Signal(0xb)",
+         "matchingRanges": {
+          "lineNumber": "1624",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "1624",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tSIGSTOP   = Signal(0x17)",
+         "matchingRanges": {
+          "lineNumber": "1625"
+         },
+         "lineNumber": "1625",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CBkSBAgBIAE4rIHY-5_A7LmhAUAASBk"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/syscall/zerrors_linux_mips64.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tPR_TSC_ENABLE                    = 0x1",
+         "matchingRanges": {
+          "lineNumber": "924"
+         },
+         "lineNumber": "924",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 36,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tPR_TSC_SIGSEGV                   = 0x2",
+         "matchingRanges": {
+          "lineNumber": "925",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "925",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 36,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tPR_UNALIGN_NOPRINT               = 0x1",
+         "matchingRanges": {
+          "lineNumber": "926"
+         },
+         "lineNumber": "926",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 36,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tSIGQUIT   = Signal(0x3)",
+         "matchingRanges": {
+          "lineNumber": "1606"
+         },
+         "lineNumber": "1606",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tSIGSEGV   = Signal(0xb)",
+         "matchingRanges": {
+          "lineNumber": "1607",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "1607",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tSIGSTOP   = Signal(0x17)",
+         "matchingRanges": {
+          "lineNumber": "1608"
+         },
+         "lineNumber": "1608",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CBoSBAgBIAE44K-h2Omag7nYAUAASBo"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/syscall/zerrors_darwin_arm64.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tSIGQUIT   = Signal(0x3)",
+         "matchingRanges": {
+          "lineNumber": "1273"
+         },
+         "lineNumber": "1273",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tSIGSEGV   = Signal(0xb)",
+         "matchingRanges": {
+          "lineNumber": "1274",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "1274",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tSIGSTOP   = Signal(0x11)",
+         "matchingRanges": {
+          "lineNumber": "1275"
+         },
+         "lineNumber": "1275",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBsSBAgBIAE4lqWE7tubtJUTQABIGw"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/syscall/zerrors_darwin_amd64.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tSIGQUIT   = Signal(0x3)",
+         "matchingRanges": {
+          "lineNumber": "1261"
+         },
+         "lineNumber": "1261",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tSIGSEGV   = Signal(0xb)",
+         "matchingRanges": {
+          "lineNumber": "1262",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "1262",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tSIGSTOP   = Signal(0x11)",
+         "matchingRanges": {
+          "lineNumber": "1263"
+         },
+         "lineNumber": "1263",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CBwSBAgBIAE4wtSGs-SKw7snQABIHA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/syscall/zerrors_netbsd_arm64.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tSIGQUIT   = Signal(0x3)",
+         "matchingRanges": {
+          "lineNumber": "1547"
+         },
+         "lineNumber": "1547",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tSIGSEGV   = Signal(0xb)",
+         "matchingRanges": {
+          "lineNumber": "1548",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "1548",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tSIGSTOP   = Signal(0x11)",
+         "matchingRanges": {
+          "lineNumber": "1549"
+         },
+         "lineNumber": "1549",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CB0SBAgBIAE43qiE2ImX3qNHQABIHQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/syscall/zerrors_netbsd_amd64.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tSIGQUIT   = Signal(0x3)",
+         "matchingRanges": {
+          "lineNumber": "1547"
+         },
+         "lineNumber": "1547",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tSIGSEGV   = Signal(0xb)",
+         "matchingRanges": {
+          "lineNumber": "1548",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "1548",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tSIGSTOP   = Signal(0x11)",
+         "matchingRanges": {
+          "lineNumber": "1549"
+         },
+         "lineNumber": "1549",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CB4SBAgBIAE44NiP4_OP3MzuAUAASB4"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/syscall/zerrors_linux_loong64.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tPR_TSC_ENABLE                     = 0x1",
+         "matchingRanges": {
+          "lineNumber": "1094"
+         },
+         "lineNumber": "1094",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 37,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tPR_TSC_SIGSEGV                    = 0x2",
+         "matchingRanges": {
+          "lineNumber": "1095",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "1095",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 37,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tPR_UNALIGN_NOPRINT                = 0x1",
+         "matchingRanges": {
+          "lineNumber": "1096"
+         },
+         "lineNumber": "1096",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 37,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tSIGQUIT   = Signal(0x3)",
+         "matchingRanges": {
+          "lineNumber": "1914"
+         },
+         "lineNumber": "1914",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tSIGSEGV   = Signal(0xb)",
+         "matchingRanges": {
+          "lineNumber": "1915",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "1915",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tSIGSTKFLT = Signal(0x10)",
+         "matchingRanges": {
+          "lineNumber": "1916"
+         },
+         "lineNumber": "1916",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CB8SBAgBIAE4_pOw6PqY1bAyQABIHw"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/syscall/zerrors_linux_riscv64.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tPR_TSC_ENABLE                    = 0x1",
+         "matchingRanges": {
+          "lineNumber": "955"
+         },
+         "lineNumber": "955",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 36,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tPR_TSC_SIGSEGV                   = 0x2",
+         "matchingRanges": {
+          "lineNumber": "956",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "956",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 36,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tPR_UNALIGN_NOPRINT               = 0x1",
+         "matchingRanges": {
+          "lineNumber": "957"
+         },
+         "lineNumber": "957",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 36,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tSIGQUIT   = Signal(0x3)",
+         "matchingRanges": {
+          "lineNumber": "1668"
+         },
+         "lineNumber": "1668",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tSIGSEGV   = Signal(0xb)",
+         "matchingRanges": {
+          "lineNumber": "1669",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "1669",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tSIGSTKFLT = Signal(0x10)",
+         "matchingRanges": {
+          "lineNumber": "1670"
+         },
+         "lineNumber": "1670",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CCASBAgBIAE4soPkqPT60MR5QABIIA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/syscall/zerrors_linux_ppc64le.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tPR_TSC_ENABLE                    = 0x1",
+         "matchingRanges": {
+          "lineNumber": "931"
+         },
+         "lineNumber": "931",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 36,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tPR_TSC_SIGSEGV                   = 0x2",
+         "matchingRanges": {
+          "lineNumber": "932",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "932",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 36,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tPR_UNALIGN_NOPRINT               = 0x1",
+         "matchingRanges": {
+          "lineNumber": "933"
+         },
+         "lineNumber": "933",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 36,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tSIGQUIT   = Signal(0x3)",
+         "matchingRanges": {
+          "lineNumber": "1691"
+         },
+         "lineNumber": "1691",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tSIGSEGV   = Signal(0xb)",
+         "matchingRanges": {
+          "lineNumber": "1692",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "1692",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tSIGSTKFLT = Signal(0x10)",
+         "matchingRanges": {
+          "lineNumber": "1693"
+         },
+         "lineNumber": "1693",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CCESBAgBIAE4ivLaofjtvLHWAUAASCE"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/syscall/zerrors_freebsd_amd64.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tSIGQUIT   = Signal(0x3)",
+         "matchingRanges": {
+          "lineNumber": "1562"
+         },
+         "lineNumber": "1562",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tSIGSEGV   = Signal(0xb)",
+         "matchingRanges": {
+          "lineNumber": "1563",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "1563",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tSIGSTOP   = Signal(0x11)",
+         "matchingRanges": {
+          "lineNumber": "1564"
+         },
+         "lineNumber": "1564",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CCISBAgBIAE4pIvVhtCaieA_QABIIg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/syscall/zerrors_openbsd_arm64.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tSIGQUIT   = Signal(0x3)",
+         "matchingRanges": {
+          "lineNumber": "1523"
+         },
+         "lineNumber": "1523",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tSIGSEGV   = Signal(0xb)",
+         "matchingRanges": {
+          "lineNumber": "1524",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "1524",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tSIGSTOP   = Signal(0x11)",
+         "matchingRanges": {
+          "lineNumber": "1525"
+         },
+         "lineNumber": "1525",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CCMSBAgBIAE4tOTTi86ijMaNAUAASCM"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/syscall/zerrors_freebsd_arm64.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tSIGQUIT   = Signal(0x3)",
+         "matchingRanges": {
+          "lineNumber": "1562"
+         },
+         "lineNumber": "1562",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tSIGSEGV   = Signal(0xb)",
+         "matchingRanges": {
+          "lineNumber": "1563",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "1563",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tSIGSTOP   = Signal(0x11)",
+         "matchingRanges": {
+          "lineNumber": "1564"
+         },
+         "lineNumber": "1564",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CCQSBAgBIAE4ivL8-tPtoeeaAUAASCQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/syscall/zerrors_openbsd_ppc64.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tSIGQUIT   = Signal(0x3)",
+         "matchingRanges": {
+          "lineNumber": "1542"
+         },
+         "lineNumber": "1542",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tSIGSEGV   = Signal(0xb)",
+         "matchingRanges": {
+          "lineNumber": "1543",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "1543",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tSIGSTOP   = Signal(0x11)",
+         "matchingRanges": {
+          "lineNumber": "1544"
+         },
+         "lineNumber": "1544",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CCUSBAgBIAE47uPIuO2MxZS0AUAASCU"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/syscall/zerrors_solaris_amd64.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tSIGQUIT    = Signal(0x3)",
+         "matchingRanges": {
+          "lineNumber": "1227"
+         },
+         "lineNumber": "1227",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 21,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tSIGSEGV    = Signal(0xb)",
+         "matchingRanges": {
+          "lineNumber": "1228",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "1228",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 21,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tSIGSTOP    = Signal(0x17)",
+         "matchingRanges": {
+          "lineNumber": "1229"
+         },
+         "lineNumber": "1229",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 21,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CCYSBAgBIAE4jMzN2NbGofK4AUAASCY"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/syscall/zerrors_openbsd_amd64.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tSIGQUIT   = Signal(0x3)",
+         "matchingRanges": {
+          "lineNumber": "1438"
+         },
+         "lineNumber": "1438",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tSIGSEGV   = Signal(0xb)",
+         "matchingRanges": {
+          "lineNumber": "1439",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "1439",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tSIGSTOP   = Signal(0x11)",
+         "matchingRanges": {
+          "lineNumber": "1440"
+         },
+         "lineNumber": "1440",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CCcSBAgBIAE4mtmb8Mn1-OTUAUAASCc"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/syscall/zerrors_linux_mips64le.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tPR_TSC_ENABLE                    = 0x1",
+         "matchingRanges": {
+          "lineNumber": "924"
+         },
+         "lineNumber": "924",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 36,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tPR_TSC_SIGSEGV                   = 0x2",
+         "matchingRanges": {
+          "lineNumber": "925",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "925",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 36,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tPR_UNALIGN_NOPRINT               = 0x1",
+         "matchingRanges": {
+          "lineNumber": "926"
+         },
+         "lineNumber": "926",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 36,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tSIGQUIT   = Signal(0x3)",
+         "matchingRanges": {
+          "lineNumber": "1606"
+         },
+         "lineNumber": "1606",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tSIGSEGV   = Signal(0xb)",
+         "matchingRanges": {
+          "lineNumber": "1607",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "1607",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tSIGSTOP   = Signal(0x17)",
+         "matchingRanges": {
+          "lineNumber": "1608"
+         },
+         "lineNumber": "1608",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CCgSBAgBIAE45t35vu6aw6WeAUAASCg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/syscall/zerrors_openbsd_riscv64.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tSIGQUIT   = Signal(0x3)",
+         "matchingRanges": {
+          "lineNumber": "1541"
+         },
+         "lineNumber": "1541",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tSIGSEGV   = Signal(0xb)",
+         "matchingRanges": {
+          "lineNumber": "1542",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "1542",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tSIGSTOP   = Signal(0x11)",
+         "matchingRanges": {
+          "lineNumber": "1543"
+         },
+         "lineNumber": "1543",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CCkSBAgBIAE4xOLwm5q526lQQABIKQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/syscall/zerrors_dragonfly_amd64.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tSIGQUIT     = Signal(0x3)",
+         "matchingRanges": {
+          "lineNumber": "1373"
+         },
+         "lineNumber": "1373",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 22,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tSIGSEGV     = Signal(0xb)",
+         "matchingRanges": {
+          "lineNumber": "1374",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "1374",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 22,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tSIGSTOP     = Signal(0x11)",
+         "matchingRanges": {
+          "lineNumber": "1375"
+         },
+         "lineNumber": "1375",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 22,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CCoSBAgBIAE45pGd1p-9taeJAUAASCo"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/syscall/zerrors_freebsd_riscv64.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tSIGQUIT   = Signal(0x3)",
+         "matchingRanges": {
+          "lineNumber": "1562"
+         },
+         "lineNumber": "1562",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tSIGSEGV   = Signal(0xb)",
+         "matchingRanges": {
+          "lineNumber": "1563",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "1563",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tSIGSTOP   = Signal(0x11)",
+         "matchingRanges": {
+          "lineNumber": "1564"
+         },
+         "lineNumber": "1564",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CCsSBAgBIAE4mMj-nebMnI3bAUAASCs"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/vendor/golang.org/x/sys/unix/zerrors_linux.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tPR_TSC_ENABLE                               = 0x1",
+         "matchingRanges": {
+          "lineNumber": "3018"
+         },
+         "lineNumber": "3018",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 47,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tPR_TSC_SIGSEGV                              = 0x2",
+         "matchingRanges": {
+          "lineNumber": "3019",
+          "columnRanges": [
+           {
+            "startIndex": 8,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "3019",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 47,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 8,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tPR_UNALIGN_NOPRINT                          = 0x1",
+         "matchingRanges": {
+          "lineNumber": "3020"
+         },
+         "lineNumber": "3020",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 47,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tSIGQUIT = syscall.Signal(0x3)",
+         "matchingRanges": {
+          "lineNumber": "4197"
+         },
+         "lineNumber": "4197",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 26,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tSIGSEGV = syscall.Signal(0xb)",
+         "matchingRanges": {
+          "lineNumber": "4198",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "4198",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 26,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tSIGTERM = syscall.Signal(0xf)",
+         "matchingRanges": {
+          "lineNumber": "4199"
+         },
+         "lineNumber": "4199",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 26,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CCwSBAgBIAE43oLQyODG595PQABILA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/vendor/golang.org/x/sys/unix/zerrors_aix_ppc.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tSIGSAK      = syscall.Signal(0x3f)",
+         "matchingRanges": {
+          "lineNumber": "1192"
+         },
+         "lineNumber": "1192",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 30,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tSIGSEGV     = syscall.Signal(0xb)",
+         "matchingRanges": {
+          "lineNumber": "1193",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "1193",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 30,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tSIGSOUND    = syscall.Signal(0x3e)",
+         "matchingRanges": {
+          "lineNumber": "1194"
+         },
+         "lineNumber": "1194",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 30,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t{10, \"SIGBUS\", \"bus error\"},",
+         "matchingRanges": {
+          "lineNumber": "1347"
+         },
+         "lineNumber": "1347",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 6,
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 16,
+            "length": 11
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t{11, \"SIGSEGV\", \"segmentation fault\"},",
+         "matchingRanges": {
+          "lineNumber": "1348",
+          "columnRanges": [
+           {
+            "startIndex": 7,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "1348",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 6,
+            "length": 9
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 17,
+            "length": 20
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 7,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\t{12, \"SIGSYS\", \"bad system call\"},",
+         "matchingRanges": {
+          "lineNumber": "1349"
+         },
+         "lineNumber": "1349",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 6,
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 16,
+            "length": 17
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CC0SBAgBIAE49MSp2Li_8696QABILQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/vendor/golang.org/x/sys/windows/types_windows.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tSIGKILL = Signal(0x9)",
+         "matchingRanges": {
+          "lineNumber": "43"
+         },
+         "lineNumber": "43",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 18,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tSIGSEGV = Signal(0xb)",
+         "matchingRanges": {
+          "lineNumber": "44",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "44",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 18,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tSIGPIPE = Signal(0xd)",
+         "matchingRanges": {
+          "lineNumber": "45"
+         },
+         "lineNumber": "45",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 18,
+            "length": 3
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CC4SBAgBIAE4vLL1t7bHnKAKQABILg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/vendor/golang.org/x/sys/unix/zerrors_zos_s390x.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tSIGBUS    = Signal(10)",
+         "matchingRanges": {
+          "lineNumber": "757"
+         },
+         "lineNumber": "757",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 2
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tSIGSEGV   = Signal(11)",
+         "matchingRanges": {
+          "lineNumber": "758",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "758",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 2
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tSIGSYS    = Signal(12)",
+         "matchingRanges": {
+          "lineNumber": "759"
+         },
+         "lineNumber": "759",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 20,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t{10, \"SIGBUS\", \"bus error\"},",
+         "matchingRanges": {
+          "lineNumber": "961"
+         },
+         "lineNumber": "961",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 6,
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 16,
+            "length": 11
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t{11, \"SIGSEGV\", \"segmentation fault\"},",
+         "matchingRanges": {
+          "lineNumber": "962",
+          "columnRanges": [
+           {
+            "startIndex": 7,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "962",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 6,
+            "length": 9
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 17,
+            "length": 20
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 7,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\t{12, \"SIGSYS\", \"bad argument to routine\"},",
+         "matchingRanges": {
+          "lineNumber": "963"
+         },
+         "lineNumber": "963",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 6,
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 16,
+            "length": 25
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CC8SBAgBIAE4voaX-fCngY2mAUAASC8"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/vendor/golang.org/x/sys/unix/zerrors_aix_ppc64.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tSIGSAK      = syscall.Signal(0x3f)",
+         "matchingRanges": {
+          "lineNumber": "1192"
+         },
+         "lineNumber": "1192",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 30,
+            "length": 4
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tSIGSEGV     = syscall.Signal(0xb)",
+         "matchingRanges": {
+          "lineNumber": "1193",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "1193",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 30,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tSIGSOUND    = syscall.Signal(0x3e)",
+         "matchingRanges": {
+          "lineNumber": "1194"
+         },
+         "lineNumber": "1194",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 30,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t{10, \"SIGBUS\", \"bus error\"},",
+         "matchingRanges": {
+          "lineNumber": "1347"
+         },
+         "lineNumber": "1347",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 6,
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 16,
+            "length": 11
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t{11, \"SIGSEGV\", \"segmentation fault\"},",
+         "matchingRanges": {
+          "lineNumber": "1348",
+          "columnRanges": [
+           {
+            "startIndex": 7,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "1348",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 6,
+            "length": 9
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 17,
+            "length": 20
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 7,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\t{12, \"SIGSYS\", \"bad system call\"},",
+         "matchingRanges": {
+          "lineNumber": "1349"
+         },
+         "lineNumber": "1349",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 6,
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 16,
+            "length": 17
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CDASBAgBIAE4iKOJtrfqqvr4AUAASDA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "go",
+        "ossProject": "go"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/cmd/vendor/golang.org/x/sys/unix/zerrors_netbsd_386.go",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "\tSIGQUIT   = syscall.Signal(0x3)",
+         "matchingRanges": {
+          "lineNumber": "1619"
+         },
+         "lineNumber": "1619",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 28,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\tSIGSEGV   = syscall.Signal(0xb)",
+         "matchingRanges": {
+          "lineNumber": "1620",
+          "columnRanges": [
+           {
+            "startIndex": 1,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "1620",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 28,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 1,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\tSIGSTOP   = syscall.Signal(0x11)",
+         "matchingRanges": {
+          "lineNumber": "1621"
+         },
+         "lineNumber": "1621",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 28,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "\t{10, \"SIGBUS\", \"bus error\"},",
+         "matchingRanges": {
+          "lineNumber": "1756"
+         },
+         "lineNumber": "1756",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 6,
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 16,
+            "length": 11
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "\t{11, \"SIGSEGV\", \"segmentation fault\"},",
+         "matchingRanges": {
+          "lineNumber": "1757",
+          "columnRanges": [
+           {
+            "startIndex": 7,
+            "length": 7
+           }
+          ]
+         },
+         "lineNumber": "1757",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 6,
+            "length": 9
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 17,
+            "length": 20
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 7,
+           "length": 7
+          }
+         ]
+        },
+        {
+         "lineText": "\t{12, \"SIGSYS\", \"bad system call\"},",
+         "matchingRanges": {
+          "lineNumber": "1758"
+         },
+         "lineNumber": "1758",
+         "tokens": [
+          {
+           "tokenType": "NUMERIC_LITERAL",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 6,
+            "length": 8
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 16,
+            "length": 17
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CDESBAgBIAE40tae_azm-JmWAUAASDE"
+   }
+  ],
+  "estimatedResultCount": "165",
+  "nextPageToken": "CLyy9be2x5ygCgiOmLz6r5/bpxEIlqWE7tubtJUTCK67xOu/nvXbGwiamqrTxcTjviYIwtSGs+SKw7snCMDwr6nzgs+KLgj+k7Do+pjVsDII1rOTl/bCvvgyCPT/mbOO+Pi0Mwjksei35avC1DYIpIvVhtCaieA/CN6ohNiJl96jRwiSjbn87+fexkcI3oLQyODG595PCMTi8JuaudupUAjemK352q6tl14IlOnV45fisMxxCKzZyI2Pp9bpcQiik/bdr//q9XQIsoPkqPT60MR5CPTEqdi4v/Ovegia8LKi2/2ThIIBCOaRndafvbWniQEIiMrn+ufTt6aLAQi05NOLzqKMxo0BCNLWnv2s5viZlgEI9MzVyY6MkuWYAQiK8vz60+2h55oBCKi1l5ixj+eInQEI5t35vu6aw6WeAQjo6oDtoeDpnaEBCKyB2PufwOy5oQEIvoaX+fCngY2mAQi0vImSobCLw64BCO7jyLjtjMWUtAEIjMzN2NbGofK4AQiahOjz9Prz970BCPDLwPf8w6LdxQEIosm6vMWcj6/GAQiE6IG0sJa8tNEBCJrZm/DJ9fjk1AEIivLaofjtvLHWAQjgr6HY6ZqDudgBCM7txu7fmNW/2gEImMj+nebMnI3bAQj617Gp/PuZwucBCODYj+Pzj9zM7gEIiKOJtrfqqvr4AQj2g+TPt4789vsB",
+  "exhaustive": true,
+  "requestToken": "ChBjYXNlOnllcyBTSUdTRUdWEh0oIGdpdDpnby9nb0BtYXN0ZXIgY2FzZTp5ZXMgKRoMCO27qNEGEMSAk7QCIAwqADIASAE"
+ }
+}

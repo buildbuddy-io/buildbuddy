@@ -1,0 +1,7261 @@
+{
+ "query": "file:BUILD$ java_library",
+ "oss_project": "bazel",
+ "repo_name": "bazel",
+ "page_size": 50,
+ "fetched_at": "2026-06-11T22:29:16Z",
+ "response": {
+  "searchResults": [
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/net/starlark/java/lib/BUILD",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "load(\"@rules_java//java:defs.bzl\", \"java_library\")",
+         "matchingRanges": {
+          "lineNumber": "1",
+          "columnRanges": [
+           {
+            "startIndex": 36,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "1",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 5,
+            "length": 28
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 35,
+            "length": 14
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 36,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "2"
+         },
+         "lineNumber": "2"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "java_library(",
+         "matchingRanges": {
+          "lineNumber": "16",
+          "columnRanges": [
+           {
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "16",
+         "ranges": [
+          {
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    name = \"lib\",",
+         "matchingRanges": {
+          "lineNumber": "17"
+         },
+         "lineNumber": "17",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAASAggBOJaLna2MiaiwCkAASAA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/net/starlark/java/lib/json/BUILD",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "load(\"@rules_java//java:defs.bzl\", \"java_library\")",
+         "matchingRanges": {
+          "lineNumber": "1",
+          "columnRanges": [
+           {
+            "startIndex": 36,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "1",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 5,
+            "length": 28
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 35,
+            "length": 14
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 36,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "2"
+         },
+         "lineNumber": "2"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "# Starlark json module",
+         "matchingRanges": {
+          "lineNumber": "14"
+         },
+         "lineNumber": "14",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 22
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "java_library(",
+         "matchingRanges": {
+          "lineNumber": "15",
+          "columnRanges": [
+           {
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "15",
+         "ranges": [
+          {
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    name = \"json\",",
+         "matchingRanges": {
+          "lineNumber": "16"
+         },
+         "lineNumber": "16",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAESAggBOIS9xMTqjMb7_AFAAEgB"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/net/starlark/java/eval/BUILD",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "load(\"@rules_cc//cc:cc_binary.bzl\", \"cc_binary\")",
+         "matchingRanges": {
+          "lineNumber": "3"
+         },
+         "lineNumber": "3",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 5,
+            "length": 29
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 36,
+            "length": 11
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "load(\"@rules_java//java:defs.bzl\", \"java_library\")",
+         "matchingRanges": {
+          "lineNumber": "4",
+          "columnRanges": [
+           {
+            "startIndex": 36,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "4",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 5,
+            "length": 28
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 35,
+            "length": 14
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 36,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "5"
+         },
+         "lineNumber": "5"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "# The Starlark evaluator",
+         "matchingRanges": {
+          "lineNumber": "14"
+         },
+         "lineNumber": "14",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 24
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "java_library(",
+         "matchingRanges": {
+          "lineNumber": "15",
+          "columnRanges": [
+           {
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "15",
+         "ranges": [
+          {
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    name = \"eval\",",
+         "matchingRanges": {
+          "lineNumber": "16"
+         },
+         "lineNumber": "16",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "java_library(",
+         "matchingRanges": {
+          "lineNumber": "84",
+          "columnRanges": [
+           {
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "84",
+         "ranges": [
+          {
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    name = \"cpu_profiler_native_support\",",
+         "matchingRanges": {
+          "lineNumber": "85"
+         },
+         "lineNumber": "85",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 29
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "java_library(",
+         "matchingRanges": {
+          "lineNumber": "90",
+          "columnRanges": [
+           {
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "90",
+         "ranges": [
+          {
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    name = \"cpu_profiler_native_support_impl\",",
+         "matchingRanges": {
+          "lineNumber": "91"
+         },
+         "lineNumber": "91",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 34
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 4
+    },
+    "resultToken": "CAISAggBOK6gqdDilIus4QFAAEgC"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/net/starlark/java/eval/BUILD",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "load(\"@rules_java//java:defs.bzl\", \"java_binary\", \"java_library\", \"java_test\")",
+         "matchingRanges": {
+          "lineNumber": "1",
+          "columnRanges": [
+           {
+            "startIndex": 51,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "1",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 5,
+            "length": 28
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 35,
+            "length": 13
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 50,
+            "length": 14
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 66,
+            "length": 11
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 51,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "2"
+         },
+         "lineNumber": "2"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "# Script-based tests of the Starlark interpreter.",
+         "matchingRanges": {
+          "lineNumber": "57"
+         },
+         "lineNumber": "57",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 49
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "java_library(",
+         "matchingRanges": {
+          "lineNumber": "58",
+          "columnRanges": [
+           {
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "58",
+         "ranges": [
+          {
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    name = \"ScriptTest_lib\",",
+         "matchingRanges": {
+          "lineNumber": "59"
+         },
+         "lineNumber": "59",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 16
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAMSAggBONLpvq3Ngvz-DEAASAM"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/net/starlark/java/spelling/BUILD",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "load(\"@rules_java//java:defs.bzl\", \"java_library\")",
+         "matchingRanges": {
+          "lineNumber": "3",
+          "columnRanges": [
+           {
+            "startIndex": 36,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "3",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 5,
+            "length": 28
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 35,
+            "length": 14
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 36,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "4"
+         },
+         "lineNumber": "4"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "java_library(",
+         "matchingRanges": {
+          "lineNumber": "16",
+          "columnRanges": [
+           {
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "16",
+         "ranges": [
+          {
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    name = \"spelling\",",
+         "matchingRanges": {
+          "lineNumber": "17"
+         },
+         "lineNumber": "17",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 10
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAQSAggBOMi98c3PnKCTU0AASAQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "third_party/grpc-java/BUILD",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "load(\"@rules_java//java:java_library.bzl\", \"java_library\")",
+         "matchingRanges": {
+          "lineNumber": "17",
+          "columnRanges": [
+           {
+            "startIndex": 24,
+            "length": 12
+           },
+           {
+            "startIndex": 44,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "17",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 5,
+            "length": 36
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 43,
+            "length": 14
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 24,
+           "length": 12
+          },
+          {
+           "startIndex": 44,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "load(\"@rules_license//rules:license.bzl\", \"license\")",
+         "matchingRanges": {
+          "lineNumber": "18"
+         },
+         "lineNumber": "18",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 5,
+            "length": 35
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 42,
+            "length": 9
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "# TODO: wyv@ - rename this to just `grpc-java`.",
+         "matchingRanges": {
+          "lineNumber": "56"
+         },
+         "lineNumber": "56",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 47
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "java_library(",
+         "matchingRanges": {
+          "lineNumber": "57",
+          "columnRanges": [
+           {
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "57",
+         "ranges": [
+          {
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    name = \"grpc-jar\",",
+         "matchingRanges": {
+          "lineNumber": "58"
+         },
+         "lineNumber": "58",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 10
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAUSAggBOJruk4zpuIf6ZkAASAU"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/net/starlark/java/annot/BUILD",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "load(\"@rules_java//java:defs.bzl\", \"java_library\")",
+         "matchingRanges": {
+          "lineNumber": "1",
+          "columnRanges": [
+           {
+            "startIndex": 36,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "1",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 5,
+            "length": 28
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 35,
+            "length": 14
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 36,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "2"
+         },
+         "lineNumber": "2"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "# Depending on this library adds annotations processing to the build.",
+         "matchingRanges": {
+          "lineNumber": "15"
+         },
+         "lineNumber": "15",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 69
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "java_library(",
+         "matchingRanges": {
+          "lineNumber": "16",
+          "columnRanges": [
+           {
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "16",
+         "ranges": [
+          {
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    name = \"annot\",",
+         "matchingRanges": {
+          "lineNumber": "17"
+         },
+         "lineNumber": "17",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 7
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "# Annotations without processor, to avoid a dependency cycle in the processor itself.",
+         "matchingRanges": {
+          "lineNumber": "23"
+         },
+         "lineNumber": "23",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 85
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "java_library(",
+         "matchingRanges": {
+          "lineNumber": "24",
+          "columnRanges": [
+           {
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "24",
+         "ranges": [
+          {
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    name = \"annot_sans_processor\",",
+         "matchingRanges": {
+          "lineNumber": "25"
+         },
+         "lineNumber": "25",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 22
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CAYSAggBOLaZkfC8h82pywFAAEgG"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/net/starlark/java/syntax/BUILD",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "load(\"@rules_java//java:defs.bzl\", \"java_library\")",
+         "matchingRanges": {
+          "lineNumber": "3",
+          "columnRanges": [
+           {
+            "startIndex": 36,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "3",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 5,
+            "length": 28
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 35,
+            "length": 14
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 36,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "4"
+         },
+         "lineNumber": "4"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "# The Starlark frontend (syntax, scanner, parser, resolver)",
+         "matchingRanges": {
+          "lineNumber": "16"
+         },
+         "lineNumber": "16",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 59
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "java_library(",
+         "matchingRanges": {
+          "lineNumber": "17",
+          "columnRanges": [
+           {
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "17",
+         "ranges": [
+          {
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    name = \"syntax\",",
+         "matchingRanges": {
+          "lineNumber": "18"
+         },
+         "lineNumber": "18",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 8
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAcSAggBOJD3rvK5lI7fc0AASAc"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/net/starlark/java/syntax/BUILD",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "load(\"@rules_java//java:defs.bzl\", \"java_library\", \"java_test\")",
+         "matchingRanges": {
+          "lineNumber": "1",
+          "columnRanges": [
+           {
+            "startIndex": 36,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "1",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 5,
+            "length": 28
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 35,
+            "length": 14
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 51,
+            "length": 11
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 36,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "2"
+         },
+         "lineNumber": "2"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "java_library(",
+         "matchingRanges": {
+          "lineNumber": "16",
+          "columnRanges": [
+           {
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "16",
+         "ranges": [
+          {
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    name = \"TestUtils\",",
+         "matchingRanges": {
+          "lineNumber": "17"
+         },
+         "lineNumber": "17",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 11
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAgSAggBOJjqubmxzvfepgFAAEgI"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "third_party/BUILD",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "load(\"@rules_java//java:defs.bzl\", \"java_binary\", \"java_import\", \"java_library\", \"java_plugin\")",
+         "matchingRanges": {
+          "lineNumber": "1",
+          "columnRanges": [
+           {
+            "startIndex": 66,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "1",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 5,
+            "length": 28
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 35,
+            "length": 13
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 50,
+            "length": 13
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 65,
+            "length": 14
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 81,
+            "length": 13
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 66,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "load(\"@rules_license//rules:license.bzl\", \"license\")",
+         "matchingRanges": {
+          "lineNumber": "2"
+         },
+         "lineNumber": "2",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 5,
+            "length": 35
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 42,
+            "length": 9
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "java_library(",
+         "matchingRanges": {
+          "lineNumber": "68",
+          "columnRanges": [
+           {
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "68",
+         "ranges": [
+          {
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    name = \"api_client\",",
+         "matchingRanges": {
+          "lineNumber": "69"
+         },
+         "lineNumber": "69",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 12
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "java_library(",
+         "matchingRanges": {
+          "lineNumber": "126",
+          "columnRanges": [
+           {
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "126",
+         "ranges": [
+          {
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    name = \"auth\",",
+         "matchingRanges": {
+          "lineNumber": "127"
+         },
+         "lineNumber": "127",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "java_library(",
+         "matchingRanges": {
+          "lineNumber": "157",
+          "columnRanges": [
+           {
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "157",
+         "ranges": [
+          {
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    name = \"auto_service\",",
+         "matchingRanges": {
+          "lineNumber": "158"
+         },
+         "lineNumber": "158",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 14
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "java_library(",
+         "matchingRanges": {
+          "lineNumber": "177",
+          "columnRanges": [
+           {
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "177",
+         "ranges": [
+          {
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    name = \"auto_service_api\",",
+         "matchingRanges": {
+          "lineNumber": "178"
+         },
+         "lineNumber": "178",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 18
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 18
+    },
+    "resultToken": "CAkSAggBOJrb66fChtKh-QFAAEgJ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "third_party/ijar/test/BUILD",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "load(\"@rules_java//java:java_binary.bzl\", \"java_binary\")",
+         "matchingRanges": {
+          "lineNumber": "1"
+         },
+         "lineNumber": "1",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 5,
+            "length": 35
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 42,
+            "length": 13
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "load(\"@rules_java//java:java_library.bzl\", \"java_library\")",
+         "matchingRanges": {
+          "lineNumber": "2",
+          "columnRanges": [
+           {
+            "startIndex": 24,
+            "length": 12
+           },
+           {
+            "startIndex": 44,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "2",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 5,
+            "length": 36
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 43,
+            "length": 14
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 24,
+           "length": 12
+          },
+          {
+           "startIndex": 44,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "load(\"@rules_java//java:java_test.bzl\", \"java_test\")",
+         "matchingRanges": {
+          "lineNumber": "3"
+         },
+         "lineNumber": "3",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 5,
+            "length": 33
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 40,
+            "length": 11
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "java_library(",
+         "matchingRanges": {
+          "lineNumber": "87",
+          "columnRanges": [
+           {
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "87",
+         "ranges": [
+          {
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    name = \"invokedynamic\",",
+         "matchingRanges": {
+          "lineNumber": "88"
+         },
+         "lineNumber": "88",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 15
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "# deprecations markers",
+         "matchingRanges": {
+          "lineNumber": "95"
+         },
+         "lineNumber": "95",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 22
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "java_library(",
+         "matchingRanges": {
+          "lineNumber": "96",
+          "columnRanges": [
+           {
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "96",
+         "ranges": [
+          {
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    name = \"ijar_testlib\",",
+         "matchingRanges": {
+          "lineNumber": "97"
+         },
+         "lineNumber": "97",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 14
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "java_library(",
+         "matchingRanges": {
+          "lineNumber": "192",
+          "columnRanges": [
+           {
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "192",
+         "ranges": [
+          {
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    name = \"typeannotations2\",",
+         "matchingRanges": {
+          "lineNumber": "193"
+         },
+         "lineNumber": "193",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 18
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 6
+    },
+    "resultToken": "CAoSAggBOMaf3a-lzp_2vQFAAEgK"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/java_tools/buildjar/java/com/google/devtools/build/buildjar/javac/plugins/BUILD",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "load(\"@rules_java//java:defs.bzl\", \"java_library\")",
+         "matchingRanges": {
+          "lineNumber": "1",
+          "columnRanges": [
+           {
+            "startIndex": 36,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "1",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 5,
+            "length": 28
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 35,
+            "length": 14
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 36,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "load(\"//tools/build_rules:java_rules_skylark.bzl\", \"bootstrap_java_library\")",
+         "matchingRanges": {
+          "lineNumber": "2",
+          "columnRanges": [
+           {
+            "startIndex": 62,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "2",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 5,
+            "length": 44
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 51,
+            "length": 24
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 62,
+           "length": 12
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "java_library(",
+         "matchingRanges": {
+          "lineNumber": "12",
+          "columnRanges": [
+           {
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "12",
+         "ranges": [
+          {
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    name = \"plugins\",",
+         "matchingRanges": {
+          "lineNumber": "13"
+         },
+         "lineNumber": "13",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 9
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "java_library(",
+         "matchingRanges": {
+          "lineNumber": "27",
+          "columnRanges": [
+           {
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "27",
+         "ranges": [
+          {
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    name = \"dependency\",",
+         "matchingRanges": {
+          "lineNumber": "28"
+         },
+         "lineNumber": "28",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 12
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "java_library(",
+         "matchingRanges": {
+          "lineNumber": "49",
+          "columnRanges": [
+           {
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "49",
+         "ranges": [
+          {
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    name = \"errorprone\",",
+         "matchingRanges": {
+          "lineNumber": "50"
+         },
+         "lineNumber": "50",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 12
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "java_library(",
+         "matchingRanges": {
+          "lineNumber": "68",
+          "columnRanges": [
+           {
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "68",
+         "ranges": [
+          {
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    name = \"processing\",",
+         "matchingRanges": {
+          "lineNumber": "69"
+         },
+         "lineNumber": "69",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 12
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 7
+    },
+    "resultToken": "CAsSAggBOL6GjMi-6PuSGUAASAs"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/java_tools/buildjar/java/com/google/devtools/build/java/turbine/BUILD",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "load(\"@rules_graalvm//graalvm:defs.bzl\", \"native_image\")",
+         "matchingRanges": {
+          "lineNumber": "2"
+         },
+         "lineNumber": "2",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 5,
+            "length": 34
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 41,
+            "length": 14
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "load(\"@rules_java//java:defs.bzl\", \"java_binary\", \"java_library\")",
+         "matchingRanges": {
+          "lineNumber": "3",
+          "columnRanges": [
+           {
+            "startIndex": 51,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "3",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 5,
+            "length": 28
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 35,
+            "length": 13
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 50,
+            "length": 14
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 51,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "load(\"@rules_shell//shell:sh_binary.bzl\", \"sh_binary\")",
+         "matchingRanges": {
+          "lineNumber": "4"
+         },
+         "lineNumber": "4",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 5,
+            "length": 35
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 42,
+            "length": 11
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "java_library(",
+         "matchingRanges": {
+          "lineNumber": "21",
+          "columnRanges": [
+           {
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "21",
+         "ranges": [
+          {
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    name = \"turbine_deps\",",
+         "matchingRanges": {
+          "lineNumber": "22"
+         },
+         "lineNumber": "22",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 14
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAwSAggBOOTHrM_I7tH9d0AASAw"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/java_tools/buildjar/java/com/google/devtools/build/buildjar/jarhelper/BUILD",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "load(\"@rules_java//java:defs.bzl\", \"java_library\")",
+         "matchingRanges": {
+          "lineNumber": "1",
+          "columnRanges": [
+           {
+            "startIndex": 36,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "1",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 5,
+            "length": 28
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 35,
+            "length": 14
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 36,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "load(\"//tools/build_rules:java_rules_skylark.bzl\", \"bootstrap_java_library\")",
+         "matchingRanges": {
+          "lineNumber": "2",
+          "columnRanges": [
+           {
+            "startIndex": 62,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "2",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 5,
+            "length": 44
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 51,
+            "length": 24
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 62,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "3"
+         },
+         "lineNumber": "3"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "java_library(",
+         "matchingRanges": {
+          "lineNumber": "15",
+          "columnRanges": [
+           {
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "15",
+         "ranges": [
+          {
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    name = \"jarhelper\",",
+         "matchingRanges": {
+          "lineNumber": "16"
+         },
+         "lineNumber": "16",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 11
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "bootstrap_java_library(",
+         "matchingRanges": {
+          "lineNumber": "30",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "30",
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    name = \"bootstrap_jarhelper\",",
+         "matchingRanges": {
+          "lineNumber": "31"
+         },
+         "lineNumber": "31",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 21
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 4
+    },
+    "resultToken": "CA0SAggBOPzq8vj8lPz0LUAASA0"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/java_tools/buildjar/java/com/google/devtools/build/buildjar/BUILD",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "load(\"@rules_java//java:defs.bzl\", \"java_binary\", \"java_library\")",
+         "matchingRanges": {
+          "lineNumber": "1",
+          "columnRanges": [
+           {
+            "startIndex": 51,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "1",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 5,
+            "length": 28
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 35,
+            "length": 13
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 50,
+            "length": 14
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 51,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "load(\"//tools/build_rules:java_rules_skylark.bzl\", \"bootstrap_java_binary\", \"bootstrap_java_library\")",
+         "matchingRanges": {
+          "lineNumber": "2",
+          "columnRanges": [
+           {
+            "startIndex": 87,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "2",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 5,
+            "length": 44
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 51,
+            "length": 23
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 76,
+            "length": 24
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 87,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "3"
+         },
+         "lineNumber": "3"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "java_library(",
+         "matchingRanges": {
+          "lineNumber": "25",
+          "columnRanges": [
+           {
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "25",
+         "ranges": [
+          {
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    name = \"optionsparser\",",
+         "matchingRanges": {
+          "lineNumber": "26"
+         },
+         "lineNumber": "26",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 15
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "java_library(",
+         "matchingRanges": {
+          "lineNumber": "48",
+          "columnRanges": [
+           {
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "48",
+         "ranges": [
+          {
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    name = \"javac\",",
+         "matchingRanges": {
+          "lineNumber": "49"
+         },
+         "lineNumber": "49",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 7
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "# Bazel's BuildJar",
+         "matchingRanges": {
+          "lineNumber": "80"
+         },
+         "lineNumber": "80",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 18
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "java_library(",
+         "matchingRanges": {
+          "lineNumber": "81",
+          "columnRanges": [
+           {
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "81",
+         "ranges": [
+          {
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    name = \"buildjar\",",
+         "matchingRanges": {
+          "lineNumber": "82"
+         },
+         "lineNumber": "82",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 10
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 12
+    },
+    "resultToken": "CA4SAggBOKCbq8m9sMXL7QFAAEgO"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/java_tools/buildjar/java/com/google/devtools/build/buildjar/javac/statistics/BUILD",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "load(\"@rules_java//java:defs.bzl\", \"java_library\")",
+         "matchingRanges": {
+          "lineNumber": "1",
+          "columnRanges": [
+           {
+            "startIndex": 36,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "1",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 5,
+            "length": 28
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 35,
+            "length": 14
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 36,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "2"
+         },
+         "lineNumber": "2"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "java_library(",
+         "matchingRanges": {
+          "lineNumber": "8",
+          "columnRanges": [
+           {
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "8",
+         "ranges": [
+          {
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    name = \"statistics\",",
+         "matchingRanges": {
+          "lineNumber": "9"
+         },
+         "lineNumber": "9",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 12
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CA8SAggBOKL789Lz-L-uswFAAEgP"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/net/starlark/java/annot/processor/BUILD",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "load(\"@rules_java//java:defs.bzl\", \"java_library\", \"java_plugin\")",
+         "matchingRanges": {
+          "lineNumber": "1",
+          "columnRanges": [
+           {
+            "startIndex": 36,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "1",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 5,
+            "length": 28
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 35,
+            "length": 14
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 51,
+            "length": 13
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 36,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "2"
+         },
+         "lineNumber": "2"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "java_library(",
+         "matchingRanges": {
+          "lineNumber": "22",
+          "columnRanges": [
+           {
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "22",
+         "ranges": [
+          {
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    name = \"processor_lib\",",
+         "matchingRanges": {
+          "lineNumber": "23"
+         },
+         "lineNumber": "23",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 15
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CBASAggBOJ7V7pvzmvOD3AFAAEgQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/java_tools/singlejar/java/com/google/devtools/build/singlejar/BUILD",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "load(\"@rules_java//java:defs.bzl\", \"java_library\")",
+         "matchingRanges": {
+          "lineNumber": "1",
+          "columnRanges": [
+           {
+            "startIndex": 36,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "1",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 5,
+            "length": 28
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 35,
+            "length": 14
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 36,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "2"
+         },
+         "lineNumber": "2"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "# This is used as a library outside of Bazel.",
+         "matchingRanges": {
+          "lineNumber": "17"
+         },
+         "lineNumber": "17",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 45
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "java_library(",
+         "matchingRanges": {
+          "lineNumber": "18",
+          "columnRanges": [
+           {
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "18",
+         "ranges": [
+          {
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    name = \"libSingleJar\",",
+         "matchingRanges": {
+          "lineNumber": "19"
+         },
+         "lineNumber": "19",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 14
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CBESAggBOLS-nO3SpIuZ2gFAAEgR"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/starlarkbuildapi/java/BUILD",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "load(\"@rules_java//java:defs.bzl\", \"java_library\")",
+         "matchingRanges": {
+          "lineNumber": "9",
+          "columnRanges": [
+           {
+            "startIndex": 36,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "9",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 5,
+            "length": 28
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 35,
+            "length": 14
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 36,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "10"
+         },
+         "lineNumber": "10"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "java_library(",
+         "matchingRanges": {
+          "lineNumber": "22",
+          "columnRanges": [
+           {
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "22",
+         "ranges": [
+          {
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    name = \"java\",",
+         "matchingRanges": {
+          "lineNumber": "23"
+         },
+         "lineNumber": "23",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CBISAggBOK61loO_7fjwW0AASBI"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/tools/singlejar/BUILD",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "load(\"@rules_cc//cc:cc_test.bzl\", \"cc_test\")",
+         "matchingRanges": {
+          "lineNumber": "4"
+         },
+         "lineNumber": "4",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 5,
+            "length": 27
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 34,
+            "length": 9
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "load(\"@rules_java//java:defs.bzl\", \"java_library\")",
+         "matchingRanges": {
+          "lineNumber": "5",
+          "columnRanges": [
+           {
+            "startIndex": 36,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "5",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 5,
+            "length": 28
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 35,
+            "length": 14
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 36,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "load(\"@rules_shell//shell:sh_test.bzl\", \"sh_test\")",
+         "matchingRanges": {
+          "lineNumber": "6"
+         },
+         "lineNumber": "6",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 5,
+            "length": 33
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 40,
+            "length": 9
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "java_library(",
+         "matchingRanges": {
+          "lineNumber": "555",
+          "columnRanges": [
+           {
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "555",
+         "ranges": [
+          {
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    name = \"test1\",",
+         "matchingRanges": {
+          "lineNumber": "556"
+         },
+         "lineNumber": "556",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 7
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "java_library(",
+         "matchingRanges": {
+          "lineNumber": "564",
+          "columnRanges": [
+           {
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "564",
+         "ranges": [
+          {
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    name = \"test2\",",
+         "matchingRanges": {
+          "lineNumber": "565"
+         },
+         "lineNumber": "565",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 7
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "java_library(",
+         "matchingRanges": {
+          "lineNumber": "572",
+          "columnRanges": [
+           {
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "572",
+         "ranges": [
+          {
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    name = \"data1\",",
+         "matchingRanges": {
+          "lineNumber": "573"
+         },
+         "lineNumber": "573",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 7
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 5
+    },
+    "resultToken": "CBMSAggBOPyri6Pc14CEogFAAEgT"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "third_party/chicory/BUILD",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "load(\"@rules_java//java:defs.bzl\", \"java_library\")",
+         "matchingRanges": {
+          "lineNumber": "1",
+          "columnRanges": [
+           {
+            "startIndex": 36,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "1",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 5,
+            "length": 28
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 35,
+            "length": 14
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 36,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "2"
+         },
+         "lineNumber": "2"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "java_library(",
+         "matchingRanges": {
+          "lineNumber": "10",
+          "columnRanges": [
+           {
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "10",
+         "ranges": [
+          {
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    name = \"chicory\",",
+         "matchingRanges": {
+          "lineNumber": "11"
+         },
+         "lineNumber": "11",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 9
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CBQSAggBOJL-1vfhueqKfEAASBQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/java_tools/singlejar/javatests/com/google/devtools/build/singlejar/BUILD",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "load(\"@rules_java//java:defs.bzl\", \"java_library\", \"java_test\")",
+         "matchingRanges": {
+          "lineNumber": "1",
+          "columnRanges": [
+           {
+            "startIndex": 36,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "1",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 5,
+            "length": 28
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 35,
+            "length": 14
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 51,
+            "length": 11
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 36,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "2"
+         },
+         "lineNumber": "2"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "java_library(",
+         "matchingRanges": {
+          "lineNumber": "9",
+          "columnRanges": [
+           {
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "9",
+         "ranges": [
+          {
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    name = \"libSingleJarTesting\",",
+         "matchingRanges": {
+          "lineNumber": "10"
+         },
+         "lineNumber": "10",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 21
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CBUSAggBONi49vey57zuVUAASBU"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/java_tools/singlejar/java/com/google/devtools/build/zip/BUILD",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "load(\"@rules_java//java:java_library.bzl\", \"java_library\")",
+         "matchingRanges": {
+          "lineNumber": "1",
+          "columnRanges": [
+           {
+            "startIndex": 24,
+            "length": 12
+           },
+           {
+            "startIndex": 44,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "1",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 5,
+            "length": 36
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 43,
+            "length": 14
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 24,
+           "length": 12
+          },
+          {
+           "startIndex": 44,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "2"
+         },
+         "lineNumber": "2"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "java_library(",
+         "matchingRanges": {
+          "lineNumber": "24",
+          "columnRanges": [
+           {
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "24",
+         "ranges": [
+          {
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    name = \"zip\",",
+         "matchingRanges": {
+          "lineNumber": "25"
+         },
+         "lineNumber": "25",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CBYSAggBOPz88P7d4qKtMUAASBY"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/rules/java/BUILD",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "load(\"@rules_java//java:defs.bzl\", \"java_library\")",
+         "matchingRanges": {
+          "lineNumber": "1",
+          "columnRanges": [
+           {
+            "startIndex": 36,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "1",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 5,
+            "length": 28
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 35,
+            "length": 14
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 36,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "2"
+         },
+         "lineNumber": "2"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "java_library(",
+         "matchingRanges": {
+          "lineNumber": "14",
+          "columnRanges": [
+           {
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "14",
+         "ranges": [
+          {
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    name = \"java-compilation\",",
+         "matchingRanges": {
+          "lineNumber": "15"
+         },
+         "lineNumber": "15",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 18
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "java_library(",
+         "matchingRanges": {
+          "lineNumber": "111",
+          "columnRanges": [
+           {
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "111",
+         "ranges": [
+          {
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    name = \"java-root-utils\",",
+         "matchingRanges": {
+          "lineNumber": "112"
+         },
+         "lineNumber": "112",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 17
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CBcSAggBOKD86cHwqqe7PEAASBc"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/rules/java/BUILD",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "load(\"@rules_java//java:defs.bzl\", \"java_library\", \"java_test\")",
+         "matchingRanges": {
+          "lineNumber": "1",
+          "columnRanges": [
+           {
+            "startIndex": 36,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "1",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 5,
+            "length": 28
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 35,
+            "length": 14
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 51,
+            "length": 11
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 36,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "2"
+         },
+         "lineNumber": "2"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "java_library(",
+         "matchingRanges": {
+          "lineNumber": "18",
+          "columnRanges": [
+           {
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "18",
+         "ranges": [
+          {
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    name = \"java-info\",",
+         "matchingRanges": {
+          "lineNumber": "19"
+         },
+         "lineNumber": "19",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 11
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "java_library(",
+         "matchingRanges": {
+          "lineNumber": "244",
+          "columnRanges": [
+           {
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "244",
+         "ranges": [
+          {
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    name = \"java_compile_action_test_helper\",",
+         "matchingRanges": {
+          "lineNumber": "245"
+         },
+         "lineNumber": "245",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 33
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CBgSAggBONrCjPPS9o3r_gFAAEgY"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/java_tools/buildjar/java/com/google/devtools/build/buildjar/genclass/BUILD",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "load(\"@rules_java//java:defs.bzl\", \"java_binary\", \"java_library\")",
+         "matchingRanges": {
+          "lineNumber": "1",
+          "columnRanges": [
+           {
+            "startIndex": 51,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "1",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 5,
+            "length": 28
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 35,
+            "length": 13
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 50,
+            "length": 14
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 51,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "load(\"//tools/build_rules:java_rules_skylark.bzl\", \"bootstrap_java_binary\")",
+         "matchingRanges": {
+          "lineNumber": "2"
+         },
+         "lineNumber": "2",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 5,
+            "length": 44
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 51,
+            "length": 23
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "java_library(",
+         "matchingRanges": {
+          "lineNumber": "26",
+          "columnRanges": [
+           {
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "26",
+         "ranges": [
+          {
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    name = \"genclass_lib\",",
+         "matchingRanges": {
+          "lineNumber": "27"
+         },
+         "lineNumber": "27",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 14
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CBkSAggBOJaTmfret_O4akAASBk"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/starlarkdocextract/BUILD",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "load(\"@rules_java//java:defs.bzl\", \"java_library\")",
+         "matchingRanges": {
+          "lineNumber": "1",
+          "columnRanges": [
+           {
+            "startIndex": 36,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "1",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 5,
+            "length": 28
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 35,
+            "length": 14
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 36,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "2"
+         },
+         "lineNumber": "2"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "java_library(",
+         "matchingRanges": {
+          "lineNumber": "14",
+          "columnRanges": [
+           {
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "14",
+         "ranges": [
+          {
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    name = \"labelrenderer\",",
+         "matchingRanges": {
+          "lineNumber": "15"
+         },
+         "lineNumber": "15",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 15
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "java_library(",
+         "matchingRanges": {
+          "lineNumber": "23",
+          "columnRanges": [
+           {
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "23",
+         "ranges": [
+          {
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    name = \"extractionexception\",",
+         "matchingRanges": {
+          "lineNumber": "24"
+         },
+         "lineNumber": "24",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 21
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "java_library(",
+         "matchingRanges": {
+          "lineNumber": "34",
+          "columnRanges": [
+           {
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "34",
+         "ranges": [
+          {
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    name = \"starlarkfunctioninfoextractor\",",
+         "matchingRanges": {
+          "lineNumber": "35"
+         },
+         "lineNumber": "35",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 31
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "java_library(",
+         "matchingRanges": {
+          "lineNumber": "51",
+          "columnRanges": [
+           {
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "51",
+         "ranges": [
+          {
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    name = \"ruleinfoextractor\",",
+         "matchingRanges": {
+          "lineNumber": "52"
+         },
+         "lineNumber": "52",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 19
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 6
+    },
+    "resultToken": "CBoSAggBOISXoJTa5dCZ1QFAAEga"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/java_tools/singlejar/javatests/com/google/devtools/build/zip/BUILD",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "load(\"@rules_java//java:defs.bzl\", \"java_library\", \"java_test\")",
+         "matchingRanges": {
+          "lineNumber": "1",
+          "columnRanges": [
+           {
+            "startIndex": 36,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "1",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 5,
+            "length": 28
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 35,
+            "length": 14
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 51,
+            "length": 11
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 36,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "2"
+         },
+         "lineNumber": "2"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "java_library(",
+         "matchingRanges": {
+          "lineNumber": "9",
+          "columnRanges": [
+           {
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "9",
+         "ranges": [
+          {
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    name = \"zip_tests\",",
+         "matchingRanges": {
+          "lineNumber": "10"
+         },
+         "lineNumber": "10",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 11
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CBsSAggBOLrwwNzBjIWnxgFAAEgb"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/java_tools/junitrunner/java/com/google/testing/coverage/BUILD",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "load(\"@rules_java//java:defs.bzl\", \"java_binary\", \"java_library\")",
+         "matchingRanges": {
+          "lineNumber": "1",
+          "columnRanges": [
+           {
+            "startIndex": 51,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "1",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 5,
+            "length": 28
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 35,
+            "length": 13
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 50,
+            "length": 14
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 51,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "2"
+         },
+         "lineNumber": "2"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "java_library(",
+         "matchingRanges": {
+          "lineNumber": "33",
+          "columnRanges": [
+           {
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "33",
+         "ranges": [
+          {
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    name = \"JacocoCoverageLib\",",
+         "matchingRanges": {
+          "lineNumber": "34"
+         },
+         "lineNumber": "34",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 19
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "java_library(",
+         "matchingRanges": {
+          "lineNumber": "55",
+          "columnRanges": [
+           {
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "55",
+         "ranges": [
+          {
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    name = \"bitfield\",",
+         "matchingRanges": {
+          "lineNumber": "56"
+         },
+         "lineNumber": "56",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 10
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CBwSAggBOMia2p7xjszTNUAASBw"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/graph/BUILD",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "load(\"@rules_java//java:defs.bzl\", \"java_library\", \"java_test\")",
+         "matchingRanges": {
+          "lineNumber": "1",
+          "columnRanges": [
+           {
+            "startIndex": 36,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "1",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 5,
+            "length": 28
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 35,
+            "length": 14
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 51,
+            "length": 11
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 36,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "2"
+         },
+         "lineNumber": "2"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "java_library(",
+         "matchingRanges": {
+          "lineNumber": "16",
+          "columnRanges": [
+           {
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "16",
+         "ranges": [
+          {
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    name = \"GraphTests_lib\",",
+         "matchingRanges": {
+          "lineNumber": "17"
+         },
+         "lineNumber": "17",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 16
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CB0SAggBOL6I9aO0uYODkAFAAEgd"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/graph/BUILD",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "load(\"@rules_java//java:defs.bzl\", \"java_library\")",
+         "matchingRanges": {
+          "lineNumber": "1",
+          "columnRanges": [
+           {
+            "startIndex": 36,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "1",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 5,
+            "length": 28
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 35,
+            "length": 14
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 36,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "2"
+         },
+         "lineNumber": "2"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "# write AT\u0026T GraphViz files.",
+         "matchingRanges": {
+          "lineNumber": "16"
+         },
+         "lineNumber": "16",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 28
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "java_library(",
+         "matchingRanges": {
+          "lineNumber": "17",
+          "columnRanges": [
+           {
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "17",
+         "ranges": [
+          {
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    name = \"graph\",",
+         "matchingRanges": {
+          "lineNumber": "18"
+         },
+         "lineNumber": "18",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 7
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CB4SAggBOIbLl9fQzfeBmQFAAEge"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/bazel/rules/java/BUILD",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "load(\"@rules_java//java:defs.bzl\", \"java_library\")",
+         "matchingRanges": {
+          "lineNumber": "1",
+          "columnRanges": [
+           {
+            "startIndex": 36,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "1",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 5,
+            "length": 28
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 35,
+            "length": 14
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 36,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "2"
+         },
+         "lineNumber": "2"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "java_library(",
+         "matchingRanges": {
+          "lineNumber": "14",
+          "columnRanges": [
+           {
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "14",
+         "ranges": [
+          {
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    name = \"bazel_java_semantics\",",
+         "matchingRanges": {
+          "lineNumber": "15"
+         },
+         "lineNumber": "15",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 22
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CB8SAggBOKKFwN64reXFIEAASB8"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/bazel/rules/java/BUILD",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "load(\"@rules_java//java:defs.bzl\", \"java_library\", \"java_test\")",
+         "matchingRanges": {
+          "lineNumber": "1",
+          "columnRanges": [
+           {
+            "startIndex": 36,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "1",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 5,
+            "length": 28
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 35,
+            "length": 14
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 51,
+            "length": 11
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 36,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "2"
+         },
+         "lineNumber": "2"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "java_library(",
+         "matchingRanges": {
+          "lineNumber": "16",
+          "columnRanges": [
+           {
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "16",
+         "ranges": [
+          {
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    name = \"JavaTests_lib\",",
+         "matchingRanges": {
+          "lineNumber": "17"
+         },
+         "lineNumber": "17",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 15
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CCASAggBOPSX4a3pioG9MEAASCA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "examples/java-starlark/src/main/java/com/example/myproject/BUILD",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "load(\"//tools/build_rules:java_rules_skylark.bzl\", \"java_binary\", \"java_library\")",
+         "matchingRanges": {
+          "lineNumber": "1",
+          "columnRanges": [
+           {
+            "startIndex": 67,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "1",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 5,
+            "length": 44
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 51,
+            "length": 13
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 66,
+            "length": 14
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 67,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "2"
+         },
+         "lineNumber": "2"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "java_library(",
+         "matchingRanges": {
+          "lineNumber": "17",
+          "columnRanges": [
+           {
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "17",
+         "ranges": [
+          {
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    name = \"hello-lib\",",
+         "matchingRanges": {
+          "lineNumber": "18"
+         },
+         "lineNumber": "18",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 11
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CCESAggBOPj8ufOg4qo9QABIIQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "examples/java-starlark/src/test/java/com/example/myproject/BUILD",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "load(\"//tools/build_rules:java_rules_skylark.bzl\", \"java_library\", \"java_test\")",
+         "matchingRanges": {
+          "lineNumber": "1",
+          "columnRanges": [
+           {
+            "startIndex": 52,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "1",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 5,
+            "length": 44
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 51,
+            "length": 14
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 67,
+            "length": 11
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 52,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "2"
+         },
+         "lineNumber": "2"
+        },
+        {
+         "lineText": "java_library(",
+         "matchingRanges": {
+          "lineNumber": "3",
+          "columnRanges": [
+           {
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "3",
+         "ranges": [
+          {
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    name = \"junit4\",",
+         "matchingRanges": {
+          "lineNumber": "4"
+         },
+         "lineNumber": "4",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 8
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CCISAggBOO6Rz7qRl7CclQFAAEgi"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/query2/BUILD",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "load(\"@rules_java//java:defs.bzl\", \"java_library\")",
+         "matchingRanges": {
+          "lineNumber": "1",
+          "columnRanges": [
+           {
+            "startIndex": 36,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "1",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 5,
+            "length": 28
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 35,
+            "length": 14
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 36,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "2"
+         },
+         "lineNumber": "2"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "java_library(",
+         "matchingRanges": {
+          "lineNumber": "14",
+          "columnRanges": [
+           {
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "14",
+         "ranges": [
+          {
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    name = \"query2\",",
+         "matchingRanges": {
+          "lineNumber": "15"
+         },
+         "lineNumber": "15",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 8
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "java_library(",
+         "matchingRanges": {
+          "lineNumber": "143",
+          "columnRanges": [
+           {
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "143",
+         "ranges": [
+          {
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    name = \"aquery-utils\",",
+         "matchingRanges": {
+          "lineNumber": "144"
+         },
+         "lineNumber": "144",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 14
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CCMSAggBOPTgxYbYxrm3IkAASCM"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/query2/cquery/BUILD",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "load(\"@rules_java//java:defs.bzl\", \"java_library\", \"java_test\")",
+         "matchingRanges": {
+          "lineNumber": "1",
+          "columnRanges": [
+           {
+            "startIndex": 36,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "1",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 5,
+            "length": 28
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 35,
+            "length": 14
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 51,
+            "length": 11
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 36,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "2"
+         },
+         "lineNumber": "2"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "java_library(",
+         "matchingRanges": {
+          "lineNumber": "92",
+          "columnRanges": [
+           {
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "92",
+         "ranges": [
+          {
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    name = \"configured_target_query_helper\",",
+         "matchingRanges": {
+          "lineNumber": "93"
+         },
+         "lineNumber": "93",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 32
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "java_library(",
+         "matchingRanges": {
+          "lineNumber": "111",
+          "columnRanges": [
+           {
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "111",
+         "ranges": [
+          {
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    name = \"configured_target_query_test\",",
+         "matchingRanges": {
+          "lineNumber": "112"
+         },
+         "lineNumber": "112",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 30
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 3
+    },
+    "resultToken": "CCQSAggBONimqJWV39OBS0AASCQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/starlark/util/BUILD",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "load(\"@rules_java//java:defs.bzl\", \"java_library\")",
+         "matchingRanges": {
+          "lineNumber": "1",
+          "columnRanges": [
+           {
+            "startIndex": 36,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "1",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 5,
+            "length": 28
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 35,
+            "length": 14
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 36,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "2"
+         },
+         "lineNumber": "2"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "java_library(",
+         "matchingRanges": {
+          "lineNumber": "16",
+          "columnRanges": [
+           {
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "16",
+         "ranges": [
+          {
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    name = \"util\",",
+         "matchingRanges": {
+          "lineNumber": "17"
+         },
+         "lineNumber": "17",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CCUSAggBOPy4xOiCoZbBbkAASCU"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/query2/aquery/BUILD",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "load(\"@rules_java//java:defs.bzl\", \"java_library\", \"java_test\")",
+         "matchingRanges": {
+          "lineNumber": "1",
+          "columnRanges": [
+           {
+            "startIndex": 36,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "1",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 5,
+            "length": 28
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 35,
+            "length": 14
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 51,
+            "length": 11
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 36,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "2"
+         },
+         "lineNumber": "2"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "java_library(",
+         "matchingRanges": {
+          "lineNumber": "14",
+          "columnRanges": [
+           {
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "14",
+         "ranges": [
+          {
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    name = \"action_graph_query_helper\",",
+         "matchingRanges": {
+          "lineNumber": "15"
+         },
+         "lineNumber": "15",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 27
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CCYSAggBOL7Bh9W9s8uAlgFAAEgm"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/rules/starlarkdocextract/BUILD",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "load(\"@rules_java//java:defs.bzl\", \"java_library\", \"java_test\")",
+         "matchingRanges": {
+          "lineNumber": "1",
+          "columnRanges": [
+           {
+            "startIndex": 36,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "1",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 5,
+            "length": 28
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 35,
+            "length": 14
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 51,
+            "length": 11
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 36,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "2"
+         },
+         "lineNumber": "2"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "java_library(",
+         "matchingRanges": {
+          "lineNumber": "16",
+          "columnRanges": [
+           {
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "16",
+         "ranges": [
+          {
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    name = \"StarlarkDocExtractTests_lib\",",
+         "matchingRanges": {
+          "lineNumber": "17"
+         },
+         "lineNumber": "17",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 29
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CCcSAggBOLiBgayki8fDjwFAAEgn"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/rules/starlarkdocextract/BUILD",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "load(\"@rules_java//java:defs.bzl\", \"java_library\")",
+         "matchingRanges": {
+          "lineNumber": "1",
+          "columnRanges": [
+           {
+            "startIndex": 36,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "1",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 5,
+            "length": 28
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 35,
+            "length": 14
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 36,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "2"
+         },
+         "lineNumber": "2"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "java_library(",
+         "matchingRanges": {
+          "lineNumber": "14",
+          "columnRanges": [
+           {
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "14",
+         "ranges": [
+          {
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    name = \"starlarkdocextract\",",
+         "matchingRanges": {
+          "lineNumber": "15"
+         },
+         "lineNumber": "15",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 20
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CCgSAggBONqC8fuyvt3bpgFAAEgo"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/BUILD",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "load(\"@rules_java//java:java_library.bzl\", \"java_library\")",
+         "matchingRanges": {
+          "lineNumber": "1",
+          "columnRanges": [
+           {
+            "startIndex": 24,
+            "length": 12
+           },
+           {
+            "startIndex": 44,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "1",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 5,
+            "length": 36
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 43,
+            "length": 14
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 24,
+           "length": 12
+          },
+          {
+           "startIndex": 44,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "2"
+         },
+         "lineNumber": "2"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "java_library(",
+         "matchingRanges": {
+          "lineNumber": "93",
+          "columnRanges": [
+           {
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "93",
+         "ranges": [
+          {
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    name = \"AllTests\",",
+         "matchingRanges": {
+          "lineNumber": "94"
+         },
+         "lineNumber": "94",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 10
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CCkSAggBOJSikY_mlbKPlAFAAEgp"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/BUILD",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "load(\"@rules_java//java:defs.bzl\", \"java_library\")",
+         "matchingRanges": {
+          "lineNumber": "1",
+          "columnRanges": [
+           {
+            "startIndex": 36,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "1",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 5,
+            "length": 28
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 35,
+            "length": 14
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 36,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "2"
+         },
+         "lineNumber": "2"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "java_library(",
+         "matchingRanges": {
+          "lineNumber": "117",
+          "columnRanges": [
+           {
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "117",
+         "ranges": [
+          {
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    name = \"all-build-rules\",",
+         "matchingRanges": {
+          "lineNumber": "118"
+         },
+         "lineNumber": "118",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 17
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CCoSAggBOPjl9fOtrbum5gFAAEgq"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/bazel/repository/starlark/BUILD",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "load(\"@rules_java//java:defs.bzl\", \"java_library\", \"java_test\")",
+         "matchingRanges": {
+          "lineNumber": "1",
+          "columnRanges": [
+           {
+            "startIndex": 36,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "1",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 5,
+            "length": 28
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 35,
+            "length": 14
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 51,
+            "length": 11
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 36,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "2"
+         },
+         "lineNumber": "2"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "java_library(",
+         "matchingRanges": {
+          "lineNumber": "16",
+          "columnRanges": [
+           {
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "16",
+         "ranges": [
+          {
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    name = \"StarlarkTests_lib\",",
+         "matchingRanges": {
+          "lineNumber": "17"
+         },
+         "lineNumber": "17",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 19
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CCsSAggBOPTRv9ngn_uGJkAASCs"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/bazel/repository/starlark/BUILD",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "load(\"@rules_java//java:defs.bzl\", \"java_library\")",
+         "matchingRanges": {
+          "lineNumber": "1",
+          "columnRanges": [
+           {
+            "startIndex": 36,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "1",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 5,
+            "length": 28
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 35,
+            "length": 14
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 36,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "2"
+         },
+         "lineNumber": "2"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "java_library(",
+         "matchingRanges": {
+          "lineNumber": "14",
+          "columnRanges": [
+           {
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "14",
+         "ranges": [
+          {
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    name = \"starlark\",",
+         "matchingRanges": {
+          "lineNumber": "15"
+         },
+         "lineNumber": "15",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 10
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CCwSAggBOICv9vzezZ_WOkAASCw"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/skyframe/BUILD",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "load(\"@rules_java//java:defs.bzl\", \"java_library\")",
+         "matchingRanges": {
+          "lineNumber": "1",
+          "columnRanges": [
+           {
+            "startIndex": 36,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "1",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 5,
+            "length": 28
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 35,
+            "length": 14
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 36,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "2"
+         },
+         "lineNumber": "2"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "# TODO(b/144899336): Split this further.",
+         "matchingRanges": {
+          "lineNumber": "24"
+         },
+         "lineNumber": "24",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 40
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "java_library(",
+         "matchingRanges": {
+          "lineNumber": "25",
+          "columnRanges": [
+           {
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "25",
+         "ranges": [
+          {
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    name = \"skyframe_cluster\",",
+         "matchingRanges": {
+          "lineNumber": "26"
+         },
+         "lineNumber": "26",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 18
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "java_library(",
+         "matchingRanges": {
+          "lineNumber": "401",
+          "columnRanges": [
+           {
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "401",
+         "ranges": [
+          {
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    name = \"detailed_exceptions\",",
+         "matchingRanges": {
+          "lineNumber": "402"
+         },
+         "lineNumber": "402",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 21
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "java_library(",
+         "matchingRanges": {
+          "lineNumber": "412",
+          "columnRanges": [
+           {
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "412",
+         "ranges": [
+          {
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    name = \"abstract_label_cycle_reporter\",",
+         "matchingRanges": {
+          "lineNumber": "413"
+         },
+         "lineNumber": "413",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 31
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 40
+    },
+    "resultToken": "CC0SAggBOMbGjJf0nazdogFAAEgt"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/test/java/com/google/devtools/build/lib/skyframe/BUILD",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "load(\"@rules_java//java:defs.bzl\", \"java_library\", \"java_test\")",
+         "matchingRanges": {
+          "lineNumber": "1",
+          "columnRanges": [
+           {
+            "startIndex": 36,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "1",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 5,
+            "length": 28
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 35,
+            "length": 14
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 51,
+            "length": 11
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 36,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "2"
+         },
+         "lineNumber": "2"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "java_library(",
+         "matchingRanges": {
+          "lineNumber": "24",
+          "columnRanges": [
+           {
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "24",
+         "ranges": [
+          {
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    name = \"testutil\",",
+         "matchingRanges": {
+          "lineNumber": "25"
+         },
+         "lineNumber": "25",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 10
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "java_library(",
+         "matchingRanges": {
+          "lineNumber": "35",
+          "columnRanges": [
+           {
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "35",
+         "ranges": [
+          {
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    name = \"SkyFunctionEnvironmentForTesting\",",
+         "matchingRanges": {
+          "lineNumber": "36"
+         },
+         "lineNumber": "36",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 34
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "java_library(",
+         "matchingRanges": {
+          "lineNumber": "48",
+          "columnRanges": [
+           {
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "48",
+         "ranges": [
+          {
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    name = \"TimestampBuilderTestCase\",",
+         "matchingRanges": {
+          "lineNumber": "49"
+         },
+         "lineNumber": "49",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 26
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "java_library(",
+         "matchingRanges": {
+          "lineNumber": "111",
+          "columnRanges": [
+           {
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "111",
+         "ranges": [
+          {
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    name = \"AbstractCollectPackagesUnderDirectoryTest\",",
+         "matchingRanges": {
+          "lineNumber": "112"
+         },
+         "lineNumber": "112",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 43
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 10
+    },
+    "resultToken": "CC4SAggBOJSFroLftJOD7gFAAEgu"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/skybridge/BUILD",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "load(\"@rules_java//java:defs.bzl\", \"java_library\")",
+         "matchingRanges": {
+          "lineNumber": "1",
+          "columnRanges": [
+           {
+            "startIndex": 36,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "1",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 5,
+            "length": 28
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 35,
+            "length": 14
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 36,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "2"
+         },
+         "lineNumber": "2"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "java_library(",
+         "matchingRanges": {
+          "lineNumber": "14",
+          "columnRanges": [
+           {
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "14",
+         "ranges": [
+          {
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    name = \"skybridge_interface\",",
+         "matchingRanges": {
+          "lineNumber": "15"
+         },
+         "lineNumber": "15",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 21
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CC8SAggBOKzV4Kz_ofGMogFAAEgv"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/starlarkprofiler/BUILD",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "load(\"@rules_java//java:defs.bzl\", \"java_library\")",
+         "matchingRanges": {
+          "lineNumber": "1",
+          "columnRanges": [
+           {
+            "startIndex": 36,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "1",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 5,
+            "length": 28
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 35,
+            "length": 14
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 36,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "2"
+         },
+         "lineNumber": "2"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "java_library(",
+         "matchingRanges": {
+          "lineNumber": "14",
+          "columnRanges": [
+           {
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "14",
+         "ranges": [
+          {
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    name = \"cpu_profiler_module\",",
+         "matchingRanges": {
+          "lineNumber": "15"
+         },
+         "lineNumber": "15",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 21
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "java_library(",
+         "matchingRanges": {
+          "lineNumber": "26",
+          "columnRanges": [
+           {
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "26",
+         "ranges": [
+          {
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    name = \"cpu_profiler_service\",",
+         "matchingRanges": {
+          "lineNumber": "27"
+         },
+         "lineNumber": "27",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 22
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "java_library(",
+         "matchingRanges": {
+          "lineNumber": "37",
+          "columnRanges": [
+           {
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "37",
+         "ranges": [
+          {
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    name = \"cpu_profiler_service_impl\",",
+         "matchingRanges": {
+          "lineNumber": "38"
+         },
+         "lineNumber": "38",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 27
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 4
+    },
+    "resultToken": "CDASAggBOOiGw-nvkpK1EUAASDA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "bazel",
+        "ossProject": "bazel"
+       },
+       "refSpec": "refs/heads/master"
+      },
+      "path": "src/main/java/com/google/devtools/build/lib/starlarkbuildapi/BUILD",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "load(\"@rules_java//java:defs.bzl\", \"java_library\")",
+         "matchingRanges": {
+          "lineNumber": "13",
+          "columnRanges": [
+           {
+            "startIndex": 36,
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "13",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 4
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 5,
+            "length": 28
+           }
+          },
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 35,
+            "length": 14
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 36,
+           "length": 12
+          }
+         ]
+        },
+        {
+         "matchingRanges": {
+          "lineNumber": "14"
+         },
+         "lineNumber": "14"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "java_library(",
+         "matchingRanges": {
+          "lineNumber": "37",
+          "columnRanges": [
+           {
+            "length": 12
+           }
+          ]
+         },
+         "lineNumber": "37",
+         "ranges": [
+          {
+           "length": 12
+          }
+         ]
+        },
+        {
+         "lineText": "    name = \"starlarkbuildapi\",",
+         "matchingRanges": {
+          "lineNumber": "38"
+         },
+         "lineNumber": "38",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 11,
+            "length": 18
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CDESAggBOLbR97XX-Mu1qAFAAEgx"
+   }
+  ],
+  "estimatedResultCount": "327",
+  "nextPageToken": "CPj8ufOg4qo9CJaLna2MiaiwCgjS6b6tzYL8/gwI6IbD6e+SkrURCL6GjMi+6PuSGQiihcDeuK3lxSAI9ODFhtjGubciCPTRv9ngn/uGJgj86vL4/JT89C0I9JfhremKgb0wCPz88P7d4qKtMQjImtqe8Y7M0zUIgK/2/N7Nn9Y6CKD86cHwqqe7PAjYpqiVld/TgUsIyL3xzc+coJNTCNi49vey57zuVQiutZaDv+348FsImu6TjOm4h/pmCJaTmfret/O4agj8uMTogqGWwW4IkPeu8rmUjt9zCOTHrM/I7tH9dwiS/tb34bnqinwIuIGBrKSLx8OPAQi+iPWjtLmDg5ABCJSikY/mlbKPlAEI7pHPupGXsJyVAQi+wYfVvbPLgJYBCIbLl9fQzfeBmQEI/KuLo9zXgISiAQis1eCs/6HxjKIBCMbGjJf0nazdogEI2oLx+7K+3dumAQiY6rm5sc733qYBCLbR97XX+Mu1qAEIovvz0vP4v66zAQjGn92vpc6f9r0BCLrwwNzBjIWnxgEItpmR8LyHzanLAQiEl6CU2uXQmdUBCLS+nO3SpIuZ2gEIntXum/Oa84PcAQiuoKnQ4pSLrOEBCPjl9fOtrbum5gEIoJuryb2wxcvtAQiUha6C37STg+4BCJrb66fChtKh+QEIhL3ExOqMxvv8AQjawozz0vaN6/4B",
+  "exhaustive": true,
+  "requestToken": "ChhmaWxlOkJVSUxEJCBqYXZhX2xpYnJhcnkSIyggZ2l0OmJhemVsL2JhemVsQG1hc3RlciBjYXNlOnllcyApGgwIu-2s0QYQscmc0AMgDCoAMgBIAQ"
+ }
+}

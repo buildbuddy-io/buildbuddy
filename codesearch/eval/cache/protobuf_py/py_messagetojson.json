@@ -1,0 +1,1790 @@
+{
+ "query": "MessageToJson",
+ "oss_project": "protobuf",
+ "repo_name": "protobuf",
+ "page_size": 50,
+ "fetched_at": "2026-06-17T22:22:39Z",
+ "response": {
+  "searchResults": [
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "protobuf",
+        "ossProject": "protobuf"
+       },
+       "refSpec": "refs/heads/main"
+      },
+      "path": "python/google/protobuf/json_format.py",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "def MessageToJson(",
+         "matchingRanges": {
+          "lineNumber": "78",
+          "columnRanges": [
+           {
+            "startIndex": 4,
+            "length": 13
+           }
+          ]
+         },
+         "lineNumber": "78",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 4,
+           "length": 13
+          }
+         ]
+        },
+        {
+         "lineText": "    message,",
+         "matchingRanges": {
+          "lineNumber": "79"
+         },
+         "lineNumber": "79"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  def _MessageToJsonObject(self, message):",
+         "matchingRanges": {
+          "lineNumber": "204",
+          "columnRanges": [
+           {
+            "startIndex": 7,
+            "length": 13
+           }
+          ]
+         },
+         "lineNumber": "204",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 7,
+           "length": 13
+          }
+         ]
+        },
+        {
+         "lineText": "    \"\"\"Converts message to an object according to ProtoJSON Specification.\"\"\"",
+         "matchingRanges": {
+          "lineNumber": "205"
+         },
+         "lineNumber": "205",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 4,
+            "length": 73
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  def _AnyMessageToJsonObject(self, message):",
+         "matchingRanges": {
+          "lineNumber": "330",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 13
+           }
+          ]
+         },
+         "lineNumber": "330",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 13
+          }
+         ]
+        },
+        {
+         "lineText": "    \"\"\"Converts Any message according to ProtoJSON Specification.\"\"\"",
+         "matchingRanges": {
+          "lineNumber": "331"
+         },
+         "lineNumber": "331",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 4,
+            "length": 64
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  def _ValueMessageToJsonObject(self, message):",
+         "matchingRanges": {
+          "lineNumber": "358",
+          "columnRanges": [
+           {
+            "startIndex": 12,
+            "length": 13
+           }
+          ]
+         },
+         "lineNumber": "358",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 12,
+           "length": 13
+          }
+         ]
+        },
+        {
+         "lineText": "    \"\"\"Converts Value message according to ProtoJSON Specification.\"\"\"",
+         "matchingRanges": {
+          "lineNumber": "359"
+         },
+         "lineNumber": "359",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 4,
+            "length": 66
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  def _StructMessageToJsonObject(self, message):",
+         "matchingRanges": {
+          "lineNumber": "388",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 13
+           }
+          ]
+         },
+         "lineNumber": "388",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 13
+          }
+         ]
+        },
+        {
+         "lineText": "    \"\"\"Converts Struct message according to ProtoJSON Specification.\"\"\"",
+         "matchingRanges": {
+          "lineNumber": "389"
+         },
+         "lineNumber": "389",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 4,
+            "length": 67
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 27
+    },
+    "resultToken": "CAASBAgBIAE4npjs0Kmj8PkLQABIAA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "protobuf",
+        "ossProject": "protobuf"
+       },
+       "refSpec": "refs/heads/main"
+      },
+      "path": "src/google/protobuf/json/json_test.cc",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "      std::string result;",
+         "matchingRanges": {
+          "lineNumber": "98"
+         },
+         "lineNumber": "98"
+        },
+        {
+         "lineText": "      RETURN_IF_ERROR(MessageToJsonString(proto, \u0026result, options));",
+         "matchingRanges": {
+          "lineNumber": "99",
+          "columnRanges": [
+           {
+            "startIndex": 22,
+            "length": 13
+           }
+          ]
+         },
+         "lineNumber": "99",
+         "ranges": [
+          {
+           "startIndex": 22,
+           "length": 13
+          }
+         ]
+        },
+        {
+         "lineText": "      return result;",
+         "matchingRanges": {
+          "lineNumber": "100"
+         },
+         "lineNumber": "100",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "absl::StatusOr\u003cgoogle::protobuf::Struct\u003e MessageToJsonAndBack(",
+         "matchingRanges": {
+          "lineNumber": "1676",
+          "columnRanges": [
+           {
+            "startIndex": 41,
+            "length": 13
+           }
+          ]
+         },
+         "lineNumber": "1676",
+         "ranges": [
+          {
+           "startIndex": 41,
+           "length": 13
+          }
+         ]
+        },
+        {
+         "lineText": "    const google::protobuf::Struct\u0026 msg) {",
+         "matchingRanges": {
+          "lineNumber": "1677"
+         },
+         "lineNumber": "1677",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 4,
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  std::string str;",
+         "matchingRanges": {
+          "lineNumber": "1678"
+         },
+         "lineNumber": "1678"
+        },
+        {
+         "lineText": "  auto status = MessageToJsonString(msg, \u0026str);",
+         "matchingRanges": {
+          "lineNumber": "1679",
+          "columnRanges": [
+           {
+            "startIndex": 16,
+            "length": 13
+           }
+          ]
+         },
+         "lineNumber": "1679",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 16,
+           "length": 13
+          }
+         ]
+        },
+        {
+         "lineText": "  if (!status.ok()) return status;",
+         "matchingRanges": {
+          "lineNumber": "1680"
+         },
+         "lineNumber": "1680",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 2
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 20,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  EXPECT_THAT(MessageToJsonAndBack(s), IsOkAndHolds(EqualsProto(R\"pb(",
+         "matchingRanges": {
+          "lineNumber": "1694",
+          "columnRanges": [
+           {
+            "startIndex": 14,
+            "length": 13
+           }
+          ]
+         },
+         "lineNumber": "1694",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 64,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 14,
+           "length": 13
+          }
+         ]
+        },
+        {
+         "lineText": "                fields {",
+         "matchingRanges": {
+          "lineNumber": "1695"
+         },
+         "lineNumber": "1695",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "length": 24
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 6
+    },
+    "resultToken": "CAESBAgBIAE4osiajrnErqMsQABIAQ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "protobuf",
+        "ossProject": "protobuf"
+       },
+       "refSpec": "refs/heads/main"
+      },
+      "path": "src/google/protobuf/json/json.h",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "// subject to change without notice.",
+         "matchingRanges": {
+          "lineNumber": "72"
+         },
+         "lineNumber": "72",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 36
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "PROTOBUF_EXPORT absl::Status MessageToJsonString(const Message\u0026 message,",
+         "matchingRanges": {
+          "lineNumber": "73",
+          "columnRanges": [
+           {
+            "startIndex": 29,
+            "length": 13
+           }
+          ]
+         },
+         "lineNumber": "73",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 49,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 29,
+           "length": 13
+          }
+         ]
+        },
+        {
+         "lineText": "                                                 std::string* output,",
+         "matchingRanges": {
+          "lineNumber": "74"
+         },
+         "lineNumber": "74"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "inline absl::Status MessageToJsonString(const Message\u0026 message,",
+         "matchingRanges": {
+          "lineNumber": "77",
+          "columnRanges": [
+           {
+            "startIndex": 20,
+            "length": 13
+           }
+          ]
+         },
+         "lineNumber": "77",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 40,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 20,
+           "length": 13
+          }
+         ]
+        },
+        {
+         "lineText": "                                        std::string* output) {",
+         "matchingRanges": {
+          "lineNumber": "78"
+         },
+         "lineNumber": "78"
+        },
+        {
+         "lineText": "  return MessageToJsonString(message, output, PrintOptions());",
+         "matchingRanges": {
+          "lineNumber": "79",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 13
+           }
+          ]
+         },
+         "lineNumber": "79",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 13
+          }
+         ]
+        },
+        {
+         "lineText": "}",
+         "matchingRanges": {
+          "lineNumber": "80"
+         },
+         "lineNumber": "80"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "inline absl::Status MessageToJsonStream(const Message\u0026 message,",
+         "matchingRanges": {
+          "lineNumber": "92",
+          "columnRanges": [
+           {
+            "startIndex": 20,
+            "length": 13
+           }
+          ]
+         },
+         "lineNumber": "92",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 40,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 20,
+           "length": 13
+          }
+         ]
+        },
+        {
+         "lineText": "                                        io::ZeroCopyOutputStream* json_output) {",
+         "matchingRanges": {
+          "lineNumber": "93"
+         },
+         "lineNumber": "93"
+        },
+        {
+         "lineText": "  return MessageToJsonStream(message, json_output, PrintOptions());",
+         "matchingRanges": {
+          "lineNumber": "94",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 13
+           }
+          ]
+         },
+         "lineNumber": "94",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 13
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 6
+    },
+    "resultToken": "CAISBAgBIAE47uHk7PW1152QAUAASAI"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "protobuf",
+        "ossProject": "protobuf"
+       },
+       "refSpec": "refs/heads/main"
+      },
+      "path": "src/google/protobuf/json/json.cc",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "absl::Status MessageToJsonString(const Message\u0026 message, std::string* output,",
+         "matchingRanges": {
+          "lineNumber": "90",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 13
+           }
+          ]
+         },
+         "lineNumber": "90",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 33,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 13
+          }
+         ]
+        },
+        {
+         "lineText": "                                 const PrintOptions\u0026 options) {",
+         "matchingRanges": {
+          "lineNumber": "91"
+         },
+         "lineNumber": "91",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 33,
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "  io::StringOutputStream out(output);",
+         "matchingRanges": {
+          "lineNumber": "92"
+         },
+         "lineNumber": "92"
+        },
+        {
+         "lineText": "  return MessageToJsonStream(message, \u0026out, options);",
+         "matchingRanges": {
+          "lineNumber": "93",
+          "columnRanges": [
+           {
+            "startIndex": 9,
+            "length": 13
+           }
+          ]
+         },
+         "lineNumber": "93",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 9,
+           "length": 13
+          }
+         ]
+        },
+        {
+         "lineText": "}",
+         "matchingRanges": {
+          "lineNumber": "94"
+         },
+         "lineNumber": "94"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "absl::Status MessageToJsonStream(const Message\u0026 message,",
+         "matchingRanges": {
+          "lineNumber": "96",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 13
+           }
+          ]
+         },
+         "lineNumber": "96",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 33,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 13
+          }
+         ]
+        },
+        {
+         "lineText": "                                 io::ZeroCopyOutputStream* json_output,",
+         "matchingRanges": {
+          "lineNumber": "97"
+         },
+         "lineNumber": "97"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  return google::protobuf::json_internal::MessageToJsonStream(message, json_output, opts);",
+         "matchingRanges": {
+          "lineNumber": "111",
+          "columnRanges": [
+           {
+            "startIndex": 42,
+            "length": 13
+           }
+          ]
+         },
+         "lineNumber": "111",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 6
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 42,
+           "length": 13
+          }
+         ]
+        },
+        {
+         "lineText": "}",
+         "matchingRanges": {
+          "lineNumber": "112"
+         },
+         "lineNumber": "112"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 4
+    },
+    "resultToken": "CAMSBAgBIAE4xKvjwsL61ZohQABIAw"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "protobuf",
+        "ossProject": "protobuf"
+       },
+       "refSpec": "refs/heads/main"
+      },
+      "path": "python/google/protobuf/internal/json_format_test.py",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  def CheckParseBack(self, message, parsed_message):",
+         "matchingRanges": {
+          "lineNumber": "77"
+         },
+         "lineNumber": "77",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "    json_format.Parse(json_format.MessageToJson(message), parsed_message)",
+         "matchingRanges": {
+          "lineNumber": "78",
+          "columnRanges": [
+           {
+            "startIndex": 34,
+            "length": 13
+           }
+          ]
+         },
+         "lineNumber": "78",
+         "ranges": [
+          {
+           "startIndex": 34,
+           "length": 13
+          }
+         ]
+        },
+        {
+         "lineText": "    self.assertEqual(message, parsed_message)",
+         "matchingRanges": {
+          "lineNumber": "79"
+         },
+         "lineNumber": "79"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  def testEmptyMessageToJson(self):",
+         "matchingRanges": {
+          "lineNumber": "90",
+          "columnRanges": [
+           {
+            "startIndex": 15,
+            "length": 13
+           }
+          ]
+         },
+         "lineNumber": "90",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 15,
+           "length": 13
+          }
+         ]
+        },
+        {
+         "lineText": "    message = json_format_proto3_pb2.TestMessage()",
+         "matchingRanges": {
+          "lineNumber": "91"
+         },
+         "lineNumber": "91"
+        },
+        {
+         "lineText": "    self.assertEqual(json_format.MessageToJson(message), '{}')",
+         "matchingRanges": {
+          "lineNumber": "92",
+          "columnRanges": [
+           {
+            "startIndex": 33,
+            "length": 13
+           }
+          ]
+         },
+         "lineNumber": "92",
+         "tokens": [
+          {
+           "tokenType": "STRING_LITERAL",
+           "range": {
+            "startIndex": 57,
+            "length": 4
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 33,
+           "length": 13
+          }
+         ]
+        },
+        {
+         "lineText": "    parsed_message = json_format_proto3_pb2.TestMessage()",
+         "matchingRanges": {
+          "lineNumber": "93"
+         },
+         "lineNumber": "93"
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  def testPartialMessageToJson(self):",
+         "matchingRanges": {
+          "lineNumber": "96",
+          "columnRanges": [
+           {
+            "startIndex": 17,
+            "length": 13
+           }
+          ]
+         },
+         "lineNumber": "96",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 3
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 17,
+           "length": 13
+          }
+         ]
+        },
+        {
+         "lineText": "    message = json_format_proto3_pb2.TestMessage(",
+         "matchingRanges": {
+          "lineNumber": "97"
+         },
+         "lineNumber": "97"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 40
+    },
+    "resultToken": "CAQSBAgBIAE42ov2s_mJrJokQABIBA"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "protobuf",
+        "ossProject": "protobuf"
+       },
+       "refSpec": "refs/heads/main"
+      },
+      "path": "src/google/protobuf/json/internal/unparser.h",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "namespace json_internal {",
+         "matchingRanges": {
+          "lineNumber": "20"
+         },
+         "lineNumber": "20",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 9
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "// Internal version of google::protobuf::util::MessageToJsonStream; see json.h for",
+         "matchingRanges": {
+          "lineNumber": "21",
+          "columnRanges": [
+           {
+            "startIndex": 47,
+            "length": 13
+           }
+          ]
+         },
+         "lineNumber": "21",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 82
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 47,
+           "length": 13
+          }
+         ]
+        },
+        {
+         "lineText": "// details.",
+         "matchingRanges": {
+          "lineNumber": "22"
+         },
+         "lineNumber": "22",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "length": 11
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "absl::Status MessageToJsonStream(const Message\u0026 message,",
+         "matchingRanges": {
+          "lineNumber": "23",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 13
+           }
+          ]
+         },
+         "lineNumber": "23",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 33,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 13
+          }
+         ]
+        },
+        {
+         "lineText": "                                 io::ZeroCopyOutputStream* json_output,",
+         "matchingRanges": {
+          "lineNumber": "24"
+         },
+         "lineNumber": "24"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAUSBAgBIAE48MCZltjn2r6bAUAASAU"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "protobuf",
+        "ossProject": "protobuf"
+       },
+       "refSpec": "refs/heads/main"
+      },
+      "path": "src/google/protobuf/json/internal/unparser.cc",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "absl::Status MessageToJsonStream(const Message\u0026 message,",
+         "matchingRanges": {
+          "lineNumber": "872",
+          "columnRanges": [
+           {
+            "startIndex": 13,
+            "length": 13
+           }
+          ]
+         },
+         "lineNumber": "872",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 33,
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 13,
+           "length": 13
+          }
+         ]
+        },
+        {
+         "lineText": "                                 io::ZeroCopyOutputStream* json_output,",
+         "matchingRanges": {
+          "lineNumber": "873"
+         },
+         "lineNumber": "873"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAYSBAgBIAE4mpyDp-3-q8L0AUAASAY"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "protobuf",
+        "ossProject": "protobuf"
+       },
+       "refSpec": "refs/heads/main"
+      },
+      "path": "conformance/conformance_python.py",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "      try:",
+         "matchingRanges": {
+          "lineNumber": "101"
+         },
+         "lineNumber": "101",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 3
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "        response.json_payload = json_format.MessageToJson(test_message)",
+         "matchingRanges": {
+          "lineNumber": "102",
+          "columnRanges": [
+           {
+            "startIndex": 44,
+            "length": 13
+           }
+          ]
+         },
+         "lineNumber": "102",
+         "ranges": [
+          {
+           "startIndex": 44,
+           "length": 13
+          }
+         ]
+        },
+        {
+         "lineText": "      except Exception as e:",
+         "matchingRanges": {
+          "lineNumber": "103"
+         },
+         "lineNumber": "103",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 6
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 23,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAcSAggBOPjPsIaXlMq6twFAAEgH"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "protobuf",
+        "ossProject": "protobuf"
+       },
+       "refSpec": "refs/heads/main"
+      },
+      "path": "src/google/protobuf/json/json_enumval_custom_string_test.cc",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  std::string json_res{};",
+         "matchingRanges": {
+          "lineNumber": "34"
+         },
+         "lineNumber": "34"
+        },
+        {
+         "lineText": "  absl::Status status = json::MessageToJsonString(msg, \u0026json_res);",
+         "matchingRanges": {
+          "lineNumber": "35",
+          "columnRanges": [
+           {
+            "startIndex": 30,
+            "length": 13
+           }
+          ]
+         },
+         "lineNumber": "35",
+         "ranges": [
+          {
+           "startIndex": 30,
+           "length": 13
+          }
+         ]
+        },
+        {
+         "lineText": "  EXPECT_OK(status);",
+         "matchingRanges": {
+          "lineNumber": "36"
+         },
+         "lineNumber": "36",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "startIndex": 12,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  std::string json_res{};",
+         "matchingRanges": {
+          "lineNumber": "46"
+         },
+         "lineNumber": "46"
+        },
+        {
+         "lineText": "  absl::Status status = json::MessageToJsonString(msg, \u0026json_res);",
+         "matchingRanges": {
+          "lineNumber": "47",
+          "columnRanges": [
+           {
+            "startIndex": 30,
+            "length": 13
+           }
+          ]
+         },
+         "lineNumber": "47",
+         "ranges": [
+          {
+           "startIndex": 30,
+           "length": 13
+          }
+         ]
+        },
+        {
+         "lineText": "  EXPECT_OK(status);",
+         "matchingRanges": {
+          "lineNumber": "48"
+         },
+         "lineNumber": "48",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "startIndex": 12,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "  std::string json_res{};",
+         "matchingRanges": {
+          "lineNumber": "68"
+         },
+         "lineNumber": "68"
+        },
+        {
+         "lineText": "  absl::Status status = json::MessageToJsonString(msg, \u0026json_res);",
+         "matchingRanges": {
+          "lineNumber": "69",
+          "columnRanges": [
+           {
+            "startIndex": 30,
+            "length": 13
+           }
+          ]
+         },
+         "lineNumber": "69",
+         "ranges": [
+          {
+           "startIndex": 30,
+           "length": 13
+          }
+         ]
+        },
+        {
+         "lineText": "  EXPECT_OK(status);",
+         "matchingRanges": {
+          "lineNumber": "70"
+         },
+         "lineNumber": "70",
+         "tokens": [
+          {
+           "tokenType": "MACRO",
+           "range": {
+            "startIndex": 12,
+            "length": 6
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 10
+    },
+    "resultToken": "CAgSAggBOO7GoJ_mvfv-RkAASAg"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "protobuf",
+        "ossProject": "protobuf"
+       },
+       "refSpec": "refs/heads/main"
+      },
+      "path": "conformance/conformance_cpp.cc",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "using ::google::protobuf::util::JsonStringToMessage;",
+         "matchingRanges": {
+          "lineNumber": "58"
+         },
+         "lineNumber": "58",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "using ::google::protobuf::util::MessageToJsonString;",
+         "matchingRanges": {
+          "lineNumber": "59",
+          "columnRanges": [
+           {
+            "startIndex": 32,
+            "length": 13
+           }
+          ]
+         },
+         "lineNumber": "59",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 32,
+           "length": 13
+          }
+         ]
+        },
+        {
+         "lineText": "using ::google::protobuf::util::NewTypeResolverForDescriptorPool;",
+         "matchingRanges": {
+          "lineNumber": "60"
+         },
+         "lineNumber": "60",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 5
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "      absl::Status status =",
+         "matchingRanges": {
+          "lineNumber": "200"
+         },
+         "lineNumber": "200"
+        },
+        {
+         "lineText": "          MessageToJsonString(*test_message, response.mutable_json_payload());",
+         "matchingRanges": {
+          "lineNumber": "201",
+          "columnRanges": [
+           {
+            "startIndex": 10,
+            "length": 13
+           }
+          ]
+         },
+         "lineNumber": "201",
+         "ranges": [
+          {
+           "startIndex": 10,
+           "length": 13
+          }
+         ]
+        },
+        {
+         "lineText": "      if (!status.ok()) {",
+         "matchingRanges": {
+          "lineNumber": "202"
+         },
+         "lineNumber": "202",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 6,
+            "length": 2
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAkSAggBOOrCnu6xqeeDpAFAAEgJ"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "protobuf",
+        "ossProject": "protobuf"
+       },
+       "refSpec": "refs/heads/main"
+      },
+      "path": "src/google/protobuf/util/json_util.h",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "using ::google::protobuf::json::JsonToBinaryString;",
+         "matchingRanges": {
+          "lineNumber": "28"
+         },
+         "lineNumber": "28",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 5
+           }
+          }
+         ]
+        },
+        {
+         "lineText": "using ::google::protobuf::json::MessageToJsonString;",
+         "matchingRanges": {
+          "lineNumber": "29",
+          "columnRanges": [
+           {
+            "startIndex": 32,
+            "length": 13
+           }
+          ]
+         },
+         "lineNumber": "29",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "length": 5
+           }
+          }
+         ],
+         "ranges": [
+          {
+           "startIndex": 32,
+           "length": 13
+          }
+         ]
+        },
+        {
+         "lineText": "}  // namespace util",
+         "matchingRanges": {
+          "lineNumber": "30"
+         },
+         "lineNumber": "30",
+         "tokens": [
+          {
+           "tokenType": "COMMENT",
+           "range": {
+            "startIndex": 3,
+            "length": 17
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 1
+    },
+    "resultToken": "CAoSAggBOJC526jFlpyyTkAASAo"
+   },
+   {
+    "fileSearchResult": {
+     "fileSpec": {
+      "sourceRoot": {
+       "repositoryKey": {
+        "repositoryName": "protobuf",
+        "ossProject": "protobuf"
+       },
+       "refSpec": "refs/heads/main"
+      },
+      "path": "benchmarks/benchmark.cc",
+      "type": "FILE"
+     },
+     "snippets": [
+      {
+       "snippetLines": [
+        {
+         "lineText": "  std::string json;",
+         "matchingRanges": {
+          "lineNumber": "425"
+         },
+         "lineNumber": "425"
+        },
+        {
+         "lineText": "  ABSL_CHECK_OK(google::protobuf::json::MessageToJsonString(proto, \u0026json));",
+         "matchingRanges": {
+          "lineNumber": "426",
+          "columnRanges": [
+           {
+            "startIndex": 40,
+            "length": 13
+           }
+          ]
+         },
+         "lineNumber": "426",
+         "ranges": [
+          {
+           "startIndex": 40,
+           "length": 13
+          }
+         ]
+        },
+        {
+         "lineText": "  for (auto _ : state) {",
+         "matchingRanges": {
+          "lineNumber": "427"
+         },
+         "lineNumber": "427",
+         "tokens": [
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 2,
+            "length": 3
+           }
+          },
+          {
+           "tokenType": "KEYWORD",
+           "range": {
+            "startIndex": 7,
+            "length": 4
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "snippetLines": [
+        {
+         "lineText": "    json.clear();",
+         "matchingRanges": {
+          "lineNumber": "468"
+         },
+         "lineNumber": "468"
+        },
+        {
+         "lineText": "    ABSL_CHECK_OK(google::protobuf::json::MessageToJsonString(proto, \u0026json));",
+         "matchingRanges": {
+          "lineNumber": "469",
+          "columnRanges": [
+           {
+            "startIndex": 42,
+            "length": 13
+           }
+          ]
+         },
+         "lineNumber": "469",
+         "ranges": [
+          {
+           "startIndex": 42,
+           "length": 13
+          }
+         ]
+        },
+        {
+         "lineText": "    benchmark::DoNotOptimize(json);",
+         "matchingRanges": {
+          "lineNumber": "470"
+         },
+         "lineNumber": "470"
+        }
+       ]
+      }
+     ],
+     "numberOfMatchingLines": 2
+    },
+    "resultToken": "CAsSAggBOPSEj7OSp92qWkAASAs"
+   }
+  ],
+  "estimatedResultCount": "13",
+  "exhaustive": true,
+  "requestToken": "Cg1NZXNzYWdlVG9Kc29uEjUoIGdpdDpnaXRodWIvcHJvdG9jb2xidWZmZXJzL3Byb3RvYnVmQG1haW4gY2FzZTp5ZXMgKRoMCK68zNEGEJGhsp0DIAwqADIASAE"
+ }
+}
