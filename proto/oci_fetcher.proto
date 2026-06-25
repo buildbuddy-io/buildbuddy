@@ -73,6 +73,12 @@ message FetchBlobRequest {
   bool bypass_registry = 3;
   optional int64 size = 4;
   optional string media_type = 5;
+  // The manifest the blob belongs to, e.g. gcr.io/org/repo@sha256:...
+  // (manifest digest reference, same repository as ref). When set, the server
+  // proves repository access with a HEAD of this manifest instead of a blob
+  // HEAD, which some registries (e.g. public.ecr.aws) reject even when the
+  // blob GET is authorized. When unset, the server falls back to a blob HEAD.
+  string manifest_ref = 6;
 }
 
 message FetchBlobResponse {

@@ -167,7 +167,7 @@ func (s *ociFetcherServer) FetchBlob(req *ofpb.FetchBlobRequest, stream ofpb.OCI
 		}
 		return status.NotFoundErrorf("bypassing registry, but blob %q not found in cache", digestRef)
 	}
-	return s.dedupedFetchBlob(ctx, stream, digestRef, hash, req.GetCredentials())
+	return s.dedupedFetchBlob(ctx, stream, digestRef, hash, req.GetCredentials(), req.GetManifestRef(), req.GetSize(), req.GetMediaType())
 }
 
 // FetchBlobMetadata returns OCI blob metadata (size, media type).
@@ -299,7 +299,7 @@ func (s *ociFetcherServer) streamBlobFromCache(ctx context.Context, stream ofpb.
 	return ocicache.FetchBlobFromCache(ctx, &grpcStreamWriter{stream: stream}, s.bsClient, hash, metadata.GetContentLength())
 }
 
-func (s *ociFetcherServer) dedupedFetchBlob(ctx context.Context, stream ofpb.OCIFetcher_FetchBlobServer, digestRef ctrname.Digest, hash ctr.Hash, creds *rgpb.Credentials) error {
+func (s *ociFetcherServer) dedupedFetchBlob(ctx context.Context, stream ofpb.OCIFetcher_FetchBlobServer, digestRef ctrname.Digest, hash ctr.Hash, creds *rgpb.Credentials, manifestRef string, size int64, mediaType string) error {
 	start := time.Now()
 	repo := digestRef.Context()
 	key := ocicache.NewBlobFetchKey(repo, hash, creds)
@@ -307,32 +307,42 @@ func (s *ociFetcherServer) dedupedFetchBlob(ctx context.Context, stream ofpb.OCI
 	contentLength, _, err := s.blobFetchGroup.Do(ctx, key, func(ctx context.Context) (int64, error) {
 		isLeader = true
 
-		// Cached metadata proves the content-addressed blob exists; we only need
-		// to prove the caller may access the repo before serving it from cache.
-		metadata, err := ocicache.FetchBlobMetadataFromCache(ctx, s.bsClient, s.acClient, repo, hash)
-		if err == nil {
-			if err := s.proveBlobAccess(ctx, digestRef, creds); err != nil {
-				return 0, err
-			}
-			contentLength := metadata.GetContentLength()
-			cacheWriter := &grpcStreamWriter{stream: stream}
-			err := ocicache.FetchBlobFromCache(ctx, cacheWriter, s.bsClient, hash, contentLength)
+		// The cache fast-path requires proving the caller may access the repo
+		// without fetching the blob. We do that with a manifest HEAD, so it is
+		// only available when the caller supplies the manifest ref. Without one
+		// (older clients), we fall through to the registry, where the blob GET
+		// proves access as a side effect.
+		if manifestRef != "" {
+			// Cached metadata proves the content-addressed blob exists; we only
+			// need to prove repo access before serving it from cache.
+			metadata, err := ocicache.FetchBlobMetadataFromCache(ctx, s.bsClient, s.acClient, repo, hash)
 			if err == nil {
-				return contentLength, nil
+				if err := s.proveBlobAccess(ctx, digestRef, creds, manifestRef); err != nil {
+					return 0, err
+				}
+				contentLength := metadata.GetContentLength()
+				cacheWriter := &grpcStreamWriter{stream: stream}
+				err := ocicache.FetchBlobFromCache(ctx, cacheWriter, s.bsClient, hash, contentLength)
+				if err == nil {
+					return contentLength, nil
+				}
+				// Only recover if no bytes were streamed. Once bytes have been
+				// sent, falling back would corrupt the response by replaying
+				// from offset 0.
+				if cacheWriter.bytesWritten > 0 {
+					return 0, err
+				}
+				log.CtxWarningf(ctx, "Blob metadata was cached but reading blob %q from cache failed before streaming bytes; falling back to registry: %s", digestRef, err)
+			} else if !status.IsNotFoundError(err) {
+				log.CtxWarningf(ctx, "Error looking up blob metadata in cache; falling back to registry: %s", err)
 			}
-			// Only recover if no bytes were streamed. Once bytes have been sent,
-			// falling back would corrupt the response by replaying from offset 0.
-			if cacheWriter.bytesWritten > 0 {
-				return 0, err
-			}
-			log.CtxWarningf(ctx, "Blob metadata was cached but reading blob %q from cache failed before streaming bytes; falling back to registry: %s", digestRef, err)
-		} else if !status.IsNotFoundError(err) {
-			log.CtxWarningf(ctx, "Error looking up blob metadata in cache; falling back to registry: %s", err)
+		} else {
+			log.CtxInfof(ctx, "FetchBlob request for %q has no manifest ref; fetching from registry to prove access", digestRef)
 		}
 
-		// Cache miss: fetch from the registry, which proves access and writes
-		// the blob through to the cache.
-		size, err := s.fetchBlobFromRemoteWriteToCacheAndResponse(ctx, digestRef, repo, hash, creds, stream)
+		// Cache miss, no manifest ref, or cache read failure: fetch from the
+		// registry, which proves access and writes the blob through to the cache.
+		size, err := s.fetchBlobFromRemoteWriteToCacheAndResponse(ctx, digestRef, repo, hash, creds, stream, size, mediaType)
 		if err == nil {
 			s.accessProofCache.Add(repoAccessKey(repo, creds), struct{}{})
 		}
@@ -371,33 +381,17 @@ func recordFetchBlobMetrics(role string, err error, duration time.Duration) {
 // registry, streams it to the response, and writes it to the cache
 // simultaneously using read-through caching.
 // It returns the content length of the blob (0 if metadata was unavailable).
-func (s *ociFetcherServer) fetchBlobFromRemoteWriteToCacheAndResponse(ctx context.Context, digestRef ctrname.Digest, repo ctrname.Repository, hash ctr.Hash, creds *rgpb.Credentials, stream ofpb.OCIFetcher_FetchBlobServer) (int64, error) {
-	// All HTTP-triggering calls (Compressed, MediaType, Size) must be
-	// inside the retry scope so that token refresh covers them, not just
-	// the lazy Layer() reference creation.
-	//
-	// MediaType and Size are fetched before Compressed so that there is
-	// no open ReadCloser to leak if they fail and trigger a retry.
-	// They are best-effort: failures are logged but don't prevent
-	// streaming the blob data. Caching is skipped when metadata is
-	// unavailable.
-	var mediaType string
-	var size int64
+func (s *ociFetcherServer) fetchBlobFromRemoteWriteToCacheAndResponse(ctx context.Context, digestRef ctrname.Digest, repo ctrname.Repository, hash ctr.Hash, creds *rgpb.Credentials, stream ofpb.OCIFetcher_FetchBlobServer, size int64, mediaType string) (int64, error) {
+	// The blob GET is the only registry request here, and it proves repo
+	// access as a side effect. We deliberately avoid a metadata blob HEAD:
+	// some registries (notably public.ecr.aws) reject blob HEADs even when the
+	// GET is authorized. Size and media type are supplied by the caller (from
+	// the manifest descriptor); when absent (older clients) we stream without
+	// caching rather than fall back to a blob HEAD.
 	rc, err := withPullerRetry(ctx, s, digestRef, creds, func(puller *remote.Puller) (io.ReadCloser, error) {
 		layer, err := puller.Layer(ctx, digestRef)
 		if err != nil {
 			return nil, err
-		}
-		// Best-effort metadata for read-through caching.
-		if mt, err := layer.MediaType(); err != nil {
-			log.CtxWarningf(ctx, "Could not get media type for layer: %s", err)
-		} else {
-			mediaType = string(mt)
-		}
-		if sz, err := layer.Size(); err != nil {
-			log.CtxWarningf(ctx, "Could not get size for layer: %s", err)
-		} else {
-			size = sz
 		}
 		return layer.Compressed()
 	})
@@ -411,7 +405,7 @@ func (s *ociFetcherServer) fetchBlobFromRemoteWriteToCacheAndResponse(ctx contex
 		return s.streamBlob(r, stream)
 	}
 
-	// Skip caching when metadata is unavailable.
+	// Skip caching when the caller didn't provide metadata.
 	if mediaType == "" || size == 0 {
 		return 0, streamAndClose(rc)
 	}
@@ -521,17 +515,30 @@ func (s *ociFetcherServer) proveManifestAccess(ctx context.Context, imageRef ctr
 }
 
 // proveBlobAccess checks that the caller's credentials allow accessing the
-// blob's repository in the remote registry (via a metadata HEAD).
-func (s *ociFetcherServer) proveBlobAccess(ctx context.Context, digestRef ctrname.Digest, creds *rgpb.Credentials) error {
+// blob's repository in the remote registry, so a cached blob may be served.
+//
+// Access is proven with a HEAD of the manifest the blob belongs to (a 200),
+// rather than a blob HEAD: some registries (notably public.ecr.aws) return 401
+// for blob HEAD requests even when the corresponding GET is authorized, which
+// would make already-cached blobs unservable. The manifest endpoint is
+// authorized at repository scope, so this is an equivalent access check.
+//
+// manifestRef must be non-empty; callers that lack it fetch the blob from the
+// registry instead, where the GET proves access.
+func (s *ociFetcherServer) proveBlobAccess(ctx context.Context, digestRef ctrname.Digest, creds *rgpb.Credentials, manifestRef string) error {
 	repo := digestRef.Context()
 	if s.accessProofCache.Contains(repoAccessKey(repo, creds)) {
 		return nil
 	}
-	if _, err := s.fetchBlobMetadataFromRemote(ctx, digestRef, creds); err != nil {
+	imageRef, err := parseManifestRef(manifestRef)
+	if err != nil {
 		return err
 	}
-	s.accessProofCache.Add(repoAccessKey(repo, creds), struct{}{})
-	return nil
+	if imageRef.Context().Name() != repo.Name() {
+		return status.InvalidArgumentErrorf("manifest ref %q is not in the same repository as blob %q", manifestRef, digestRef)
+	}
+	// proveManifestAccess records the repo+creds proof in the access cache.
+	return s.proveManifestAccess(ctx, imageRef, creds)
 }
 
 func (s *ociFetcherServer) resolveTagToDigest(ctx context.Context, imageRef ctrname.Reference, creds *rgpb.Credentials) (ctr.Hash, error) {

@@ -239,6 +239,7 @@ func TestFetchBlob_LocalCacheWriteThrough(t *testing.T) {
 
 	reg := setupTestRegistry(t, nil)
 	imageName, img := reg.PushNamedImage(t, "test-image", nil)
+	manifestDigest, _, _ := imageMetadata(t, img)
 
 	layers, err := img.Layers()
 	require.NoError(t, err)
@@ -246,6 +247,7 @@ func TestFetchBlob_LocalCacheWriteThrough(t *testing.T) {
 	layer := layers[0]
 	digest, err := layer.Digest()
 	require.NoError(t, err)
+	layerSize, layerMediaType := layerMetadata(t, layer)
 	expectedData := layerData(t, layer)
 
 	_, bsClient, acClient := setupCacheEnv(t)
@@ -254,9 +256,16 @@ func TestFetchBlob_LocalCacheWriteThrough(t *testing.T) {
 	proxyClient := runOCIFetcherProxy(ctx, t, ociFetcherClient)
 
 	ref := imageName + "@" + digest.String()
+	manifestRef := imageName + "@" + manifestDigest
 
-	// First fetch: should go to upstream and write to local cache.
-	stream, err := proxyClient.FetchBlob(ctx, &ofpb.FetchBlobRequest{Ref: ref})
+	// First fetch: should go to upstream and write to local cache. Providing
+	// the manifest ref, size, and media type lets the server cache the blob.
+	stream, err := proxyClient.FetchBlob(ctx, &ofpb.FetchBlobRequest{
+		Ref:         ref,
+		ManifestRef: manifestRef,
+		Size:        gproto.Int64(layerSize),
+		MediaType:   gproto.String(layerMediaType),
+	})
 	require.NoError(t, err)
 	data := collectBlobData(t, stream)
 	require.Equal(t, expectedData, data)
@@ -267,7 +276,12 @@ func TestFetchBlob_LocalCacheWriteThrough(t *testing.T) {
 
 	// Second fetch: access was proven on the first fetch, so this is served
 	// from the local BS cache without contacting the (now-stopped) registry.
-	stream2, err := proxyClient.FetchBlob(ctx, &ofpb.FetchBlobRequest{Ref: ref})
+	stream2, err := proxyClient.FetchBlob(ctx, &ofpb.FetchBlobRequest{
+		Ref:         ref,
+		ManifestRef: manifestRef,
+		Size:        gproto.Int64(layerSize),
+		MediaType:   gproto.String(layerMediaType),
+	})
 	require.NoError(t, err)
 	data2 := collectBlobData(t, stream2)
 	require.Equal(t, expectedData, data2)

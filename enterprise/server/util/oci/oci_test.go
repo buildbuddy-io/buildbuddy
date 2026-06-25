@@ -1023,10 +1023,9 @@ func TestResolve_Concurrency(t *testing.T) {
 	imageAddress := registry.ImageAddress(imageName + "_image")
 	expected := map[string]int{
 		http.MethodGet + " /v2/": 1,
-		http.MethodHead + " /v2/" + imageName + "_image/manifests/latest":               1,
-		http.MethodGet + " /v2/" + imageName + "_image/manifests/latest":                1,
-		http.MethodHead + " /v2/" + imageName + "_image/blobs/" + configDigest.String(): 1,
-		http.MethodGet + " /v2/" + imageName + "_image/blobs/" + configDigest.String():  1,
+		http.MethodHead + " /v2/" + imageName + "_image/manifests/latest":              1,
+		http.MethodGet + " /v2/" + imageName + "_image/manifests/latest":               1,
+		http.MethodGet + " /v2/" + imageName + "_image/blobs/" + configDigest.String(): 1,
 	}
 	for digest := range pushedDigestToFiles {
 		expected[http.MethodGet+" /v2/"+imageName+"_image/blobs/"+digest.String()] = 1
@@ -1673,11 +1672,10 @@ func TestResolveWithOCIFetcher_Layers_DiffIDs(t *testing.T) {
 				require.NoError(t, err)
 				// With OCIFetcher, fetching the config blob uses FetchBlob which:
 				// - Reuses the puller from Resolve() (no additional GET /v2/)
-				// - Makes a HEAD request for the config blob to get size for caching
-				// - Makes a GET request for the config blob data
+				// - Makes a GET request for the config blob data (no blob HEAD;
+				//   the config descriptor carries size/media type)
 				expected = map[string]int{
-					http.MethodHead + " /v2/" + nameToResolve + "/blobs/" + configDigest.String(): 1,
-					http.MethodGet + " /v2/" + nameToResolve + "/blobs/" + configDigest.String():  1,
+					http.MethodGet + " /v2/" + nameToResolve + "/blobs/" + configDigest.String(): 1,
 				}
 
 				// To make the DiffID() request counts always be zero,
@@ -1741,18 +1739,16 @@ func TestResolveWithOCIFetcher_Concurrency(t *testing.T) {
 	// - 1 HEAD manifest: From FetchManifest (which does HEAD before GET)
 	//   Note: We skip the separate FetchManifestMetadata call when using OCIFetcher
 	// - 1 GET manifest
-	// - 1 HEAD + 1 GET for config blob
-	// - 1 HEAD + 1 GET for each layer blob (HEAD is for getting size for caching)
+	// - 1 GET for config blob (no blob HEAD; size/media type come from the descriptor)
+	// - 1 GET for each layer blob (no blob HEAD)
 	expected := map[string]int{
 		http.MethodGet + " /v2/": 1,
-		http.MethodHead + " /v2/" + imageName + "_image/manifests/latest":               1,
-		http.MethodGet + " /v2/" + imageName + "_image/manifests/latest":                1,
-		http.MethodHead + " /v2/" + imageName + "_image/blobs/" + configDigest.String(): 1,
-		http.MethodGet + " /v2/" + imageName + "_image/blobs/" + configDigest.String():  1,
+		http.MethodHead + " /v2/" + imageName + "_image/manifests/latest":              1,
+		http.MethodGet + " /v2/" + imageName + "_image/manifests/latest":               1,
+		http.MethodGet + " /v2/" + imageName + "_image/blobs/" + configDigest.String(): 1,
 	}
 	for digest := range pushedDigestToFiles {
 		expected[http.MethodGet+" /v2/"+imageName+"_image/blobs/"+digest.String()] = 1
-		expected[http.MethodHead+" /v2/"+imageName+"_image/blobs/"+digest.String()] = 1
 	}
 	counter.Reset()
 	c := &claims.Claims{UserID: "US123"}

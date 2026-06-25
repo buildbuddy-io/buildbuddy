@@ -606,7 +606,7 @@ func newImageFromRawManifest(ctx context.Context, repo ctrname.Repository, desc 
 			manifest.Config.Digest,
 			i,
 			i.puller,
-			nil,
+			&manifest.Config,
 		)
 
 		rc, err := layer.Uncompressed()
@@ -834,14 +834,28 @@ func (l *layerFromDigest) fetchFromRemote() (io.ReadCloser, error) {
 	}
 	if l.image.useOCIFetcher {
 		ref := l.repo.Digest(l.digest.String())
+		// Pass the manifest this blob belongs to so the server can prove repo
+		// access with a manifest HEAD rather than a blob HEAD (some registries,
+		// e.g. public.ecr.aws, reject blob HEADs even when the GET is allowed).
+		manifestRef := l.repo.Digest(l.image.desc.Digest.String())
+		req := &ofpb.FetchBlobRequest{
+			Ref:            ref.String(),
+			ManifestRef:    manifestRef.String(),
+			Credentials:    l.image.credentials.ToProto(),
+			BypassRegistry: l.image.credentials.bypassRegistry,
+		}
+		// Pass the blob's size and media type (from the manifest descriptor) so
+		// the server can write the blob to cache without a metadata blob HEAD.
+		if l.desc != nil {
+			size := l.desc.Size
+			mediaType := string(l.desc.MediaType)
+			req.Size = &size
+			req.MediaType = &mediaType
+		}
 		// Create a cancellable context so that Close() can abort the stream
 		// if the caller doesn't read to EOF.
 		ctx, cancel := context.WithCancel(l.image.ctx)
-		stream, err := l.image.ociFetcherClient.FetchBlob(ctx, &ofpb.FetchBlobRequest{
-			Ref:            ref.String(),
-			Credentials:    l.image.credentials.ToProto(),
-			BypassRegistry: l.image.credentials.bypassRegistry,
-		})
+		stream, err := l.image.ociFetcherClient.FetchBlob(ctx, req)
 		if err != nil {
 			cancel()
 			return nil, err
