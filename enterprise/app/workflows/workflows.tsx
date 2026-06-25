@@ -20,6 +20,7 @@ import { normalizeRepoURL } from "../../../app/util/git";
 import { github } from "../../../proto/github_ts_proto";
 import { workflow } from "../../../proto/workflow_ts_proto";
 import ActionListComponent from "./action_list";
+import ChecksDropdown from "./checks_dropdown";
 import GitHubAppImport from "./github_app_import";
 import WorkflowsZeroStateAnimation from "./zero_state";
 
@@ -604,6 +605,7 @@ class RepoItem extends React.Component<RepoItemProps, RepoItemState> {
                   </Popup>
                 </div>
               )}
+              {!this.isDeprecatedWorkflow() && <ChecksDropdown repoUrl={this.props.repoUrl} />}
               {menuItems.length > 0 && (
                 <div className="workflow-button-container">
                   <OutlinedButton
