@@ -360,26 +360,26 @@ func TestActionCacheProxy_CachingEnabled(t *testing.T) {
 	require.True(t, status.IsNotFoundError(err))
 
 	// Write it through the proxy and confirm it's readable from the proxy and
-	// backing cache.
+	// backing cache. Writing through the proxy also populates the local cache,
+	// so reading it back from the proxy is already a cache hit.
 	update(ctx, proxy, digestA, 1, t)
 	require.Equal(t, int32(1), get(ctx, ac, digestA, t).GetExitCode())
 	require.Equal(t, int32(1), get(ctx, proxy, digestA, t).GetExitCode())
-	require.Equal(t, 0, countingClient.cacheHitCount)
-
-	// This extra read should actually be a cached hit.
-	require.Equal(t, int32(1), get(ctx, proxy, digestA, t).GetExitCode())
 	require.Equal(t, 1, countingClient.cacheHitCount)
 
-	// Change the action result, write it, and confirm the new result is
-	// readable from the proxy and backing cache.
+	// Another read is also a cache hit.
+	require.Equal(t, int32(1), get(ctx, proxy, digestA, t).GetExitCode())
+	require.Equal(t, 2, countingClient.cacheHitCount)
+
+	// Change the action result through the proxy. This refreshes the local
+	// entry, so the new result is readable and reads remain cache hits.
 	update(ctx, proxy, digestA, 2, t)
 	require.Equal(t, int32(2), get(ctx, ac, digestA, t).GetExitCode())
 	require.Equal(t, int32(2), get(ctx, proxy, digestA, t).GetExitCode())
-	// That should _not_ be a cache hit.
-	require.Equal(t, 1, countingClient.cacheHitCount)
-	// But reading from the proxy again _should_ be a cache hit.
+	require.Equal(t, 3, countingClient.cacheHitCount)
+	// Reading from the proxy again is also a cache hit.
 	require.Equal(t, int32(2), get(ctx, proxy, digestA, t).GetExitCode())
-	require.Equal(t, 2, countingClient.cacheHitCount)
+	require.Equal(t, 4, countingClient.cacheHitCount)
 
 	countingClient.cacheHitCount = 0
 	// DigestB shouldn't be present initially,
