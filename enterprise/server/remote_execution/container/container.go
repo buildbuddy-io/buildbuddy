@@ -465,9 +465,9 @@ type CommandContainer interface {
 	//
 	// A `nil` value may be returned if the resource usage is unknown.
 	//
-	// Implementations may assume that this will only be called when the
-	// container is paused, for the purposes of computing resources used for
-	// pooled runners.
+	// Live stats are used by the OOM killer to decide which tasks to kill when
+	// the executor is running low on memory. Paused stats are used for pooled
+	// runner accounting.
 	Stats(ctx context.Context) (*repb.UsageStats, error)
 }
 
