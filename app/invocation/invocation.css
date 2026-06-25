@@ -1326,6 +1326,17 @@
   justify-content: space-between;
 }
 
+.metadata-detail-inline-action {
+  align-items: center;
+  justify-content: flex-start;
+  gap: 4px;
+}
+
+.metadata-detail .metadata-history-link {
+  flex-shrink: 0;
+  margin-left: 0;
+}
+
 .snapshot-id-details {
   display: flex;
   justify-content: space-between;
