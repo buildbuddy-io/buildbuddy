@@ -815,8 +815,7 @@ func keyRange(key []byte) ([]byte, []byte) {
 	return keyPrefix(key, keys.MinByte), keyPrefix(key, keys.MaxByte)
 }
 
-func olderThanThreshold(t time.Time, threshold time.Duration) bool {
-	age := time.Since(t)
+func olderThanThreshold(age time.Duration, threshold time.Duration) bool {
 	return age >= threshold
 }
 
@@ -935,12 +934,11 @@ func (p *PebbleCache) updateAtime(update *accessTimeUpdate) error {
 	}
 
 	atime := time.UnixMicro(md.GetLastAccessUsec())
+	newAtime := p.clock.Now()
 
-	if !olderThanThreshold(atime, p.atimeUpdateThreshold) {
+	if !olderThanThreshold(newAtime.Sub(atime), p.atimeUpdateThreshold) {
 		return nil
 	}
-
-	newAtime := p.clock.Now()
 
 	if atime.After(newAtime) {
 		// Atime updates are queued -- if an object was overwritten
@@ -1837,11 +1835,11 @@ func (p *PebbleCache) sendSizeUpdate(partID string, cacheType rspb.CacheType, op
 }
 
 func (p *PebbleCache) sendAtimeUpdate(ctx context.Context, key filestore.PebbleKey, lastAccessUsec int64) {
-	atime := time.UnixMicro(lastAccessUsec)
+	age := time.Since(time.UnixMicro(lastAccessUsec))
 
-	p.metrics.atimeDeltaWhenRead.Observe(float64(time.Since(atime).Milliseconds()))
+	p.metrics.atimeDeltaWhenRead.Observe(float64(age.Milliseconds()))
 
-	if !olderThanThreshold(atime, p.atimeUpdateThreshold) {
+	if !olderThanThreshold(age, p.atimeUpdateThreshold) {
 		return
 	}
 
