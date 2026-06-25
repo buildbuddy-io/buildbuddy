@@ -32,25 +32,13 @@ message StorageMetadata {
   }
   FileMetadata file_metadata = 1;
 
-  message PebbleMetadata {
-    // The root key for all stored chunks.
-    bytes key = 1;
-
-    // The number of chunks stored in pebble
-    // for this file. Chunks are 1-indexed.
-    // Ex. If chunks == 2, a reader would expect to
-    // read: [chunk-1, chunk-2].
-    int64 chunks = 2;
-  }
-  PebbleMetadata pebble_metadata = 2;
-
   message InlineMetadata {
     bytes data = 1;
     int64 created_at_nsec = 2;
   }
   InlineMetadata inline_metadata = 3;
 
-  reserved 4;
+  reserved 2, 4;
 
   message GCSMetadata {
     string blob_name = 1;
