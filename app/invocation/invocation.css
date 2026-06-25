@@ -739,10 +739,6 @@
   flex-grow: 1;
 }
 
-.action-primary-output {
-  overflow-wrap: anywhere;
-}
-
 .action-section .action-property-title {
   width: 20%;
   flex-grow: 0;
