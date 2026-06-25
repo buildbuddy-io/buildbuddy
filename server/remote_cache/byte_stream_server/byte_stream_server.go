@@ -45,8 +45,9 @@ const defaultChunkedReadMaxInFlight = 32
 var compressBufSize = int(4e6) // 4MB
 
 var (
-	bazel5_1_0              = bazel_request.MustParseVersion("5.1.0")
-	maxDirectWriteSizeBytes = flag.Int64("cache.max_direct_write_size_bytes", 16384, "For bytestream requests smaller than this size, write straight to the cache without checking if the entry already exists.")
+	bazel5_1_0                  = bazel_request.MustParseVersion("5.1.0")
+	maxDirectWriteSizeBytes     = flag.Int64("cache.max_direct_write_size_bytes", 16384, "For bytestream requests smaller than this size, write straight to the cache without checking if the entry already exists.")
+	maxChunkedZstdReadSizeBytes = flag.Int64("cache.max_chunked_zstd_read_size_bytes", 16*1024*1024, "Maximum compressed size for a single zstd chunk read during chunked blob passthrough.")
 )
 
 type skipWriteValidationKey struct{}
@@ -96,7 +97,7 @@ func NewByteStreamServer(env environment.Env) (*ByteStreamServer, error) {
 	return &ByteStreamServer{
 		env:        env,
 		cache:      cache,
-		bufferPool: bytebufferpool.VariableSize(max(*remote_cache_config.ReadBufSizeBytes, compressBufSize, int(compression.ZstdCompressBound(chunking.MaxSupportedChunkSizeBytes())))),
+		bufferPool: bytebufferpool.VariableSize(max(*remote_cache_config.ReadBufSizeBytes, compressBufSize, int(compression.ZstdCompressBound(chunking.MaxSupportedChunkSizeBytes())), int(*maxChunkedZstdReadSizeBytes))),
 		warner:     bazel_deprecation.NewWarner(env),
 	}, nil
 }
@@ -387,7 +388,7 @@ func (r *chunkedBlobReader) advance() error {
 	r.resultChans[index] = nil
 	r.nextRead++
 	if result.err != nil {
-		r.bufferPool.Put(result.data)
+		r.putChunkBuffer(result.data)
 		r.cancel()
 		metrics.ByteStreamServerChunkedReadFailures.With(prometheus.Labels{
 			metrics.ChunkedFailureReasonLabel: "chunk_read_error",
@@ -418,7 +419,7 @@ func (r *chunkedBlobReader) spawn(index int) {
 	if rn.GetCompressor() == repb.Compressor_ZSTD {
 		bufSize = compression.ZstdCompressBound(bufSize)
 	}
-	buf := r.bufferPool.Get(bufSize)
+	buf := r.getChunkBuffer(bufSize)
 	resultCh := make(chan chunkReadResult, 1)
 	r.resultChans[index] = resultCh
 	go func() {
@@ -433,20 +434,97 @@ func (r *chunkedBlobReader) readChunk(rn *rspb.ResourceName, offset int64, buf [
 	}
 	defer rc.Close()
 
+	if rn.GetCompressor() == repb.Compressor_ZSTD {
+		return r.readCompressedChunkToEOF(rc, rn, buf)
+	}
+
 	n, err := ioutil.ReadTryFillBuffer(rc, buf)
 	if err != nil {
 		return chunkReadResult{data: buf, err: err}
 	}
 	readSize := rn.GetDigest().GetSizeBytes() - offset
-	if rn.GetCompressor() != repb.Compressor_ZSTD && int64(n) != readSize {
+	if int64(n) != readSize {
 		return chunkReadResult{data: buf, err: io.ErrUnexpectedEOF}
 	}
 	return chunkReadResult{data: buf[:n]}
 }
 
+func (r *chunkedBlobReader) readCompressedChunkToEOF(rc io.Reader, rn *rspb.ResourceName, buf []byte) chunkReadResult {
+	// ZstdCompressBound is only a seed size here; streaming zstd output can be
+	// larger than that while still being a valid encoding of the chunk.
+	n, err := ioutil.ReadTryFillBuffer(rc, buf)
+	if err != nil {
+		return chunkReadResult{data: buf, err: err}
+	}
+	if n < len(buf) {
+		return chunkReadResult{data: buf[:n]}
+	}
+
+	maxReadSize := max(*maxChunkedZstdReadSizeBytes, int64(len(buf)))
+	var extra [1]byte
+	for {
+		m, err := rc.Read(extra[:])
+		if m == 0 {
+			if err == io.EOF {
+				return chunkReadResult{data: buf[:n]}
+			}
+			if err != nil {
+				return chunkReadResult{data: buf, err: err}
+			}
+			continue
+		}
+		minSize := int64(n + m)
+		if minSize > maxReadSize {
+			return chunkReadResult{data: buf, err: status.ResourceExhaustedErrorf("compressed chunk %s exceeded max read size %d", rn.GetDigest().GetHash(), maxReadSize)}
+		}
+		newSize := max(int64(len(buf))*2, minSize)
+		newSize = min(newSize, maxReadSize)
+		newBuf := r.getChunkBuffer(newSize)
+		copy(newBuf, buf[:n])
+		r.putChunkBuffer(buf)
+		buf = newBuf
+		copy(buf[n:], extra[:m])
+		n += m
+		if err == io.EOF {
+			return chunkReadResult{data: buf[:n]}
+		}
+		if err != nil {
+			return chunkReadResult{data: buf, err: err}
+		}
+
+		for n < len(buf) {
+			m, err := rc.Read(buf[n:])
+			n += m
+			if err == io.EOF {
+				return chunkReadResult{data: buf[:n]}
+			}
+			if err != nil {
+				return chunkReadResult{data: buf, err: err}
+			}
+		}
+	}
+}
+
+func (r *chunkedBlobReader) getChunkBuffer(size int64) []byte {
+	if r.bufferPool == nil {
+		return make([]byte, size)
+	}
+	buf := r.bufferPool.Get(size)
+	if int64(len(buf)) < size {
+		return make([]byte, size)
+	}
+	return buf
+}
+
+func (r *chunkedBlobReader) putChunkBuffer(buf []byte) {
+	if r.bufferPool != nil {
+		r.bufferPool.Put(buf)
+	}
+}
+
 func (r *chunkedBlobReader) releaseCurrent() {
 	if r.currentBuf != nil {
-		r.bufferPool.Put(r.currentBuf)
+		r.putChunkBuffer(r.currentBuf)
 		r.currentBuf = nil
 	}
 	r.currentOffset = 0

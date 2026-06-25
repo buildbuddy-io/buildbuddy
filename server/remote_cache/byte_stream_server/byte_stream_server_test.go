@@ -765,6 +765,16 @@ func zstdDecompress(t *testing.T, b []byte) []byte {
 	return out
 }
 
+func compressZstdInFrames(data []byte, frameSize int) []byte {
+	var compressed []byte
+	for len(data) > 0 {
+		n := min(frameSize, len(data))
+		compressed = append(compressed, compression.CompressZstd(nil, data[:n])...)
+		data = data[n:]
+	}
+	return compressed
+}
+
 func newUUID(t *testing.T) string {
 	uuid, err := guuid.NewRandom()
 	require.NoError(t, err)
@@ -1056,6 +1066,69 @@ func TestChunkedBlobReaderReadChunk(t *testing.T) {
 		require.NoError(t, result.err)
 		require.Equal(t, compressed, result.data)
 	})
+
+	t.Run("zstd reads beyond compress bound", func(t *testing.T) {
+		data := bytes.Repeat([]byte("a"), 256)
+		var compressed []byte
+		for _, b := range data {
+			compressed = append(compressed, compression.CompressZstd(nil, []byte{b})...)
+		}
+		initialSize := compression.ZstdCompressBound(int64(len(data)))
+		require.Greater(t, len(compressed), int(initialSize))
+
+		d, err := digest.Compute(bytes.NewReader(data), repb.DigestFunction_BLAKE3)
+		require.NoError(t, err)
+		rn := digest.NewCASResourceName(d, "", repb.DigestFunction_BLAKE3)
+		rn.SetCompressor(repb.Compressor_ZSTD)
+		r := &chunkedBlobReader{
+			ctx: context.Background(),
+			cache: &readerFuncCache{
+				reader: func(ctx context.Context, r *rspb.ResourceName, offset, limit int64) (io.ReadCloser, error) {
+					return io.NopCloser(bytes.NewReader(compressed)), nil
+				},
+			},
+			bufferPool: bytebufferpool.VariableSize(len(compressed)),
+		}
+
+		buf := r.bufferPool.Get(initialSize)
+		result := r.readChunk(rn.ToProto(), 0, buf)
+		require.NoError(t, result.err)
+		require.Equal(t, compressed, result.data)
+	})
+
+	t.Run("zstd enforces max compressed read size", func(t *testing.T) {
+		data := bytes.Repeat([]byte("a"), 256)
+		var compressed []byte
+		for _, b := range data {
+			compressed = append(compressed, compression.CompressZstd(nil, []byte{b})...)
+		}
+		initialSize := compression.ZstdCompressBound(int64(len(data)))
+		require.Greater(t, len(compressed), int(initialSize))
+
+		oldMax := *maxChunkedZstdReadSizeBytes
+		*maxChunkedZstdReadSizeBytes = initialSize
+		defer func() {
+			*maxChunkedZstdReadSizeBytes = oldMax
+		}()
+
+		d, err := digest.Compute(bytes.NewReader(data), repb.DigestFunction_BLAKE3)
+		require.NoError(t, err)
+		rn := digest.NewCASResourceName(d, "", repb.DigestFunction_BLAKE3)
+		rn.SetCompressor(repb.Compressor_ZSTD)
+		r := &chunkedBlobReader{
+			ctx: context.Background(),
+			cache: &readerFuncCache{
+				reader: func(ctx context.Context, r *rspb.ResourceName, offset, limit int64) (io.ReadCloser, error) {
+					return io.NopCloser(bytes.NewReader(compressed)), nil
+				},
+			},
+			bufferPool: bytebufferpool.VariableSize(len(compressed)),
+		}
+
+		buf := r.bufferPool.Get(initialSize)
+		result := r.readChunk(rn.ToProto(), 0, buf)
+		require.True(t, status.IsResourceExhaustedError(result.err), "got %v", result.err)
+	})
 }
 
 func TestChunkedBlobReader_ReadReturnsCurrentChunk(t *testing.T) {
@@ -1227,6 +1300,88 @@ func TestReadChunked_ZstdBLAKE3_PassthroughIncompressible(t *testing.T) {
 		DigestFunction: repb.DigestFunction_BLAKE3,
 	}
 	require.NoError(t, manifest.Store(ctx, baseCache))
+
+	blobRN := digest.NewCASResourceName(blobDigest, "", repb.DigestFunction_BLAKE3)
+	blobRN.SetCompressor(repb.Compressor_ZSTD)
+
+	stream, err := bsClient.Read(ctx, &bspb.ReadRequest{
+		ResourceName: blobRN.DownloadString(),
+	})
+	require.NoError(t, err)
+
+	var buf bytes.Buffer
+	for {
+		resp, err := stream.Recv()
+		if err == io.EOF {
+			break
+		}
+		require.NoError(t, err)
+		buf.Write(resp.GetData())
+	}
+	require.Equal(t, fullBlob, zstdDecompress(t, buf.Bytes()))
+}
+
+func TestReadChunked_ZstdPassthroughCompressedChunkLargerThanCompressBound(t *testing.T) {
+	largeChunkSize := int64(1024 * 1024)
+	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
+		"cache.chunking_enabled": {
+			State:          memprovider.Enabled,
+			DefaultVariant: "true",
+			Variants: map[string]any{
+				"true":  true,
+				"false": false,
+			},
+		},
+	})
+	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
+	flags.Set(t, "cache.zstd_transcoding_enabled", true)
+
+	fp, err := experiments.NewFlagProvider(t.Name())
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+	te.SetExperimentFlagProvider(fp)
+	te.SetCache(&casCompressionCache{Cache: te.GetCache()})
+
+	ctx, err = prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+	require.NoError(t, err)
+
+	clientConn := runByteStreamServer(ctx, t, te)
+	bsClient := bspb.NewByteStreamClient(clientConn)
+
+	chunk1 := bytes.Repeat([]byte("a"), 4*1024)
+	_, chunk2 := testdigest.RandomCASResourceBuf(t, largeChunkSize)
+	_, chunk3 := testdigest.RandomCASResourceBuf(t, largeChunkSize)
+	fullBlob := append(append(chunk1, chunk2...), chunk3...)
+
+	chunk1Digest, err := digest.Compute(bytes.NewReader(chunk1), repb.DigestFunction_BLAKE3)
+	require.NoError(t, err)
+	chunk2Digest, err := digest.Compute(bytes.NewReader(chunk2), repb.DigestFunction_BLAKE3)
+	require.NoError(t, err)
+	chunk3Digest, err := digest.Compute(bytes.NewReader(chunk3), repb.DigestFunction_BLAKE3)
+	require.NoError(t, err)
+	blobDigest, err := digest.Compute(bytes.NewReader(fullBlob), repb.DigestFunction_BLAKE3)
+	require.NoError(t, err)
+
+	compressedChunk1 := compressZstdInFrames(chunk1, 1)
+	require.Greater(t, len(compressedChunk1), int(compression.ZstdCompressBound(int64(len(chunk1)))))
+
+	baseCache := te.GetCache().(*casCompressionCache).Cache
+	chunk1RN := digest.NewCASResourceName(chunk1Digest, "", repb.DigestFunction_BLAKE3)
+	chunk2RN := digest.NewCASResourceName(chunk2Digest, "", repb.DigestFunction_BLAKE3)
+	chunk3RN := digest.NewCASResourceName(chunk3Digest, "", repb.DigestFunction_BLAKE3)
+	require.NoError(t, baseCache.Set(ctx, chunk1RN.ToProto(), compressedChunk1))
+	require.NoError(t, baseCache.Set(ctx, chunk2RN.ToProto(), chunk2))
+	require.NoError(t, baseCache.Set(ctx, chunk3RN.ToProto(), chunk3))
+
+	manifest := &chunking.Manifest{
+		BlobDigest:     blobDigest,
+		ChunkDigests:   []*repb.Digest{chunk1Digest, chunk2Digest, chunk3Digest},
+		InstanceName:   "",
+		DigestFunction: repb.DigestFunction_BLAKE3,
+	}
+	require.NoError(t, manifest.Store(ctx, te.GetCache()))
 
 	blobRN := digest.NewCASResourceName(blobDigest, "", repb.DigestFunction_BLAKE3)
 	blobRN.SetCompressor(repb.Compressor_ZSTD)
