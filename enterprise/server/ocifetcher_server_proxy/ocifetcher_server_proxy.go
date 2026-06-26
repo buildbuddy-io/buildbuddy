@@ -81,7 +81,7 @@ func (s *OCIFetcherServerProxy) FetchBlob(req *ofpb.FetchBlobRequest, stream ofp
 		return err
 	}
 
-	size, err := s.fetchBlobMetadataSize(ctx, req)
+	size, err := s.fetchBlobMetadataSize(ctx, req, digestRef.Context())
 	if err != nil {
 		return err
 	}
@@ -113,7 +113,10 @@ func parseBlobDigestRef(ref string) (ctrname.Digest, ctr.Hash, error) {
 	return digestRef, hash, nil
 }
 
-func (s *OCIFetcherServerProxy) fetchBlobMetadataSize(ctx context.Context, req *ofpb.FetchBlobRequest) (int64, error) {
+func (s *OCIFetcherServerProxy) fetchBlobMetadataSize(ctx context.Context, req *ofpb.FetchBlobRequest, repo ctrname.Repository) (int64, error) {
+	if req.Size != nil && isPublicECRRepo(repo) {
+		return req.GetSize(), nil
+	}
 	metaResp, err := s.remote.FetchBlobMetadata(ctx, &ofpb.FetchBlobMetadataRequest{
 		Ref:            req.GetRef(),
 		Credentials:    req.GetCredentials(),
@@ -123,6 +126,10 @@ func (s *OCIFetcherServerProxy) fetchBlobMetadataSize(ctx context.Context, req *
 		return 0, err
 	}
 	return metaResp.GetSize(), nil
+}
+
+func isPublicECRRepo(repo ctrname.Repository) bool {
+	return repo.RegistryStr() == "public.ecr.aws"
 }
 
 func (s *OCIFetcherServerProxy) dedupedFetchBlob(ctx context.Context, stream ofpb.OCIFetcher_FetchBlobServer, digestRef ctrname.Digest, hash ctr.Hash, size int64, req *ofpb.FetchBlobRequest) error {

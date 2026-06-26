@@ -787,10 +787,9 @@ func TestFetchBlobRetryOnCompressedError(t *testing.T) {
 		// Two blob GETs: first fails with 401 (simulating expired token),
 		// second succeeds after puller eviction and retry.
 		http.MethodGet + " " + blobPath: 2,
-		// Two blob HEADs for layer.Size(): one per attempt (Size is
-		// fetched before Compressed to avoid leaking the reader on
-		// retry).
-		http.MethodHead + " " + blobPath: 2,
+		// One blob HEAD for layer.Size(): the size is reused when
+		// Compressed fails and the puller is retried.
+		http.MethodHead + " " + blobPath: 1,
 	})
 }
 
@@ -844,6 +843,98 @@ func TestFetchBlobStreamsDirectlyWhenBlobMetadataLookupFails(t *testing.T) {
 		// No /v2/ ping: puller stays cached across metadata failures.
 		http.MethodGet + " " + blobPath:  1,
 		http.MethodHead + " " + blobPath: 3,
+	})
+}
+
+func TestPublicECRBlobHead401(t *testing.T) {
+	t.Run("FetchBlob/UsesDescriptorHintsAndWritesCache", func(t *testing.T) {
+		var failBlobHead atomic.Bool
+		reg, counter := setupRegistry(t, nil, func(w http.ResponseWriter, r *http.Request) bool {
+			if failBlobHead.Load() && r.Method == http.MethodHead && strings.Contains(r.URL.Path, "/blobs/") {
+				w.WriteHeader(http.StatusUnauthorized)
+				return false
+			}
+			return true
+		})
+		flags.Set(t, "executor.container_registry_mirrors", []interfaces.MirrorConfig{{
+			OriginalURL: "https://public.ecr.aws",
+			MirrorURL:   "http://" + reg.Address(),
+		}})
+		imageName, img := reg.PushNamedImage(t, "test-image", nil)
+		failBlobHead.Store(true)
+		publicECRImageName := strings.Replace(imageName, reg.Address(), "public.ecr.aws", 1)
+
+		layers, err := img.Layers()
+		require.NoError(t, err)
+		require.NotEmpty(t, layers)
+		layer := layers[0]
+		layerDigest, err := layer.Digest()
+		require.NoError(t, err)
+		expectedData := layerData(t, layer)
+		expectedSize, expectedMediaType := layerMetadata(t, layer)
+
+		server := newTestServer(t)
+		counter.Reset()
+		size := expectedSize
+		mediaType := expectedMediaType
+		stream := &mockFetchBlobServer{ctx: context.Background()}
+		err = server.FetchBlob(&ofpb.FetchBlobRequest{
+			Ref:       publicECRImageName + "@" + layerDigest.String(),
+			Size:      &size,
+			MediaType: &mediaType,
+		}, stream)
+		require.NoError(t, err)
+		require.Equal(t, expectedData, stream.collectData())
+
+		blobPath := "/v2/test-image/blobs/" + layerDigest.String()
+		assertRequests(t, counter, map[string]int{
+			http.MethodGet + " /v2/":        1,
+			http.MethodGet + " " + blobPath: 1,
+		})
+
+		counter.Reset()
+		resp, err := server.FetchBlobMetadata(context.Background(), &ofpb.FetchBlobMetadataRequest{
+			Ref: publicECRImageName + "@" + layerDigest.String(),
+		})
+		require.NoError(t, err)
+		require.Equal(t, expectedSize, resp.GetSize())
+		require.Equal(t, expectedMediaType, resp.GetMediaType())
+		assertRequests(t, counter, map[string]int{})
+	})
+
+	t.Run("FetchBlobMetadata/CacheHitSkipsAccessProof", func(t *testing.T) {
+		var failBlobHead atomic.Bool
+		reg, counter := setupRegistry(t, nil, func(w http.ResponseWriter, r *http.Request) bool {
+			if failBlobHead.Load() && r.Method == http.MethodHead && strings.Contains(r.URL.Path, "/blobs/") {
+				w.WriteHeader(http.StatusUnauthorized)
+				return false
+			}
+			return true
+		})
+		imageName, img := reg.PushNamedImage(t, "test-image", nil)
+		failBlobHead.Store(true)
+		publicECRImageName := strings.Replace(imageName, reg.Address(), "public.ecr.aws", 1)
+
+		layers, err := img.Layers()
+		require.NoError(t, err)
+		require.NotEmpty(t, layers)
+		layer := layers[0]
+		layerDigest, err := layer.Digest()
+		require.NoError(t, err)
+		expectedData := layerData(t, layer)
+		cachedMediaType := "application/vnd.buildbuddy.cached.layer"
+
+		_, bsClient, acClient := setupCacheEnv(t)
+		ref := publicECRImageName + "@" + layerDigest.String()
+		seedBlobCache(t, bsClient, acClient, ref, expectedData, cachedMediaType)
+
+		server := newTestServerWithCache(t, bsClient, acClient)
+		counter.Reset()
+		resp, err := server.FetchBlobMetadata(context.Background(), &ofpb.FetchBlobMetadataRequest{Ref: ref})
+		require.NoError(t, err)
+		require.Equal(t, int64(len(expectedData)), resp.GetSize())
+		require.Equal(t, cachedMediaType, resp.GetMediaType())
+		assertRequests(t, counter, map[string]int{})
 	})
 }
 

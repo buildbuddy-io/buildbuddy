@@ -834,6 +834,14 @@ func (l *layerFromDigest) fetchFromRemote() (io.ReadCloser, error) {
 	}
 	if l.image.useOCIFetcher {
 		ref := l.repo.Digest(l.digest.String())
+		var size *int64
+		var mediaType *string
+		if l.desc != nil {
+			descSize := l.desc.Size
+			descMediaType := string(l.desc.MediaType)
+			size = &descSize
+			mediaType = &descMediaType
+		}
 		// Create a cancellable context so that Close() can abort the stream
 		// if the caller doesn't read to EOF.
 		ctx, cancel := context.WithCancel(l.image.ctx)
@@ -841,6 +849,8 @@ func (l *layerFromDigest) fetchFromRemote() (io.ReadCloser, error) {
 			Ref:            ref.String(),
 			Credentials:    l.image.credentials.ToProto(),
 			BypassRegistry: l.image.credentials.bypassRegistry,
+			Size:           size,
+			MediaType:      mediaType,
 		})
 		if err != nil {
 			cancel()

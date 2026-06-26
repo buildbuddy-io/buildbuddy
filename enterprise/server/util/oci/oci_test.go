@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"runtime"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -1424,6 +1425,59 @@ func TestResolveWithOCIFetcher_NoClient(t *testing.T) {
 	require.Contains(t, err.Error(), "OCIFetcherClient is required")
 }
 
+func TestResolveWithOCIFetcher_LayerFetchUsesDescriptorHints(t *testing.T) {
+	te := setupTestEnvWithCache(t)
+	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
+
+	counter := testhttp.NewRequestCounter()
+	var failBlobHead atomic.Bool
+	registry := testregistry.Run(t, testregistry.Opts{
+		HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
+			counter.Inc(r)
+			if failBlobHead.Load() && r.Method == http.MethodHead && strings.Contains(r.URL.Path, "/blobs/") {
+				w.WriteHeader(http.StatusUnauthorized)
+				return false
+			}
+			return true
+		},
+	})
+	imageName, pushedImage := registry.PushNamedImageWithFiles(t, "resolve_descriptor_hints", map[string][]byte{
+		"/name": []byte("descriptor hints"),
+	}, nil)
+	failBlobHead.Store(true)
+
+	pulledImage, err := newResolver(t, te).Resolve(
+		context.Background(),
+		imageName,
+		oci.RuntimePlatform(),
+		oci.Credentials{},
+		true, /*=useOCIFetcher*/
+	)
+	require.NoError(t, err)
+
+	expectedLayers, err := pushedImage.Layers()
+	require.NoError(t, err)
+	require.NotEmpty(t, expectedLayers)
+	expectedDigest, err := expectedLayers[0].Digest()
+	require.NoError(t, err)
+
+	layers, err := pulledImage.Layers()
+	require.NoError(t, err)
+	require.NotEmpty(t, layers)
+
+	counter.Reset()
+	rc, err := layers[0].Compressed()
+	require.NoError(t, err)
+	_, err = io.ReadAll(rc)
+	require.NoError(t, err)
+	require.NoError(t, rc.Close())
+
+	blobPath := "/v2/resolve_descriptor_hints/blobs/" + expectedDigest.String()
+	requests := counter.Snapshot()
+	require.Equal(t, 0, requests[http.MethodHead+" "+blobPath], "layer descriptor size should avoid blob HEAD")
+	require.Equal(t, 1, requests[http.MethodGet+" "+blobPath])
+}
+
 // TestResolveWithOCIFetcher exercises Resolver.Resolve with useOCIFetcher=true,
 // validating basic image resolution scenarios:
 //   - Resolving an existing image without credentials succeeds and returns correct layer contents
@@ -1742,7 +1796,7 @@ func TestResolveWithOCIFetcher_Concurrency(t *testing.T) {
 	//   Note: We skip the separate FetchManifestMetadata call when using OCIFetcher
 	// - 1 GET manifest
 	// - 1 HEAD + 1 GET for config blob
-	// - 1 HEAD + 1 GET for each layer blob (HEAD is for getting size for caching)
+	// - 1 GET for each layer blob; the layer descriptors provide size for caching
 	expected := map[string]int{
 		http.MethodGet + " /v2/": 1,
 		http.MethodHead + " /v2/" + imageName + "_image/manifests/latest":               1,
@@ -1752,7 +1806,6 @@ func TestResolveWithOCIFetcher_Concurrency(t *testing.T) {
 	}
 	for digest := range pushedDigestToFiles {
 		expected[http.MethodGet+" /v2/"+imageName+"_image/blobs/"+digest.String()] = 1
-		expected[http.MethodHead+" /v2/"+imageName+"_image/blobs/"+digest.String()] = 1
 	}
 	counter.Reset()
 	c := &claims.Claims{UserID: "US123"}

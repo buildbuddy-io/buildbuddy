@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -206,9 +207,9 @@ func TestFetchBlob_ForwardsRequestUnchanged(t *testing.T) {
 		mediaType *string
 	}{
 		{name: "NoSizeOrMediaType"},
-		{name: "SizeOnly", size: gproto.Int64(12345)},
+		{name: "SizeOnly", size: gproto.Int64(int64(len(blobData)))},
 		{name: "MediaTypeOnly", mediaType: gproto.String("application/vnd.example.layer.v1.tar+gzip")},
-		{name: "SizeAndMediaType", size: gproto.Int64(12345), mediaType: gproto.String("application/vnd.example.layer.v1.tar+gzip")},
+		{name: "SizeAndMediaType", size: gproto.Int64(int64(len(blobData))), mediaType: gproto.String("application/vnd.example.layer.v1.tar+gzip")},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx := context.Background()
@@ -226,9 +227,75 @@ func TestFetchBlob_ForwardsRequestUnchanged(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, blobData, collectBlobData(t, stream))
 			require.NotNil(t, remoteClient.fetchBlobRequest)
+			require.NotNil(t, remoteClient.fetchBlobMetadataRequest)
 			require.Empty(t, cmp.Diff(req, remoteClient.fetchBlobRequest, protocmp.Transform()))
 		})
 	}
+}
+
+func TestFetchBlob_SizeHintSkipsBlobMetadataRequest(t *testing.T) {
+	ctx := context.Background()
+	counter := testhttp.NewRequestCounter()
+	var failBlobHead atomic.Bool
+	reg := testregistry.Run(t, testregistry.Opts{
+		HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
+			counter.Inc(r)
+			if failBlobHead.Load() && r.Method == http.MethodHead && strings.Contains(r.URL.Path, "/blobs/") {
+				w.WriteHeader(http.StatusUnauthorized)
+				return false
+			}
+			return true
+		},
+	})
+	imageName, img := reg.PushNamedImage(t, "test-image", nil)
+	failBlobHead.Store(true)
+	flags.Set(t, "executor.container_registry_mirrors", []interfaces.MirrorConfig{{
+		OriginalURL: "https://public.ecr.aws",
+		MirrorURL:   "http://" + reg.Address(),
+	}})
+	publicECRImageName := strings.Replace(imageName, reg.Address(), "public.ecr.aws", 1)
+	layers, err := img.Layers()
+	require.NoError(t, err)
+	require.NotEmpty(t, layers)
+	layer := layers[0]
+	layerDigest, err := layer.Digest()
+	require.NoError(t, err)
+	expectedData := layerData(t, layer)
+	expectedSize, expectedMediaType := layerMetadata(t, layer)
+	ref := publicECRImageName + "@" + layerDigest.String()
+
+	_, bsClient, acClient := setupCacheEnv(t)
+	ociFetcherClient := runOCIFetcherServer(ctx, t, bsClient, acClient)
+	countingClient := &countingOCIFetcherClient{inner: ociFetcherClient}
+	proxyClient := runOCIFetcherProxy(ctx, t, countingClient)
+
+	counter.Reset()
+	stream, err := proxyClient.FetchBlob(ctx, &ofpb.FetchBlobRequest{Ref: ref})
+	require.NoError(t, err)
+	_, err = stream.Recv()
+	require.Error(t, err)
+	require.True(t, status.IsUnauthenticatedError(err), "expected Unauthenticated from blob metadata HEAD, got: %v", err)
+	blobPath := "/v2/test-image/blobs/" + layerDigest.String()
+	require.Empty(t, cmp.Diff(map[string]int{
+		http.MethodGet + " /v2/":         2,
+		http.MethodHead + " " + blobPath: 2,
+	}, counter.Snapshot()))
+
+	counter.Reset()
+	size := expectedSize
+	mediaType := expectedMediaType
+	stream, err = proxyClient.FetchBlob(ctx, &ofpb.FetchBlobRequest{
+		Ref:       ref,
+		Size:      &size,
+		MediaType: &mediaType,
+	})
+	require.NoError(t, err)
+	require.Equal(t, expectedData, collectBlobData(t, stream))
+	require.Equal(t, int32(1), countingClient.fetchBlobMetadataCount.Load(), "size hint should skip the second FetchBlobMetadata call")
+	require.Empty(t, cmp.Diff(map[string]int{
+		http.MethodGet + " /v2/":        1,
+		http.MethodGet + " " + blobPath: 1,
+	}, counter.Snapshot()))
 }
 
 // TestFetchBlob_LocalCacheWriteThrough verifies that after a FetchBlob call,
@@ -868,8 +935,9 @@ func layerData(t *testing.T, layer ctr.Layer) []byte {
 
 // countingOCIFetcherClient wraps an OCIFetcherClient and counts FetchBlob calls.
 type countingOCIFetcherClient struct {
-	inner          ofpb.OCIFetcherClient
-	fetchBlobCount atomic.Int32
+	inner                  ofpb.OCIFetcherClient
+	fetchBlobCount         atomic.Int32
+	fetchBlobMetadataCount atomic.Int32
 }
 
 func (c *countingOCIFetcherClient) FetchManifest(ctx context.Context, req *ofpb.FetchManifestRequest, opts ...grpc.CallOption) (*ofpb.FetchManifestResponse, error) {
@@ -886,11 +954,13 @@ func (c *countingOCIFetcherClient) FetchBlob(ctx context.Context, req *ofpb.Fetc
 }
 
 func (c *countingOCIFetcherClient) FetchBlobMetadata(ctx context.Context, req *ofpb.FetchBlobMetadataRequest, opts ...grpc.CallOption) (*ofpb.FetchBlobMetadataResponse, error) {
+	c.fetchBlobMetadataCount.Add(1)
 	return c.inner.FetchBlobMetadata(ctx, req, opts...)
 }
 
 type recordingOCIFetcherClient struct {
-	fetchBlobRequest *ofpb.FetchBlobRequest
+	fetchBlobRequest         *ofpb.FetchBlobRequest
+	fetchBlobMetadataRequest *ofpb.FetchBlobMetadataRequest
 }
 
 func (c *recordingOCIFetcherClient) FetchManifest(ctx context.Context, req *ofpb.FetchManifestRequest, opts ...grpc.CallOption) (*ofpb.FetchManifestResponse, error) {
@@ -907,6 +977,7 @@ func (c *recordingOCIFetcherClient) FetchBlob(ctx context.Context, req *ofpb.Fet
 }
 
 func (c *recordingOCIFetcherClient) FetchBlobMetadata(ctx context.Context, req *ofpb.FetchBlobMetadataRequest, opts ...grpc.CallOption) (*ofpb.FetchBlobMetadataResponse, error) {
+	c.fetchBlobMetadataRequest = gproto.Clone(req).(*ofpb.FetchBlobMetadataRequest)
 	return &ofpb.FetchBlobMetadataResponse{Size: 5}, nil
 }
 
