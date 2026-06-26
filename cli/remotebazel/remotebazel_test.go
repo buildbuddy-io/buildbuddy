@@ -1,7 +1,6 @@
 package remotebazel
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -19,6 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/storage"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testgit"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testshell"
+	"github.com/buildbuddy-io/buildbuddy/server/util/lockingbuffer"
 	"github.com/buildbuddy-io/buildbuddy/server/util/terminal"
 	"github.com/creack/pty"
 	"github.com/stretchr/testify/require"
@@ -30,23 +30,6 @@ import (
 
 func init() {
 	parser.SetBazelHelpForTesting(test_data.BazelHelpFlagsAsProtoOutput)
-}
-
-type lockedBuffer struct {
-	mu  sync.Mutex
-	buf bytes.Buffer
-}
-
-func (b *lockedBuffer) Write(p []byte) (int, error) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.buf.Write(p)
-}
-
-func (b *lockedBuffer) String() string {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.buf.String()
 }
 
 // Used to mock logs streamed from the BuildBuddy server.
@@ -784,7 +767,7 @@ func runStreamLogsWithPTY(t *testing.T, client bbspb.BuildBuddyServiceClient, wh
 		os.Stdout = oldStdout
 	}()
 
-	output := &lockedBuffer{}
+	output := lockingbuffer.New()
 	copyDone := make(chan struct{})
 	go func() {
 		defer close(copyDone)
