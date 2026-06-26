@@ -54,7 +54,8 @@ var (
 	samplerSleepDuration               = flag.Duration("cache.raft.sampler_sleep_duration", 1*time.Second, "How long the eviction sampler sleeps when it cannot find eligible entries to evict. Set to 0 to disable sleeping (intended for tests).")
 	evictionBatchSize                  = flag.Int("cache.raft.eviction_batch_size", 100, "Buffer this many writes before delete")
 	numDeleteWorkers                   = flag.Int("cache.raft.num_delete_worker", 4, "Number of deletes in parallel")
-	gcsDeleteBufferSize                = flag.Int("cache.raft.gcs_delete_buffer_size", 1000, "Buffer up to this many GCS deletion requests")
+	numGCSDeleteWorkers                = flag.Int("cache.raft.num_gcs_delete_worker", 32, "Number of parallel GCS blob deletion workers (per partition).")
+	gcsDeleteBufferSize                = flag.Int("cache.raft.gcs_delete_buffer_size", 10000, "Buffer up to this many GCS deletion requests")
 )
 
 const (
@@ -153,6 +154,7 @@ type partitionUsage struct {
 	localSizeUpdatePeriod    time.Duration
 	evictionBatchSize        int
 	numDeleteWorkers         int
+	numGCSDeleteWorkers      int
 	fileStorer               filestore.Store
 
 	metrics metricSet
@@ -602,6 +604,7 @@ func New(sender *sender.Sender, dbGetter pebble.Leaser, gossipManager interfaces
 			localSizeUpdatePeriod:    *localSizeUpdatePeriod,
 			evictionBatchSize:        *evictionBatchSize,
 			numDeleteWorkers:         *numDeleteWorkers,
+			numGCSDeleteWorkers:      *numGCSDeleteWorkers,
 			fileStorer:               fileStorer,
 			metrics:                  metricSet,
 		}
@@ -647,10 +650,16 @@ func (ut *Tracker) Start() {
 			pu.processEviction(gctx)
 			return nil
 		})
-		pu.eg.Go(func() error {
-			pu.processGCSDeletions(gctx)
-			return nil
-		})
+		numGCSWorkers := pu.numGCSDeleteWorkers
+		if numGCSWorkers < 1 {
+			numGCSWorkers = 1
+		}
+		for i := 0; i < numGCSWorkers; i++ {
+			pu.eg.Go(func() error {
+				pu.processGCSDeletions(gctx)
+				return nil
+			})
+		}
 		pu.eg.Go(func() error {
 			pu.updateLocalSizeBytes(gctx)
 			return nil
