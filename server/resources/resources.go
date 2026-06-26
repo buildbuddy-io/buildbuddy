@@ -12,7 +12,6 @@ import (
 	"cloud.google.com/go/compute/metadata"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
-	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/elastic/gosigar"
@@ -39,7 +38,6 @@ const (
 	hostnameEnvVarName  = "MY_HOSTNAME"
 	namespaceEnvVarName = "MY_NAMESPACE"
 	podNameEnvVarName   = "MY_POD_NAME"
-	portEnvVarName      = "MY_PORT"
 	poolEnvVarName      = "MY_POOL"
 	podUIDVarName       = "K8S_POD_UID"
 
@@ -420,20 +418,6 @@ func GetMyHostname() (string, error) {
 		return v, nil
 	}
 	return os.Hostname()
-}
-
-func GetMyPort() (int32, error) {
-	portStr := ""
-	if v := os.Getenv(portEnvVarName); v != "" {
-		portStr = v
-	} else if p, err := flagutil.GetDereferencedValue[int]("grpc_port"); err == nil {
-		portStr = strconv.Itoa(p)
-	}
-	i, err := strconv.ParseInt(portStr, 10, 32)
-	if err != nil {
-		return 0, err
-	}
-	return int32(i), nil
 }
 
 func GetZone() string {
