@@ -795,7 +795,7 @@ const ApiKeyFieldDefaultState: ApiKeyFieldState = {
 };
 
 class ApiKeyField extends React.Component<ApiKeyFieldProps, ApiKeyFieldState> {
-  state = ApiKeyFieldDefaultState;
+  state = { ...ApiKeyFieldDefaultState };
 
   private copyTimeout: number | undefined;
   private value: string | undefined;
@@ -804,6 +804,20 @@ class ApiKeyField extends React.Component<ApiKeyFieldProps, ApiKeyFieldState> {
     if (this.props.apiKey.value) {
       this.value = this.props.apiKey.value;
     }
+  }
+
+  componentDidUpdate(prevProps: ApiKeyFieldProps) {
+    if (prevProps.apiKey.id === this.props.apiKey.id && prevProps.apiKey.value === this.props.apiKey.value) {
+      return;
+    }
+    this.value = this.props.apiKey.value || undefined;
+    clearTimeout(this.copyTimeout);
+    this.copyTimeout = undefined;
+    this.setState({ ...ApiKeyFieldDefaultState });
+  }
+
+  componentWillUnmount() {
+    clearTimeout(this.copyTimeout);
   }
 
   private async retrieveValue() {
