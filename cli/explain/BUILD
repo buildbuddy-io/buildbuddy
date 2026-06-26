@@ -1,10 +1,15 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 package(default_visibility = ["//cli:__subpackages__"])
 
 go_library(
     name = "explain",
-    srcs = ["explain.go"],
+    srcs = [
+        "explain.go",
+        "timing_profile.go",
+        "timing_profile_analysis.go",
+        "timing_profile_output.go",
+    ],
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/explain",
     deps = [
         "//cli/arg",
@@ -13,6 +18,8 @@ go_library(
         "//cli/log",
         "//cli/login",
         "//proto:buildbuddy_service_go_proto",
+        "//proto:build_event_stream_go_proto",
+        "//proto:command_line_go_proto",
         "//proto:invocation_go_proto",
         "//proto:spawn_diff_go_proto",
         "//proto:spawn_go_proto",
@@ -26,4 +33,10 @@ go_library(
         "@org_golang_google_protobuf//proto",
         "@org_golang_x_sync//errgroup",
     ],
+)
+
+go_test(
+    name = "explain_test",
+    srcs = ["timing_profile_analysis_test.go"],
+    embed = [":explain"],
 )
