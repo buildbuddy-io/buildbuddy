@@ -1,8 +1,8 @@
 // Package mcpserver provides an MCP server implementation for BuildBuddy.
 //
 // The MCP server exposes the developer-only APIs from BuildBuddy's public API
-// (/api/v1) as MCP tools. The tool schemas are auto-generated from the protobuf
-// service definition (see mcptoolgen).
+// (/api/v1) as MCP tools, plus special MCP-only tools. The API tool schemas
+// are auto-generated from the protobuf service definition (see mcptoolgen).
 package mcpserver
 
 import (
@@ -15,6 +15,9 @@ import (
 	"reflect"
 	"slices"
 	"strings"
+	"unicode/utf8"
+
+	_ "embed"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/mcp/jsonrpc"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/mcp/mcptools"
@@ -30,8 +33,6 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/reflect/protoregistry"
-
-	_ "embed"
 
 	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
 )
@@ -58,6 +59,8 @@ const (
 
 	// Maximum size of a single MCP JSON-RPC request body.
 	maxRequestBodyBytes = 4 * 1024 * 1024 // 4 MiB
+
+	maxFeedbackChars = 1024
 )
 
 var supportedProtocolVersions = []string{
@@ -98,6 +101,7 @@ func init() {
 type Service struct {
 	authenticator      interfaces.Authenticator
 	apiService         interfaces.ApiService
+	feedbackReporter   interfaces.FeedbackReporter
 	authInterceptor    func(http.Handler) http.Handler
 	allowedAPIRPCNames func(ctx context.Context, groupID string) []string
 }
@@ -132,6 +136,12 @@ type toolCallParams struct {
 	Arguments json.RawMessage `json:"arguments,omitempty"`
 }
 
+// feedbackToolArguments contains the JSON arguments for the special feedback
+// tool.
+type feedbackToolArguments struct {
+	Feedback string `json:"feedback"`
+}
+
 // toolCallResult is the successful result payload returned from tools/call.
 type toolCallResult struct {
 	Content           []toolContent `json:"content"`
@@ -157,6 +167,7 @@ func Register(env *real_environment.RealEnv) error {
 	env.SetMCPService(NewService(
 		env.GetAuthenticator(),
 		env.GetAPIService(),
+		env.GetFeedbackReporter(),
 		func(handler http.Handler) http.Handler {
 			return interceptors.WrapAuthenticatedExternalHandler(env, handler)
 		},
@@ -171,12 +182,14 @@ func Register(env *real_environment.RealEnv) error {
 func NewService(
 	authenticator interfaces.Authenticator,
 	apiService interfaces.ApiService,
+	feedbackReporter interfaces.FeedbackReporter,
 	authInterceptor func(http.Handler) http.Handler,
 	allowedAPIRPCNames func(ctx context.Context, groupID string) []string,
 ) *Service {
 	return &Service{
 		authenticator:      authenticator,
 		apiService:         apiService,
+		feedbackReporter:   feedbackReporter,
 		authInterceptor:    authInterceptor,
 		allowedAPIRPCNames: allowedAPIRPCNames,
 	}
@@ -327,14 +340,38 @@ func (s *Service) handleInitialize(request *jsonrpc.Request) (*jsonrpc.Response,
 	}), http.StatusOK
 }
 
-// toolsForUser returns the generated API tools the authenticated caller is
-// currently allowed to use.
+// feedbackTool returns the special MCP-only feedback tool descriptor.
+func feedbackTool() tool {
+	return tool{
+		Name:        "feedback",
+		Description: "Report feedback about the BuildBuddy MCP server (missing or misbehaving tools, unclear docs, etc.). Your feedback helps BuildBuddy enable more efficient agentic workflows.",
+		InputSchema: map[string]any{
+			"type":                 "object",
+			"additionalProperties": false,
+			"required":             []string{"feedback"},
+			"properties": map[string]any{
+				"feedback": map[string]any{
+					"type":        "string",
+					"description": "Feedback about the BuildBuddy MCP server.",
+					"minLength":   1,
+					"maxLength":   maxFeedbackChars,
+				},
+			},
+		},
+	}
+}
+
+// toolsForUser returns the special MCP-only tools and generated API tools the
+// authenticated caller is currently allowed to use.
 func (s *Service) toolsForUser(ctx context.Context, groupID string) []tool {
+	tools := make([]tool, 0, len(apiToolsManifest.Tools)+1)
+	if s.feedbackReporter != nil {
+		tools = append(tools, feedbackTool())
+	}
 	if s.apiService == nil {
-		return nil
+		return tools
 	}
 	allowed := s.allowedRPCs(ctx, groupID)
-	tools := make([]tool, 0, len(apiToolsManifest.Tools))
 	for _, generatedTool := range apiToolsManifest.Tools {
 		if _, ok := allowed[apiServicePrefix+generatedTool.RPCName]; !ok {
 			continue
@@ -351,12 +388,15 @@ func (s *Service) toolsForUser(ctx context.Context, groupID string) []tool {
 	return tools
 }
 
-// handleToolCall validates a tools/call request and dispatches it to a
-// generated public API tool.
+// handleToolCall validates a tools/call request and dispatches it to a special
+// MCP-only tool or a generated public API tool.
 func (s *Service) handleToolCall(ctx context.Context, groupID string, request *jsonrpc.Request) (*jsonrpc.Response, int) {
 	var params toolCallParams
 	if err := json.Unmarshal(request.Params, &params); err != nil {
 		return jsonrpc.Failure(request.ID, jsonrpc.InvalidParamsCode, "invalid tool call params"), http.StatusOK
+	}
+	if params.Name == "feedback" {
+		return s.handleFeedbackToolCall(ctx, request.ID, params.Arguments), http.StatusOK
 	}
 	generatedTool, ok := apiToolsByName[params.Name]
 	if !ok {
@@ -387,6 +427,38 @@ func (s *Service) handleToolCall(ctx context.Context, groupID string, request *j
 		return jsonrpc.Failure(request.ID, jsonrpc.InternalErrorCode, status.Message(err)), http.StatusOK
 	}
 	return jsonrpc.Success(request.ID, result), http.StatusOK
+}
+
+// handleFeedbackToolCall validates and stores feedback about the MCP server.
+func (s *Service) handleFeedbackToolCall(ctx context.Context, id json.RawMessage, argumentsJSON json.RawMessage) *jsonrpc.Response {
+	if s.feedbackReporter == nil {
+		return jsonrpc.Success(id, toolErrorResult(status.FailedPreconditionError("feedback is not configured")))
+	}
+	argumentsJSON = bytes.TrimSpace(argumentsJSON)
+	if len(argumentsJSON) == 0 {
+		argumentsJSON = []byte("{}")
+	}
+	var arguments feedbackToolArguments
+	if err := json.Unmarshal(argumentsJSON, &arguments); err != nil {
+		return jsonrpc.Failure(id, jsonrpc.InvalidParamsCode, "invalid tool arguments")
+	}
+	if strings.TrimSpace(arguments.Feedback) == "" {
+		return jsonrpc.Success(id, toolErrorResult(status.InvalidArgumentError("feedback is required")))
+	}
+	if utf8.RuneCountInString(arguments.Feedback) > maxFeedbackChars {
+		return jsonrpc.Success(id, toolErrorResult(status.InvalidArgumentErrorf("feedback exceeds %d characters", maxFeedbackChars)))
+	}
+	if err := s.feedbackReporter.ReportFeedback(ctx, arguments.Feedback); err != nil {
+		log.Warningf("mcp feedback: %s", err)
+		return jsonrpc.Success(id, toolErrorResult(err))
+	}
+	return jsonrpc.Success(id, &toolCallResult{
+		Content: []toolContent{{
+			Type: "text",
+			Text: "Feedback recorded.",
+		}},
+		StructuredContent: map[string]bool{"ok": true},
+	})
 }
 
 // invokeAPITool uses reflection to find and invoke the generated public API

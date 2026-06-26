@@ -92,6 +92,7 @@ type RealEnv struct {
 	remoteExecutionRedisPubSubClient     redis.UniversalClient
 	buildEventProxyClients               []pepb.PublishBuildEventClient
 	webhooks                             []interfaces.Webhook
+	feedbackReporter                     interfaces.FeedbackReporter
 	xcodeLocator                         interfaces.XcodeLocator
 	internalHTTPMux                      interfaces.HttpServeMux
 	mux                                  interfaces.HttpServeMux
@@ -217,6 +218,13 @@ func (r *RealEnv) GetWebhooks() []interfaces.Webhook {
 }
 func (r *RealEnv) SetWebhooks(wh []interfaces.Webhook) {
 	r.webhooks = wh
+}
+
+func (r *RealEnv) GetFeedbackReporter() interfaces.FeedbackReporter {
+	return r.feedbackReporter
+}
+func (r *RealEnv) SetFeedbackReporter(fr interfaces.FeedbackReporter) {
+	r.feedbackReporter = fr
 }
 
 func (r *RealEnv) GetBuildEventHandler() interfaces.BuildEventHandler {

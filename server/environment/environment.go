@@ -53,6 +53,7 @@ type Env interface {
 	GetHealthChecker() interfaces.HealthChecker
 	GetAuthenticator() interfaces.Authenticator
 	GetWebhooks() []interfaces.Webhook
+	GetFeedbackReporter() interfaces.FeedbackReporter
 	GetBuildEventHandler() interfaces.BuildEventHandler
 	GetBuildEventProxyClients() []pepb.PublishBuildEventClient
 	GetCache() interfaces.Cache

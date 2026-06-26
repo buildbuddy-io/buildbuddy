@@ -7,9 +7,11 @@ import (
 	"flag"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
@@ -17,7 +19,8 @@ import (
 )
 
 var (
-	webhookURL = flag.String("integrations.slack.webhook_url", "", "A Slack webhook url to post build update messages to.")
+	webhookURL         = flag.String("integrations.slack.webhook_url", "", "A Slack webhook url to post build update messages to.")
+	feedbackWebhookURL = flag.String("integrations.slack.feedback_webhook_url", "", "A Slack webhook url to post feedback messages to.")
 )
 
 type Field struct {
@@ -82,6 +85,7 @@ type SlackWebhook struct {
 	client        *http.Client
 	callbackURL   string
 	buildBuddyURL string
+	authenticator interfaces.Authenticator
 }
 
 func Register(env *real_environment.RealEnv) error {
@@ -89,6 +93,9 @@ func Register(env *real_environment.RealEnv) error {
 		env.SetWebhooks(
 			append(env.GetWebhooks(), NewSlackWebhook(*webhookURL, build_buddy_url.String())),
 		)
+	}
+	if *feedbackWebhookURL != "" {
+		env.SetFeedbackReporter(NewFeedbackWebhook(*feedbackWebhookURL, build_buddy_url.String(), env.GetAuthenticator()))
 	}
 	return nil
 }
@@ -99,6 +106,13 @@ func NewSlackWebhook(callbackURL string, bbURL string) *SlackWebhook {
 		buildBuddyURL: bbURL,
 		client:        &http.Client{},
 	}
+}
+
+// NewFeedbackWebhook returns a Slack webhook configured for feedback reports.
+func NewFeedbackWebhook(callbackURL string, bbURL string, authenticator interfaces.Authenticator) *SlackWebhook {
+	w := NewSlackWebhook(callbackURL, bbURL)
+	w.authenticator = authenticator
+	return w
 }
 
 func (w *SlackWebhook) slackPayloadFromInvocation(invocation *inpb.Invocation) *Payload {
@@ -133,6 +147,96 @@ func (w *SlackWebhook) NotifyComplete(ctx context.Context, invocation *inpb.Invo
 	json.NewEncoder(buf).Encode(payload)
 	_, err := http.Post(w.callbackURL, "application/json; charset=utf-8", buf)
 	return err
+}
+
+func (w *SlackWebhook) slackPayloadFromFeedback(user interfaces.UserInfo, feedback string) *Payload {
+	messagePrefix := feedbackMessagePrefix(user)
+	fallback := messagePrefix
+	a := Attachment{
+		Fallback: &fallback,
+		Text:     &feedback,
+	}
+	a.AddField(Field{
+		Title: "Group ID",
+		Value: user.GetGroupID(),
+		Short: true,
+	})
+	if user.GetUserID() != "" {
+		a.AddField(Field{
+			Title: "User ID",
+			Value: user.GetUserID(),
+			Short: true,
+		})
+	}
+	if apiKeyID := user.GetAPIKeyInfo().ID; apiKeyID != "" {
+		a.AddField(Field{
+			Title: "API key ID",
+			Value: apiKeyID,
+			Short: true,
+		})
+	}
+	return &Payload{
+		Text:        messagePrefix,
+		Attachments: []Attachment{a},
+	}
+}
+
+func feedbackMessagePrefix(user interfaces.UserInfo) string {
+	parts := []string{"[MCP server]"}
+	if groupIdentifier := feedbackGroupIdentifier(user); groupIdentifier != "" {
+		parts = append(parts, "["+groupIdentifier+"]")
+	}
+	if userEmail := strings.TrimSpace(user.GetUserEmail()); userEmail != "" {
+		parts = append(parts, "["+userEmail+"]")
+	}
+	return strings.Join(parts, " ")
+}
+
+func feedbackGroupIdentifier(user interfaces.UserInfo) string {
+	if groupURLIdentifier := strings.TrimSpace(user.GetGroupURLIdentifier()); groupURLIdentifier != "" {
+		return groupURLIdentifier
+	}
+	if groupName := strings.TrimSpace(user.GetGroupName()); groupName != "" {
+		return groupName
+	}
+	return strings.TrimSpace(user.GetGroupID())
+}
+
+// ReportFeedback posts an authenticated feedback report to Slack.
+func (w *SlackWebhook) ReportFeedback(ctx context.Context, feedback string) error {
+	if w.authenticator == nil {
+		return status.FailedPreconditionError("Slack feedback reporter requires an authenticator")
+	}
+	if strings.TrimSpace(feedback) == "" {
+		return status.InvalidArgumentError("feedback is required")
+	}
+	user, err := w.authenticator.AuthenticatedUser(ctx)
+	if err != nil {
+		return err
+	}
+	return w.post(ctx, w.slackPayloadFromFeedback(user, feedback))
+}
+
+func (w *SlackWebhook) post(ctx context.Context, payload *Payload) error {
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return status.WrapErrorf(err, "marshal Slack payload")
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, w.callbackURL, bytes.NewReader(body))
+	if err != nil {
+		return status.WrapErrorf(err, "build Slack request")
+	}
+	req.Header.Set("Content-Type", "application/json; charset=utf-8")
+	resp, err := w.client.Do(req)
+	if err != nil {
+		return status.WrapErrorf(err, "post to Slack webhook")
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		respBody, _ := io.ReadAll(resp.Body)
+		return status.UnavailableErrorf("Slack webhook returned HTTP %d: %s", resp.StatusCode, string(respBody))
+	}
+	return nil
 }
 
 // Client posts messages to Slack webhook URLs.

@@ -133,9 +133,15 @@ func getES256KeyPair(key string) (*ecdsa.PrivateKey, string, error) {
 
 type Claims struct {
 	jwt.StandardClaims
-	APIKeyID                   string `json:"api_key_id,omitempty"`
-	UserID                     string `json:"user_id"`
-	GroupID                    string `json:"group_id"`
+	APIKeyID string `json:"api_key_id,omitempty"`
+	UserID   string `json:"user_id"`
+	// UserEmail is the authenticated user's email, if known.
+	UserEmail string `json:"user_email,omitempty"`
+	GroupID   string `json:"group_id"`
+	// GroupURLIdentifier is the selected group's URL identifier, if known.
+	GroupURLIdentifier string `json:"group_url_identifier,omitempty"`
+	// GroupName is the selected group's display name, if known.
+	GroupName                  string `json:"group_name,omitempty"`
 	ExperimentTargetingGroupID string `json:"experiment_targeting_group_id"`
 	// APIKeyOwnerGroupID identifies the group that owns the API key used
 	// for authentication. Will be empty if authentication was not performed
@@ -166,8 +172,23 @@ func (c *Claims) GetUserID() string {
 	return c.UserID
 }
 
+// GetUserEmail returns the authenticated user's email, if known.
+func (c *Claims) GetUserEmail() string {
+	return c.UserEmail
+}
+
 func (c *Claims) GetGroupID() string {
 	return c.GroupID
+}
+
+// GetGroupURLIdentifier returns the selected group's URL identifier, if known.
+func (c *Claims) GetGroupURLIdentifier() string {
+	return c.GroupURLIdentifier
+}
+
+// GetGroupName returns the selected group's display name, if known.
+func (c *Claims) GetGroupName() string {
+	return c.GroupName
 }
 
 func (c *Claims) GetExperimentTargetingGroupID() string {
@@ -403,6 +424,8 @@ func userClaims(u *tables.User, effectiveGroup string) (*Claims, error) {
 	cacheEncryptionEnabled := false
 	enforceIPRules := false
 	groupStatus := grpb.Group_UNKNOWN_GROUP_STATUS
+	groupURLIdentifier := ""
+	groupName := ""
 	var capabilities []cappb.Capability
 	for _, g := range u.Groups {
 		allowedGroups = append(allowedGroups, g.Group.GroupID)
@@ -415,12 +438,17 @@ func userClaims(u *tables.User, effectiveGroup string) (*Claims, error) {
 			cacheEncryptionEnabled = g.Group.CacheEncryptionEnabled
 			enforceIPRules = g.Group.EnforceIPRules
 			groupStatus = g.Group.Status
+			groupURLIdentifier = g.Group.URLIdentifier
+			groupName = g.Group.Name
 			capabilities = g.Capabilities
 		}
 	}
 	return &Claims{
 		UserID:                 u.UserID,
+		UserEmail:              u.Email,
 		GroupID:                effectiveGroup,
+		GroupURLIdentifier:     groupURLIdentifier,
+		GroupName:              groupName,
 		GroupMemberships:       groupMemberships,
 		AllowedGroups:          allowedGroups,
 		Capabilities:           capabilities,

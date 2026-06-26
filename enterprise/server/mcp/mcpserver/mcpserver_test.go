@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/mcp/jsonrpc"
@@ -29,6 +30,19 @@ func (f *fakeAPIService) GetInvocation(ctx context.Context, req *apipb.GetInvoca
 		return f.getInvocation(ctx, req)
 	}
 	return nil, status.UnimplementedError("not implemented")
+}
+
+type fakeFeedbackReporter struct {
+	reports []string
+	err     error
+}
+
+func (f *fakeFeedbackReporter) ReportFeedback(ctx context.Context, feedback string) error {
+	if f.err != nil {
+		return f.err
+	}
+	f.reports = append(f.reports, feedback)
+	return nil
 }
 
 func TestMCPToolsList_OnlyGetAPIsAreExposed(t *testing.T) {
@@ -163,6 +177,69 @@ func TestMCPToolCall_GetInvocation(t *testing.T) {
 	require.Len(t, invocations, 1)
 }
 
+func TestMCPToolsList_FeedbackRequiresNoCapabilities(t *testing.T) {
+	server := newTestServer(t, testServerOptions{
+		users: testUsers(
+			testUser("developer-key", "GROUP1", nil),
+		),
+		apiService:       &fakeAPIService{},
+		feedbackReporter: &fakeFeedbackReporter{},
+	})
+
+	rsp := callJSONRPC[toolListResponse](t, server.URL, "developer-key", "tools/list", nil)
+	require.Nil(t, rsp.Error)
+	require.Len(t, rsp.Result.Tools, 1)
+	require.Equal(t, "feedback", rsp.Result.Tools[0].Name)
+
+	var inputSchema map[string]any
+	unmarshalJSON(t, rsp.Result.Tools[0].InputSchema, &inputSchema)
+	require.Equal(t, float64(maxFeedbackChars), inputSchema["properties"].(map[string]any)["feedback"].(map[string]any)["maxLength"])
+}
+
+func TestMCPToolCall_Feedback(t *testing.T) {
+	feedbackReporter := &fakeFeedbackReporter{}
+	server := newTestServer(t, testServerOptions{
+		users: testUsers(
+			testUser("developer-key", "GROUP1", nil),
+		),
+		apiService:       &fakeAPIService{},
+		feedbackReporter: feedbackReporter,
+	})
+
+	rsp := callJSONRPC[toolCallResponse](t, server.URL, "developer-key", "tools/call", map[string]any{
+		"name": "feedback",
+		"arguments": map[string]any{
+			"feedback": "The MCP server should make this easier to discover.",
+		},
+	})
+	require.Nil(t, rsp.Error)
+	require.False(t, rsp.Result.IsError)
+	require.Equal(t, []string{"The MCP server should make this easier to discover."}, feedbackReporter.reports)
+	require.Contains(t, rsp.Result.Content[0].Text, "Feedback recorded")
+}
+
+func TestMCPToolCall_FeedbackTooLong(t *testing.T) {
+	feedbackReporter := &fakeFeedbackReporter{}
+	server := newTestServer(t, testServerOptions{
+		users: testUsers(
+			testUser("developer-key", "GROUP1", nil),
+		),
+		apiService:       &fakeAPIService{},
+		feedbackReporter: feedbackReporter,
+	})
+
+	rsp := callJSONRPC[toolCallResponse](t, server.URL, "developer-key", "tools/call", map[string]any{
+		"name": "feedback",
+		"arguments": map[string]any{
+			"feedback": strings.Repeat("x", maxFeedbackChars+1),
+		},
+	})
+	require.Nil(t, rsp.Error)
+	require.True(t, rsp.Result.IsError)
+	require.Contains(t, rsp.Result.Content[0].Text, "feedback exceeds 1024 characters")
+	require.Empty(t, feedbackReporter.reports)
+}
+
 // testUser constructs one authenticated caller identity keyed by its API key.
 func testUser(apiKey, groupID string, capabilities []cappb.Capability) interfaces.UserInfo {
 	return &testauth.TestUser{
@@ -186,9 +263,10 @@ func testUsers(users ...interfaces.UserInfo) map[string]interfaces.UserInfo {
 }
 
 type testServerOptions struct {
-	users       map[string]interfaces.UserInfo
-	apiService  interfaces.ApiService
-	allowedRPCs []string
+	users            map[string]interfaces.UserInfo
+	apiService       interfaces.ApiService
+	feedbackReporter interfaces.FeedbackReporter
+	allowedRPCs      []string
 }
 
 func newTestServer(t *testing.T, opts testServerOptions) *httptest.Server {
@@ -196,6 +274,7 @@ func newTestServer(t *testing.T, opts testServerOptions) *httptest.Server {
 	service := NewService(
 		authenticator,
 		opts.apiService,
+		opts.feedbackReporter,
 		func(next http.Handler) http.Handler {
 			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				ctx := authenticator.AuthenticatedHTTPContext(w, r)

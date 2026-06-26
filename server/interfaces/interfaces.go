@@ -116,7 +116,13 @@ type UserInfo interface {
 	// ID of the authenticated user. Empty if authenticated using an Org API
 	// key.
 	GetUserID() string
+	// GetUserEmail returns the authenticated user's email, if known.
+	GetUserEmail() string
 	GetGroupID() string
+	// GetGroupURLIdentifier returns the selected group's URL identifier, if known.
+	GetGroupURLIdentifier() string
+	// GetGroupName returns the selected group's display name, if known.
+	GetGroupName() string
 	// GetExperimentTargetingGroupID returns the group ID used for experiment
 	// targeting purposes. This should return the same value as GetGroupID()
 	// except when a server admin is setting a special header to target a
@@ -629,6 +635,12 @@ type UserDB interface {
 // A webhook can be called when a build is completed.
 type Webhook interface {
 	NotifyComplete(ctx context.Context, invocation *inpb.Invocation) error
+}
+
+// FeedbackReporter receives authenticated write-only feedback reports.
+type FeedbackReporter interface {
+	// ReportFeedback stores or forwards a feedback report.
+	ReportFeedback(ctx context.Context, feedback string) error
 }
 
 // Allows aggregating invocation statistics.
