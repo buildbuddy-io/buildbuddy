@@ -719,9 +719,6 @@
 }
 
 .action-header .view-history-button {
-  display: flex;
-  align-items: center;
-  gap: 4px;
   margin-top: -16px;
 }
 

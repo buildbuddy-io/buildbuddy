@@ -15,3 +15,13 @@
 .text-link:hover {
   color: var(--color-link-hover);
 }
+
+.text-link .icon {
+  /*
+    When an icon appears inside a link, make its size and color match the link text.
+    The number is is calculated as 16/14 because for lucide icons,
+    16px icons look good next to a 14px font.
+   */
+  --icon-size: 1.1428571428571428em;
+  stroke: currentColor;
+}

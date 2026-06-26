@@ -47,3 +47,8 @@ svg.icon.orange {
 svg.icon.yellow {
   stroke: var(--color-icon-yellow);
 }
+
+.dark .github-icon {
+  /* Hack: make the github icon appear white in dark mode. */
+  filter: invert();
+}
