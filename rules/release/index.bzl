@@ -29,20 +29,21 @@ def release(name, run, after, enable_actions = True, **kwargs):
         actions = [".apply", ".diff", ".delete"]
 
     for action in actions:
-        run_action_command = name + action + ".run"
         after_action_command = name + action + ".after"
-        command(
-            name = run_action_command,
-            command = run + action,
-        )
+        run_action_command = name + action + ".run"
         command(
             name = after_action_command,
             command = after + action,
         )
+        command(
+            name = run_action_command,
+            command = run + action,
+        )
         multirun(
             name = name + action,
             commands = [
-                run_action_command,
                 after_action_command,
+                run_action_command,
             ],
+            **kwargs,
         )
