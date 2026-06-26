@@ -39,6 +39,7 @@ import (
 const (
 	explainCmdUsage = `
 usage: bb explain [--old {FILE | INVOCATION_ID}] [--new {FILE | INVOCATION_ID}] [--output_format {text|json|proto}] [--nondeterministic_only]
+       bb explain timing-profile INVOCATION_ID
 
 Displays a human-readable, structural diff of two compact execution logs, either
 obtained from the given invocations or located at the given file paths.
@@ -57,6 +58,9 @@ Output formats:
   text   Unstructured output (default)
   json   Structured output as JSON
   proto  Structured output as binary proto
+
+Subcommands:
+  timing-profile   Analyzes the timing profile for an invocation.
 `
 )
 
@@ -97,6 +101,9 @@ var (
 )
 
 func HandleExplain(args []string) (int, error) {
+	if len(args) > 0 && args[0] == "timing-profile" {
+		return handleTimingProfile(args[1:])
+	}
 	explainCmd.Var(profilePaths, "profile", "Path that a CPU profile should be written to.")
 	if err := arg.ParseFlagSet(explainCmd, args); err != nil {
 		if !errors.Is(err, flag.ErrHelp) {
