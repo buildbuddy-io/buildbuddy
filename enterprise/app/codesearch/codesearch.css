@@ -8,6 +8,10 @@
   align-items: center;
   background: var(--color-search-result-header-bg);
   padding: 2px 32px;
+
+  .icon {
+    --icon-size: 16px;
+  }
 }
 
 .code-search .repo-name {
@@ -97,7 +101,7 @@
   height: 100%;
 }
 
-.code-search .icon {
+.code-search .big-icon {
   --icon-size: 180px;
 }
 
