@@ -25,6 +25,7 @@ const WRITE_COLOR = cssColor("--color-indigo-500", "#3f51b5");
 const EMPTY_COLOR = "#eee";
 
 interface Props {
+  region?: string;
   node: cache_proxy.CacheProxyNode;
   lastCheckInTime?: google_timestamp.protobuf.Timestamp | null;
   statistics?: cache_proxy.IStatistics | null;
@@ -75,6 +76,12 @@ export default class CacheProxyCardComponent extends React.Component<Props> {
               <div className="cache-proxy-section-title">Proxy Instance ID:</div>
               <div>{this.props.node.proxyId}</div>
             </div>
+            {this.props.region && (
+              <div className="cache-proxy-section">
+                <div className="cache-proxy-section-title">Region:</div>
+                <div>{this.props.region}</div>
+              </div>
+            )}
             {this.props.node.proxyHostId && (
               <div className="cache-proxy-section">
                 <div className="cache-proxy-section-title">Proxy Host ID:</div>
