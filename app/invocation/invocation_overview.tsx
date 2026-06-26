@@ -25,6 +25,7 @@ import { User } from "../auth/auth_service";
 import Breadcrumbs from "../components/breadcrumbs/breadcrumbs";
 import { Link } from "../components/link/link";
 import format from "../format/format";
+import { GithubIcon } from "../icons/github";
 import { Github } from "../icons/github_lucide";
 import { getRepoUrlPathParam, Path } from "../router/router";
 import { RepoURL } from "../util/git";
@@ -235,7 +236,7 @@ export default class InvocationOverviewComponent extends React.Component<Props> 
           )}
           {this.props.model.getGithubActionsUrl() && (
             <Link className="detail clickable" href={this.props.model.getGithubActionsUrl()} target="_blank">
-              <img className="icon" src="/image/github.svg" />
+              <GithubIcon />
               GitHub Actions
             </Link>
           )}
