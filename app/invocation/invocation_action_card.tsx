@@ -1588,7 +1588,16 @@ export default class InvocationActionCardComponent extends React.Component<Props
                         {this.state.actionResult.executionMetadata ? (
                           <div className="action-list">
                             <div className="metadata-title">Executor Host ID</div>
-                            <div className="metadata-detail">{this.state.actionResult.executionMetadata.worker} </div>
+                            <div className="metadata-detail metadata-detail-inline-action">
+                              <span>{this.state.actionResult.executionMetadata.worker}</span>
+                              {this.state.actionResult.executionMetadata.worker && (
+                                <TextLink
+                                  className="artifact-view metadata-history-link"
+                                  href={getExecutorDrilldownUrl(this.state.actionResult.executionMetadata.worker)}>
+                                  <History /> History
+                                </TextLink>
+                              )}
+                            </div>
                             <div className="metadata-title">Executor ID</div>
                             <div className="metadata-detail">
                               {this.state.actionResult.executionMetadata.executorId}
@@ -1868,6 +1877,17 @@ function getDrilldownUrl(targetLabel?: string, actionMnemonic?: string): string 
   }
   const dimensionParam = `${encodeTargetLabelUrlParam(targetLabel)}|${encodeActionMnemonicUrlParam(actionMnemonic)}`;
   return `/trends/?d=${encodeURIComponent(dimensionParam)}&ddMetric=e4#drilldown`;
+}
+
+function getExecutorDrilldownUrl(executorHostId?: string): string {
+  if (!executorHostId) {
+    return "";
+  }
+  return `/trends/?d=${encodeURIComponent(encodeWorkerUrlParam(executorHostId))}&ddMetric=e9#drilldown`;
+}
+
+export function encodeWorkerUrlParam(workerId: string): string {
+  return `e1|${workerId.length}|${workerId}`;
 }
 
 export function encodeTargetLabelUrlParam(targetLabel: string): string {
