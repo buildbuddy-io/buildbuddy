@@ -5,6 +5,9 @@ import (
 	"fmt"
 	"io"
 	"math/rand"
+	"net"
+	"net/url"
+	"os"
 	"regexp"
 	"slices"
 	"strconv"
@@ -28,6 +31,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/error_util"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
@@ -65,6 +69,7 @@ var (
 	maxSchedulingDelay           = flag.Duration("remote_execution.max_scheduling_delay", 5*time.Second, "Max duration that actions can sit in a non-preferred executor's queue before they are executed.")
 	cgroupSettingsEnabled        = flag.Bool("remote_execution.cgroup_settings_enabled", true, "Apply cgroup2 settings to Linux executions.")
 	proactiveCancellationEnabled = flag.Bool("remote_execution.proactive_cancellation_enabled", true, "If true, the scheduler will proactively cancel task reservations on executors when a task is completed by another executor.")
+	schedulerRPCSchemeFlag       = flag.String("remote_execution.scheduler_rpc_scheme", "grpc", "Protocol scheme this scheduler advertises for peer task reservations. Upgrade all schedulers before enabling grpcs. Supported values: grpc, grpcs.")
 	debugExecutorLabelsKey       = flag.String("remote_execution.debug_executor_labels_key", "", "If set, requests using the 'debug-executor-labels' platform property must also set the 'debug-executor-labels-key' platform property to this value, otherwise the requested labels are ignored. If empty, anyone can use 'debug-executor-labels'.", flag.Secret)
 	unclaimedTasksSetMaxSize     = flag.Int64("remote_execution.unclaimed_tasks_set_max_size", 100_000, "Max number of unclaimed tasks to track in redis per executor pool. This set of tasks is used for eager work assignments (when executors newly join a pool) and work-stealing requests (when executors are nearly idle).")
 	unclaimedTasksCacheTTL       = flag.Duration("remote_execution.unclaimed_tasks_cache_ttl", 1*time.Second, "If set, cache the unclaimed task list in memory for up to this TTL", flag.Internal)
@@ -74,6 +79,9 @@ var (
 )
 
 const (
+	schedulerRPCSchemeGRPC  = "grpc"
+	schedulerRPCSchemeGRPCS = "grpcs"
+
 	// This number controls how many reservations the scheduler will
 	// enqueue (across executor nodes) for each task. Typically this
 	// is 2 -- we've increased it to 3 because each executor will
@@ -691,9 +699,9 @@ func (h *executorHandle) startTaskReservationStreamer() {
 type executionNode struct {
 	*scpb.ExecutionNode
 
-	// Optional host:port of the scheduler to which the executor is connected. Only set for executors connecting using
+	// Optional RPC target of the scheduler to which the executor is connected. Only set for executors connecting using
 	// the "task streaming" API.
-	schedulerHostPort string
+	schedulerTarget string
 	// Optional handle for locally connected executor that can be used to enqueue task reservations.
 	handle *executorHandle
 }
@@ -751,7 +759,7 @@ func (en *executionNode) String() string {
 	if en.handle != nil {
 		return fmt.Sprintf("connected executor(%s)", en.GetExecutorId())
 	}
-	return fmt.Sprintf("executor(%s) @ scheduler(%s)", en.GetExecutorId(), en.schedulerHostPort)
+	return fmt.Sprintf("executor(%s) @ scheduler(%s)", en.GetExecutorId(), en.schedulerTarget)
 }
 
 func nodesThatFit(nodes []*executionNode, taskSize *scpb.TaskSize) []*executionNode {
@@ -976,9 +984,22 @@ func (np *nodePool) fetchExecutionNodes(ctx context.Context) ([]*executionNode, 
 			continue
 		}
 
+		// Legacy registrations are plaintext, regardless of our local scheme.
+		// Never fall back when an explicit target is present but invalid.
+		target := node.GetSchedulerTarget()
+		if target == "" && node.GetSchedulerHostPort() != "" {
+			target = "grpc://" + node.GetSchedulerHostPort()
+		}
+		if err := validateSchedulerTarget(target); err != nil {
+			// A malformed registration cannot become reachable by retrying it.
+			// Leave it in Redis so a subsequent heartbeat can repair it, but do
+			// not count it towards probes or delay scheduling on healthy peers.
+			log.CtxWarningf(ctx, "Ignoring executor %q with invalid scheduler target %q: %s", id, target, err)
+			continue
+		}
 		executors = append(executors, &executionNode{
-			ExecutionNode:     node.GetRegistration(),
-			schedulerHostPort: node.GetSchedulerHostPort(),
+			ExecutionNode:   node.GetRegistration(),
+			schedulerTarget: target,
 		})
 	}
 
@@ -1235,16 +1256,16 @@ type schedulerClientCache struct {
 	clients map[string]*schedulerClient
 	// Address of this app instance. If the destination address matches the address of this instance, we call into
 	// the local scheduler server instance directly instead of using RPCs.
-	localServerHostPort string
-	localServer         *SchedulerServer
+	localServerTarget string
+	localServer       *SchedulerServer
 }
 
-func newSchedulerClientCache(env environment.Env, localServerHostPort string, localServer *SchedulerServer) *schedulerClientCache {
+func newSchedulerClientCache(env environment.Env, localServerTarget string, localServer *SchedulerServer) *schedulerClientCache {
 	cache := &schedulerClientCache{
-		env:                 env,
-		clients:             make(map[string]*schedulerClient),
-		localServerHostPort: localServerHostPort,
-		localServer:         localServer,
+		env:               env,
+		clients:           make(map[string]*schedulerClient),
+		localServerTarget: localServerTarget,
+		localServer:       localServer,
 	}
 	cache.startExpirer()
 	return cache
@@ -1269,26 +1290,70 @@ func (c *schedulerClientCache) startExpirer() {
 	}()
 }
 
-func (c *schedulerClientCache) get(hostPort string) (*schedulerClient, error) {
+func (c *schedulerClientCache) get(target string) (*schedulerClient, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	client, ok := c.clients[hostPort]
+	client, ok := c.clients[target]
 	if !ok {
-		log.Infof("Creating new scheduler client for %q", hostPort)
-		if hostPort == c.localServerHostPort {
+		log.Infof("Creating new scheduler client for %q", target)
+		if target == c.localServerTarget {
 			client = &schedulerClient{localServer: c.localServer}
 		} else {
 			// This is non-blocking so it's OK to hold the lock.
-			conn, err := grpc_client.DialInternalWithPoolSize(c.env, "grpc://"+hostPort, 2)
+			conn, err := grpc_client.DialInternalWithPoolSize(c.env, target, 2)
 			if err != nil {
 				return nil, status.UnavailableErrorf("could not dial scheduler: %s", err)
 			}
 			client = &schedulerClient{rpcClient: scpb.NewSchedulerClient(conn), rpcConn: conn}
 		}
-		c.clients[hostPort] = client
+		c.clients[target] = client
 	}
 	client.lastAccess = time.Now()
 	return client, nil
+}
+
+func validateSchedulerTarget(target string) error {
+	u, err := url.Parse(target)
+	if err != nil {
+		return status.InvalidArgumentError("invalid scheduler target")
+	}
+	if (u.Scheme != schedulerRPCSchemeGRPC && u.Scheme != schedulerRPCSchemeGRPCS) || u.User != nil || u.Path != "" || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" || u.Opaque != "" {
+		return status.InvalidArgumentError("scheduler target must be grpc://host:port or grpcs://host:port")
+	}
+	host, port, err := net.SplitHostPort(u.Host)
+	if err != nil || host == "" {
+		return status.InvalidArgumentError("scheduler target must include a host and port")
+	}
+	p, err := strconv.Atoi(port)
+	if err != nil || p <= 0 || p > 65535 {
+		return status.InvalidArgumentError("scheduler target port must be between 1 and 65535")
+	}
+	return nil
+}
+
+func schedulerPort(options *Options, scheme string) (int32, error) {
+	if options.LocalPortOverride != 0 {
+		return options.LocalPortOverride, nil
+	}
+	portFlagName := "grpc_port"
+	if scheme == schedulerRPCSchemeGRPCS {
+		portFlagName = "grpcs_port"
+	}
+	// MY_PORT takes precedence for both schemes, including deployments that
+	// remap ports. When advertising grpcs it must reach the TLS listener.
+	portStr := os.Getenv("MY_PORT")
+	if portStr == "" {
+		port, err := flagutil.GetDereferencedValue[int](portFlagName)
+		if err != nil {
+			return 0, err
+		}
+		portStr = strconv.Itoa(port)
+	}
+	port, err := strconv.ParseInt(portStr, 10, 32)
+	if err != nil {
+		return 0, err
+	}
+	return int32(port), nil
 }
 
 // Options for overriding server behavior needed for testing.
@@ -1310,8 +1375,8 @@ type SchedulerServer struct {
 	clock                clockwork.Clock
 	schedulerClientCache *schedulerClientCache
 	shuttingDown         <-chan struct{}
-	// host:port at which this scheduler can be reached
-	ownHostPort string
+	// Full RPC target at which this scheduler can be reached.
+	ownTarget string
 
 	// If enabled, users may register their own executors.
 	// When enabled, the executor group ID becomes part of the executor key.
@@ -1383,17 +1448,26 @@ func NewSchedulerServerWithOptions(env environment.Env, options *Options) (*Sche
 	if taskRouter == nil {
 		return nil, status.FailedPreconditionError("Missing task router in env")
 	}
+	schedulerScheme := strings.TrimSpace(strings.ToLower(*schedulerRPCSchemeFlag))
+	if schedulerScheme != schedulerRPCSchemeGRPC && schedulerScheme != schedulerRPCSchemeGRPCS {
+		return nil, status.InvalidArgumentErrorf("remote_execution.scheduler_rpc_scheme must be one of %q or %q, got %q", schedulerRPCSchemeGRPC, schedulerRPCSchemeGRPCS, *schedulerRPCSchemeFlag)
+	}
+	if schedulerScheme == schedulerRPCSchemeGRPCS && (env.GetSSLService() == nil || !env.GetSSLService().IsEnabled()) {
+		return nil, status.InvalidArgumentError("remote_execution.scheduler_rpc_scheme=grpcs requires an enabled SSL service (ssl.enable_ssl=true)")
+	}
 
 	ownHostname, err := resources.GetMyHostname()
 	if err != nil {
 		return nil, status.UnknownErrorf("Could not determine own hostname: %s", err)
 	}
-	ownPort := options.LocalPortOverride
-	if ownPort == 0 {
-		ownPort, err = resources.GetMyPort()
-		if err != nil {
-			return nil, status.UnknownErrorf("Could not determine own port: %s", err)
-		}
+	ownPort, err := schedulerPort(options, schedulerScheme)
+	if err != nil {
+		return nil, status.UnknownErrorf("Could not determine own port: %s", err)
+	}
+
+	ownTarget := schedulerScheme + "://" + net.JoinHostPort(ownHostname, strconv.Itoa(int(ownPort)))
+	if err := validateSchedulerTarget(ownTarget); err != nil {
+		return nil, err
 	}
 
 	clock := env.GetClock()
@@ -1425,14 +1499,14 @@ func NewSchedulerServerWithOptions(env environment.Env, options *Options) (*Sche
 		disableAnonymousArmLinuxExecution: remote_execution_config.RemoteExecutionEnabled() && scheduler_server_config.DisableAnonymousArmLinuxExecution(),
 		requireExecutorAuthorization:      options.RequireExecutorAuthorization || (remote_execution_config.RemoteExecutionEnabled() && *requireExecutorAuthorization),
 		enableRedisAvailabilityMonitoring: remote_execution_config.RemoteExecutionEnabled() && env.GetRemoteExecutionService().RedisAvailabilityMonitoringEnabled(),
-		ownHostPort:                       fmt.Sprintf("%s:%d", ownHostname, ownPort),
+		ownTarget:                         ownTarget,
 		actionMergingLeaseTTL:             actionMergingLeaseTTL,
 		leaseDuration:                     options.LeaseDuration,
 		leaseGracePeriod:                  options.LeaseGracePeriod,
 		detector:                          options.UpgradeDetector,
 		checkTaskAccessLogLimiter:         newPerKeyLogLimiter(clock, checkTaskAccessLogInterval),
 	}
-	s.schedulerClientCache = newSchedulerClientCache(env, s.ownHostPort, s)
+	s.schedulerClientCache = newSchedulerClientCache(env, s.ownTarget, s)
 	return s, nil
 }
 
@@ -1652,11 +1726,16 @@ func (s *SchedulerServer) insertOrUpdateNode(ctx context.Context, executorHandle
 	groupID := executorHandle.GroupID()
 
 	r := &scpb.RegisteredExecutionNode{
-		Registration:      node,
-		SchedulerHostPort: s.ownHostPort,
-		GroupId:           groupID,
-		Acl:               acl,
-		LastPingTime:      timestamppb.Now(),
+		Registration:    node,
+		SchedulerTarget: s.ownTarget,
+		GroupId:         groupID,
+		Acl:             acl,
+		LastPingTime:    timestamppb.Now(),
+	}
+	// Keep old readers working while rolling out the new binary in grpc mode.
+	// TLS requires upgraded readers; do not advertise a plaintext fallback.
+	if hostPort, ok := strings.CutPrefix(s.ownTarget, "grpc://"); ok {
+		r.SchedulerHostPort = hostPort
 	}
 	b, err := proto.Marshal(r)
 	if err != nil {
@@ -2739,21 +2818,21 @@ func enqueueOnConnectedExecutor(ctx context.Context, node *executionNode, reques
 }
 
 func (s *SchedulerServer) enqueueOnRemoteExecutor(ctx context.Context, node *executionNode, request *scpb.EnqueueTaskReservationRequest) (bool, error) {
-	if node.schedulerHostPort == "" {
-		log.CtxErrorf(ctx, "node %q has no scheduler host:port set", node.GetExecutorId())
+	if node.schedulerTarget == "" {
+		log.CtxErrorf(ctx, "node %q has no scheduler target set", node.GetExecutorId())
 		return false, nil
 	}
 
-	schedulerClient, err := s.schedulerClientCache.get(node.schedulerHostPort)
+	schedulerClient, err := s.schedulerClientCache.get(node.schedulerTarget)
 	if err != nil {
-		log.CtxWarningf(ctx, "Could not get SchedulerClient for %q: %s", node.schedulerHostPort, err)
-		return false, nil
+		log.CtxWarningf(ctx, "Could not get SchedulerClient for %q: %s", node.schedulerTarget, err)
+		return false, err
 	}
 	rpcCtx, cancel := context.WithTimeout(ctx, schedulerEnqueueTaskReservationTimeout)
 	defer cancel()
 	_, err = schedulerClient.EnqueueTaskReservation(rpcCtx, request)
 	if err != nil {
-		log.CtxWarningf(ctx, "EnqueueTaskReservation via scheduler target %q failed: %s", node.schedulerHostPort, err)
+		log.CtxWarningf(ctx, "EnqueueTaskReservation via scheduler target %q failed: %s", node.schedulerTarget, err)
 		return false, err
 	}
 	return true, nil
