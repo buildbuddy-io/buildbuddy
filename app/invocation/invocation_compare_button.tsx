@@ -87,7 +87,7 @@ export default class InvocationCompareButtonComponent extends React.Component<
           </>
         )}
         {this.props.mini && (
-          <OutlinedButton className="invocation-menu-button" onClick={this.onClick.bind(this)}>
+          <OutlinedButton className="icon-button invocation-menu-button" onClick={this.onClick.bind(this)}>
             <MoreVertical />
           </OutlinedButton>
         )}

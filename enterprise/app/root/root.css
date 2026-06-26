@@ -101,10 +101,9 @@ body {
   justify-content: center;
 }
 
-.history-button svg {
+.history-button .icon {
+  --icon-size: 14px;
   margin-right: 8px;
-  width: 14px;
-  height: 14px;
 }
 
 .history-button:hover {

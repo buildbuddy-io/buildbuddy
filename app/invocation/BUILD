@@ -567,6 +567,7 @@ ts_library(
         "//app/components/breadcrumbs",
         "//app/components/link",
         "//app/format",
+        "//app/icons:github",
         "//app/icons:github_lucide",
         "//app/invocation:invocation_buttons",
         "//app/invocation:invocation_model",

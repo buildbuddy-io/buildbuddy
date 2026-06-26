@@ -719,9 +719,6 @@
 }
 
 .action-header .view-history-button {
-  display: flex;
-  align-items: center;
-  gap: 4px;
   margin-top: -16px;
 }
 
@@ -1244,11 +1241,7 @@
 }
 
 .invocation-menu-container .base-button.invocation-menu-button {
-  width: 40px;
-  height: 40px;
   border: none;
-  padding: 0;
-  justify-content: center;
 }
 
 .invocation-delete-dialog .error-description {
@@ -1686,9 +1679,5 @@ svg.invocation-query-graph .nodes rect {
 }
 
 .invocation-compare-button-container-mini .invocation-menu-button {
-  width: 40px;
-  height: 40px;
   border: none;
-  padding: 0;
-  justify-content: center;
 }
