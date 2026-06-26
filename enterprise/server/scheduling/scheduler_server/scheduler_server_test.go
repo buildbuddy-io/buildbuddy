@@ -101,6 +101,82 @@ type schedulerOpts struct {
 	preferredExecutors []string
 }
 
+func TestSchedulerRPCScheme(t *testing.T) {
+	for _, test := range []struct {
+		name        string
+		scheme      string
+		expected    string
+		expectError bool
+	}{
+		{
+			name:     "grpc",
+			scheme:   "grpc",
+			expected: schedulerRPCSchemeGRPC,
+		},
+		{
+			name:     "grpcs",
+			scheme:   "grpcs",
+			expected: schedulerRPCSchemeGRPCS,
+		},
+		{
+			name:     "normalizes",
+			scheme:   " GRPCS ",
+			expected: schedulerRPCSchemeGRPCS,
+		},
+		{
+			name:        "rejects invalid scheme",
+			scheme:      "https",
+			expectError: true,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			flags.Set(t, "remote_execution.scheduler_rpc_scheme", test.scheme)
+
+			scheme, err := schedulerRPCScheme()
+			if test.expectError {
+				require.Error(t, err)
+				require.Contains(t, err.Error(), "remote_execution.scheduler_rpc_scheme")
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, test.expected, scheme)
+		})
+	}
+}
+
+func TestSchedulerRPCTarget(t *testing.T) {
+	require.Equal(t, "grpc://scheduler-0.headless:1985", schedulerRPCTarget(schedulerRPCSchemeGRPC, "scheduler-0.headless:1985"))
+	require.Equal(t, "grpcs://scheduler-0.headless:1986", schedulerRPCTarget(schedulerRPCSchemeGRPCS, "scheduler-0.headless:1986"))
+}
+
+func TestSchedulerPortUsesSchemeDefault(t *testing.T) {
+	flags.Set(t, "grpc_port", 1985)
+	flags.Set(t, "grpcs_port", 1986)
+
+	port, err := schedulerPort(&Options{}, schedulerRPCSchemeGRPC)
+	require.NoError(t, err)
+	require.Equal(t, int32(1985), port)
+
+	port, err = schedulerPort(&Options{}, schedulerRPCSchemeGRPCS)
+	require.NoError(t, err)
+	require.Equal(t, int32(1986), port)
+}
+
+func TestSchedulerPortHonorsOverride(t *testing.T) {
+	port, err := schedulerPort(&Options{LocalPortOverride: 1234}, schedulerRPCSchemeGRPCS)
+	require.NoError(t, err)
+	require.Equal(t, int32(1234), port)
+}
+
+func TestSchedulerPortHonorsMyPort(t *testing.T) {
+	t.Setenv("MY_PORT", "4321")
+	flags.Set(t, "grpcs_port", 1986)
+
+	port, err := schedulerPort(&Options{}, schedulerRPCSchemeGRPCS)
+	require.NoError(t, err)
+	require.Equal(t, int32(4321), port)
+}
+
 func getEnv(t *testing.T, opts *schedulerOpts, user string) (*testenv.TestEnv, context.Context) {
 	redisTarget := testredis.Start(t).Target
 	env := enterprise_testenv.GetCustomTestEnv(t, &enterprise_testenv.Options{

@@ -62,11 +62,15 @@ var (
 	maxSchedulingDelay           = flag.Duration("remote_execution.max_scheduling_delay", 5*time.Second, "Max duration that actions can sit in a non-preferred executor's queue before they are executed.")
 	cgroupSettingsEnabled        = flag.Bool("remote_execution.cgroup_settings_enabled", true, "Apply cgroup2 settings to Linux executions.")
 	proactiveCancellationEnabled = flag.Bool("remote_execution.proactive_cancellation_enabled", false, "If true, the scheduler will proactively cancel task reservations on executors when a task is completed by another executor.")
+	schedulerRPCSchemeFlag       = flag.String("remote_execution.scheduler_rpc_scheme", "grpc", "Protocol scheme to use when this scheduler dials another scheduler to enqueue task reservations. Supported values: grpc, grpcs.")
 	debugExecutorLabelsKey       = flag.String("remote_execution.debug_executor_labels_key", "", "If set, requests using the 'debug-executor-labels' platform property must also set the 'debug-executor-labels-key' platform property to this value, otherwise the requested labels are ignored. If empty, anyone can use 'debug-executor-labels'.", flag.Secret)
 	unclaimedTasksCacheTTL       = flag.Duration("remote_execution.unclaimed_tasks_cache_ttl", 1*time.Second, "If set, cache the unclaimed task list in memory for up to this TTL", flag.Internal)
 )
 
 const (
+	schedulerRPCSchemeGRPC  = "grpc"
+	schedulerRPCSchemeGRPCS = "grpcs"
+
 	// This number controls how many reservations the scheduler will
 	// enqueue (across executor nodes) for each task. Typically this
 	// is 2 -- we've increased it to 3 because each executor will
@@ -1115,16 +1119,18 @@ type schedulerClientCache struct {
 
 	mu      sync.Mutex
 	clients map[string]*schedulerClient
+	scheme  string
 	// Address of this app instance. If the destination address matches the address of this instance, we call into
 	// the local scheduler server instance directly instead of using RPCs.
 	localServerHostPort string
 	localServer         *SchedulerServer
 }
 
-func newSchedulerClientCache(env environment.Env, localServerHostPort string, localServer *SchedulerServer) *schedulerClientCache {
+func newSchedulerClientCache(env environment.Env, localServerHostPort string, localServer *SchedulerServer, scheme string) *schedulerClientCache {
 	cache := &schedulerClientCache{
 		env:                 env,
 		clients:             make(map[string]*schedulerClient),
+		scheme:              scheme,
 		localServerHostPort: localServerHostPort,
 		localServer:         localServer,
 	}
@@ -1161,7 +1167,7 @@ func (c *schedulerClientCache) get(hostPort string) (*schedulerClient, error) {
 			client = &schedulerClient{localServer: c.localServer}
 		} else {
 			// This is non-blocking so it's OK to hold the lock.
-			conn, err := grpc_client.DialInternalWithPoolSize(c.env, "grpc://"+hostPort, 2)
+			conn, err := grpc_client.DialInternalWithPoolSize(c.env, schedulerRPCTarget(c.scheme, hostPort), 2)
 			if err != nil {
 				return nil, status.UnavailableErrorf("could not dial scheduler: %s", err)
 			}
@@ -1171,6 +1177,31 @@ func (c *schedulerClientCache) get(hostPort string) (*schedulerClient, error) {
 	}
 	client.lastAccess = time.Now()
 	return client, nil
+}
+
+func schedulerRPCScheme() (string, error) {
+	scheme := strings.TrimSpace(strings.ToLower(*schedulerRPCSchemeFlag))
+	switch scheme {
+	case schedulerRPCSchemeGRPC, schedulerRPCSchemeGRPCS:
+		return scheme, nil
+	default:
+		return "", status.InvalidArgumentErrorf("remote_execution.scheduler_rpc_scheme must be one of %q or %q, got %q", schedulerRPCSchemeGRPC, schedulerRPCSchemeGRPCS, *schedulerRPCSchemeFlag)
+	}
+}
+
+func schedulerRPCTarget(scheme, hostPort string) string {
+	return fmt.Sprintf("%s://%s", scheme, hostPort)
+}
+
+func schedulerPort(options *Options, scheme string) (int32, error) {
+	if options.LocalPortOverride != 0 {
+		return options.LocalPortOverride, nil
+	}
+	portFlagName := "grpc_port"
+	if scheme == schedulerRPCSchemeGRPCS {
+		portFlagName = "grpcs_port"
+	}
+	return resources.GetMyPortFromEnvOrFlag(portFlagName)
 }
 
 // Options for overriding server behavior needed for testing.
@@ -1246,17 +1277,18 @@ func NewSchedulerServerWithOptions(env environment.Env, options *Options) (*Sche
 	if taskRouter == nil {
 		return nil, status.FailedPreconditionError("Missing task router in env")
 	}
+	schedulerScheme, err := schedulerRPCScheme()
+	if err != nil {
+		return nil, err
+	}
 
 	ownHostname, err := resources.GetMyHostname()
 	if err != nil {
 		return nil, status.UnknownErrorf("Could not determine own hostname: %s", err)
 	}
-	ownPort := options.LocalPortOverride
-	if ownPort == 0 {
-		ownPort, err = resources.GetMyPort()
-		if err != nil {
-			return nil, status.UnknownErrorf("Could not determine own port: %s", err)
-		}
+	ownPort, err := schedulerPort(options, schedulerScheme)
+	if err != nil {
+		return nil, status.UnknownErrorf("Could not determine own port: %s", err)
 	}
 
 	clock := env.GetClock()
@@ -1293,7 +1325,7 @@ func NewSchedulerServerWithOptions(env environment.Env, options *Options) (*Sche
 		leaseDuration:                     options.LeaseDuration,
 		leaseGracePeriod:                  options.LeaseGracePeriod,
 	}
-	s.schedulerClientCache = newSchedulerClientCache(env, s.ownHostPort, s)
+	s.schedulerClientCache = newSchedulerClientCache(env, s.ownHostPort, s, schedulerScheme)
 	return s, nil
 }
 
