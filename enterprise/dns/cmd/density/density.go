@@ -6,11 +6,13 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/dns/server"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/configsecrets"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments/gcsflagsync"
+	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore/gcs"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
@@ -34,7 +36,16 @@ var (
 	zoneFile   = flag.String("dns.zone_file", "", "Path to a zone file containing the DNS records to serve")
 	zoneOrigin = flag.String("dns.zone_origin", "", "Origin domain to qualify relative names in the zone file against. If empty, names must be fully qualified.")
 
-	acmeChallengeNameservers = flag.Slice[string]("dns.acme_challenge_nameservers", []string{}, "Nameservers to which any in-zone _acme-challenge.* query is referred, delegating ACME DNS-01 validation to a dynamic provider (e.g. Cloud DNS). Empty disables.")
+	// Self-hosted ACME DNS-01: when dns.acme.gcs.bucket is set, density accepts
+	// RFC2136 UPDATEs for _acme-challenge TXT records (authenticated by the TSIG
+	// key) and serves them from the GCS bucket, shared across replicas.
+	acmeGCSBucket   = flag.String("dns.acme.gcs.bucket", "", "GCS bucket for self-hosted ACME _acme-challenge TXT records. Setting this enables RFC2136 UPDATE handling.")
+	acmeGCSCredFile = flag.String("dns.acme.gcs.credentials_file", "", "Path to a JSON credentials file for the ACME GCS bucket.")
+	acmeGCSCreds    = flag.String("dns.acme.gcs.credentials", "", "JSON credentials for the ACME GCS bucket.", flag.Secret)
+	acmeGCSProject  = flag.String("dns.acme.gcs.project_id", "", "GCP project ID owning the ACME GCS bucket.")
+	acmeCacheTTL    = flag.Duration("dns.acme.cache_ttl", 10*time.Second, "How long to cache ACME _acme-challenge TXT lookups before re-reading from GCS.")
+	acmeTSIGName    = flag.String("dns.acme.tsig_key_name", "", "TSIG key name authorizing RFC2136 UPDATEs of _acme-challenge records.")
+	acmeTSIGSecret  = flag.String("dns.acme.tsig_secret", "", "Base64 TSIG secret for dns.acme.tsig_key_name.", flag.Secret)
 )
 
 func main() {
@@ -116,7 +127,23 @@ func startDNSServer(env *real_environment.RealEnv) error {
 	if err != nil {
 		return status.WrapErrorf(err, "parse zone file %q", *zoneFile)
 	}
-	handler := server.NewHandler(env, records, *acmeChallengeNameservers)
+
+	// Self-hosted ACME (RFC2136 UPDATE + blobstore-backed challenge store) is
+	// enabled by configuring an ACME GCS bucket; the TSIG key authorizes updates.
+	var acme *server.Challenges
+	tsigSecrets := map[string]string{}
+	if *acmeGCSBucket != "" {
+		bs, err := gcs.NewGCSBlobStore(context.Background(), *acmeGCSBucket, *acmeGCSCredFile, *acmeGCSCreds, *acmeGCSProject, false /*=enableCompression*/)
+		if err != nil {
+			return status.WrapError(err, "init ACME challenge blobstore")
+		}
+		acme = server.NewChallenges(bs, *acmeCacheTTL)
+		if *acmeTSIGName != "" {
+			tsigSecrets[dns.Fqdn(*acmeTSIGName)] = *acmeTSIGSecret
+		}
+	}
+
+	handler := server.NewHandler(env, records, acme)
 
 	addr := fmt.Sprintf("%s:%d", *listen, *dnsPort)
 
@@ -132,8 +159,8 @@ func startDNSServer(env *real_environment.RealEnv) error {
 		packetConn.Close()
 		return status.WrapErrorf(err, "bind DNS tcp %s", addr)
 	}
-	udpServer := &dns.Server{PacketConn: packetConn, Handler: handler}
-	tcpServer := &dns.Server{Listener: listener, Handler: handler}
+	udpServer := &dns.Server{PacketConn: packetConn, Handler: handler, TsigSecret: tsigSecrets}
+	tcpServer := &dns.Server{Listener: listener, Handler: handler, TsigSecret: tsigSecrets}
 
 	for _, s := range []*dns.Server{udpServer, tcpServer} {
 		go func() {
