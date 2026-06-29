@@ -41,9 +41,6 @@ var (
 )
 
 func Register(env *real_environment.RealEnv) error {
-	if !*quotaManagerEnabled {
-		return nil
-	}
 	qm, err := NewQuotaManager(env)
 	if err != nil {
 		return err
@@ -87,6 +84,10 @@ func (qm *QuotaManager) checkGroupBlocked(ctx context.Context) error {
 func (qm *QuotaManager) Allow(ctx context.Context, namespace string, quantity int64) error {
 	if err := qm.checkGroupBlocked(ctx); err != nil {
 		return err
+	}
+
+	if !*quotaManagerEnabled {
+		return nil
 	}
 
 	key, err := quota.GetKey(ctx, qm.env)
