@@ -490,8 +490,11 @@ func TestMirrorConfig(t *testing.T) {
 
 	const bearerChallenge = `Bearer realm="https://auth.example.test/token",service="registry.example.test",scope="repository:myimage:pull"`
 	upstream3RequireAuth := atomic.Bool{}
+	upstream3OmitManifestContentLength := atomic.Bool{}
 	upstream3Counter := atomic.Int32{}
 	upstream3AuthedRequests := atomic.Int32{}
+	var upstream3RawManifest []byte
+	var upstream3ManifestDigest string
 	upstream3 := testregistry.Run(t, testregistry.Opts{
 		HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
 			upstream3Counter.Add(1)
@@ -506,6 +509,16 @@ func TestMirrorConfig(t *testing.T) {
 					return false
 				}
 				upstream3AuthedRequests.Add(1)
+			}
+			if upstream3OmitManifestContentLength.Load() && r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/manifests/") {
+				w.Header().Set("Content-Type", "application/vnd.oci.image.manifest.v1+json")
+				w.Header().Set("Docker-Content-Digest", upstream3ManifestDigest)
+				w.WriteHeader(http.StatusOK)
+				if flusher, ok := w.(http.Flusher); ok {
+					flusher.Flush()
+				}
+				_, _ = w.Write(upstream3RawManifest)
+				return false
 			}
 			return true
 		},
@@ -569,6 +582,11 @@ func TestMirrorConfig(t *testing.T) {
 	require.Greater(t, len(layers3), 0)
 	layer3Digest, err := layers3[0].Digest()
 	require.NoError(t, err)
+	upstream3RawManifest, err = image3.RawManifest()
+	require.NoError(t, err)
+	digest3, err := image3.Digest()
+	require.NoError(t, err)
+	upstream3ManifestDigest = digest3.String()
 	upstream3RequireAuth.Store(true)
 
 	// Also push an image to upstream1 under a plain name for the legacy
@@ -685,6 +703,8 @@ func TestMirrorConfig(t *testing.T) {
 
 	t.Run("authenticated manifest request on mirror subdomain forwards authorization upstream", func(t *testing.T) {
 		before := upstream3AuthedRequests.Load()
+		upstream3OmitManifestContentLength.Store(true)
+		t.Cleanup(func() { upstream3OmitManifestContentLength.Store(false) })
 
 		path := "/v2/ns3/myimage/manifests/latest"
 		req, err := http.NewRequest(http.MethodGet, "http://"+mirrorHostPort+path, nil)
@@ -695,11 +715,9 @@ func TestMirrorConfig(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, http.StatusOK, resp.StatusCode)
 
-		expectedManifest, err := image3.RawManifest()
-		require.NoError(t, err)
 		body, err := io.ReadAll(resp.Body)
 		require.NoError(t, err)
-		require.Equal(t, expectedManifest, body)
+		require.Equal(t, upstream3RawManifest, body)
 		require.Greater(t, upstream3AuthedRequests.Load()-before, int32(0))
 	})
 
