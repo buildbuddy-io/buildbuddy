@@ -195,7 +195,7 @@ func register() {
 		},
 		{
 			Name:    "explain",
-			Help:    "Explains your build using collected profiles.",
+			Help:    "Explains your build using collected profiles and compact execution logs.",
 			Handler: explain.HandleExplain,
 			Flags:   explain.Flags,
 		},

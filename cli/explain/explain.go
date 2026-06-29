@@ -1,6 +1,7 @@
 package explain
 
 import (
+	"context"
 	"errors"
 	"flag"
 	"fmt"
@@ -18,9 +19,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/explain/compactgraph"
 	"github.com/buildbuddy-io/buildbuddy/cli/flaghistory"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
-	"github.com/buildbuddy-io/buildbuddy/cli/util"
+	"github.com/buildbuddy-io/buildbuddy/cli/util/download"
 	"github.com/buildbuddy-io/buildbuddy/proto/spawn"
 	"github.com/buildbuddy-io/buildbuddy/proto/spawn_diff"
+	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
@@ -33,7 +35,7 @@ import (
 const (
 	explainCmdUsage = `
 usage: bb explain [--old {FILE | INVOCATION_ID}] [--new {FILE | INVOCATION_ID}] [--output_format {text|json|proto}] [--nondeterministic_only]
-       bb explain timing-profile INVOCATION_ID
+       bb explain profile INVOCATION_ID
 
 Displays a human-readable, structural diff of two compact execution logs, either
 obtained from the given invocations or located at the given file paths.
@@ -54,7 +56,7 @@ Output formats:
   proto  Structured output as binary proto
 
 Subcommands:
-  timing-profile   Analyzes the timing profile for an invocation.
+  profile   Analyzes the timing profile for an invocation.
 `
 )
 
@@ -95,8 +97,8 @@ var (
 )
 
 func HandleExplain(args []string) (int, error) {
-	if len(args) > 0 && args[0] == "timing-profile" {
-		return handleTimingProfile(args[1:])
+	if len(args) > 0 && args[0] == "profile" {
+		return handleProfile(args[1:])
 	}
 	explainCmd.Var(profilePaths, "profile", "Path that a CPU profile should be written to.")
 	if err := arg.ParseFlagSet(explainCmd, args); err != nil {
@@ -269,7 +271,25 @@ func openLog(pathOrId string) (io.ReadCloser, error) {
 	}
 	matches := uuidPattern.FindStringSubmatch(pathOrId)
 	invocationId := matches[1]
-	return util.OpenInvocationFile(invocationId, *apiTarget, "execution log", findExecutionLog)
+
+	ctx := context.Background()
+	target, err := download.ResolveTarget(*apiTarget)
+	if err != nil {
+		return nil, err
+	}
+	conn, err := grpc_client.DialSimple(target)
+	if err != nil {
+		return nil, err
+	}
+
+	// Avoid reading the entire log into memory at once.
+	in, out := io.Pipe()
+	go func() {
+		err := download.GetInvocationFile(ctx, conn, out, invocationId, "execution log", findExecutionLog)
+		conn.Close()
+		out.CloseWithError(err)
+	}()
+	return in, nil
 }
 
 func findExecutionLog(inv *inpb.Invocation) *bespb.File {
