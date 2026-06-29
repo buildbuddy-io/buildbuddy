@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -55,7 +56,6 @@ const (
 )
 
 // Mirror configures OCI registry mirrors on the registry domain.
-// Currently only registries that do not require auth can be mirrored.
 type Mirror struct {
 	// The registry subdomain that must match for this mirror config to be in effect.
 	SubDomain string `yaml:"subdomain" json:"subdomain"`
@@ -78,6 +78,36 @@ var (
 var (
 	errNotFound = status.NotFoundError("not found")
 )
+
+type upstreamHTTPStatusError struct {
+	statusCode      int
+	wwwAuthenticate string
+	message         string
+}
+
+func (e *upstreamHTTPStatusError) Error() string {
+	return e.message
+}
+
+func upstreamHTTPError(resp *http.Response, message string) error {
+	return &upstreamHTTPStatusError{
+		statusCode:      resp.StatusCode,
+		wwwAuthenticate: resp.Header.Get(headerWWWAuthenticate),
+		message:         message,
+	}
+}
+
+func writeUpstreamHTTPError(w http.ResponseWriter, err error) bool {
+	var upstreamErr *upstreamHTTPStatusError
+	if !errors.As(err, &upstreamErr) {
+		return false
+	}
+	if upstreamErr.wwwAuthenticate != "" {
+		w.Header().Set(headerWWWAuthenticate, upstreamErr.wwwAuthenticate)
+	}
+	http.Error(w, upstreamErr.message, upstreamErr.statusCode)
+	return true
+}
 
 // manifestResolveResult holds the outcome of a tag->digest resolution so it can be
 // shared across concurrent requests via singleflight.
@@ -170,7 +200,7 @@ func (r *registry) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 // The OCI registry is intended to be a read-through cache for public OCI images
 // (to cut down on the number of API calls to Docker Hub and on bandwidth).
 // handleRegistryRequest implements just enough of the [OCI Distribution Spec](https://github.com/opencontainers/distribution-spec/blob/main/spec.md)
-// to allow clients to pull OCI images from remote registries that do not require authentication.
+// to allow clients to pull OCI images from remote registries.
 // This registry does not support resumable pulls via the Range header.
 func (r *registry) handleRegistryRequest(w http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
@@ -259,6 +289,42 @@ func isRegistryDomainRequest(req *http.Request) (string, bool) {
 	return strings.CutSuffix(host, "."+*registryDomain)
 }
 
+func upstreamRegistryScheme(registry string) string {
+	host := registry
+	if h, _, err := net.SplitHostPort(registry); err == nil {
+		host = h
+	}
+	if host == "localhost" || net.ParseIP(host) != nil {
+		return "http"
+	}
+	return "https"
+}
+
+func joinRepository(prefix, repository string) string {
+	prefix = strings.Trim(prefix, "/")
+	repository = strings.Trim(repository, "/")
+	if prefix == "" {
+		return repository
+	}
+	if repository == "" {
+		return prefix
+	}
+	return prefix + "/" + repository
+}
+
+func copyUpstreamHeaders(w http.ResponseWriter, headers http.Header) {
+	for _, header := range []string{
+		headerContentType,
+		headerContentLength,
+		headerDockerContentDigest,
+		headerWWWAuthenticate,
+	} {
+		for _, value := range headers.Values(header) {
+			w.Header().Add(header, value)
+		}
+	}
+}
+
 func (r *registry) determineUpstreamRepository(ctx context.Context, req *http.Request, repository string) (string, error) {
 	// If the request is not for the dedicated registry domain, fallback to
 	// the previous DockerHub mirroring behavior.
@@ -286,7 +352,7 @@ func (r *registry) determineUpstreamRepository(ctx context.Context, req *http.Re
 		}
 
 		// Rewrite the target according to the mirroring config.
-		return mirror.RemoteRegistry + "/" + mirror.RemoteRepository + "/" + after, nil
+		return joinRepository(mirror.RemoteRegistry, joinRepository(mirror.RemoteRepository, after)), nil
 	}
 	return "", errNotFound
 }
@@ -298,21 +364,8 @@ func (r *registry) handleV2Request(ctx context.Context, w http.ResponseWriter, i
 		return
 	}
 
-	// If the request is not for the DockerHub mirror, for now just return
-	// an OK response which tells the client that no auth is required. For now,
-	// we are only mirroring repositories that don't require auth.
-	if remoteRegistry != ctrname.DefaultRegistry {
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("{}"))
-		return
-	}
-
-	scheme := "https"
-	if inreq.URL.Scheme != "" {
-		scheme = inreq.URL.Scheme
-	}
 	u := &url.URL{
-		Scheme: scheme,
+		Scheme: upstreamRegistryScheme(remoteRegistry),
 		Host:   remoteRegistry,
 		Path:   "/v2/",
 	}
@@ -327,9 +380,7 @@ func (r *registry) handleV2Request(ctx context.Context, w http.ResponseWriter, i
 		return
 	}
 	defer upresp.Body.Close()
-	if upresp.Header.Get(headerWWWAuthenticate) != "" {
-		w.Header().Add(headerWWWAuthenticate, upresp.Header.Get(headerWWWAuthenticate))
-	}
+	copyUpstreamHeaders(w, upresp.Header)
 	w.WriteHeader(upresp.StatusCode)
 	_, err = io.Copy(w, upresp.Body)
 	if err != nil && err != context.Canceled {
@@ -388,7 +439,7 @@ func (r *registry) resolveManifestDigest(ctx context.Context, acceptHeaders []st
 		return manifestResolveResult{}, nil
 	}
 	if headresp.StatusCode != http.StatusOK {
-		return manifestResolveResult{}, status.UnavailableErrorf("could not fetch manifest for %s, upstream HTTP status %d", ref.Context(), headresp.StatusCode)
+		return manifestResolveResult{}, upstreamHTTPError(headresp, fmt.Sprintf("could not fetch manifest for %s, upstream HTTP status %d", ref.Context(), headresp.StatusCode))
 	}
 	value := headresp.Header.Get(headerDockerContentDigest)
 	hash, err := parseDockerContentDigestHeader(value)
@@ -431,7 +482,9 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 		// TODO(dan): Docker Hub responds with Docker-Content-Digest headers. Other registries may not. Make code resilient to header absence.
 		resolved, err := r.resolveTagToDigest(ctx, inreq, ociResourceType, ref)
 		if err != nil {
-			if status.IsNotFoundError(err) {
+			if writeUpstreamHTTPError(w, err) {
+				return
+			} else if status.IsNotFoundError(err) {
 				http.Error(w, err.Error(), http.StatusNotFound)
 			} else {
 				http.Error(w, err.Error(), http.StatusServiceUnavailable)
@@ -492,7 +545,9 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 		err = r.fetchAndCache(ctx, inreq, bsClient, acClient, ociResourceType, resolvedRef, hash, ref)
 	}
 	if err != nil {
-		if status.IsNotFoundError(err) {
+		if writeUpstreamHTTPError(w, err) {
+			return
+		} else if status.IsNotFoundError(err) {
 			http.Error(w, fmt.Sprintf("Could not find %q", resolvedRef.Context()), http.StatusNotFound)
 		} else {
 			log.CtxErrorf(ctx, "error fetching %q from upstream: %s", resolvedRef.Context(), err)
@@ -522,7 +577,7 @@ func (r *registry) fetchAndCache(ctx context.Context, inreq *http.Request, bsCli
 		return status.NotFoundErrorf("could not find %s", resolvedRef.Context())
 	}
 	if upresp.StatusCode != http.StatusOK {
-		return status.UnavailableErrorf("upstream returned HTTP %d for %s", upresp.StatusCode, resolvedRef.Context())
+		return upstreamHTTPError(upresp, fmt.Sprintf("upstream returned HTTP %d for %s", upresp.StatusCode, resolvedRef.Context()))
 	}
 
 	contentLength, err := strconv.ParseInt(upresp.Header.Get(headerContentLength), 10, 64)
@@ -609,6 +664,10 @@ func (r *registry) resolveTagToDigest(ctx context.Context, inreq *http.Request, 
 		result, err = resolve(ctx)
 	}
 	if err != nil {
+		var upstreamErr *upstreamHTTPStatusError
+		if errors.As(err, &upstreamErr) {
+			return manifestResolveResult{}, err
+		}
 		return manifestResolveResult{}, status.UnavailableErrorf("could not resolve digest for manifest %q: %s", ref.Context(), err)
 	}
 	if !result.exists {
