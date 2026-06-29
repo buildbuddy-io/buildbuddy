@@ -357,12 +357,10 @@ func (pu *partitionUsage) processEviction(ctx context.Context) {
 				// batches, so stop launching new deletes and return.
 				return
 			}
-			inner.Add(1)
-			go func() {
-				defer inner.Done()
+			inner.Go(func() {
 				defer sem.Release(1)
 				pu.sendDeleteRequests(ctx, batch)
-			}()
+			})
 		}
 	})
 	// Block until the batcher, the dispatcher, and every in-flight
@@ -782,10 +780,8 @@ func (ut *Tracker) Start() {
 // grace) so it always returns within that budget: it drains buffered GCS
 // deletes when there is time, and degrades to a clean abandon when there isn't.
 func (ut *Tracker) Stop(ctx context.Context) {
-	// One budget for the whole GCS-drain phase, measured from now and never
-	// exceeding the caller's shutdown grace. This makes the drain "within
-	// gcsDeleteDrainTimeout of Stop" rather than per-partition, so draining all
-	// partitions in parallel below shares a single deadline.
+	// A single drain budget for all partitions, measured from Stop and capped
+	// by the shutdown grace.
 	drainCtx, cancel := context.WithTimeout(ctx, *gcsDeleteDrainTimeout)
 	defer cancel()
 
