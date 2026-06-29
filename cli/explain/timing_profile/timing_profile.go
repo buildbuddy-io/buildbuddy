@@ -1,7 +1,8 @@
-package explain
+package timing_profile
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"io"
@@ -10,6 +11,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/login"
+	"github.com/buildbuddy-io/buildbuddy/cli/parser"
 	"github.com/buildbuddy-io/buildbuddy/cli/util/download"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 
@@ -32,9 +34,10 @@ Analyzes the timing profile for the given invocation.
 var (
 	profileFlags  = flag.NewFlagSet("profile", flag.ContinueOnError)
 	profileTarget = profileFlags.String("target", login.DefaultApiTarget, "The API target to use for fetching the timing profile.")
+	maxTopSpans   = profileFlags.Int("n", 100, "The maximum number of slowest actions to include in the output.")
 )
 
-func handleProfile(args []string) (int, error) {
+func HandleProfile(args []string) (int, error) {
 	if err := arg.ParseFlagSet(profileFlags, args); err != nil {
 		if !errors.Is(err, flag.ErrHelp) {
 			log.Printf("Failed to parse flags: %s", err)
@@ -54,7 +57,7 @@ func analyzeTimingProfile(invocationIDOrURL string) (int, error) {
 	ctx := context.Background()
 
 	invocationID := invocationIDOrURL
-	if matches := uuidPattern.FindStringSubmatch(invocationIDOrURL); matches != nil {
+	if matches := parser.UuidPattern.FindStringSubmatch(invocationIDOrURL); matches != nil {
 		invocationID = matches[1]
 	}
 
@@ -64,7 +67,16 @@ func analyzeTimingProfile(invocationIDOrURL string) (int, error) {
 	}
 	defer profile.Close()
 
-	// TODO: Analyze profile.
+	parsedProfile, err := ParseTimingProfile(profile, *maxTopSpans)
+	if err != nil {
+		return -1, err
+	}
+
+	json, err := json.Marshal(parsedProfile)
+	if err != nil {
+		return -1, err
+	}
+	log.Printf("%s", json)
 	return 0, nil
 }
 

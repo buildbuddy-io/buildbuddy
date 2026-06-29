@@ -4,17 +4,15 @@ package(default_visibility = ["//cli:__subpackages__"])
 
 go_library(
     name = "explain",
-    srcs = [
-        "explain.go",
-        "timing_profile.go",
-    ],
+    srcs = ["explain.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/explain",
     deps = [
         "//cli/arg",
         "//cli/explain/compactgraph",
+        "//cli/explain/timing_profile",
         "//cli/flaghistory",
         "//cli/log",
-        "//cli/login",
+        "//cli/parser",
         "//cli/util/download",
         "//proto:build_event_stream_go_proto",
         "//proto:buildbuddy_service_go_proto",
