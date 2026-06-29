@@ -443,20 +443,43 @@ func TestDispatch_TaskSizeOverridesExperiment(t *testing.T) {
 func TestDispatch_ContainerImageRewriteExperiment(t *testing.T) {
 	for _, tc := range []struct {
 		name                  string
+		rewriteVariant        string
 		containerImage        string
 		wantContainerImage    string
 		wantExperimentVariant string
 	}{
 		{
 			name:                  "matching prefix is rewritten",
+			rewriteVariant:        `"prefix": "gcr.io/flame-public/", "replacement": "buildbuddy.bbcr.io/public/"`,
 			containerImage:        "docker://gcr.io/flame-public/rbe-ubuntu:latest",
 			wantContainerImage:    "docker://buildbuddy.bbcr.io/public/rbe-ubuntu:latest",
 			wantExperimentVariant: "bbcr",
 		},
 		{
 			name:                  "non-matching prefix is not rewritten",
+			rewriteVariant:        `"prefix": "gcr.io/flame-public/", "replacement": "buildbuddy.bbcr.io/public/"`,
 			containerImage:        "docker://us-docker.pkg.dev/other/image:latest",
 			wantContainerImage:    "",
+			wantExperimentVariant: "bbcr",
+		},
+		{
+			name: "matching rewrite from multiple rules is rewritten",
+			rewriteVariant: `"rewrites": [
+            {"prefix": "gcr.io/flame-public/", "replacement": "buildbuddy.bbcr.io/public/"},
+            {"prefix": "public.ecr.aws/", "replacement": "ecr.bbcr.dev/public/"}
+          ]`,
+			containerImage:        "docker://public.ecr.aws/example-org/example-image:latest",
+			wantContainerImage:    "docker://ecr.bbcr.dev/public/example-org/example-image:latest",
+			wantExperimentVariant: "bbcr",
+		},
+		{
+			name: "only first matching rewrite is applied",
+			rewriteVariant: `"rewrites": [
+            {"prefix": "public.ecr.aws/", "replacement": "first.example.com/"},
+            {"prefix": "public.ecr.aws/", "replacement": "second.example.com/"}
+          ]`,
+			containerImage:        "docker://public.ecr.aws/example-org/example-image:latest",
+			wantContainerImage:    "docker://first.example.com/example-org/example-image:latest",
 			wantExperimentVariant: "bbcr",
 		},
 	} {
@@ -472,8 +495,7 @@ func TestDispatch_ContainerImageRewriteExperiment(t *testing.T) {
       "state": "ENABLED",
       "variants": {
         "bbcr": {
-          "prefix": "gcr.io/flame-public/",
-          "replacement": "buildbuddy.bbcr.io/public/"
+          `+tc.rewriteVariant+`
         },
         "default": {}
       },
