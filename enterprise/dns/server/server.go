@@ -40,6 +40,11 @@ const (
 	// acmeTTL is the TTL on served _acme-challenge TXT records. Short, since
 	// challenges are transient.
 	acmeTTL = 300
+
+	// acmeBlobstoreTimeout bounds the blobstore reads/writes made on the DNS
+	// request path so a slow or hung backend can't block handler goroutines
+	// indefinitely.
+	acmeBlobstoreTimeout = 10 * time.Second
 )
 
 type handler struct {
@@ -106,7 +111,9 @@ func (h *handler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 	// with a current value is answered; one without is authoritative NODATA.
 	if h.acme != nil && h.isACMEChallengeName(qName) {
 		if qType == dns.TypeTXT {
-			if vals := h.acme.TXT(context.Background(), qName); len(vals) > 0 {
+			ctx, cancel := context.WithTimeout(context.Background(), acmeBlobstoreTimeout)
+			defer cancel()
+			if vals := h.acme.TXT(ctx, qName); len(vals) > 0 {
 				m.Answer = txtRecords(qName, vals)
 				if err := w.WriteMsg(m); err != nil {
 					log.Warningf("Failed to write ACME challenge answer for %q: %s", qName, err)
@@ -349,7 +356,8 @@ func (h *handler) serveUpdate(w dns.ResponseWriter, r *dns.Msg) {
 		return
 	}
 
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), acmeBlobstoreTimeout)
+	defer cancel()
 	rcode := dns.RcodeSuccess
 	for _, rr := range r.Ns { // RFC2136: the records to apply live in the Ns section.
 		hdr := rr.Header()

@@ -137,7 +137,10 @@ func startDNSServer(env *real_environment.RealEnv) error {
 		if err != nil {
 			return status.WrapError(err, "init ACME challenge blobstore")
 		}
-		acme = server.NewChallenges(bs, *acmeCacheTTL)
+		acme, err = server.NewChallenges(bs, *acmeCacheTTL)
+		if err != nil {
+			return status.WrapError(err, "init ACME challenge store")
+		}
 		if *acmeTSIGName != "" {
 			tsigSecrets[dns.Fqdn(*acmeTSIGName)] = *acmeTSIGSecret
 		}

@@ -530,7 +530,8 @@ func signedUpdate(zone string) *dns.Msg {
 }
 
 func TestSelfHostedACMEChallenge(t *testing.T) {
-	acme := server.NewChallenges(newMemBlobstore(), 10*time.Second)
+	acme, err := server.NewChallenges(newMemBlobstore(), 10*time.Second)
+	require.NoError(t, err)
 	h := server.NewHandler(testenv.GetTestEnv(t), mustRecords(t), acme)
 	const name = "_acme-challenge.cache.buildbuddy.io."
 
@@ -574,7 +575,8 @@ func TestSelfHostedACMEChallenge(t *testing.T) {
 }
 
 func TestSelfHostedACMERejectsUnsignedUpdate(t *testing.T) {
-	acme := server.NewChallenges(newMemBlobstore(), 10*time.Second)
+	acme, err := server.NewChallenges(newMemBlobstore(), 10*time.Second)
+	require.NoError(t, err)
 	h := server.NewHandler(testenv.GetTestEnv(t), mustRecords(t), acme)
 
 	up := new(dns.Msg) // no TSIG
@@ -589,7 +591,8 @@ func TestSelfHostedACMERejectsUnsignedUpdate(t *testing.T) {
 }
 
 func TestSelfHostedACMERejectsNonChallengeUpdate(t *testing.T) {
-	acme := server.NewChallenges(newMemBlobstore(), 10*time.Second)
+	acme, err := server.NewChallenges(newMemBlobstore(), 10*time.Second)
+	require.NoError(t, err)
 	h := server.NewHandler(testenv.GetTestEnv(t), mustRecords(t), acme)
 
 	// A signed UPDATE for a name that isn't an _acme-challenge TXT is refused, so

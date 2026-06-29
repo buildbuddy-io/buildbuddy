@@ -2,26 +2,38 @@ package server
 
 import (
 	"context"
+	"slices"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/util/lib/set"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	"github.com/miekg/dns"
 	"golang.org/x/sync/singleflight"
 )
 
-// acmeBlobPrefix namespaces the per-challenge blobs within the bucket.
-const acmeBlobPrefix = "dns/acme-challenge/"
+const (
+	// acmeBlobPrefix namespaces the per-challenge blobs within the bucket.
+	acmeBlobPrefix = "dns/acme-challenge/"
+
+	// acmeCacheMaxEntries caps the in-memory TXT cache. Bounded so that a flood
+	// of queries for distinct (possibly nonexistent) _acme-challenge.* names
+	// can't grow it without limit; the least-recently-used name is evicted.
+	acmeCacheMaxEntries = 1000
+)
 
 // Challenges stores ACME DNS-01 `_acme-challenge` TXT records in a blobstore --
 // one blob per challenge name -- so every density replica sees the same values
-// without a shared database. Reads go through a short single-flighted cache so
-// concurrent lookups (and repeated polls by Let's Encrypt) collapse to roughly
-// one blobstore read per name per TTL.
+// without a shared database. Reads go through a short single-flighted, TTL'd,
+// LRU-bounded cache so concurrent lookups (and repeated polls by Let's Encrypt)
+// collapse to roughly one blobstore read per name per TTL. Only present values
+// are cached: an "absent" result is never cached, so a query that races ahead
+// of the UPDATE that creates a name can't pin a stale negative answer on a
+// replica (and a flood of misses can't fill the cache).
 //
 // Writes are read-modify-write without compare-and-swap, so two concurrent adds
 // to the *same* name can lose one value; cert-manager re-presents on its
@@ -29,49 +41,48 @@ const acmeBlobPrefix = "dns/acme-challenge/"
 // conflict (separate blobs).
 type Challenges struct {
 	bs  interfaces.Blobstore
-	ttl time.Duration
 	sf  singleflight.Group
-
-	mu  sync.Mutex
-	hot map[string]cachedTXT
+	hot lru.LRU[[]string]
 }
 
-type cachedTXT struct {
-	vals []string
-	at   time.Time
-}
-
-// NewChallenges returns a blobstore-backed challenge store caching lookups for
-// ttl.
-func NewChallenges(bs interfaces.Blobstore, ttl time.Duration) *Challenges {
-	return &Challenges{bs: bs, ttl: ttl, hot: make(map[string]cachedTXT)}
+// NewChallenges returns a blobstore-backed challenge store caching present
+// lookups for ttl (bounded to acmeCacheMaxEntries names).
+func NewChallenges(bs interfaces.Blobstore, ttl time.Duration) (*Challenges, error) {
+	hot, err := lru.New(&lru.Config[[]string]{
+		MaxSize:    acmeCacheMaxEntries,
+		TTL:        ttl,
+		SizeFn:     func([]string) int64 { return 1 },
+		ThreadSafe: true,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &Challenges{bs: bs, hot: hot}, nil
 }
 
 func acmeBlobName(fqdn string) string { return acmeBlobPrefix + dns.CanonicalName(fqdn) }
 
 // TXT returns the current TXT values for an `_acme-challenge` name. Concurrent
-// lookups for the same name collapse to a single blobstore read, and the result
-// (including "absent", i.e. nil) is cached for ttl.
+// lookups for the same name collapse to a single blobstore read, and a present
+// result is cached for ttl. An absent result is not cached.
 func (c *Challenges) TXT(ctx context.Context, fqdn string) []string {
 	fqdn = dns.CanonicalName(fqdn)
 
-	c.mu.Lock()
-	if e, ok := c.hot[fqdn]; ok && time.Since(e.at) < c.ttl {
-		c.mu.Unlock()
-		return e.vals
+	if vals, ok := c.hot.Get(fqdn); ok {
+		return vals
 	}
-	c.mu.Unlock()
 
 	v, _, _ := c.sf.Do(fqdn, func() (any, error) {
 		vals, err := c.read(ctx, fqdn)
 		if err != nil {
-			// Transient read error: serve "absent" but don't poison the cache.
+			// Transient read error: serve "absent" but don't cache it.
 			log.Warningf("ACME challenge read for %q failed: %s", fqdn, err)
 			return []string(nil), nil
 		}
-		c.mu.Lock()
-		c.hot[fqdn] = cachedTXT{vals: vals, at: time.Now()}
-		c.mu.Unlock()
+		// Cache only present values (see the type doc for why "absent" isn't).
+		if len(vals) > 0 {
+			c.hot.Add(fqdn, vals)
+		}
 		return vals, nil
 	})
 	return v.([]string)
@@ -97,7 +108,8 @@ func (c *Challenges) Add(ctx context.Context, fqdn string, vals ...string) error
 	if err != nil {
 		return err
 	}
-	if _, err := c.bs.WriteBlob(ctx, acmeBlobName(fqdn), encodeTXT(union(cur, vals))); err != nil {
+	merged := slices.Collect(set.Union(set.From(cur...), set.From(vals...)))
+	if _, err := c.bs.WriteBlob(ctx, acmeBlobName(fqdn), encodeTXT(merged)); err != nil {
 		return err
 	}
 	c.evict(fqdn)
@@ -116,7 +128,7 @@ func (c *Challenges) Delete(ctx context.Context, fqdn string, vals ...string) er
 	if err != nil {
 		return err
 	}
-	rem := subtract(cur, vals)
+	rem := slices.Collect(set.Difference(set.From(cur...), set.From(vals...)))
 	if len(rem) == 0 {
 		return c.bs.DeleteBlob(ctx, acmeBlobName(fqdn))
 	}
@@ -124,11 +136,7 @@ func (c *Challenges) Delete(ctx context.Context, fqdn string, vals ...string) er
 	return err
 }
 
-func (c *Challenges) evict(fqdn string) {
-	c.mu.Lock()
-	delete(c.hot, fqdn)
-	c.mu.Unlock()
-}
+func (c *Challenges) evict(fqdn string) { c.hot.Remove(fqdn) }
 
 // encodeTXT/decodeTXT store the value set as newline-separated lines.
 func encodeTXT(vals []string) []byte { return []byte(strings.Join(vals, "\n")) }
@@ -138,34 +146,6 @@ func decodeTXT(data []byte) []string {
 	for line := range strings.SplitSeq(string(data), "\n") {
 		if line = strings.TrimSpace(line); line != "" {
 			out = append(out, line)
-		}
-	}
-	return out
-}
-
-func union(a, b []string) []string {
-	seen := make(map[string]struct{}, len(a)+len(b))
-	out := make([]string, 0, len(a)+len(b))
-	for _, group := range [][]string{a, b} {
-		for _, s := range group {
-			if _, ok := seen[s]; !ok {
-				seen[s] = struct{}{}
-				out = append(out, s)
-			}
-		}
-	}
-	return out
-}
-
-func subtract(a, remove []string) []string {
-	drop := make(map[string]struct{}, len(remove))
-	for _, s := range remove {
-		drop[s] = struct{}{}
-	}
-	var out []string
-	for _, s := range a {
-		if _, ok := drop[s]; !ok {
-			out = append(out, s)
 		}
 	}
 	return out
