@@ -1,4 +1,4 @@
-package util
+package download
 
 import (
 	"context"
@@ -12,7 +12,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/login"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
-	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"google.golang.org/grpc/metadata"
 
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
@@ -23,42 +22,27 @@ import (
 
 type InvocationFileSelector func(inv *inpb.Invocation) *bespb.File
 
-func OpenInvocationFile(invocationID, target, description string, selector InvocationFileSelector) (io.ReadCloser, error) {
+// GetInvocationFile downloads the specified file from the given
+// invocation and writes it to w. Pass an io.PipeWriter to stream the contents
+// to a reader without buffering the entire file in memory.
+func GetInvocationFile(ctx context.Context, bsClient bspb.ByteStreamClient, bbClient bbspb.BuildBuddyServiceClient, w io.Writer, invocationID, description string, selector InvocationFileSelector) error {
 	apiKey, err := login.GetAPIKey()
 	if err != nil {
-		return nil, err
+		return err
 	}
-	ctx := metadata.AppendToOutgoingContext(context.Background(), "x-buildbuddy-api-key", apiKey)
-	backend, err := resolveTarget(target)
+	ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", apiKey)
+	resource, err := getInvocationResource(ctx, bbClient, invocationID, description, selector)
 	if err != nil {
-		return nil, err
-	}
-	conn, err := grpc_client.DialSimple(backend)
-	if err != nil {
-		return nil, err
-	}
-	resource, err := getInvocationResource(ctx, conn, invocationID, description, selector)
-	if err != nil {
-		conn.Close()
-		return nil, err
+		return err
 	}
 
-	bsClient := bspb.NewByteStreamClient(conn)
-	// Avoid reading the entire log into memory at once.
-	in, out := io.Pipe()
-	go func() {
-		defer conn.Close()
-		err := cachetools.GetBlob(ctx, bsClient, resource, out)
-		if err != nil {
-			out.CloseWithError(fmt.Errorf("failed to download %s %s for invocation %s: %v", description, resource.DownloadString(), invocationID, err))
-		} else {
-			out.Close()
-		}
-	}()
-	return in, nil
+	if err := cachetools.GetBlob(ctx, bsClient, resource, w); err != nil {
+		return fmt.Errorf("failed to download %s %s for invocation %s: %v", description, resource.DownloadString(), invocationID, err)
+	}
+	return nil
 }
 
-func resolveTarget(target string) (string, error) {
+func ResolveTarget(target string) (string, error) {
 	if target != "" {
 		return target, nil
 	}
@@ -72,8 +56,8 @@ func resolveTarget(target string) (string, error) {
 	return backend, nil
 }
 
-func getInvocationResource(ctx context.Context, conn *grpc_client.ClientConnPool, invocationID, description string, selector InvocationFileSelector) (*digest.CASResourceName, error) {
-	resp, err := bbspb.NewBuildBuddyServiceClient(conn).GetInvocation(ctx, &inpb.GetInvocationRequest{
+func getInvocationResource(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, invocationID, description string, selector InvocationFileSelector) (*digest.CASResourceName, error) {
+	resp, err := bbClient.GetInvocation(ctx, &inpb.GetInvocationRequest{
 		Lookup: &inpb.InvocationLookup{InvocationId: invocationID},
 	})
 	if err != nil {
