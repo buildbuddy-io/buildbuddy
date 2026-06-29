@@ -488,7 +488,31 @@ func TestMirrorConfig(t *testing.T) {
 	})
 	t.Cleanup(func() { upstream2.Shutdown() })
 
-	// Configure registry domain and two mirrors on different subdomains.
+	const bearerChallenge = `Bearer realm="https://auth.example.test/token",service="registry.example.test",scope="repository:myimage:pull"`
+	upstream3RequireAuth := atomic.Bool{}
+	upstream3Counter := atomic.Int32{}
+	upstream3AuthedRequests := atomic.Int32{}
+	upstream3 := testregistry.Run(t, testregistry.Opts{
+		HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
+			upstream3Counter.Add(1)
+			if strings.Contains(r.URL.Path, "//") {
+				http.Error(w, "unexpected double slash in path", http.StatusInternalServerError)
+				return false
+			}
+			if upstream3RequireAuth.Load() && (r.Method == http.MethodGet || r.Method == http.MethodHead) {
+				if r.Header.Get("Authorization") != "Bearer test-token" {
+					w.Header().Set("WWW-Authenticate", bearerChallenge)
+					http.Error(w, "authentication required", http.StatusUnauthorized)
+					return false
+				}
+				upstream3AuthedRequests.Add(1)
+			}
+			return true
+		},
+	})
+	t.Cleanup(func() { upstream3.Shutdown() })
+
+	// Configure registry domain and mirrors on different subdomains.
 	flags.Set(t, "ociregistry.domain", "registry.test")
 	flags.Set(t, "ociregistry.mirrors", []ociregistry.Mirror{
 		{
@@ -502,6 +526,12 @@ func TestMirrorConfig(t *testing.T) {
 			Namespace:        "ns2",
 			RemoteRegistry:   upstream2.Address(),
 			RemoteRepository: "repo2",
+		},
+		{
+			SubDomain:        "mirror3",
+			Namespace:        "ns3",
+			RemoteRegistry:   upstream3.Address(),
+			RemoteRepository: "",
 		},
 	})
 
@@ -531,6 +561,16 @@ func TestMirrorConfig(t *testing.T) {
 	layer2Digest, err := layers2[0].Digest()
 	require.NoError(t, err)
 
+	// Push an image to upstream3 under myimage (for mirror3, which uses an
+	// empty RemoteRepository).
+	_, image3 := upstream3.PushNamedImage(t, "myimage", nil)
+	layers3, err := image3.Layers()
+	require.NoError(t, err)
+	require.Greater(t, len(layers3), 0)
+	layer3Digest, err := layers3[0].Digest()
+	require.NoError(t, err)
+	upstream3RequireAuth.Store(true)
+
 	// Also push an image to upstream1 under a plain name for the legacy
 	// (non-registry-domain) path.
 	legacyImageName, legacyImage := upstream1.PushNamedImage(t, "legacyimage", nil)
@@ -547,6 +587,16 @@ func TestMirrorConfig(t *testing.T) {
 		resp, err := http.DefaultClient.Do(req)
 		require.NoError(t, err)
 		require.Equal(t, http.StatusOK, resp.StatusCode)
+	})
+
+	t.Run("v2 check on authenticated mirror subdomain forwards auth challenge", func(t *testing.T) {
+		req, err := http.NewRequest(http.MethodGet, "http://"+mirrorHostPort+"/v2/", nil)
+		require.NoError(t, err)
+		req.Host = "mirror3.registry.test"
+		resp, err := http.DefaultClient.Do(req)
+		require.NoError(t, err)
+		require.Equal(t, http.StatusUnauthorized, resp.StatusCode)
+		require.Equal(t, bearerChallenge, resp.Header.Get("WWW-Authenticate"))
 	})
 
 	t.Run("pull blob via mirror1 subdomain routes to upstream1", func(t *testing.T) {
@@ -620,6 +670,56 @@ func TestMirrorConfig(t *testing.T) {
 
 		require.Greater(t, upstream1Counter.Load()-u1Before, int32(0))
 		require.Equal(t, int32(0), upstream2Counter.Load()-u2Before)
+	})
+
+	t.Run("unauthenticated manifest request on mirror subdomain forwards auth challenge", func(t *testing.T) {
+		path := "/v2/ns3/myimage/manifests/latest"
+		req, err := http.NewRequest(http.MethodHead, "http://"+mirrorHostPort+path, nil)
+		require.NoError(t, err)
+		req.Host = "mirror3.registry.test"
+		resp, err := http.DefaultClient.Do(req)
+		require.NoError(t, err)
+		require.Equal(t, http.StatusUnauthorized, resp.StatusCode)
+		require.Equal(t, bearerChallenge, resp.Header.Get("WWW-Authenticate"))
+	})
+
+	t.Run("authenticated manifest request on mirror subdomain forwards authorization upstream", func(t *testing.T) {
+		before := upstream3AuthedRequests.Load()
+
+		path := "/v2/ns3/myimage/manifests/latest"
+		req, err := http.NewRequest(http.MethodGet, "http://"+mirrorHostPort+path, nil)
+		require.NoError(t, err)
+		req.Host = "mirror3.registry.test"
+		req.Header.Set("Authorization", "Bearer test-token")
+		resp, err := http.DefaultClient.Do(req)
+		require.NoError(t, err)
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+
+		expectedManifest, err := image3.RawManifest()
+		require.NoError(t, err)
+		body, err := io.ReadAll(resp.Body)
+		require.NoError(t, err)
+		require.Equal(t, expectedManifest, body)
+		require.Greater(t, upstream3AuthedRequests.Load()-before, int32(0))
+	})
+
+	t.Run("authenticated blob request with empty remote repository routes without double slash", func(t *testing.T) {
+		path := "/v2/ns3/myimage/blobs/" + layer3Digest.String()
+		req, err := http.NewRequest(http.MethodGet, "http://"+mirrorHostPort+path, nil)
+		require.NoError(t, err)
+		req.Host = "mirror3.registry.test"
+		req.Header.Set("Authorization", "Bearer test-token")
+		resp, err := http.DefaultClient.Do(req)
+		require.NoError(t, err)
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+
+		body, err := io.ReadAll(resp.Body)
+		require.NoError(t, err)
+		rc, err := layers3[0].Compressed()
+		require.NoError(t, err)
+		expectedBody, err := io.ReadAll(rc)
+		require.NoError(t, err)
+		require.Equal(t, expectedBody, body)
 	})
 
 	t.Run("wrong namespace on mirror subdomain returns not found", func(t *testing.T) {
