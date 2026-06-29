@@ -659,11 +659,26 @@ export default class DrilldownPageComponent extends React.Component<Props, State
       case stats.DrilldownType.EXIT_CODE_DRILLDOWN_TYPE:
         this.navigateDimensionBarClick(encodeExitCodeUrlParam(originalLabel));
         return;
+      case stats.DrilldownType.OS_DRILLDOWN_TYPE:
+        this.navigateGenericFilterBarClick(`os:"${originalLabel}"`);
+        return;
+      case stats.DrilldownType.ARCH_DRILLDOWN_TYPE:
+        this.navigateGenericFilterBarClick(`arch:"${originalLabel}"`);
+        return;
       case stats.DrilldownType.GROUP_ID_DRILLDOWN_TYPE:
       case stats.DrilldownType.DATE_DRILLDOWN_TYPE:
       default:
         return;
     }
+  }
+
+  navigateGenericFilterBarClick(newParam: string) {
+    let result = this.props.search.get("sq") ?? "";
+    if (result) {
+      result += " ";
+    }
+    result += newParam;
+    this.navigateForBarClick("sq", result);
   }
 
   navigateDimensionBarClick(newParam: string) {
@@ -703,6 +718,10 @@ export default class DrilldownPageComponent extends React.Component<Props, State
         return "pool (execution)";
       case stats.DrilldownType.EXIT_CODE_DRILLDOWN_TYPE:
         return "exit code (execution)";
+      case stats.DrilldownType.ARCH_DRILLDOWN_TYPE:
+        return "arch (execution)";
+      case stats.DrilldownType.OS_DRILLDOWN_TYPE:
+        return "os (execution)";
       default:
         return "???";
     }
