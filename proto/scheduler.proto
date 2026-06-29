@@ -332,6 +332,10 @@ message SchedulingMetadata {
   string arch = 3;
   string pool = 4;
 
+  // Explicitly requested workload isolation type.
+  // Can be unset, which means "use the default isolation type."
+  WorkloadIsolationType requested_isolation_type = 17;
+
   reserved 14;
 
   // If set, the task will be scheduled only on nodes matching this hostname
@@ -372,6 +376,16 @@ message SchedulingMetadata {
 
   // cgroup2 settings. Will be set only for Linux executions.
   CgroupSettings cgroup_settings = 12;
+}
+
+enum WorkloadIsolationType {
+  UNKNOWN_ISOLATION_TYPE = 0;
+  BARE_ISOLATION_TYPE = 1;
+  DOCKER_ISOLATION_TYPE = 2;
+  PODMAN_ISOLATION_TYPE = 3;
+  OCI_ISOLATION_TYPE = 4;
+  FIRECRACKER_ISOLATION_TYPE = 5;
+  SANDBOX_ISOLATION_TYPE = 6;
 }
 
 message RoutingConfig {

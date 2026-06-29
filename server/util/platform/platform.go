@@ -172,8 +172,6 @@ const (
 
 	// Property name prefix indicating a custom resource assignment.
 	customResourcePrefix = "resources:"
-
-// If you add a container type, also add it to KnownContainerTypes
 )
 
 // KnownContainerTypes are all the types that are currently supported, or were
@@ -405,7 +403,54 @@ const (
 	FirecrackerContainerType ContainerType = "firecracker"
 	OCIContainerType         ContainerType = "oci"
 	SandboxContainerType     ContainerType = "sandbox"
+
+	// If you add a container type, also add it to KnownContainerTypes
+	// and update the WorkloadIsolationType proto in scheduler.proto
 )
+
+// IsolationTypeFromString returns the WorkloadIsolationType enum value
+// corresponding to the given container type string (e.g. "firecracker"). The
+// returned bool is false if the string is not a known isolation type.
+func IsolationTypeFromString(s string) (scpb.WorkloadIsolationType, bool) {
+	switch ContainerType(s) {
+	case BareContainerType:
+		return scpb.WorkloadIsolationType_BARE_ISOLATION_TYPE, true
+	case DockerContainerType:
+		return scpb.WorkloadIsolationType_DOCKER_ISOLATION_TYPE, true
+	case PodmanContainerType:
+		return scpb.WorkloadIsolationType_PODMAN_ISOLATION_TYPE, true
+	case OCIContainerType:
+		return scpb.WorkloadIsolationType_OCI_ISOLATION_TYPE, true
+	case FirecrackerContainerType:
+		return scpb.WorkloadIsolationType_FIRECRACKER_ISOLATION_TYPE, true
+	case SandboxContainerType:
+		return scpb.WorkloadIsolationType_SANDBOX_ISOLATION_TYPE, true
+	default:
+		return scpb.WorkloadIsolationType_UNKNOWN_ISOLATION_TYPE, false
+	}
+}
+
+// IsolationTypeToString returns the container type string corresponding to the
+// given WorkloadIsolationType enum value (e.g. "firecracker"). The returned
+// bool is false if the enum value is not a known isolation type.
+func IsolationTypeToString(t scpb.WorkloadIsolationType) (string, bool) {
+	switch t {
+	case scpb.WorkloadIsolationType_BARE_ISOLATION_TYPE:
+		return string(BareContainerType), true
+	case scpb.WorkloadIsolationType_DOCKER_ISOLATION_TYPE:
+		return string(DockerContainerType), true
+	case scpb.WorkloadIsolationType_PODMAN_ISOLATION_TYPE:
+		return string(PodmanContainerType), true
+	case scpb.WorkloadIsolationType_OCI_ISOLATION_TYPE:
+		return string(OCIContainerType), true
+	case scpb.WorkloadIsolationType_FIRECRACKER_ISOLATION_TYPE:
+		return string(FirecrackerContainerType), true
+	case scpb.WorkloadIsolationType_SANDBOX_ISOLATION_TYPE:
+		return string(SandboxContainerType), true
+	default:
+		return "", false
+	}
+}
 
 // ParseProperties parses the client provided properties into a struct.
 //

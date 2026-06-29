@@ -19,6 +19,31 @@ import (
 	gstatus "google.golang.org/grpc/status"
 )
 
+func TestIsolationTypeStringConversion(t *testing.T) {
+	// Every known container type should map to an isolation type enum value
+	// and back to a non-empty string, round-tripping to the original value.
+	for _, ct := range KnownContainerTypes {
+		isolationType, ok := IsolationTypeFromString(string(ct))
+		require.True(t, ok, "IsolationTypeFromString(%q) should be ok", ct)
+
+		s, ok := IsolationTypeToString(isolationType)
+		require.True(t, ok, "IsolationTypeToString(%v) should be ok", isolationType)
+		require.NotEmpty(t, s, "IsolationTypeToString(%v) should not return an empty string for container type %q", isolationType, ct)
+		require.Equal(t, string(ct), s, "isolation type string conversion should round-trip for container type %q", ct)
+	}
+
+	// An unknown isolation type enum value should not convert to a string.
+	s, ok := IsolationTypeToString(scpb.WorkloadIsolationType_UNKNOWN_ISOLATION_TYPE)
+	require.False(t, ok)
+	require.Empty(t, s)
+
+	// An unrecognized container type string should not convert to an enum
+	// value.
+	isolationType, ok := IsolationTypeFromString("not-a-real-isolation-type")
+	require.False(t, ok)
+	require.Equal(t, scpb.WorkloadIsolationType_UNKNOWN_ISOLATION_TYPE, isolationType)
+}
+
 func TestParse_OS(t *testing.T) {
 	for _, testCase := range []struct {
 		rawValue      string
