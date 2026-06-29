@@ -36,7 +36,10 @@ const NONDETERMINISM: WorkflowPreset = {
         crons:
           - "0 8 * * *"
     steps:
-      - run: bb detect nondeterminism
+      # To send email or Slack notifications, set the BB_NOTIFY_API_KEY secret in the BuildBuddy UI
+      # to an API key with the notification capability.
+      # To send Slack notifications, set the WEBHOOK_URL_SECRET_NAME secret.
+      - run: bb detect nondeterminism --notify_email --notify_slack=WEBHOOK_URL_SECRET_NAME
     platform_properties:
       # Caching is disabled anyway, so the value from recycling is minimized.
       recycle-runner: false
