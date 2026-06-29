@@ -710,6 +710,37 @@ func filterToDebugExecutorID(nodes []*executionNode, task *repb.ExecutionTask) (
 	return id, nil
 }
 
+// If isolationType is non-empty (i.e. the task explicitly requested a
+// workload-isolation-type), filters the given nodes to those that support it.
+func filterToSupportedIsolationType(nodes []*executionNode, isolationType string) []*executionNode {
+	if isolationType == "" {
+		return nodes
+	}
+	out := make([]*executionNode, 0, len(nodes))
+	for _, n := range nodes {
+		if nodeSupportsIsolationType(n.ExecutionNode, isolationType) {
+			out = append(out, n)
+		}
+	}
+	return out
+}
+
+// nodeSupportsIsolationType reports whether the node can run a task requesting
+// the given workload-isolation-type. An empty isolationType means the task
+// didn't request one, so any node qualifies. Older executors don't advertise
+// their supported isolation types; we keep them as candidates since we can't
+// tell what they support, preserving backwards compatibility.
+func nodeSupportsIsolationType(en *scpb.ExecutionNode, isolationType string) bool {
+	if isolationType == "" {
+		return true
+	}
+	supported := en.GetSupportedIsolationTypes()
+	if len(supported) == 0 {
+		return true
+	}
+	return slices.Contains(supported, isolationType)
+}
+
 // Parses the requested executor labels from the "debug-executor-labels"
 // platform property. The value is a comma-separated list of "key=value" pairs;
 // entries without an "=" are treated as a key with an empty value.
@@ -1848,6 +1879,11 @@ func (s *SchedulerServer) sampleUnclaimedTasks(ctx context.Context, count int, n
 				continue
 			}
 		}
+		// Don't allow this executor to steal a task that explicitly requests a
+		// workload-isolation-type that the executor doesn't support.
+		if !nodeSupportsIsolationType(node, task.metadata.GetIsolationType()) {
+			continue
+		}
 
 		// Don't try to re-assign tasks intended to run on a specific executor.
 		fullTask := &repb.ExecutionTask{}
@@ -2275,6 +2311,7 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 	pool := enqueueRequest.GetSchedulingMetadata().GetPool()
 	hostnamePattern := enqueueRequest.GetSchedulingMetadata().GetHostnamePattern()
 	routingConfig := enqueueRequest.GetSchedulingMetadata().GetRoutingConfig()
+	isolationType := enqueueRequest.GetSchedulingMetadata().GetIsolationType()
 
 	key := nodePoolKey{os: os, arch: arch, pool: pool, groupID: groupID}
 
@@ -2347,6 +2384,10 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 			// NOTE: if adding more filtering here, also update the filtering in
 			// sampleUnclaimedTasks, to ensure that executors not matching the
 			// filters cannot steal this task.
+			candidateNodes = filterToSupportedIsolationType(candidateNodes, isolationType)
+			if len(candidateNodes) == 0 {
+				return status.UnavailableErrorf("no registered executors in pool %q with os %q with arch %q support workload isolation type %q", pool, os, arch, isolationType)
+			}
 			var debugExecutorID string
 			debugExecutorID, candidateNodes = filterToDebugExecutorID(candidateNodes, task)
 			if len(candidateNodes) == 0 {
