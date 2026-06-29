@@ -17,6 +17,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/explain/compactgraph"
+	"github.com/buildbuddy-io/buildbuddy/cli/explain/timing_profile"
 	"github.com/buildbuddy-io/buildbuddy/cli/flaghistory"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/util/download"
@@ -100,7 +101,7 @@ var (
 
 func HandleExplain(args []string) (int, error) {
 	if len(args) > 0 && args[0] == "profile" {
-		return handleProfile(args[1:])
+		return timing_profile.HandleProfile(args[1:])
 	}
 	explainCmd.Var(profilePaths, "profile", "Path that a CPU profile should be written to.")
 	if err := arg.ParseFlagSet(explainCmd, args); err != nil {
