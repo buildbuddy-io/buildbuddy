@@ -284,6 +284,7 @@ func (pu *partitionUsage) sendDeleteRequests(ctx context.Context, keys []*sender
 		res, ok := rsp.([]*approxlru.Sample[*evictionKey])
 		if !ok {
 			alert.UnexpectedEvent("raft_unexpected_delete_rsp", "response not type of approxlru.Sample[*evictionKey]")
+			continue
 		}
 
 		pu.updateEvictionMetrics(res)
@@ -303,10 +304,19 @@ func (pu *partitionUsage) sendDeleteRequests(ctx context.Context, keys []*sender
 
 func (pu *partitionUsage) processEviction(ctx context.Context) {
 	batches := make(chan []*sender.KeyMeta, 1)
+	// sendBatch hands a batch to the dispatcher, but bails out on ctx.Done so the
+	// batcher stops promptly on shutdown instead of blocking until pu.deletes
+	// drains. Returns false if ctx was cancelled (caller should return).
+	sendBatch := func(b []*sender.KeyMeta) bool {
+		select {
+		case batches <- b:
+			return true
+		case <-ctx.Done():
+			return false
+		}
+	}
 	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		defer close(batches)
 		var batch []*sender.KeyMeta
 		timer := time.NewTimer(evictFlushPeriod)
@@ -320,20 +330,22 @@ func (pu *partitionUsage) processEviction(ctx context.Context) {
 					Meta: sampleToDelete,
 				})
 				if len(batch) >= pu.evictionBatchSize {
-					batches <- batch
+					if !sendBatch(batch) {
+						return
+					}
 					batch = nil
 					timer.Reset(evictFlushPeriod)
 				}
 			case <-timer.C:
-				batches <- batch
+				if !sendBatch(batch) {
+					return
+				}
 				batch = nil
 			}
 		}
-	}()
+	})
 	sem := semaphore.NewWeighted(int64(pu.numDeleteWorkers))
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		// inner tracks the in-flight sendDeleteRequests goroutines (the only
 		// senders to pu.gcsDeletes) so this dispatcher doesn't return until
 		// they have all stopped.
@@ -341,10 +353,9 @@ func (pu *partitionUsage) processEviction(ctx context.Context) {
 		defer inner.Wait()
 		for batch := range batches {
 			if err := sem.Acquire(ctx, 1); err != nil {
-				// Context cancelled: stop launching new deletes, but keep
-				// draining batches so the batcher above (which may be blocked
-				// sending) can observe ctx.Done and close the channel.
-				continue
+				// Context cancelled; the batcher has already (or will) close
+				// batches, so stop launching new deletes and return.
+				return
 			}
 			inner.Add(1)
 			go func() {
@@ -353,7 +364,7 @@ func (pu *partitionUsage) processEviction(ctx context.Context) {
 				pu.sendDeleteRequests(ctx, batch)
 			}()
 		}
-	}()
+	})
 	// Block until the batcher, the dispatcher, and every in-flight
 	// sendDeleteRequests goroutine have finished. This makes pu.eg.Wait() in
 	// Stop() a real barrier: once it returns, nothing can send to gcsDeletes,
@@ -383,14 +394,15 @@ func (pu *partitionUsage) processGCSDeletions(ctx context.Context) {
 	}
 }
 
-// drainGCSDeletes flushes the buffered GCS deletes on shutdown. producersStopped
-// reports whether the eviction producers have fully stopped: only then is it
-// safe to close the channel (otherwise a straggler send would panic), so if
-// they haven't, we abandon the buffer instead. When it is safe, we close and
-// let the workers drain, bounded by both gcsDeleteDrainTimeout and ctx (the
+// drainGCSDeletes flushes the buffered GCS deletes on shutdown.
+// producersStopped reports whether the eviction producers have fully stopped:
+// only then is it safe to close the channel (otherwise a straggler send would
+// panic), so if they haven't, we abandon the buffer instead. When it is safe,
+// we close and let the workers drain, bounded by shutdownCtx (the shared drain
+// budget, already capped by both gcsDeleteDrainTimeout and the server's
 // shutdown grace) so this can never exceed the budget. Anything still buffered
 // when we give up is logged as abandoned.
-func (pu *partitionUsage) drainGCSDeletes(ctx context.Context, producersStopped bool) {
+func (pu *partitionUsage) drainGCSDeletes(shutdownCtx context.Context, producersStopped bool) {
 	eg := pu.gcsDeleteEg
 	if eg == nil {
 		return
@@ -414,18 +426,15 @@ func (pu *partitionUsage) drainGCSDeletes(ctx context.Context, producersStopped 
 		eg.Wait()
 		close(done)
 	}()
-	// Cancel the workers and return without a second eg.Wait() on the give-up
-	// paths, so a GCS delete that doesn't promptly honor cancellation can't
+	// On the give-up path, cancel the workers and return without a second
+	// eg.Wait(), so a GCS delete that doesn't promptly honor cancellation can't
 	// hang shutdown. The detached waiter goroutine above reaps the workers
 	// if/when they eventually exit.
 	select {
 	case <-done:
 		pu.gcsDeleteCancel()
 		log.Infof("partition %q: drained GCS deletes in %s", pu.part.ID, pu.clock.Since(start))
-	case <-pu.clock.After(*gcsDeleteDrainTimeout):
-		pu.gcsDeleteCancel()
-		log.Warningf("partition %q: GCS delete drain timed out after %s, %d deletes abandoned", pu.part.ID, pu.clock.Since(start), len(pu.gcsDeletes))
-	case <-ctx.Done():
+	case <-shutdownCtx.Done():
 		pu.gcsDeleteCancel()
 		log.Warningf("partition %q: GCS delete drain hit shutdown deadline after %s, %d deletes abandoned", pu.part.ID, pu.clock.Since(start), len(pu.gcsDeletes))
 	}
@@ -773,22 +782,34 @@ func (ut *Tracker) Start() {
 // grace) so it always returns within that budget: it drains buffered GCS
 // deletes when there is time, and degrades to a clean abandon when there isn't.
 func (ut *Tracker) Stop(ctx context.Context) {
+	// One budget for the whole GCS-drain phase, measured from now and never
+	// exceeding the caller's shutdown grace. This makes the drain "within
+	// gcsDeleteDrainTimeout of Stop" rather than per-partition, so draining all
+	// partitions in parallel below shares a single deadline.
+	drainCtx, cancel := context.WithTimeout(ctx, *gcsDeleteDrainTimeout)
+	defer cancel()
+
 	if ut.egCancel != nil {
 		ut.egCancel()
 		waitErrgroup(ctx, ut.eg)
 	}
+	// Shut the partitions down concurrently: cancel each partition's producers,
+	// wait for them to fully stop (so nothing can still send to gcsDeletes), then
+	// drain its buffered GCS deletes. All waits are bounded by drainCtx so a slow
+	// producer or delete can't blow the grace budget.
+	var wg sync.WaitGroup
 	for _, p := range ut.byPartition {
-		p.lru.Stop()
-		// Cancel the eviction producers and wait for them to fully stop so that
-		// nothing can still send to gcsDeletes. Bound the wait by the shutdown
-		// deadline so a slow producer can't blow the grace budget.
-		producersStopped := true
-		if p.egCancel != nil {
-			p.egCancel()
-			producersStopped = waitErrgroup(ctx, p.eg)
-		}
-		p.drainGCSDeletes(ctx, producersStopped)
+		wg.Go(func() {
+			p.lru.Stop()
+			producersStopped := true
+			if p.egCancel != nil {
+				p.egCancel()
+				producersStopped = waitErrgroup(drainCtx, p.eg)
+			}
+			p.drainGCSDeletes(drainCtx, producersStopped)
+		})
 	}
+	wg.Wait()
 }
 
 // waitErrgroup blocks until eg's goroutines finish or ctx is done. It returns
