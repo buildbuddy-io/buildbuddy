@@ -13,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
+	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/open-feature/go-sdk/openfeature"
 	"github.com/open-feature/go-sdk/openfeature/memprovider"
 	"github.com/stretchr/testify/assert"
@@ -63,6 +64,7 @@ func createTestLimitingBucket(env environment.Env, config *bucketConfig, limit i
 }
 
 func TestQuotaFlagdBuckets(t *testing.T) {
+	flags.Set(t, "app.enable_quota_management", true)
 	env := testenv.GetTestEnv(t)
 	testUsers := testauth.TestUsers("US001", "GR001")
 	env.SetAuthenticator(testauth.NewTestAuthenticator(t, testUsers))
