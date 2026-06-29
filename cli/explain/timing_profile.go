@@ -14,7 +14,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
+	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
+	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
 const profileUsage = `
@@ -75,11 +77,13 @@ func openTimingProfile(ctx context.Context, invocationID string) (io.ReadCloser,
 	if err != nil {
 		return nil, err
 	}
+	bsClient := bspb.NewByteStreamClient(conn)
+	bbClient := bbspb.NewBuildBuddyServiceClient(conn)
 
 	// Avoid reading the entire profile into memory at once.
 	in, out := io.Pipe()
 	go func() {
-		err := download.GetInvocationFile(ctx, conn, out, invocationID, "timing profile", findTimingProfileLog)
+		err := download.GetInvocationFile(ctx, bsClient, bbClient, out, invocationID, "timing profile", findTimingProfileLog)
 		conn.Close()
 		out.CloseWithError(err)
 	}()

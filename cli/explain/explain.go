@@ -28,8 +28,10 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
+	bbpb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	gocmp "github.com/google/go-cmp/cmp"
+	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
 const (
@@ -281,11 +283,13 @@ func openLog(pathOrId string) (io.ReadCloser, error) {
 	if err != nil {
 		return nil, err
 	}
+	bsClient := bspb.NewByteStreamClient(conn)
+	bbClient := bbpb.NewBuildBuddyServiceClient(conn)
 
 	// Avoid reading the entire log into memory at once.
 	in, out := io.Pipe()
 	go func() {
-		err := download.GetInvocationFile(ctx, conn, out, invocationId, "execution log", findExecutionLog)
+		err := download.GetInvocationFile(ctx, bsClient, bbClient, out, invocationId, "execution log", findExecutionLog)
 		conn.Close()
 		out.CloseWithError(err)
 	}()

@@ -12,7 +12,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/login"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
-	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
@@ -26,18 +25,17 @@ type InvocationFileSelector func(inv *inpb.Invocation) *bespb.File
 // GetInvocationFile downloads the specified file from the given
 // invocation and writes it to w. Pass an io.PipeWriter to stream the contents
 // to a reader without buffering the entire file in memory.
-func GetInvocationFile(ctx context.Context, conn grpc.ClientConnInterface, w io.Writer, invocationID, description string, selector InvocationFileSelector) error {
+func GetInvocationFile(ctx context.Context, bsClient bspb.ByteStreamClient, bbClient bbspb.BuildBuddyServiceClient, w io.Writer, invocationID, description string, selector InvocationFileSelector) error {
 	apiKey, err := login.GetAPIKey()
 	if err != nil {
 		return err
 	}
 	ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", apiKey)
-	resource, err := getInvocationResource(ctx, conn, invocationID, description, selector)
+	resource, err := getInvocationResource(ctx, bbClient, invocationID, description, selector)
 	if err != nil {
 		return err
 	}
 
-	bsClient := bspb.NewByteStreamClient(conn)
 	if err := cachetools.GetBlob(ctx, bsClient, resource, w); err != nil {
 		return fmt.Errorf("failed to download %s %s for invocation %s: %v", description, resource.DownloadString(), invocationID, err)
 	}
@@ -58,8 +56,7 @@ func ResolveTarget(target string) (string, error) {
 	return backend, nil
 }
 
-func getInvocationResource(ctx context.Context, conn grpc.ClientConnInterface, invocationID, description string, selector InvocationFileSelector) (*digest.CASResourceName, error) {
-	bbClient := bbspb.NewBuildBuddyServiceClient(conn)
+func getInvocationResource(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, invocationID, description string, selector InvocationFileSelector) (*digest.CASResourceName, error) {
 	resp, err := bbClient.GetInvocation(ctx, &inpb.GetInvocationRequest{
 		Lookup: &inpb.InvocationLookup{InvocationId: invocationID},
 	})
