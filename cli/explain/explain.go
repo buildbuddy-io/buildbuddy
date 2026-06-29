@@ -1,13 +1,11 @@
 package explain
 
 import (
-	"context"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"maps"
-	"net/url"
 	"os"
 	"regexp"
 	"runtime"
@@ -20,25 +18,22 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/explain/compactgraph"
 	"github.com/buildbuddy-io/buildbuddy/cli/flaghistory"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
-	"github.com/buildbuddy-io/buildbuddy/cli/login"
-	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
-	"github.com/buildbuddy-io/buildbuddy/proto/invocation"
+	"github.com/buildbuddy-io/buildbuddy/cli/util"
 	"github.com/buildbuddy-io/buildbuddy/proto/spawn"
 	"github.com/buildbuddy-io/buildbuddy/proto/spawn_diff"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
-	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
-	gocmp "github.com/google/go-cmp/cmp"
 	"golang.org/x/sync/errgroup"
-	bspb "google.golang.org/genproto/googleapis/bytestream"
-	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
+
+	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
+	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
+	gocmp "github.com/google/go-cmp/cmp"
 )
 
 const (
 	explainCmdUsage = `
 usage: bb explain [--old {FILE | INVOCATION_ID}] [--new {FILE | INVOCATION_ID}] [--output_format {text|json|proto}] [--nondeterministic_only]
+       bb explain timing-profile INVOCATION_ID
 
 Displays a human-readable, structural diff of two compact execution logs, either
 obtained from the given invocations or located at the given file paths.
@@ -57,6 +52,9 @@ Output formats:
   text   Unstructured output (default)
   json   Structured output as JSON
   proto  Structured output as binary proto
+
+Subcommands:
+  timing-profile   Analyzes the timing profile for an invocation.
 `
 )
 
@@ -97,6 +95,9 @@ var (
 )
 
 func HandleExplain(args []string) (int, error) {
+	if len(args) > 0 && args[0] == "timing-profile" {
+		return handleTimingProfile(args[1:])
+	}
 	explainCmd.Var(profilePaths, "profile", "Path that a CPU profile should be written to.")
 	if err := arg.ParseFlagSet(explainCmd, args); err != nil {
 		if !errors.Is(err, flag.ErrHelp) {
@@ -268,82 +269,18 @@ func openLog(pathOrId string) (io.ReadCloser, error) {
 	}
 	matches := uuidPattern.FindStringSubmatch(pathOrId)
 	invocationId := matches[1]
-	// This is an invocation ID, try to fetch its corresponding log.
-	apiKey, err := login.GetAPIKey()
-	if err != nil {
-		return nil, err
-	}
-	ctx := metadata.AppendToOutgoingContext(context.Background(), "x-buildbuddy-api-key", apiKey)
-	backend := *apiTarget
-	if backend == "" {
-		backend, err = flaghistory.GetLastBackend()
-		if err != nil {
-			log.Debugf("Failed to get last backend: %v", err)
-		}
-		if backend == "" {
-			backend = login.DefaultApiTarget
-		}
-	}
-	conn, err := grpc_client.DialSimple(backend)
-	if err != nil {
-		return nil, err
-	}
-	resource, err := getExecLogResource(ctx, conn, invocationId)
-	if err != nil {
-		conn.Close()
-		return nil, err
-	}
-
-	bsClient := bspb.NewByteStreamClient(conn)
-	// Avoid reading the entire log into memory at once.
-	in, out := io.Pipe()
-	go func() {
-		defer conn.Close()
-		err := cachetools.GetBlob(ctx, bsClient, resource, out)
-		if err != nil {
-			out.CloseWithError(fmt.Errorf("failed to download %s for invocation %s: %v", resource.DownloadString(), invocationId, err))
-		} else {
-			out.Close()
-		}
-	}()
-	return in, nil
+	return util.OpenInvocationFile(invocationId, *apiTarget, "execution log", findExecutionLog)
 }
 
-func getExecLogResource(ctx context.Context, conn *grpc_client.ClientConnPool, invocationId string) (*digest.CASResourceName, error) {
-	resp, err := bbspb.NewBuildBuddyServiceClient(conn).GetInvocation(ctx, &invocation.GetInvocationRequest{
-		Lookup: &invocation.InvocationLookup{InvocationId: invocationId},
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to fetch invocation %s: %v", invocationId, err)
-	}
-	if len(resp.GetInvocation()) == 0 {
-		return nil, fmt.Errorf("no such invocation: %s", invocationId)
-	}
-	var bytestreamUri string
-outer:
-	for _, event := range resp.GetInvocation()[0].GetEvent() {
+func findExecutionLog(inv *inpb.Invocation) *bespb.File {
+	for _, event := range inv.GetEvent() {
 		for _, file := range event.GetBuildEvent().GetBuildToolLogs().GetLog() {
 			if file.Name == "execution_log.binpb.zst" {
-				bytestreamUri = file.GetUri()
-				break outer
+				return file
 			}
 		}
 	}
-	if bytestreamUri == "" {
-		return nil, fmt.Errorf("no log found for invocation %s", invocationId)
-	}
-	if !strings.HasPrefix(bytestreamUri, "bytestream://") {
-		return nil, fmt.Errorf("unsupported log URI: %s", bytestreamUri)
-	}
-	bytestreamUrl, err := url.Parse(bytestreamUri)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse bytestream URL: %v", err)
-	}
-	resource, err := digest.ParseDownloadResourceName(bytestreamUrl.Path)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse bytestream resource: %v", err)
-	}
-	return resource, nil
+	return nil
 }
 
 func writeHeader(w io.Writer, oldInvocationId, newInvocationId string) {

@@ -719,9 +719,6 @@
 }
 
 .action-header .view-history-button {
-  display: flex;
-  align-items: center;
-  gap: 4px;
   margin-top: -16px;
 }
 
@@ -1244,11 +1241,7 @@
 }
 
 .invocation-menu-container .base-button.invocation-menu-button {
-  width: 40px;
-  height: 40px;
   border: none;
-  padding: 0;
-  justify-content: center;
 }
 
 .invocation-delete-dialog .error-description {
@@ -1316,6 +1309,17 @@
   color: var(--color-text-emphasis);
   display: flex;
   justify-content: space-between;
+}
+
+.metadata-detail-inline-action {
+  align-items: center;
+  justify-content: flex-start;
+  gap: 4px;
+}
+
+.metadata-detail .metadata-history-link {
+  flex-shrink: 0;
+  margin-left: 0;
 }
 
 .snapshot-id-details {
@@ -1675,9 +1679,5 @@ svg.invocation-query-graph .nodes rect {
 }
 
 .invocation-compare-button-container-mini .invocation-menu-button {
-  width: 40px;
-  height: 40px;
   border: none;
-  padding: 0;
-  justify-content: center;
 }

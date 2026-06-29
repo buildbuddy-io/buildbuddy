@@ -26,6 +26,7 @@ func TestAddBazelFlags(t *testing.T) {
 		bazelArgsForTest(t, "--bazelrc=/tmp/bazelrc", "test", "//foo:bar"),
 		"/tmp/output-base",
 		"/tmp/log.pb.zst",
+		"test-invocation-id",
 		"grpcs://bes.example.com",
 		"https://example.com/invocation/",
 	)
@@ -42,6 +43,7 @@ func TestAddBazelFlags(t *testing.T) {
 		"--disk_cache=",
 		"--noexperimental_convenience_symlinks",
 		"--execution_log_compact_file=/tmp/log.pb.zst",
+		"--invocation_id=test-invocation-id",
 		"//foo:bar",
 	}, args)
 }
@@ -49,7 +51,7 @@ func TestAddBazelFlags(t *testing.T) {
 func TestAddBazelFlags_DoesNotMutateBaseArgs(t *testing.T) {
 	baseArgs := bazelArgsForTest(t, "build", "//foo:bar")
 
-	_, err := addBazelFlags(baseArgs, "/tmp/output-base", "/tmp/log.pb.zst", defaultBESBackend, defaultBESResultsURL)
+	_, err := addBazelFlags(baseArgs, "/tmp/output-base", "/tmp/log.pb.zst", "test-invocation-id", defaultBESBackend, defaultBESResultsURL)
 	require.NoError(t, err)
 
 	assert.Equal(t, []string{"build", "//foo:bar"}, baseArgs.Forwarded())
@@ -122,9 +124,9 @@ func TestRunReturnsNilWhenNoDiffs(t *testing.T) {
 }
 
 func TestRemovesOutputBaseAfterEachRun(t *testing.T) {
-	a, err := newArtifacts()
+	m, err := newBuildMetadata()
 	require.NoError(t, err)
-	defer os.RemoveAll(a.tempDir)
+	defer os.RemoveAll(m.tempDir)
 
 	var runner fakeRunner
 	var buildRuns int
@@ -141,7 +143,7 @@ func TestRemovesOutputBaseAfterEachRun(t *testing.T) {
 		buildRuns++
 		require.NoError(t, os.MkdirAll(filepath.Join(outputBase, "execroot"), 0755))
 		if buildRuns == 2 {
-			require.NoDirExists(t, filepath.Join(a.tempDir, "output_base_1"))
+			require.NoDirExists(t, filepath.Join(m.tempDir, "output_base_1"))
 		}
 		return nil
 	}
@@ -154,11 +156,11 @@ func TestRemovesOutputBaseAfterEachRun(t *testing.T) {
 		runner: &runner,
 	}
 
-	require.NoError(t, c.runBuilds(context.Background(), a))
+	require.NoError(t, c.runBuilds(context.Background(), m))
 
 	require.Equal(t, []string{"build", "shutdown", "clean", "build", "shutdown", "clean"}, bazelCommands(runner.runs))
-	require.NoDirExists(t, filepath.Join(a.tempDir, "output_base_1"))
-	require.NoDirExists(t, filepath.Join(a.tempDir, "output_base_2"))
+	require.NoDirExists(t, filepath.Join(m.tempDir, "output_base_1"))
+	require.NoDirExists(t, filepath.Join(m.tempDir, "output_base_2"))
 }
 
 func bazelArgsForTest(t *testing.T, args ...string) *arg.BazelArgs {

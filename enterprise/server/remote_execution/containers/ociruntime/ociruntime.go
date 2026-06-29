@@ -959,7 +959,7 @@ func (c *ociContainer) cleanupNetwork(ctx context.Context) error {
 }
 
 func (c *ociContainer) Stats(ctx context.Context) (*repb.UsageStats, error) {
-	return c.stats.TaskStats(), nil
+	return c.stats.BasicTaskStats(), nil
 }
 
 // Instruments an OCI runtime call with monitor() to ensure that resource usage

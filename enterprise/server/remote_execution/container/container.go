@@ -131,6 +131,8 @@ type Init struct {
 type UsageStats struct {
 	Clock clockwork.Clock
 
+	mu sync.RWMutex
+
 	// last is the last stats update we observed.
 	last *repb.UsageStats
 	// taskStats is the usage stats relative to when Reset() was last called
@@ -186,6 +188,9 @@ func (s *UsageStats) clock() clockwork.Clock {
 // the new task's resource usage can be accounted for.
 // TODO: make this private - it should only be used by TrackExecution.
 func (s *UsageStats) Reset() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	if s.last != nil {
 		s.last.MemoryBytes = 0
 	}
@@ -204,8 +209,28 @@ func (s *UsageStats) Reset() {
 	}
 }
 
-// TaskStats returns the usage stats for an executed task.
+// TaskStats returns the usage stats for an executed task, including the usage
+// timeline if one was recorded. The returned timeline is not cloned, so callers
+// that need to read stats while they are being updated should use
+// BasicTaskStats.
 func (s *UsageStats) TaskStats() *repb.UsageStats {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	return s.taskStatsLocked(true /*=includeTimeline*/)
+}
+
+// BasicTaskStats returns the usage stats for an executed task without the
+// usage timeline. This is intended for live stats polling while usage stats are
+// being updated.
+func (s *UsageStats) BasicTaskStats() *repb.UsageStats {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	return s.taskStatsLocked(false /*=includeTimeline*/)
+}
+
+func (s *UsageStats) taskStatsLocked(includeTimeline bool) *repb.UsageStats {
 	if s.last == nil {
 		return &repb.UsageStats{}
 	}
@@ -245,8 +270,12 @@ func (s *UsageStats) TaskStats() *repb.UsageStats {
 		taskStats.IoPressure.Full.Total -= s.baselineIOPressure.GetFull().GetTotal()
 	}
 
-	// Note: we don't clone the timeline because it's expensive.
-	taskStats.Timeline = s.timeline
+	if includeTimeline {
+		// Note: we don't clone the timeline because it's expensive. Callers
+		// that need to access stats while they are being updated should use
+		// BasicTaskStats instead.
+		taskStats.Timeline = s.timeline
+	}
 
 	return taskStats
 }
@@ -312,6 +341,9 @@ func (s *UsageStats) updateTimeline(now time.Time) {
 // created).
 // TODO: make this private - it should only be used by TrackExecution.
 func (s *UsageStats) Update(lifetimeStats *repb.UsageStats) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	s.last = lifetimeStats.CloneVT()
 	if lifetimeStats.GetMemoryBytes() > s.peakMemoryUsageBytes {
 		s.peakMemoryUsageBytes = lifetimeStats.GetMemoryBytes()

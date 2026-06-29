@@ -217,24 +217,31 @@ func TestTaskRouter_RankNodes_AffinityRouting(t *testing.T) {
 	requireNotAlwaysRanked(0, executorHostID2, t, router, ctx, thirdCmd, instanceName)
 }
 
-func TestTaskRouter_RankNodes_AffinityRouting_UsesTargetPackageForSelectedGroups(t *testing.T) {
+func TestTaskRouter_RankNodes_AffinityRouting_UsesExperimentSelectedKey(t *testing.T) {
 	env := newTestEnv(t)
 
 	const testFlags = `{
 	  "$schema": "https://flagd.dev/schema/v0/flags.json",
 	  "flags": {
-	    "remote_execution.affinity_router_use_target_package": {
+	    "remote_execution.affinity_router_key": {
 	      "state": "ENABLED",
 	      "variants": {
-	        "enabled": true,
-	        "disabled": false
+	        "first_output": "first_output",
+	        "package": "package",
+	        "target": "target"
 	      },
-	      "defaultVariant": "disabled",
+	      "defaultVariant": "first_output",
 	      "targeting": {
 	        "if": [
 	          { "==": [{ "var": "group_id" }, "GR1"] },
-	          "enabled",
-	          "disabled"
+	          "target",
+	          {
+	            "if": [
+	              { "==": [{ "var": "group_id" }, "GR2"] },
+	              "package",
+	              "first_output"
+	            ]
+	          }
 	        ]
 	      }
 	    }
@@ -261,35 +268,47 @@ func TestTaskRouter_RankNodes_AffinityRouting_UsesTargetPackageForSelectedGroups
 	}
 
 	selectedOrgCtx := withRequestMetadata(withAuthUser(t, context.Background(), env, "US1"), "//foo/bar:foo_lib", "GoLink")
+	selectedOrgSameTargetCtx := withRequestMetadata(withAuthUser(t, context.Background(), env, "US1"), "//foo/bar:foo_lib", "TestRunner")
 	selectedOrgOtherTargetCtx := withRequestMetadata(withAuthUser(t, context.Background(), env, "US1"), "//foo/bar:foo_test", "TestRunner")
 	selectedOrgPackageCtx := withRequestMetadata(withAuthUser(t, context.Background(), env, "US1"), "//foo/bar", "TestRunner")
 	selectedOrgOtherPackageCtx := withRequestMetadata(withAuthUser(t, context.Background(), env, "US1"), "//foo/baz:foo_test", "TestRunner")
 	router.MarkSucceeded(selectedOrgCtx, nil, firstCmd, instanceName, executorHostID1)
 
-	ranked := router.RankNodes(selectedOrgOtherTargetCtx, nil, secondCmd, instanceName, nodes)
+	ranked := router.RankNodes(selectedOrgSameTargetCtx, nil, secondCmd, instanceName, nodes)
 	require.Equal(t, executorHostID1, ranked[0].GetExecutionNode().GetExecutorHostId())
-	ranked = router.RankNodes(selectedOrgPackageCtx, nil, secondCmd, instanceName, nodes)
-	require.Equal(t, executorHostID1, ranked[0].GetExecutionNode().GetExecutorHostId())
+	requireNotAlwaysRanked(0, executorHostID1, t, router, selectedOrgOtherTargetCtx, secondCmd, instanceName)
+	requireNotAlwaysRanked(0, executorHostID1, t, router, selectedOrgPackageCtx, secondCmd, instanceName)
 	requireNotAlwaysRanked(0, executorHostID1, t, router, selectedOrgOtherPackageCtx, secondCmd, instanceName)
 
-	controlOrgCtx := withRequestMetadata(withAuthUser(t, context.Background(), env, "US2"), "//foo/bar:foo_lib", "GoLink")
-	controlOrgOtherTargetCtx := withRequestMetadata(withAuthUser(t, context.Background(), env, "US2"), "//foo/bar:foo_test", "TestRunner")
+	packageOrgCtx := withRequestMetadata(withAuthUser(t, context.Background(), env, "US2"), "//foo/bar:foo_lib", "GoLink")
+	packageOrgOtherTargetCtx := withRequestMetadata(withAuthUser(t, context.Background(), env, "US2"), "//foo/bar:foo_test", "TestRunner")
+	packageOrgPackageCtx := withRequestMetadata(withAuthUser(t, context.Background(), env, "US2"), "//foo/bar", "TestRunner")
+	packageOrgOtherPackageCtx := withRequestMetadata(withAuthUser(t, context.Background(), env, "US2"), "//foo/baz:foo_test", "TestRunner")
+	router.MarkSucceeded(packageOrgCtx, nil, firstCmd, instanceName, executorHostID1)
+
+	ranked = router.RankNodes(packageOrgOtherTargetCtx, nil, secondCmd, instanceName, nodes)
+	require.Equal(t, executorHostID1, ranked[0].GetExecutionNode().GetExecutorHostId())
+	ranked = router.RankNodes(packageOrgPackageCtx, nil, secondCmd, instanceName, nodes)
+	require.Equal(t, executorHostID1, ranked[0].GetExecutionNode().GetExecutorHostId())
+	requireNotAlwaysRanked(0, executorHostID1, t, router, packageOrgOtherPackageCtx, secondCmd, instanceName)
+
+	controlOrgCtx := withRequestMetadata(context.Background(), "//foo/bar:foo_lib", "GoLink")
+	controlOrgOtherTargetCtx := withRequestMetadata(context.Background(), "//foo/bar:foo_test", "TestRunner")
 	router.MarkSucceeded(controlOrgCtx, nil, firstCmd, instanceName, executorHostID1)
 
 	requireNotAlwaysRanked(0, executorHostID1, t, router, controlOrgOtherTargetCtx, secondCmd, instanceName)
 }
 
-func TestTaskRouter_RankNodes_AffinityRouting_TargetLabelExperimentFallsBackToFirstOutput(t *testing.T) {
+func TestTaskRouter_RankNodes_AffinityRouting_TargetKeyFallsBackToFirstOutput(t *testing.T) {
 	env := newTestEnv(t)
 
 	testProvider := openfeatureTesting.NewTestProvider()
 	testProvider.UsingFlags(t, map[string]memprovider.InMemoryFlag{
-		"remote_execution.affinity_router_use_target_package": {
+		"remote_execution.affinity_router_key": {
 			State:          memprovider.Enabled,
-			DefaultVariant: "enabled",
+			DefaultVariant: "target",
 			Variants: map[string]any{
-				"enabled":  true,
-				"disabled": false,
+				"target": "target",
 			},
 		},
 	})
@@ -306,12 +325,18 @@ func TestTaskRouter_RankNodes_AffinityRouting_TargetLabelExperimentFallsBackToFi
 		OutputPaths: []string{"/bazel-out/k8-fastbuild/bin/foo/libfoo.a"},
 	}
 	secondCmd := &repb.Command{
+		OutputPaths: []string{"/bazel-out/k8-fastbuild/bin/foo/libfoo.a"},
+	}
+	thirdCmd := &repb.Command{
 		OutputPaths: []string{"/bazel-out/k8-fastbuild/testlogs/foo/foo_test/test.outputs"},
 	}
 
 	router.MarkSucceeded(ctx, nil, firstCmd, instanceName, executorHostID1)
 
-	requireNotAlwaysRanked(0, executorHostID1, t, router, ctx, secondCmd, instanceName)
+	nodes := sequentiallyNumberedNodes(100)
+	ranked := router.RankNodes(ctx, nil, secondCmd, instanceName, nodes)
+	require.Equal(t, executorHostID1, ranked[0].GetExecutionNode().GetExecutorHostId())
+	requireNotAlwaysRanked(0, executorHostID1, t, router, ctx, thirdCmd, instanceName)
 }
 
 func TestTaskRouter_RankNodes_WeightedByCPU(t *testing.T) {

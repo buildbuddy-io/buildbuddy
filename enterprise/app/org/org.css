@@ -131,23 +131,14 @@
 }
 
 .organization-invite-link-container {
+  --icon-size: 16px;
   background: var(--color-form-input-bg-secondary);
   border-radius: 8px;
   padding: 16px;
   display: inline-flex;
+  gap: 8px;
   align-items: center;
   margin-bottom: 16px;
-  flex-wrap: wrap;
-}
-
-.organization-invite-link-container > :not(:last-child) {
-  margin-right: 8px;
-}
-
-.organization-invite-link-container svg {
-  width: 16px;
-  height: 16px;
-  margin-right: 16px;
 }
 
 .organization-invite-link-container .invite-link {

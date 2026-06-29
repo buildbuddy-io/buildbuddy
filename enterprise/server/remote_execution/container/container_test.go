@@ -476,6 +476,52 @@ func TestUsageStats(t *testing.T) {
 	}, s.TaskStats(), protocmp.Transform()))
 }
 
+func TestUsageStats_ConcurrentUpdateAndBasicTaskStats(t *testing.T) {
+	flags.Set(t, "executor.record_usage_timelines", true)
+
+	stats := &container.UsageStats{}
+	stats.Reset()
+
+	var eg errgroup.Group
+	eg.Go(func() error {
+		for i := range 1000 {
+			stats.Update(&repb.UsageStats{
+				CpuNanos:      int64(i) * 1e6,
+				MemoryBytes:   int64(i) * 1024,
+				CgroupIoStats: &repb.CgroupIOStats{Rbytes: int64(i), Wbytes: int64(i)},
+			})
+		}
+		return nil
+	})
+	eg.Go(func() error {
+		for range 1000 {
+			taskStats := stats.BasicTaskStats()
+			_ = taskStats.GetMemoryBytes()
+			_ = taskStats.GetCpuNanos()
+		}
+		return nil
+	})
+
+	require.NoError(t, eg.Wait())
+}
+
+func TestUsageStats_BasicTaskStatsOmitsTimeline(t *testing.T) {
+	flags.Set(t, "executor.record_usage_timelines", true)
+
+	stats := &container.UsageStats{}
+	stats.Reset()
+	stats.Update(&repb.UsageStats{
+		CpuNanos:      1e6,
+		MemoryBytes:   1024,
+		CgroupIoStats: &repb.CgroupIOStats{},
+	})
+
+	// Full execution stats should include the timeline, but live stats polling
+	// should skip it to avoid returning a pointer to mutable timeline state.
+	require.NotNil(t, stats.TaskStats().GetTimeline())
+	require.Nil(t, stats.BasicTaskStats().GetTimeline())
+}
+
 func TestUsageStats_Timeseries(t *testing.T) {
 	flags.Set(t, "executor.record_usage_timelines", true)
 

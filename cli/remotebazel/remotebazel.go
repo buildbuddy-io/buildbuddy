@@ -667,7 +667,7 @@ func logChunkID(requestedChunkID string, response *elpb.GetEventLogChunkResponse
 func streamLogs(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, invocationID string) error {
 	// Disable printing input to the terminal, which could corrupt the log stream and break log de-duplication.
 	defer resetTerminalStyles()
-	restoreTerminalEcho, err := disableTerminalEcho(os.Stdin)
+	restoreTerminalEcho, err := terminal.DisableEcho(os.Stdin)
 	if err != nil {
 		log.Warnf("Failed to disable terminal echo; typed input may interfere with remote log streaming: %s", err)
 	} else {
