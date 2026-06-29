@@ -25,6 +25,7 @@ go_library(
         "@io_opentelemetry_go_otel_sdk//resource",
         "@io_opentelemetry_go_otel_sdk//trace",
         "@io_opentelemetry_go_otel_trace//:trace",
+        "@io_opentelemetry_go_otel_trace//embedded",
         "@org_golang_google_grpc//metadata",
     ],
 )
@@ -38,5 +39,7 @@ go_test(
         "//server/util/log",
         "//server/util/testing/flags",
         "@com_github_stretchr_testify//require",
+        "@io_opentelemetry_go_otel_trace//:trace",
+        "@org_golang_google_grpc//metadata",
     ],
 )
