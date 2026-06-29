@@ -53,6 +53,10 @@ a code {
   margin: 0 4px;
 }
 
+a .theme-code-block code {
+  margin: 0;
+}
+
 .markdown h1 {
   letter-spacing: -0.025em;
 }
