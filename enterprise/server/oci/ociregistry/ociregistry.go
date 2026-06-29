@@ -53,6 +53,8 @@ const (
 	tagDigestCacheTTL = 30 * time.Second
 	// Maximum number of tag->digest mappings to cache.
 	tagDigestCacheSize = 10000
+
+	maxBufferedManifestSize = 10_000_000
 )
 
 // Mirror configures OCI registry mirrors on the registry domain.
@@ -582,7 +584,18 @@ func (r *registry) fetchAndCache(ctx context.Context, inreq *http.Request, bsCli
 
 	contentLength, err := strconv.ParseInt(upresp.Header.Get(headerContentLength), 10, 64)
 	if err != nil {
-		return status.UnavailableErrorf("missing or invalid Content-Length from upstream for %s", resolvedRef.Context())
+		if ociResourceType != ocipb.OCIResourceType_MANIFEST {
+			return status.UnavailableErrorf("missing or invalid Content-Length from upstream for %s", resolvedRef.Context())
+		}
+		raw, err := io.ReadAll(io.LimitReader(upresp.Body, maxBufferedManifestSize+1))
+		if err != nil {
+			return status.UnavailableErrorf("error reading manifest from upstream for %s: %s", resolvedRef.Context(), err)
+		}
+		if len(raw) > maxBufferedManifestSize {
+			return status.FailedPreconditionErrorf("manifest too large (%d bytes) to write to cache (limit %d bytes)", len(raw), maxBufferedManifestSize)
+		}
+		upresp.Body = io.NopCloser(bytes.NewReader(raw))
+		contentLength = int64(len(raw))
 	}
 	contentType := upresp.Header.Get(headerContentType)
 	if contentType == "" {
