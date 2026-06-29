@@ -7,6 +7,8 @@ import (
 	"testing/synctest"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/oom"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/require"
 
@@ -27,10 +29,9 @@ func TestKillerKillsTaskIfOutOfMemory(t *testing.T) {
 
 	// When executor memory is over threshold, a single registered task is a
 	// valid victim.
-	killStats := requireKilled(t, task)
-	require.Equal(t, int64(512), killStats.EstimatedMemoryBytes)
-	require.Equal(t, int64(768), killStats.ObservedMemoryBytes)
-	require.Equal(t, int64(950), killStats.ExecutorMemorySnapshot.UsedBytes)
+	details := requireKilled(t, task)
+	require.Equal(t, int64(512), details.EstimatedMemoryBytes)
+	require.Equal(t, int64(768), details.ObservedMemoryBytes)
 }
 
 func TestKillerDoesNotKillBelowThreshold(t *testing.T) {
@@ -365,9 +366,9 @@ func TestKillerKillsPausedRunnerBeforeNormalPriorityTask(t *testing.T) {
 	unregisterPaused := killer.Register(ctx, pausedRunner)
 	defer unregisterPaused()
 
-	killStats := requireKilled(t, pausedRunner)
-	require.Equal(t, int64(1000), killStats.EstimatedMemoryBytes)
-	require.Equal(t, int64(400), killStats.ObservedMemoryBytes)
+	details := requireKilled(t, pausedRunner)
+	require.Equal(t, int64(1000), details.EstimatedMemoryBytes)
+	require.Equal(t, int64(400), details.ObservedMemoryBytes)
 	requireNotKilled(t, activeTask)
 }
 
@@ -391,8 +392,8 @@ func TestKillerKillsLeastRecentlyUsedPausedRunner(t *testing.T) {
 	defer unregisterNew()
 
 	// Paused runners are killed by LRU rank before memory usage.
-	killStats := requireKilled(t, oldPausedRunner)
-	require.Equal(t, int64(400), killStats.ObservedMemoryBytes)
+	details := requireKilled(t, oldPausedRunner)
+	require.Equal(t, int64(400), details.ObservedMemoryBytes)
 	requireNotKilled(t, newPausedRunner)
 }
 
@@ -503,23 +504,6 @@ func TestKillerDoesNotLoseRegisterWakeupWhenTaskChangeSignalIsCoalesced(t *testi
 	})
 }
 
-func TestNewReturnsNoopKillerWhenDisabled(t *testing.T) {
-	flags.Set(t, "executor.oom_killer.enabled", false)
-	flags.Set(t, "executor.oom_killer.memory_usage_threshold", 0)
-	ctx := t.Context()
-	monitor := &fakeMemoryMonitor{snapshot: &MemorySnapshot{UsedBytes: 950, LimitBytes: 1000, AvailableBytes: 50}}
-
-	// A disabled OOM killer still returns a usable Killer, even when OOM killer
-	// settings would be invalid if the feature were enabled.
-	oomKiller, err := New(ctx, monitor)
-	require.NoError(t, err)
-	require.NotNil(t, oomKiller)
-	unregister := oomKiller.Register(ctx, newFakeTask("task", 100, 200))
-	require.NotNil(t, unregister)
-	unregister()
-	require.Equal(t, 0, monitor.snapshotCount())
-}
-
 func TestNewRejectsInvalidMemoryUsageThreshold(t *testing.T) {
 	ctx := t.Context()
 	monitor := &fakeMemoryMonitor{}
@@ -544,6 +528,20 @@ func TestNewRejectsInvalidMemoryUsageThreshold(t *testing.T) {
 			require.Contains(t, err.Error(), "greater than 0 and less than 1")
 		})
 	}
+}
+
+func TestNewRejectsUnsupportedIsolationType(t *testing.T) {
+	flags.Set(t, "executor.oom_killer.enabled", true)
+	flags.Set(t, "executor.oom_killer.memory_usage_threshold", 0.9)
+	flags.Set(t, "executor.enable_bare_runner", true)
+
+	// Bare runners do not guarantee the Stats() contract that the OOM killer
+	// depends on, so enabling the killer with bare isolation configured should
+	// fail before the background poll loop starts.
+	oomKiller, err := New(t.Context(), &fakeMemoryMonitor{})
+	require.True(t, status.IsFailedPreconditionError(err), "expected FailedPrecondition, got %v", err)
+	require.Nil(t, oomKiller)
+	require.Contains(t, err.Error(), "none")
 }
 
 type fakeMemoryMonitor struct {
@@ -585,7 +583,7 @@ type fakeTask struct {
 
 	mu        sync.Mutex
 	killCalls int
-	killed    chan KillStats
+	killed    chan error
 }
 
 func newFakeTask(taskID string, estimatedMemoryBytes, memoryBytes int64) *fakeTask {
@@ -594,7 +592,7 @@ func newFakeTask(taskID string, estimatedMemoryBytes, memoryBytes int64) *fakeTa
 		estimatedMemory: estimatedMemoryBytes,
 		active:          true,
 		stats:           &repb.UsageStats{MemoryBytes: memoryBytes},
-		killed:          make(chan KillStats, 10),
+		killed:          make(chan error, 10),
 	}
 }
 
@@ -617,14 +615,14 @@ func (t *fakeTask) State(ctx context.Context) (*TaskState, error) {
 	}, nil
 }
 
-func (t *fakeTask) Kill(ctx context.Context, stats KillStats) {
+func (t *fakeTask) Kill(ctx context.Context, err error) {
 	t.mu.Lock()
 	t.killCalls++
 	t.mu.Unlock()
 	if t.onKill != nil {
 		t.onKill()
 	}
-	t.killed <- stats
+	t.killed <- err
 }
 
 func (t *fakeTask) killCount() int {
@@ -633,18 +631,20 @@ func (t *fakeTask) killCount() int {
 	return t.killCalls
 }
 
-func requireKilled(t testing.TB, task *fakeTask) KillStats {
+func requireKilled(t testing.TB, task *fakeTask) *oom.Details {
 	t.Helper()
-	var stats KillStats
+	var killErr error
 	require.Eventually(t, func() bool {
 		select {
-		case stats = <-task.killed:
+		case killErr = <-task.killed:
 			return true
 		default:
 			return false
 		}
 	}, time.Second, time.Millisecond)
-	return stats
+	details, ok := oom.DetailsFromError(killErr)
+	require.True(t, ok)
+	return details
 }
 
 func requireNotKilled(t testing.TB, tasks ...*fakeTask) {
@@ -677,6 +677,7 @@ func newTestKiller(t testing.TB, ctx context.Context, monitor *fakeMemoryMonitor
 	flags.Set(t, "executor.oom_killer.enabled", true)
 	flags.Set(t, "executor.oom_killer.poll_interval", pollInterval)
 	flags.Set(t, "executor.oom_killer.memory_usage_threshold", 0.9)
+	flags.Set(t, "executor.enable_oci", true)
 
 	oomKiller, err := New(ctx, monitor)
 	require.NoError(t, err)

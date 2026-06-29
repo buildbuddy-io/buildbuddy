@@ -10,6 +10,7 @@ go_library(
         "//enterprise/server/auth",
         "//enterprise/server/remote_execution/commandutil",
         "//enterprise/server/remote_execution/executor_auth",
+        "//enterprise/server/remote_execution/oom",
         "//enterprise/server/remote_execution/operation",
         "//proto:execution_stats_go_proto",
         "//proto:remote_execution_go_proto",
@@ -49,6 +50,7 @@ go_test(
     deps = [
         ":executor",
         "//enterprise/server/remote_execution/commandutil",
+        "//enterprise/server/remote_execution/oom",
         "//enterprise/server/remote_execution/operation",
         "//enterprise/server/test/integration/remote_execution/rbetest",
         "//enterprise/server/testutil/enterprise_testenv",
@@ -71,6 +73,7 @@ go_test(
         "@com_github_stretchr_testify//require",
         "@com_google_cloud_go_longrunning//autogen/longrunningpb",
         "@org_golang_google_genproto_googleapis_rpc//errdetails",
+        "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//status",
         "@org_golang_google_protobuf//testing/protocmp",
         "@org_golang_google_protobuf//types/known/durationpb",

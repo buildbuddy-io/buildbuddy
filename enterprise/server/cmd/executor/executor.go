@@ -22,6 +22,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor/oomkiller"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executorplatform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/runner"
@@ -391,8 +392,18 @@ func main() {
 		log.Fatalf("cgroup setup failed: %s", err)
 	}
 
+	var oomKiller oomkiller.Killer
+	if oomkiller.Enabled() {
+		k, err := oomkiller.New(rootContext, oomkiller.NewMemoryMonitor())
+		if err != nil {
+			log.Fatalf("Error initializing executor OOM killer: %s", err)
+		}
+		oomKiller = k
+	}
+
 	runnerPool, err := runner.NewPool(env, cacheRoot, &runner.PoolOptions{
 		CgroupParent: tasksCgroupParent,
+		OOMKiller:    oomKiller,
 	})
 	if err != nil {
 		log.Fatalf("Failed to initialize runner pool: %s", err)
