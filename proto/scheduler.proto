@@ -372,6 +372,12 @@ message SchedulingMetadata {
 
   // cgroup2 settings. Will be set only for Linux executions.
   CgroupSettings cgroup_settings = 12;
+
+  // The workload isolation type explicitly requested by the task via the
+  // "workload-isolation-type" platform property, or empty if the task didn't
+  // request one. When set, the scheduler restricts the task to executors that
+  // advertise support for this isolation type.
+  string isolation_type = 17;
 }
 
 message RoutingConfig {
