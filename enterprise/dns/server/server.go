@@ -419,6 +419,27 @@ func writeUpdateReply(w dns.ResponseWriter, m *dns.Msg, reqTSIG *dns.TSIG) {
 	}
 }
 
+// MsgAccept is the dns.Server message-accept policy for density. It mirrors
+// miekg's default policy (accept QUERY and NOTIFY, ignore responses, reject the
+// rest as NOTIMP) but additionally accepts dynamic UPDATE messages (opcode 5),
+// which we use for self-hosted ACME DNS-01.
+//
+// This is required: miekg's default MsgAcceptFunc rejects UPDATE with NOTIMP
+// *before* the handler runs, so without it the RFC2136 update path is
+// unreachable and the server answers every UPDATE with NOTIMP.
+func MsgAccept(dh dns.Header) dns.MsgAcceptAction {
+	// QR bit (0x8000) set => this is a response; servers don't act on responses.
+	if dh.Bits&(1<<15) != 0 {
+		return dns.MsgIgnore
+	}
+	switch int(dh.Bits>>11) & 0xF { // opcode occupies bits 11-14
+	case dns.OpcodeQuery, dns.OpcodeNotify, dns.OpcodeUpdate:
+		return dns.MsgAccept
+	default:
+		return dns.MsgRejectNotImplemented
+	}
+}
+
 // recordTypeLabel maps a query type to a metric label, collapsing unknown
 // types (which the client controls) to "OTHER" so cardinality stays bounded.
 func recordTypeLabel(qType uint16) string {
