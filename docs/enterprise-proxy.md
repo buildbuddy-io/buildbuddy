@@ -55,7 +55,7 @@ resources:
 
 Now you can point Bazel hosts and remote executors in the same cluster at your cache proxy deployment, using its cluster IP. The relevant flags are `--remote_cache` for Bazel and `--executor.cache_target` for the BuildBuddy remote executor. If you need to access the proxy from outside of the cluster, you can create and use an ingress.
 
-When Bazel uses a cache proxy as its `--remote_cache`, it also uses that `--remote_cache` target when writing `bytestream://` artifact URIs into the build event stream. If the proxy is only reachable inside your cluster, set `--remote_bytestream_uri_prefix` to the canonical BuildBuddy cache hostname so BuildBuddy can fetch build event artifacts such as Bazel timing profiles:
+When Bazel uses a cache proxy as its `--remote_cache`, it also uses that `--remote_cache` target when writing `bytestream://` artifact URIs into the build event stream. Set `--remote_bytestream_uri_prefix` to the canonical BuildBuddy cache hostname so BuildBuddy can fetch build event artifacts such as Bazel timing profiles:
 
 ```bash title=".bazelrc"
 build:buildbuddy_proxy --remote_cache=grpc://cache-proxy.example.com:1985
