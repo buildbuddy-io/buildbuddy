@@ -98,91 +98,8 @@ func (s *ExecutionSearchService) SearchExecutions(ctx context.Context, req *expb
 	q.AddWhereClause("group_id = ?", u.GetGroupID())
 	q.AddWhereClause("invocation_uuid != ''")
 
-	if user := req.GetQuery().GetInvocationUser(); user != "" {
-		q.AddWhereClause("\"user\" = ?", user)
-	}
-	if host := req.GetQuery().GetInvocationHost(); host != "" {
-		q.AddWhereClause("host = ?", host)
-	}
-	if url := req.GetQuery().GetRepoUrl(); url != "" {
-		q.AddWhereClause("repo_url = ?", url)
-	}
-	if branch := req.GetQuery().GetBranchName(); branch != "" {
-		q.AddWhereClause("branch_name = ?", branch)
-	}
-	if command := req.GetQuery().GetCommand(); command != "" {
-		q.AddWhereClause("command = ?", command)
-	}
-	if pattern := req.GetQuery().GetPattern(); pattern != "" {
-		q.AddWhereClause("pattern = ?", pattern)
-	}
-	if sha := req.GetQuery().GetCommitSha(); sha != "" {
-		q.AddWhereClause("commit_sha = ?", sha)
-	}
-	roleClauses := query_builder.OrClauses{}
-	for _, role := range req.GetQuery().GetRole() {
-		roleClauses.AddOr("role = ?", role)
-	}
-	if roleQuery, roleArgs := roleClauses.Build(); roleQuery != "" {
-		q.AddWhereClause("("+roleQuery+")", roleArgs...)
-	}
-	if start := req.GetQuery().GetUpdatedAfter(); start.IsValid() {
-		q.AddWhereClause("updated_at_usec >= ?", start.AsTime().UnixMicro())
-	}
-	if end := req.GetQuery().GetUpdatedBefore(); end.IsValid() {
-		q.AddWhereClause("updated_at_usec < ?", end.AsTime().UnixMicro())
-	}
-	if tags := req.GetQuery().GetTags(); len(tags) > 0 {
-		clause, args := invocation_format.GetTagsAsClickhouseWhereClause("tags", tags)
-		q.AddWhereClause(clause, args...)
-	}
-
-	statusClauses := query_builder.OrClauses{}
-	for _, status := range req.GetQuery().GetInvocationStatus() {
-		switch status {
-		case ispb.OverallStatus_SUCCESS:
-			statusClauses.AddOr(`(invocation_status = ? AND success = ?)`, int(ispb.InvocationStatus_COMPLETE_INVOCATION_STATUS), 1)
-		case ispb.OverallStatus_FAILURE:
-			statusClauses.AddOr(`(invocation_status = ? AND success = ?)`, int(ispb.InvocationStatus_COMPLETE_INVOCATION_STATUS), 0)
-		case ispb.OverallStatus_IN_PROGRESS:
-			statusClauses.AddOr(`invocation_status = ?`, int(ispb.InvocationStatus_PARTIAL_INVOCATION_STATUS))
-		case ispb.OverallStatus_DISCONNECTED:
-			statusClauses.AddOr(`invocation_status = ?`, int(ispb.InvocationStatus_DISCONNECTED_INVOCATION_STATUS))
-		case ispb.OverallStatus_UNKNOWN_OVERALL_STATUS:
-			continue
-		default:
-			continue
-		}
-	}
-	statusQuery, statusArgs := statusClauses.Build()
-	if statusQuery != "" {
-		q.AddWhereClause(fmt.Sprintf("(%s)", statusQuery), statusArgs...)
-	}
-
-	for _, f := range req.GetQuery().GetFilter() {
-		if f.GetMetric().Execution == nil {
-			continue
-		}
-		str, args, err := filter.GenerateFilterStringAndArgs(f)
-		if err != nil {
-			return nil, err
-		}
-		q.AddWhereClause(str, args...)
-	}
-	for _, f := range req.GetQuery().GetDimensionFilter() {
-		str, args, err := filter.GenerateDimensionFilterStringAndArgs(f)
-		if err != nil {
-			return nil, err
-		}
-		q.AddWhereClause(str, args...)
-	}
-
-	for _, f := range req.GetQuery().GetGenericFilters() {
-		s, a, err := filter.ValidateAndGenerateGenericFilterQueryStringAndArgs(f, stat_filter.ObjectTypes_EXECUTION_OBJECTS, s.oh.DialectName())
-		if err != nil {
-			return nil, err
-		}
-		q.AddWhereClause(s, a...)
+	if err := s.addExecutionQueryFilters(q, req.GetQuery()); err != nil {
+		return nil, err
 	}
 
 	q.SetOrderBy("created_at_usec", true)
@@ -227,9 +144,105 @@ func (s *ExecutionSearchService) SearchExecutions(ctx context.Context, req *expb
 	return rsp, nil
 }
 
+// addExecutionQueryFilters applies the WHERE clauses shared by all execution
+// queries (SearchExecutions and GetExecutionTimeline) based on the fields set
+// on the provided ExecutionQuery. The caller is responsible for any
+// query-specific clauses (e.g. group_id, target_label) and for the SELECT,
+// ORDER BY, and pagination.
+func (s *ExecutionSearchService) addExecutionQueryFilters(q *query_builder.Query, query *expb.ExecutionQuery) error {
+	if user := query.GetInvocationUser(); user != "" {
+		q.AddWhereClause("\"user\" = ?", user)
+	}
+	if host := query.GetInvocationHost(); host != "" {
+		q.AddWhereClause("host = ?", host)
+	}
+	if url := query.GetRepoUrl(); url != "" {
+		q.AddWhereClause("repo_url = ?", url)
+	}
+	if branch := query.GetBranchName(); branch != "" {
+		q.AddWhereClause("branch_name = ?", branch)
+	}
+	if command := query.GetCommand(); command != "" {
+		q.AddWhereClause("command = ?", command)
+	}
+	if pattern := query.GetPattern(); pattern != "" {
+		q.AddWhereClause("pattern = ?", pattern)
+	}
+	if sha := query.GetCommitSha(); sha != "" {
+		q.AddWhereClause("commit_sha = ?", sha)
+	}
+	roleClauses := query_builder.OrClauses{}
+	for _, role := range query.GetRole() {
+		roleClauses.AddOr("role = ?", role)
+	}
+	if roleQuery, roleArgs := roleClauses.Build(); roleQuery != "" {
+		q.AddWhereClause("("+roleQuery+")", roleArgs...)
+	}
+	if start := query.GetUpdatedAfter(); start.IsValid() {
+		q.AddWhereClause("updated_at_usec >= ?", start.AsTime().UnixMicro())
+	}
+	if end := query.GetUpdatedBefore(); end.IsValid() {
+		q.AddWhereClause("updated_at_usec < ?", end.AsTime().UnixMicro())
+	}
+	if tags := query.GetTags(); len(tags) > 0 {
+		clause, args := invocation_format.GetTagsAsClickhouseWhereClause("tags", tags)
+		q.AddWhereClause(clause, args...)
+	}
+
+	statusClauses := query_builder.OrClauses{}
+	for _, status := range query.GetInvocationStatus() {
+		switch status {
+		case ispb.OverallStatus_SUCCESS:
+			statusClauses.AddOr(`(invocation_status = ? AND success = ?)`, int(ispb.InvocationStatus_COMPLETE_INVOCATION_STATUS), 1)
+		case ispb.OverallStatus_FAILURE:
+			statusClauses.AddOr(`(invocation_status = ? AND success = ?)`, int(ispb.InvocationStatus_COMPLETE_INVOCATION_STATUS), 0)
+		case ispb.OverallStatus_IN_PROGRESS:
+			statusClauses.AddOr(`invocation_status = ?`, int(ispb.InvocationStatus_PARTIAL_INVOCATION_STATUS))
+		case ispb.OverallStatus_DISCONNECTED:
+			statusClauses.AddOr(`invocation_status = ?`, int(ispb.InvocationStatus_DISCONNECTED_INVOCATION_STATUS))
+		case ispb.OverallStatus_UNKNOWN_OVERALL_STATUS:
+			continue
+		default:
+			continue
+		}
+	}
+	if statusQuery, statusArgs := statusClauses.Build(); statusQuery != "" {
+		q.AddWhereClause(fmt.Sprintf("(%s)", statusQuery), statusArgs...)
+	}
+
+	for _, f := range query.GetFilter() {
+		if f.GetMetric().Execution == nil {
+			continue
+		}
+		str, args, err := filter.GenerateFilterStringAndArgs(f)
+		if err != nil {
+			return err
+		}
+		q.AddWhereClause(str, args...)
+	}
+	for _, f := range query.GetDimensionFilter() {
+		str, args, err := filter.GenerateDimensionFilterStringAndArgs(f)
+		if err != nil {
+			return err
+		}
+		q.AddWhereClause(str, args...)
+	}
+	for _, f := range query.GetGenericFilters() {
+		str, args, err := filter.ValidateAndGenerateGenericFilterQueryStringAndArgs(f, stat_filter.ObjectTypes_EXECUTION_OBJECTS, s.oh.DialectName())
+		if err != nil {
+			return err
+		}
+		q.AddWhereClause(str, args...)
+	}
+	return nil
+}
+
 func (s *ExecutionSearchService) GetExecutionTimeline(ctx context.Context, req *expb.GetExecutionTimelineRequest) (*expb.GetExecutionTimelineResponse, error) {
 	if s.oh == nil {
 		return nil, status.UnavailableError("An OLAP DB is required to search executions.")
+	}
+	if req.GetTarget() == "" {
+		return nil, status.InvalidArgumentError("A target is required to fetch an execution timeline.")
 	}
 	u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
@@ -242,6 +255,42 @@ func (s *ExecutionSearchService) GetExecutionTimeline(ctx context.Context, req *
 		return nil, err
 	}
 
-	// TODO: implement this!
-	return nil, nil
+	q := query_builder.NewQuery(`
+		SELECT worker_start_timestamp_usec, worker_completed_timestamp_usec, cpu_nanos, peak_memory_bytes
+		FROM "Executions"
+	`)
+
+	// Always filter to the currently selected (and authorized) group, and to
+	// the requested target to constrain the scan size.
+	q.AddWhereClause("group_id = ?", u.GetGroupID())
+	q.AddWhereClause("target_label = ?", req.GetTarget())
+	// Only include executions that actually ran on a worker; entries that never
+	// started have nothing meaningful to plot on the timeline.
+	q.AddWhereClause("worker_start_timestamp_usec > 0")
+	q.AddWhereClause("worker_completed_timestamp_usec > 0")
+
+	if err := s.addExecutionQueryFilters(q, req.GetQuery()); err != nil {
+		return nil, err
+	}
+
+	q.SetOrderBy("worker_start_timestamp_usec", true)
+
+	qString, qArgs := q.Build()
+	olapExecutions, err := s.rawQueryExecutions(ctx, qString, qArgs...)
+	if err != nil {
+		return nil, err
+	}
+
+	rsp := &expb.GetExecutionTimelineResponse{
+		Execution: make([]*expb.ExecutionTimelineEntry, len(olapExecutions)),
+	}
+	for i, ex := range olapExecutions {
+		rsp.Execution[i] = &expb.ExecutionTimelineEntry{
+			StartTimeUsec:   ex.WorkerStartTimestampUsec,
+			DurationUsec:    ex.WorkerCompletedTimestampUsec - ex.WorkerStartTimestampUsec,
+			CpuNanos:        ex.CPUNanos,
+			PeakMemoryBytes: ex.PeakMemoryBytes,
+		}
+	}
+	return rsp, nil
 }
