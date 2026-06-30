@@ -28,6 +28,7 @@ go_library(
         "//enterprise/server/remote_execution/commandutil",
         "//enterprise/server/remote_execution/container",
         "//enterprise/server/remote_execution/executor",
+        "//enterprise/server/remote_execution/executor/oomkiller",
         "//enterprise/server/remote_execution/executorplatform",
         "//enterprise/server/remote_execution/filecache",
         "//enterprise/server/remote_execution/runner",

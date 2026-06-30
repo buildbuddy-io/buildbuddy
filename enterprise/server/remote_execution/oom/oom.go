@@ -5,7 +5,6 @@
 package oom
 
 import (
-	"fmt"
 	"strconv"
 
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
@@ -43,19 +42,19 @@ type Details struct {
 
 // Error returns the retryable error reported when the executor OOM killer kills
 // a task.
-func Error(taskID string, details Details) error {
+func Error(details Details) error {
 	metadata := map[string]string{
 		EstimatedMemoryBytesKey: strconv.FormatInt(details.EstimatedMemoryBytes, 10),
 		ObservedMemoryBytesKey:  strconv.FormatInt(details.ObservedMemoryBytes, 10),
 	}
-	st := gstatus.New(codes.Unavailable, fmt.Sprintf("executor OOM killer terminated task %q", taskID))
+	st := gstatus.New(codes.Unavailable, "executor OOM killer terminated task")
 	st, err := st.WithDetails(&errdetails.ErrorInfo{
 		Reason:   ErrorInfoReason,
 		Domain:   ErrorInfoDomain,
 		Metadata: metadata,
 	})
 	if err != nil {
-		return gstatus.Error(codes.Internal, fmt.Sprintf("add OOM killer error details: %s", err))
+		return gstatus.Errorf(codes.Internal, "add OOM killer error details: %s", err)
 	}
 	return st.Err()
 }

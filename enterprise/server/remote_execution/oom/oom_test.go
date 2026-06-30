@@ -14,7 +14,7 @@ import (
 )
 
 func TestErrorRoundTrip(t *testing.T) {
-	err := oom.Error("task-123", oom.Details{
+	err := oom.Error(oom.Details{
 		EstimatedMemoryBytes: 100,
 		ObservedMemoryBytes:  200,
 	})
@@ -28,7 +28,7 @@ func TestErrorRoundTrip(t *testing.T) {
 }
 
 func TestErrorMetadataContainsMemoryFacts(t *testing.T) {
-	err := oom.Error("task-123", oom.Details{
+	err := oom.Error(oom.Details{
 		EstimatedMemoryBytes: 100,
 		ObservedMemoryBytes:  200,
 	})

@@ -28,11 +28,15 @@ import (
 	"sync"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executorplatform"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/oom"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
@@ -51,8 +55,7 @@ type Killer interface {
 	Register(ctx context.Context, task KillableTask) func()
 }
 
-// KillableTask is the victim surface needed by the OOM killer. It can
-// represent an active execution task or a paused recycled runner.
+// KillableTask is the victim surface needed by the OOM killer.
 type KillableTask interface {
 	// State returns the victim's last recorded memory state without blocking.
 	// If memory is unknown, it returns a nil UsageStats or a UsageStats with
@@ -60,10 +63,9 @@ type KillableTask interface {
 	// implementations must not return pointers to concurrently mutated state.
 	State(ctx context.Context) (*TaskState, error)
 
-	// Kill asks the task to stop. Active execution tasks should convert stats
-	// to the retryable error reported when command execution unwinds. Paused
-	// runners should remove the paused container. Kill must be idempotent.
-	Kill(ctx context.Context, stats KillStats)
+	// Kill asks the task to stop with err as the error reported when command
+	// execution unwinds. Kill must be idempotent.
+	Kill(ctx context.Context, err error)
 }
 
 // TaskState describes a registered victim's current memory usage and whether
@@ -93,17 +95,6 @@ type TaskState struct {
 	Active bool
 }
 
-// KillStats describes why the OOM killer chose a victim.
-type KillStats struct {
-	// EstimatedMemoryBytes is the victim's scheduled or expected memory usage.
-	EstimatedMemoryBytes int64
-	// ObservedMemoryBytes is the live memory usage reported by the victim.
-	ObservedMemoryBytes int64
-	// ExecutorMemorySnapshot is the executor memory snapshot that triggered the
-	// kill.
-	ExecutorMemorySnapshot *MemorySnapshot
-}
-
 // MemorySnapshot is a point in time view of executor memory usage.
 type MemorySnapshot struct {
 	// UsedBytes is the executor memory usage in bytes.
@@ -121,7 +112,7 @@ type MemoryMonitor interface {
 }
 
 // NewMemoryMonitor returns the default executor memory monitor.
-func NewMemoryMonitor(_ string) MemoryMonitor {
+func NewMemoryMonitor() MemoryMonitor {
 	return resourcesMemoryMonitor{}
 }
 
@@ -158,23 +149,25 @@ type registeredTask struct {
 	killed bool
 }
 
-type noopKiller struct{}
-
-func (noopKiller) Register(ctx context.Context, task KillableTask) func() {
-	return func() {}
+// Enabled returns whether the OOM killer is enabled.
+func Enabled() bool {
+	return *enabled
 }
 
-// New returns an executor OOM killer using monitor when enabled. It returns a
-// no-op killer when the OOM killer flag is disabled, and an error when the OOM
-// killer is enabled with a memory usage threshold not greater than 0 and less
-// than 1.
+// New returns an executor OOM killer using monitor. Callers should only call
+// New when Enabled reports true.
 func New(ctx context.Context, monitor MemoryMonitor) (Killer, error) {
-	if !*enabled {
-		return noopKiller{}, nil
-	}
 	threshold := *memoryUsageThreshold
 	if threshold <= 0 || threshold >= 1 {
 		return nil, fmt.Errorf("executor OOM killer memory usage threshold must be greater than 0 and less than 1, got %g", threshold)
+	}
+	// TODO: support other isolation types once all isolation types are updated
+	// so that Stats() is guaranteed to be non-blocking and always just returns
+	// the last stats observed from the running task.
+	for _, isolationType := range executorplatform.GetExecutorProperties().SupportedIsolationTypes {
+		if isolationType != platform.OCIContainerType && isolationType != platform.FirecrackerContainerType {
+			return nil, status.FailedPreconditionErrorf("executor OOM killer only supports OCI and Firecracker isolation types, got enabled isolation type %q", isolationType)
+		}
 	}
 	k := &killer{
 		monitor:              monitor,
@@ -305,14 +298,13 @@ func (k *killer) check(ctx context.Context) error {
 			// instead of waiting for the next poll.
 			continue
 		}
-		stats := KillStats{
-			EstimatedMemoryBytes:   victim.state.EstimatedMemoryBytes,
-			ObservedMemoryBytes:    victim.observedMemoryBytes,
-			ExecutorMemorySnapshot: snapshot,
-		}
 		log.CtxWarningf(ctx, "Executor OOM killer terminating victim %s: executor memory used=%d projected_remaining=%d limit=%d available=%d victim memory=%d estimated=%d active=%t", taskName(victim.task), snapshot.UsedBytes, projectedUsedBytes, snapshot.LimitBytes, snapshot.AvailableBytes, victim.observedMemoryBytes, victim.state.EstimatedMemoryBytes, victim.state.Active)
 		metrics.RemoteExecutionOOMKillerTargetedTaskMemoryBytes.Observe(float64(victim.observedMemoryBytes))
-		victim.task.Kill(ctx, stats)
+		oomErr := oom.Error(oom.Details{
+			EstimatedMemoryBytes: victim.state.EstimatedMemoryBytes,
+			ObservedMemoryBytes:  victim.observedMemoryBytes,
+		})
+		victim.task.Kill(ctx, oomErr)
 		killedCount++
 	}
 	return nil

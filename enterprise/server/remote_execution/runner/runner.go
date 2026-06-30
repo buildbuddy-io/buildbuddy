@@ -23,7 +23,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/block_io"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor/oomkiller"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executorplatform"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/oom"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/persistentworker"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/workspace"
@@ -214,6 +216,8 @@ type taskRunner struct {
 
 	// task is the current task assigned to the runner.
 	task *repb.ExecutionTask
+	// schedulingMetadata is the current task's scheduling metadata.
+	schedulingMetadata *scpb.SchedulingMetadata
 	// State is the current state of the runner as it pertains to reuse. It is
 	// atomic because in some cases we want to print runner metadata for debug
 	// purposes but without having to hold the pool lock.
@@ -334,9 +338,47 @@ func (r *taskRunner) DownloadInputs(ctx context.Context) error {
 	return nil
 }
 
+// killableTask registers a running task with the OOM killer.
+type killableTask struct {
+	r         *taskRunner
+	startedAt time.Time
+	cancel    context.CancelCauseFunc
+}
+
+func (k *killableTask) State(ctx context.Context) (*oomkiller.TaskState, error) {
+	stats, err := k.r.Container.Stats(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return &oomkiller.TaskState{
+		EstimatedMemoryBytes:    k.r.schedulingMetadata.GetTaskSize().GetEstimatedMemoryBytes(),
+		GroupID:                 k.r.schedulingMetadata.GetTaskGroupId(),
+		RemoteExecutionPriority: k.r.schedulingMetadata.GetPriority(),
+		StartedAt:               k.startedAt,
+		UsageStats:              &repb.UsageStats{MemoryBytes: stats.GetMemoryBytes()},
+		Active:                  true,
+	}, nil
+}
+
+func (k *killableTask) Kill(ctx context.Context, err error) {
+	k.cancel(err)
+}
+
 // Run runs the task that is currently bound to the command runner.
 func (r *taskRunner) Run(ctx context.Context, ioStats *repb.IOStats) (res *interfaces.CommandResult) {
 	start := time.Now()
+	if r.p.oomKiller != nil {
+		var cancel context.CancelCauseFunc
+		ctx, cancel = context.WithCancelCause(ctx)
+		defer cancel(nil)
+		killable := &killableTask{
+			r:         r,
+			startedAt: start,
+			cancel:    cancel,
+		}
+		unregister := r.p.oomKiller.Register(ctx, killable)
+		defer unregister()
+	}
 	defer func() {
 		// Discard nonsensical PSI full-stall durations which are greater
 		// than the execution duration by a significant amount.
@@ -396,6 +438,14 @@ func (r *taskRunner) Run(ctx context.Context, ioStats *repb.IOStats) (res *inter
 				log.CtxInfof(ctx, "Action created %q file in workspace root; not recycling", invalidateSnapshotMarkerFile)
 				res.DoNotRecycle = true
 			}
+		}
+
+		// If the task reported an error, and it was OOM-killed, make sure to
+		// return the OOM error as the effective task error.
+		if oomErr := context.Cause(ctx); res.Error != nil && oom.IsError(oomErr) {
+			res.Error = oomErr
+			res.ExitCode = commandutil.NoExitCode
+			res.DoNotRecycle = true
 		}
 	}()
 
@@ -611,6 +661,9 @@ type PoolOptions struct {
 	// newContainerImpl.
 	ContainerProvider container.Provider
 
+	// OOMKiller kills active tasks if the executor is running out of memory.
+	OOMKiller oomkiller.Killer
+
 	// CgroupParent is the parent cgroup under which all runner containers are
 	// placed.
 	CgroupParent string
@@ -625,6 +678,7 @@ type pool struct {
 	blockDevice        *block_io.Device
 	cacheRoot          string
 	overrideProvider   container.Provider
+	oomKiller          oomkiller.Killer
 	containerProviders map[platform.ContainerType]container.Provider
 
 	maxRunnerCount                 int
@@ -667,6 +721,7 @@ func NewPool(env environment.Env, cacheRoot string, opts *PoolOptions) (*pool, e
 		buildRoot:    *rootDirectory,
 		cacheRoot:    cacheRoot,
 		cgroupParent: opts.CgroupParent,
+		oomKiller:    opts.OOMKiller,
 		runners:      []*taskRunner{},
 		resolver:     resolver,
 	}
@@ -1148,6 +1203,7 @@ func (p *pool) Get(ctx context.Context, st *repb.ScheduledTask) (interfaces.Runn
 		if r != nil {
 			p.mu.Lock()
 			r.task = task
+			r.schedulingMetadata = st.GetSchedulingMetadata()
 			r.metadata.TaskNumber++
 			r.PlatformProperties = props
 			p.mu.Unlock()
@@ -1215,6 +1271,7 @@ func (p *pool) newRunner(ctx context.Context, key *rnpb.RunnerKey, props *platfo
 			PersistentWorkerKey: key.GetPersistentWorkerKey(),
 		},
 		task:               st.GetExecutionTask(),
+		schedulingMetadata: st.GetSchedulingMetadata(),
 		PlatformProperties: props,
 		Container:          ctr,
 		Workspace:          ws,
