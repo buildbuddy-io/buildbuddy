@@ -20,6 +20,7 @@ go_library(
         "//cli/explain",
         "//cli/fix",
         "//cli/index",
+        "//cli/install_mcp",
         "//cli/login",
         "//cli/plugin",
         "//cli/printlog",
