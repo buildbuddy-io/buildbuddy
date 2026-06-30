@@ -226,3 +226,22 @@ func (s *ExecutionSearchService) SearchExecutions(ctx context.Context, req *expb
 	}
 	return rsp, nil
 }
+
+func (s *ExecutionSearchService) GetExecutionTimeline(ctx context.Context, req *expb.GetExecutionTimelineRequest) (*expb.GetExecutionTimelineResponse, error) {
+	if s.oh == nil {
+		return nil, status.UnavailableError("An OLAP DB is required to search executions.")
+	}
+	u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if u.GetGroupID() == "" {
+		return nil, status.InvalidArgumentError("Failed to find user's group when searching executions.")
+	}
+	if err := authutil.AuthorizeGroupAccessForStats(ctx, s.env, u.GetGroupID()); err != nil {
+		return nil, err
+	}
+
+	// TODO: implement this!
+	return nil, nil
+}
