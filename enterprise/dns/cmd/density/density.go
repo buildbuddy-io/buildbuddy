@@ -166,8 +166,8 @@ func startDNSServer(env *real_environment.RealEnv) error {
 		packetConn.Close()
 		return status.WrapErrorf(err, "bind DNS tcp %s", addr)
 	}
-	udpServer := &dns.Server{PacketConn: packetConn, Handler: handler, TsigSecret: tsigSecrets}
-	tcpServer := &dns.Server{Listener: listener, Handler: handler, TsigSecret: tsigSecrets}
+	udpServer := &dns.Server{PacketConn: packetConn, Handler: handler, TsigSecret: tsigSecrets, MsgAcceptFunc: server.MsgAccept}
+	tcpServer := &dns.Server{Listener: listener, Handler: handler, TsigSecret: tsigSecrets, MsgAcceptFunc: server.MsgAccept}
 
 	for _, s := range []*dns.Server{udpServer, tcpServer} {
 		go func() {

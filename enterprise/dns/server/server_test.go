@@ -649,6 +649,61 @@ func TestSelfHostedACMEUpdateIsAtomic(t *testing.T) {
 	assert.Empty(t, m.Answer)
 }
 
+func TestMsgAccept(t *testing.T) {
+	hdr := func(opcode int) dns.Header { return dns.Header{Bits: uint16(opcode) << 11} }
+	assert.Equal(t, dns.MsgAccept, server.MsgAccept(hdr(dns.OpcodeQuery)))
+	assert.Equal(t, dns.MsgAccept, server.MsgAccept(hdr(dns.OpcodeNotify)))
+	// UPDATE must be accepted -- miekg's default policy rejects it with NOTIMP.
+	assert.Equal(t, dns.MsgAccept, server.MsgAccept(hdr(dns.OpcodeUpdate)))
+	assert.Equal(t, dns.MsgRejectNotImplemented, server.MsgAccept(hdr(dns.OpcodeStatus)))
+	// A response (QR bit set) is ignored, whatever the opcode.
+	assert.Equal(t, dns.MsgIgnore, server.MsgAccept(dns.Header{Bits: 1 << 15}))
+}
+
+// TestServerAcceptsSignedUpdate drives the real dns.Server stack -- the accept
+// policy and TSIG verification that the handler-level tests bypass. It is the
+// regression guard for the server answering RFC2136 UPDATEs with NOTIMP.
+func TestServerAcceptsSignedUpdate(t *testing.T) {
+	const keyName = "acme."
+	// Any valid base64 secret; this is base64("0123456789abcdef").
+	const secret = "MDEyMzQ1Njc4OWFiY2RlZg=="
+	tsig := map[string]string{keyName: secret}
+
+	acme, err := server.NewChallenges(newMemBlobstore(), 10*time.Second)
+	require.NoError(t, err)
+	h := server.NewHandler(testenv.GetTestEnv(t), mustRecords(t), acme)
+
+	// Serve on a real loopback UDP socket with the same accept policy + TsigSecret
+	// density uses in production.
+	pc, err := net.ListenPacket("udp", "127.0.0.1:0")
+	require.NoError(t, err)
+	srv := &dns.Server{PacketConn: pc, Handler: h, TsigSecret: tsig, MsgAcceptFunc: server.MsgAccept}
+	started := make(chan struct{})
+	srv.NotifyStartedFunc = func() { close(started) }
+	go func() { _ = srv.ActivateAndServe() }()
+	defer srv.Shutdown()
+	<-started
+	addr := pc.LocalAddr().String()
+
+	const name = "_acme-challenge.cache.buildbuddy.io."
+
+	// A TSIG-signed UPDATE is accepted and applied -- not answered NOTIMP.
+	up := new(dns.Msg)
+	up.SetUpdate("buildbuddy.io.")
+	up.Insert([]dns.RR{mustRR(t, name+` 60 IN TXT "tok"`)})
+	up.SetTsig(keyName, dns.HmacSHA256, 300, time.Now().Unix())
+	reply, _, err := (&dns.Client{TsigSecret: tsig}).Exchange(up, addr)
+	require.NoError(t, err)
+	require.Equalf(t, dns.RcodeSuccess, reply.Rcode, "UPDATE rcode = %s", dns.RcodeToString[reply.Rcode])
+
+	// ...and the challenge value is now served.
+	q := new(dns.Msg)
+	q.SetQuestion(name, dns.TypeTXT)
+	reply, _, err = (&dns.Client{}).Exchange(q, addr)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"tok"}, txtValues(reply.Answer))
+}
+
 func TestExactMatch(t *testing.T) {
 	h := newTestHandler(t)
 	m := query(t, h, "cache.buildbuddy.io.", dns.TypeA)
