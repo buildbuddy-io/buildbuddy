@@ -271,6 +271,9 @@ func NewRBETestEnvWithOptions(t *testing.T, opts *EnvOptions) *Env {
 
 	flags.Set(t, "app.enable_write_to_olap_db", true)
 	flags.Set(t, "app.enable_write_executions_to_olap_db", true)
+	// Use measured task sizes so that tasks killed by the OOM killer are
+	// rescheduled with a higher memory estimate.
+	flags.Set(t, "remote_execution.use_measured_task_sizes", true)
 
 	// Pick a random admin user as the test user, and update their group
 	// API key to allow registering executors.
@@ -1539,6 +1542,10 @@ func (f *FakeTaskSizer) Get(ctx context.Context, cmd *repb.Command, props *platf
 }
 
 func (f *FakeTaskSizer) Update(ctx context.Context, cmd *repb.Command, props *platform.Properties, md *repb.ExecutedActionMetadata) error {
+	return nil
+}
+
+func (f *FakeTaskSizer) UpdateForOOM(ctx context.Context, cmd *repb.Command, props *platform.Properties, scheduledSize *scpb.TaskSize, observedMemoryBytes int64) error {
 	return nil
 }
 
