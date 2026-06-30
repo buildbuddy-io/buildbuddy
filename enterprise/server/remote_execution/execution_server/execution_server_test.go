@@ -10,6 +10,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis_execution_collector"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/execution_server"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/oom"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testredis"
@@ -2003,6 +2004,122 @@ func testPublishOperationRetryStreamWithOnlyPostCompletionStats(t *testing.T, fl
 	}
 	require.NotNil(t, foundExecutorUsage, "expected executor usage to be recorded")
 	assert.Equal(t, (5 * time.Second).Microseconds(), foundExecutorUsage.Counts.LinuxExecutionDurationUsec)
+}
+
+// TestPublishOperation_OOMKilledTask_IncreasesMemoryEstimate exercises the
+// task size update for a task killed by the executor OOM killer: when the
+// published ExecuteResponse status carries OOM killer details showing that the
+// task exceeded its memory estimate, the recorded memory estimate is increased
+// based on the observed usage, so that a client retry of the task is scheduled
+// with more memory. Errors without OOM details must not touch the estimate.
+func TestPublishOperation_OOMKilledTask_IncreasesMemoryEstimate(t *testing.T) {
+	const (
+		// The memory and CPU size the task was scheduled with.
+		scheduledMemoryBytes = 1_000_000_000
+		scheduledMilliCPU    = 2000
+		// The task's memory usage observed by the OOM killer, exceeding the
+		// scheduled estimate.
+		observedMemoryBytes = 3_000_000_000
+		// The multiplier applied to the observed usage to get the new estimate.
+		oomResizeMultiplier = 1.5
+	)
+	for _, test := range []struct {
+		name string
+		// executionErr is the execution error reported in the ExecuteResponse
+		// status.
+		executionErr error
+		// expectResize is whether the task's recorded memory estimate should be
+		// increased after the failure is published.
+		expectResize bool
+	}{
+		{
+			name: "OOM killer error increases the memory estimate",
+			executionErr: oom.Error(oom.Details{
+				EstimatedMemoryBytes: scheduledMemoryBytes,
+				ObservedMemoryBytes:  observedMemoryBytes,
+			}),
+			expectResize: true,
+		},
+		{
+			name:         "error without OOM details does not record an estimate",
+			executionErr: status.UnavailableError("executor shutting down"),
+			expectResize: false,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			// Store measured task sizes in redis so that OOM resizes can be
+			// recorded.
+			flags.Set(t, "remote_execution.use_measured_task_sizes", true)
+			flags.Set(t, "remote_execution.oom_resize_multiplier", oomResizeMultiplier)
+			env, conn, _ := setupEnv(t)
+			client := repb.NewExecutionClient(conn)
+			ctx, err := env.GetAuthenticator().(*testauth.TestAuthenticator).WithAuthenticatedUser(t.Context(), "US1")
+			require.NoError(t, err)
+
+			// Schedule an execution.
+			cmd := &repb.Command{Arguments: []string{"some_memory_hungry_command"}}
+			arn := uploadActionWithCommand(ctx, t, env, "" /*=instanceName*/, repb.DigestFunction_SHA256, &repb.Action{}, cmd)
+			executionClient, err := client.Execute(ctx, &repb.ExecuteRequest{
+				InstanceName:   arn.GetInstanceName(),
+				ActionDigest:   arn.GetDigest(),
+				DigestFunction: arn.GetDigestFunction(),
+			})
+			require.NoError(t, err)
+			require.NoError(t, executionClient.CloseSend())
+			op, err := executionClient.Recv()
+			require.NoError(t, err)
+			taskID := op.GetName()
+
+			// Publish a COMPLETED operation reporting that the task failed with
+			// the execution error, including the size the task was scheduled
+			// with in the execution metadata.
+			executorCtx := metadata.AppendToOutgoingContext(ctx, usageutil.ClientHeaderName, "executor")
+			stream, err := client.PublishOperation(executorCtx)
+			require.NoError(t, err)
+			op, err = operation.Assemble(
+				taskID,
+				operation.Metadata(repb.ExecutionStage_COMPLETED, arn.GetDigest()),
+				&repb.ExecuteResponse{
+					Result: &repb.ActionResult{
+						ExecutionMetadata: &repb.ExecutedActionMetadata{
+							EstimatedTaskSize: &scpb.TaskSize{
+								EstimatedMemoryBytes: scheduledMemoryBytes,
+								EstimatedMilliCpu:    scheduledMilliCPU,
+							},
+						},
+					},
+					Status: gstatus.Convert(test.executionErr).Proto(),
+				},
+			)
+			require.NoError(t, err)
+			require.NoError(t, stream.Send(op))
+			_, err = stream.CloseAndRecv()
+			require.NoError(t, err)
+
+			// Drain the /Execute stream so the test doesn't leak goroutines.
+			for {
+				_, err := executionClient.Recv()
+				if err == io.EOF {
+					break
+				}
+				require.NoError(t, err)
+			}
+
+			// Read back the task size that would be used to schedule the next
+			// attempt of the same command.
+			size := env.GetTaskSizer().Get(ctx, cmd, &platform.Properties{})
+			if test.expectResize {
+				// The new memory estimate should be the observed usage times the
+				// resize multiplier, and the CPU estimate should carry over from
+				// the scheduled size.
+				require.NotNil(t, size, "expected a task size to be recorded")
+				assert.Equal(t, int64(oomResizeMultiplier*observedMemoryBytes), size.GetEstimatedMemoryBytes())
+				assert.Equal(t, int64(scheduledMilliCPU), size.GetEstimatedMilliCpu())
+			} else {
+				require.Nil(t, size, "no task size should be recorded")
+			}
+		})
+	}
 }
 
 func TestMarkFailed(t *testing.T) {
