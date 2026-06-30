@@ -21,7 +21,7 @@ def ts_library(name, srcs, **kwargs):
         **kwargs
     )
 
-def ts_jasmine_node_test(name, srcs, deps = [], size = "small", **kwargs):
+def ts_jasmine_node_test(name, srcs, deps = [], data = [], esbuild_external = [], size = "small", **kwargs):
     if len(srcs) != 1:
         fail("srcs must contain exactly one TS source file")
 
@@ -55,6 +55,8 @@ def ts_jasmine_node_test(name, srcs, deps = [], size = "small", **kwargs):
         config = {"resolveExtensions": [".mjs", ".js"]},
         testonly = 1,
         entry_point = srcs[0],
+        external = esbuild_external,
+        platform = "node",
         deps = ["%s_esm" % name],
     )
 
@@ -74,7 +76,7 @@ def ts_jasmine_node_test(name, srcs, deps = [], size = "small", **kwargs):
         size = "small",
         args = ["*.test.js"],
         chdir = native.package_name(),
-        data = [":%s_commonjs.test.js" % name],
+        data = [":%s_commonjs.test.js" % name] + data,
         node_modules = "//:node_modules",
         **kwargs
     )
