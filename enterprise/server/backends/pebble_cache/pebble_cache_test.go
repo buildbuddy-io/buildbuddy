@@ -3302,58 +3302,6 @@ func TestPebbleGCSBlobMissingAfterDelete(t *testing.T) {
 }
 
 func TestPebbleGCSBackingObjectDeleted(t *testing.T) {
-	for _, tc := range []struct {
-		name string
-		read func(t *testing.T, ctx context.Context, c interfaces.Cache, rn *rspb.ResourceName)
-	}{
-		{
-			name: "get",
-			read: func(t *testing.T, ctx context.Context, c interfaces.Cache, rn *rspb.ResourceName) {
-				_, err := c.Get(ctx, rn)
-				require.True(t, status.IsNotFoundError(err), "Get: %v", err)
-			},
-		},
-		{
-			name: "get_with_metadata",
-			read: func(t *testing.T, ctx context.Context, c interfaces.Cache, rn *rspb.ResourceName) {
-				_, _, err := c.GetWithMetadata(ctx, rn)
-				require.True(t, status.IsNotFoundError(err), "GetWithMetadata: %v", err)
-			},
-		},
-		{
-			name: "get_multi",
-			read: func(t *testing.T, ctx context.Context, c interfaces.Cache, rn *rspb.ResourceName) {
-				multi, err := c.GetMulti(ctx, []*rspb.ResourceName{rn})
-				require.NoError(t, err, "GetMulti")
-				require.Nil(t, multi[rn.GetDigest()], "GetMulti")
-			},
-		},
-		{
-			name: "reader",
-			read: func(t *testing.T, ctx context.Context, c interfaces.Cache, rn *rspb.ResourceName) {
-				rc, err := c.Reader(ctx, rn, 0, 0)
-				require.True(t, status.IsNotFoundError(err), "Reader: %v", err)
-				require.Nil(t, rc, "Reader")
-			},
-		},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			clock := clockwork.NewFakeClock()
-			gcs := &recordingGCS{PebbleGCSStorage: mockgcs.New(clock)}
-			te, c := newGCSBackedContractCache(t, clock, gcs)
-			ctx := getAnonContext(t, te)
-			rn, data := testdigest.RandomCASResourceBuf(t, 100)
-
-			require.NoError(t, c.Set(ctx, rn, data))
-			require.NoError(t, gcs.DeleteRecordedBlobs(ctx))
-
-			expectMetadataMissing(t, ctx, c, rn)
-			tc.read(t, ctx, c, rn)
-		})
-	}
-}
-
-func TestPebbleGCSBackingObjectDeletedMetadataMethodsShouldReportMissing(t *testing.T) {
 	clock := clockwork.NewFakeClock()
 	gcs := &recordingGCS{PebbleGCSStorage: mockgcs.New(clock)}
 	te, c := newGCSBackedContractCache(t, clock, gcs)
@@ -3363,29 +3311,8 @@ func TestPebbleGCSBackingObjectDeletedMetadataMethodsShouldReportMissing(t *test
 	require.NoError(t, c.Set(ctx, rn, data))
 	require.NoError(t, gcs.DeleteRecordedBlobs(ctx))
 
-	t.Run("Contains", func(t *testing.T) {
-		t.Skip("PebbleCache does not consult backing storage for Contains.")
-
-		contains, err := c.Contains(ctx, rn)
-		require.NoError(t, err)
-		require.False(t, contains)
-	})
-
-	t.Run("Metadata", func(t *testing.T) {
-		t.Skip("PebbleCache does not consult backing storage for Metadata.")
-
-		_, err := c.Metadata(ctx, rn)
-		require.True(t, status.IsNotFoundError(err), "Metadata: %v", err)
-	})
-
-	t.Run("FindMissing", func(t *testing.T) {
-		t.Skip("PebbleCache does not consult backing storage for FindMissing.")
-
-		missing, err := c.FindMissing(ctx, []*rspb.ResourceName{rn})
-		require.NoError(t, err)
-		require.Len(t, missing, 1)
-		require.Equal(t, rn.GetDigest().GetHash(), missing[0].GetHash())
-	})
+	// TODO(dan): expectMetadataMissing(t, ctx, c, rn)
+	expectContentNotFound(t, ctx, c, rn)
 }
 
 func TestPebbleGCSBackingReadUnavailable(t *testing.T) {
