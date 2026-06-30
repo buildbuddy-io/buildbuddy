@@ -412,14 +412,22 @@ type TestTargetStatus struct {
 	Label          string
 	InvocationUUID string
 
-	RuleType      string
-	UserID        string
-	TargetType    int32
-	TestSize      int32
-	Status        int32
-	Cached        bool
-	StartTimeUsec int64
-	DurationUsec  int64
+	RuleType   string
+	UserID     string
+	TargetType int32
+	TestSize   int32
+	Status     int32
+	// Deprecated: do not use this stored column for new rows. It can be
+	// derived from TotalRunCount > 0 && CachedCount == TotalRunCount once
+	// explicit attempt counts are present, and remains only for older rows and
+	// existing queries.
+	Cached              bool
+	CachedCount         int32
+	CachedLocallyCount  int32
+	CachedRemotelyCount int32
+	TotalRunCount       int32
+	StartTimeUsec       int64
+	DurationUsec        int64
 
 	// The following fields are from Invocation.
 	BranchName string
