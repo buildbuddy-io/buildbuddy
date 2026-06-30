@@ -36,7 +36,7 @@ def gcs(name, srcs, bucket, gsutil = "gsutil", prefix = "", sha_prefix = "", zip
     if disable_caching:
         util_options += " -h 'Cache-Control:no-store'"
 
-    upload_cmd = "echo \"PYTHONSAFEPATH=0 %s -m %s cp %s $(SRCS) gs://%s/%s\" > $@" % (gsutil, util_options, copy_options, bucket, prefix),
+    upload_cmd = "echo \"unset -v PYTHONSAFEPATH; %s -m %s cp %s $(SRCS) gs://%s/%s\" > $@" % (gsutil, util_options, copy_options, bucket, prefix),
 
     # Generate an .apply rule for uploading.
     native.genrule(
@@ -87,7 +87,7 @@ def gcs(name, srcs, bucket, gsutil = "gsutil", prefix = "", sha_prefix = "", zip
         name = name + ".delete",
         srcs = srcs,
         outs = [name + ".delete.out"],
-        cmd = "echo \"PYTHONSAFEPATH=0 %s -m rm -r gs://%s/%s\" > $@" % (gsutil, bucket, prefix),
+        cmd = "echo \"unset -v PYTHONSAFEPATH; %s -m rm -r gs://%s/%s\" > $@" % (gsutil, bucket, prefix),
         local = 1,
         executable = 1,
         **kwargs
