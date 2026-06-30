@@ -42,6 +42,12 @@ message CacheProxyNode {
   // operationally (e.g. region, canary, environment) and surfaced on the
   // deployment view.
   map<string, string> labels = 8;
+
+  // CPU allocated to this cache proxy node, in milliCPU (1000 == 1 core).
+  int64 allocated_cpu_millis = 9;
+
+  // Memory allocated to this cache proxy node, in bytes.
+  int64 allocated_memory_bytes = 10;
 }
 
 // Statistics about this cache proxy's performance. Cumulative over the

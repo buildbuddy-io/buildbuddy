@@ -100,6 +100,18 @@ export default class CacheProxyCardComponent extends React.Component<Props> {
                 <div>{this.props.node.arch}</div>
               </div>
             )}
+            {toNumber(this.props.node.allocatedMemoryBytes) > 0 && (
+              <div className="cache-proxy-section">
+                <div className="cache-proxy-section-title">Allocated Memory:</div>
+                <div>{format.bytes(toNumber(this.props.node.allocatedMemoryBytes))}</div>
+              </div>
+            )}
+            {toNumber(this.props.node.allocatedCpuMillis) > 0 && (
+              <div className="cache-proxy-section">
+                <div className="cache-proxy-section-title">Allocated Milli CPU:</div>
+                <div>{toNumber(this.props.node.allocatedCpuMillis)}</div>
+              </div>
+            )}
             {this.props.node.labels && Object.keys(this.props.node.labels).length > 0 && (
               <div className="cache-proxy-section">
                 <div className="cache-proxy-section-title">Labels:</div>
