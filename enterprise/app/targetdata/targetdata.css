@@ -1,0 +1,16 @@
+.target-data {
+  margin-top: 32px;
+}
+
+.target-data .target-data-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.target-data .target-data-title {
+  font-size: 32px;
+  font-weight: 700;
+  word-break: break-all;
+}

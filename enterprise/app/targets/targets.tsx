@@ -274,7 +274,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
   };
 
   handleTableRowClick = (target: string) => {
-    this.navigateToTargetDrilldown(target);
+    router.navigateToTargetData(target);
   };
 
   navigateToTargetDrilldown = (target: string) => {
