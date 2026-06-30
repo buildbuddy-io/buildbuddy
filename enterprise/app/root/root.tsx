@@ -27,6 +27,7 @@ import SettingsComponent from "../settings/settings";
 import ShortcutsComponent from "../shortcuts/shortcuts";
 import SidebarComponent from "../sidebar/sidebar";
 import TapComponent from "../tap/tap";
+import TargetDataComponent from "../targetdata/targetdata";
 import TargetsComponent from "../targets/targets";
 import TrendsComponent from "../trends/trends";
 import UsageComponent from "../usage/usage";
@@ -71,6 +72,7 @@ capabilities.register("BuildBuddy Enterprise", true, [
   Path.settingsPath,
   Path.trendsPath,
   Path.targetsPath,
+  Path.targetDataPath,
   Path.executorsPath,
   Path.cacheProxiesPath,
   Path.tapPath,
@@ -236,6 +238,7 @@ export default class EnterpriseRootComponent extends React.Component {
     let orgAccessDenied = this.state.user && this.state.path === Path.orgAccessDeniedPath;
     let trends = this.state.user && this.state.path.startsWith("/trends");
     let targets = this.state.user && this.state.path.startsWith("/targets");
+    let targetData = this.state.user && this.state.path.startsWith("/targetdata");
     let usage = this.state.user && this.state.path.startsWith("/usage/");
     let auditLogs = this.state.user && this.state.path.startsWith("/audit-logs/");
     let executors = this.state.user && this.state.path.startsWith("/executors");
@@ -257,6 +260,7 @@ export default class EnterpriseRootComponent extends React.Component {
       !orgAccessDenied &&
       !trends &&
       !targets &&
+      !targetData &&
       !usage &&
       !executors &&
       !cacheProxies &&
@@ -426,6 +430,9 @@ export default class EnterpriseRootComponent extends React.Component {
                     </Suspense>
                   )}
                   {targets && this.state.user && <TargetsComponent user={this.state.user} search={this.state.search} />}
+                  {targetData && this.state.user && (
+                    <TargetDataComponent user={this.state.user} search={this.state.search} />
+                  )}
                   {usage && this.state.user && <UsageComponent path={this.state.path} user={this.state.user} />}
                   {auditLogs && this.state.user && <AuditLogsComponent user={this.state.user} />}
                   {executors && this.state.user && <ExecutorsComponent path={this.state.path} user={this.state.user} />}
