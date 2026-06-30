@@ -81,6 +81,22 @@ export default class CacheProxyCardComponent extends React.Component<Props> {
                 <div>{this.props.node.proxyHostId}</div>
               </div>
             )}
+            <div className="cache-proxy-section">
+              <div className="cache-proxy-section-title">Version:</div>
+              <div>{this.props.node.version}</div>
+            </div>
+            {this.props.node.startTime && (
+              <div className="cache-proxy-section">
+                <div className="cache-proxy-section-title">Uptime:</div>
+                <div>{format.durationSince(this.props.node.startTime)}</div>
+              </div>
+            )}
+            {this.props.lastCheckInTime && (
+              <div className="cache-proxy-section">
+                <div className="cache-proxy-section-title">Last Check-in:</div>
+                <div>{format.relativeTimeSeconds(this.props.lastCheckInTime)}</div>
+              </div>
+            )}
             {toNumber(this.props.node.allocatedMemoryBytes) > 0 && (
               <div className="cache-proxy-section">
                 <div className="cache-proxy-section-title">Allocated Memory:</div>
@@ -105,24 +121,6 @@ export default class CacheProxyCardComponent extends React.Component<Props> {
                       </div>
                     ))}
                 </div>
-              </div>
-            )}
-            {this.props.node.startTime && (
-              <div className="cache-proxy-section">
-                <div className="cache-proxy-section-title">Uptime:</div>
-                <div>{format.durationSince(this.props.node.startTime)}</div>
-              </div>
-            )}
-            {this.props.node.version && (
-              <div className="cache-proxy-section">
-                <div className="cache-proxy-section-title">Version:</div>
-                <div>{this.props.node.version}</div>
-              </div>
-            )}
-            {this.props.lastCheckInTime && (
-              <div className="cache-proxy-section">
-                <div className="cache-proxy-section-title">Last Check-in:</div>
-                <div>{format.relativeTimeSeconds(this.props.lastCheckInTime)}</div>
               </div>
             )}
             {this.props.statistics && this.renderStatistics(this.props.statistics)}

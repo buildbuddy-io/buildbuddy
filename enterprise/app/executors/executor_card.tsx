@@ -32,30 +32,20 @@ export default class ExecutorCardComponent extends React.Component<Props> {
               <div className="executor-section-title">Executor Host ID:</div>
               <div>{this.props.node.executorHostId}</div>
             </div>
-            {this.props.node.osDisplayName && (
-              <div className="executor-section">
-                <div className="executor-section-title">Operating System:</div>
-                <div>{this.props.node.osDisplayName}</div>
-              </div>
-            )}
-            {this.props.node.labels && Object.keys(this.props.node.labels).length > 0 && (
-              <div className="executor-section">
-                <div className="executor-section-title">Labels:</div>
-                <div>
-                  {Object.entries(this.props.node.labels)
-                    .sort(([a], [b]) => a.localeCompare(b))
-                    .map(([k, v]) => (
-                      <div key={k}>
-                        <b>{k}</b>: {v}
-                      </div>
-                    ))}
-                </div>
-              </div>
-            )}
+            <div className="executor-section">
+              <div className="executor-section-title">Version:</div>
+              <div>{this.props.node.version}</div>
+            </div>
             {this.props.node.startTime && (
               <div className="executor-section">
                 <div className="executor-section-title">Uptime:</div>
                 <div>{format.durationSince(this.props.node.startTime)}</div>
+              </div>
+            )}
+            {this.props.lastCheckInTime && (
+              <div className="executor-section">
+                <div className="executor-section-title">Last Check-in:</div>
+                <div>{format.relativeTimeSeconds(this.props.lastCheckInTime)}</div>
               </div>
             )}
             <div className="executor-section">
@@ -74,6 +64,12 @@ export default class ExecutorCardComponent extends React.Component<Props> {
                   : "unknown"}
               </div>
             </div>
+            {this.props.node.osDisplayName && (
+              <div className="executor-section">
+                <div className="executor-section-title">Operating System:</div>
+                <div>{this.props.node.osDisplayName}</div>
+              </div>
+            )}
             {this.props.node.assignableCustomResources && this.props.node.assignableCustomResources.length > 0 && (
               <div className="executor-section">
                 <div className="executor-section-title">Assignable Resources:</div>
@@ -125,20 +121,12 @@ export default class ExecutorCardComponent extends React.Component<Props> {
               </div>
             </div>
             <div className="executor-section">
-              <div className="executor-section-title">Version:</div>
-              <div>{this.props.node.version}</div>
-            </div>
-            <div className="executor-section">
               <div className="executor-section-title">Default:</div>
               <div>{this.props.isDefault ? "True" : "False"}</div>
             </div>
 
             {this.props.lastCheckInTime && (
               <>
-                <div className="executor-section">
-                  <div className="executor-section-title">Last Check-in:</div>
-                  <div>{format.relativeTimeSeconds(this.props.lastCheckInTime)}</div>
-                </div>
                 <div className="executor-section">
                   <div className="executor-section-title">Queue Length:</div>
                   <div>{this.props.node.currentQueueLength || 0}</div>
@@ -148,6 +136,21 @@ export default class ExecutorCardComponent extends React.Component<Props> {
                   <div>{this.props.node.activeActionCount || 0}</div>
                 </div>
               </>
+            )}
+
+            {this.props.node.labels && Object.keys(this.props.node.labels).length > 0 && (
+              <div className="executor-section">
+                <div className="executor-section-title">Labels:</div>
+                <div>
+                  {Object.entries(this.props.node.labels)
+                    .sort(([a], [b]) => a.localeCompare(b))
+                    .map(([k, v]) => (
+                      <div key={k}>
+                        <b>{k}</b>: {v}
+                      </div>
+                    ))}
+                </div>
+              </div>
             )}
 
             <div className="executor-section">
