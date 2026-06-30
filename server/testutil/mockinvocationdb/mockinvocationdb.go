@@ -38,8 +38,8 @@ func (m *MockInvocationDB) LookupGroupFromInvocation(ctx context.Context, invoca
 func (m *MockInvocationDB) LookupGroupIDFromInvocation(ctx context.Context, invocationID string) (string, error) {
 	return "", nil
 }
-func (m *MockInvocationDB) LookupExpiredInvocations(ctx context.Context, cutoffTime time.Time, limit int) ([]*tables.Invocation, error) {
-	return nil, nil
+func (m *MockInvocationDB) LookupExpiredInvocations(ctx context.Context, cutoffTime time.Time, limit, offset int) ([]*tables.Invocation, error) {
+	return []*tables.Invocation{}, nil
 }
 func (m *MockInvocationDB) LookupChildInvocations(ctx context.Context, parentRunID string) ([]string, error) {
 	return nil, nil
