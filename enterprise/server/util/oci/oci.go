@@ -606,7 +606,7 @@ func newImageFromRawManifest(ctx context.Context, repo ctrname.Repository, desc 
 			manifest.Config.Digest,
 			i,
 			i.puller,
-			nil,
+			&manifest.Config,
 		)
 
 		rc, err := layer.Uncompressed()
@@ -714,17 +714,7 @@ func (i *imageFromRawManifest) Layers() ([]ctr.Layer, error) {
 }
 
 func (i *imageFromRawManifest) LayerByDigest(digest ctr.Hash) (ctr.Layer, error) {
-	return newLayerFromDigest(
-		i.repo,
-		digest,
-		i,
-		i.puller,
-		nil,
-	), nil
-}
-
-func (i *imageFromRawManifest) LayerByDiffID(diffID ctr.Hash) (ctr.Layer, error) {
-	digest, err := partial.DiffIDToBlob(i, diffID)
+	desc, err := i.descriptorForDigest(digest)
 	if err != nil {
 		return nil, err
 	}
@@ -733,8 +723,47 @@ func (i *imageFromRawManifest) LayerByDiffID(diffID ctr.Hash) (ctr.Layer, error)
 		digest,
 		i,
 		i.puller,
-		nil,
+		desc,
 	), nil
+}
+
+func (i *imageFromRawManifest) LayerByDiffID(diffID ctr.Hash) (ctr.Layer, error) {
+	digest, err := partial.DiffIDToBlob(i, diffID)
+	if err != nil {
+		return nil, err
+	}
+	desc, err := i.descriptorForDigest(digest)
+	if err != nil {
+		return nil, err
+	}
+	return newLayerFromDigest(
+		i.repo,
+		digest,
+		i,
+		i.puller,
+		desc,
+	), nil
+}
+
+// descriptorForDigest returns the manifest descriptor (config or layer) for the
+// given blob digest, so callers can supply the blob's size and media type
+// without a registry round-trip. It returns nil (not an error) when the digest
+// isn't referenced by the manifest; the blob is then fetched without
+// write-through caching.
+func (i *imageFromRawManifest) descriptorForDigest(digest ctr.Hash) (*ctr.Descriptor, error) {
+	manifest, err := i.Manifest()
+	if err != nil {
+		return nil, err
+	}
+	if manifest.Config.Digest == digest {
+		return &manifest.Config, nil
+	}
+	for idx := range manifest.Layers {
+		if manifest.Layers[idx].Digest == digest {
+			return &manifest.Layers[idx], nil
+		}
+	}
+	return nil, nil
 }
 
 func newLayerFromDigest(repo ctrname.Repository, digest ctr.Hash, image *imageFromRawManifest, puller *remote.Puller, desc *ctr.Descriptor) *layerFromDigest {
@@ -834,14 +863,28 @@ func (l *layerFromDigest) fetchFromRemote() (io.ReadCloser, error) {
 	}
 	if l.image.useOCIFetcher {
 		ref := l.repo.Digest(l.digest.String())
+		// Pass the manifest this blob belongs to so the server can prove repo
+		// access with a manifest HEAD rather than a blob HEAD (some registries,
+		// e.g. public.ecr.aws, reject blob HEADs even when the GET is allowed).
+		manifestRef := l.repo.Digest(l.image.desc.Digest.String())
+		req := &ofpb.FetchBlobRequest{
+			Ref:            ref.String(),
+			ManifestRef:    manifestRef.String(),
+			Credentials:    l.image.credentials.ToProto(),
+			BypassRegistry: l.image.credentials.bypassRegistry,
+		}
+		// Pass the blob's size and media type (from the manifest descriptor) so
+		// the server can write the blob to cache without a metadata blob HEAD.
+		if l.desc != nil {
+			size := l.desc.Size
+			mediaType := string(l.desc.MediaType)
+			req.Size = &size
+			req.MediaType = &mediaType
+		}
 		// Create a cancellable context so that Close() can abort the stream
 		// if the caller doesn't read to EOF.
 		ctx, cancel := context.WithCancel(l.image.ctx)
-		stream, err := l.image.ociFetcherClient.FetchBlob(ctx, &ofpb.FetchBlobRequest{
-			Ref:            ref.String(),
-			Credentials:    l.image.credentials.ToProto(),
-			BypassRegistry: l.image.credentials.bypassRegistry,
-		})
+		stream, err := l.image.ociFetcherClient.FetchBlob(ctx, req)
 		if err != nil {
 			cancel()
 			return nil, err
