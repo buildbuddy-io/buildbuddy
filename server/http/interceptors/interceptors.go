@@ -29,7 +29,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
+	"github.com/buildbuddy-io/buildbuddy/server/util/quota"
 	"github.com/buildbuddy-io/buildbuddy/server/util/region"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/prometheus/client_golang/prometheus"
@@ -47,11 +49,15 @@ var (
 
 const contentSecurityPolicyReportingEndpointName = "csp-endpoint"
 
+// BuildBuddyServicePathPrefix is the HTTP protolet prefix for BuildBuddyService RPCs.
+const BuildBuddyServicePathPrefix = "/rpc/BuildBuddyService/"
+
+// APIServicePathPrefix is the HTTP protolet prefix for ApiService RPCs.
+const APIServicePathPrefix = "/api/v1/"
+
 var (
 	rpcNameContextKey       = struct{}{}
-	buildBuddyHTTPPrefix    = "/rpc/BuildBuddyService/"
 	buildBuddyServicePrefix = "/" + bbspb.BuildBuddyService_ServiceDesc.ServiceName + "/"
-	apiHTTPPrefix           = "/api/v1/"
 	apiServicePrefix        = "/" + apipb.ApiService_ServiceDesc.ServiceName + "/"
 )
 
@@ -296,14 +302,24 @@ func Authenticate(env environment.Env, next http.Handler) http.Handler {
 //	/api/v1/Run -> /api.v1.ApiService/Run
 func parseProtoletRPCName(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case strings.HasPrefix(r.URL.Path, buildBuddyHTTPPrefix):
-			r = r.WithContext(context.WithValue(r.Context(), rpcNameContextKey, buildBuddyServicePrefix+strings.TrimPrefix(r.URL.Path, buildBuddyHTTPPrefix)))
-		case strings.HasPrefix(r.URL.Path, apiHTTPPrefix):
-			r = r.WithContext(context.WithValue(r.Context(), rpcNameContextKey, apiServicePrefix+strings.TrimPrefix(r.URL.Path, apiHTTPPrefix)))
+		if rpcName, ok := ProtoletRPCNameFromHTTPPath(r.URL.Path); ok {
+			r = r.WithContext(context.WithValue(r.Context(), rpcNameContextKey, rpcName))
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// ProtoletRPCNameFromHTTPPath converts a protolet HTTP path to its canonical
+// full RPC method name.
+func ProtoletRPCNameFromHTTPPath(path string) (string, bool) {
+	switch {
+	case strings.HasPrefix(path, BuildBuddyServicePathPrefix):
+		return buildBuddyServicePrefix + strings.TrimPrefix(path, BuildBuddyServicePathPrefix), true
+	case strings.HasPrefix(path, APIServicePathPrefix):
+		return apiServicePrefix + strings.TrimPrefix(path, APIServicePathPrefix), true
+	default:
+		return "", false
+	}
 }
 
 func rpcNameFromContext(ctx context.Context) (string, bool) {
@@ -336,6 +352,48 @@ func AuthorizeIP(env environment.Env, next http.Handler) http.Handler {
 				return
 			}
 			r = r.WithContext(newCtx)
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// ApplyQuota enforces per-RPC quota when a quota manager is configured.
+func ApplyQuota(env environment.Env, next http.Handler) http.Handler {
+	return applyQuota(env, next, nil)
+}
+
+func applyProtoletQuota(env environment.Env, next http.Handler) http.Handler {
+	return applyQuota(env, next, func(r *http.Request) bool {
+		return r.Header.Get("Content-Type") == protolet.PrefixedProtoContentType
+	})
+}
+
+func applyQuota(env environment.Env, next http.Handler, skip func(*http.Request) bool) http.Handler {
+	qm := env.GetQuotaManager()
+	if qm == nil {
+		return next
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+		rpcName, ok := rpcNameFromContext(ctx)
+		if !ok {
+			// TODO: check whether these happen in dev, and if not, make this
+			// a hard failure
+			log.CtxDebugf(ctx, "Not enforcing quota for unknown RPC (path=%q)", r.URL.Path)
+			next.ServeHTTP(w, r)
+			return
+		}
+		if skip != nil && skip(r) {
+			next.ServeHTTP(w, r)
+			return
+		}
+		if err := qm.Allow(r.Context(), quota.GetRPCKey(rpcName), 1); err != nil {
+			httpStatus := http.StatusInternalServerError
+			if status.IsResourceExhaustedError(err) {
+				httpStatus = http.StatusTooManyRequests
+			}
+			http.Error(w, err.Error(), httpStatus)
+			return
 		}
 		next.ServeHTTP(w, r)
 	})
@@ -484,8 +542,8 @@ func routeLabel(r *http.Request) string {
 	if strings.HasPrefix(path, "/favicon/") {
 		return "/favicon/[...]"
 	}
-	if strings.HasPrefix(path, "/rpc/BuildBuddyService/") {
-		return "/rpc/BuildBuddyService/[...]"
+	if strings.HasPrefix(path, BuildBuddyServicePathPrefix) {
+		return BuildBuddyServicePathPrefix + "[...]"
 	}
 	if strings.HasPrefix(path, "/invocation/") {
 		return "/invocation/[...]"
@@ -547,10 +605,14 @@ func wrapHandler(env environment.Env, next http.Handler, wrapFns *[]wrapFn) http
 	return handler
 }
 
-func WrapAuthenticatedExternalProtoletHandler(env environment.Env, httpPrefix string, handlers *protolet.HTTPHandlers) http.Handler {
+// WrapAuthenticatedExternalProtoletHandler wraps an authenticated protolet HTTP
+// handler. Use this for RPCs served by protolet, such as /rpc/BuildBuddyService/*
+// and most /api/v1/* routes.
+func WrapAuthenticatedExternalProtoletHandler(env environment.Env, handlers *protolet.HTTPHandlers) http.Handler {
 	return wrapHandler(env, handlers.RequestHandler, &[]wrapFn{
 		Gzip,
 		func(h http.Handler) http.Handler { return AuthorizeSelectedGroupRole(env, h) },
+		func(h http.Handler) http.Handler { return applyProtoletQuota(env, h) },
 		parseProtoletRPCName,
 		func(h http.Handler) http.Handler { return AuthorizeIP(env, h) },
 		func(h http.Handler) http.Handler { return Authenticate(env, h) },
@@ -563,6 +625,26 @@ func WrapAuthenticatedExternalProtoletHandler(env environment.Env, httpPrefix st
 		ClientIP,
 		Subdomain,
 		region.CORS,
+		RecoverAndAlert,
+	})
+}
+
+// WrapAuthenticatedExternalAPIRPCHandler wraps an authenticated API HTTP
+// handler that is not served by protolet, such as /api/v1/GetFile.
+func WrapAuthenticatedExternalAPIRPCHandler(env environment.Env, next http.Handler) http.Handler {
+	return wrapHandler(env, next, &[]wrapFn{
+		Zstd,
+		Gzip,
+		func(h http.Handler) http.Handler { return ApplyQuota(env, h) },
+		func(h http.Handler) http.Handler { return AuthorizeIP(env, h) },
+		parseProtoletRPCName,
+		func(h http.Handler) http.Handler { return Authenticate(env, h) },
+		RequestContextFromURL,
+		func(h http.Handler) http.Handler { return SetSecurityHeaders(h) },
+		LogRequest,
+		RequestID,
+		ClientIP,
+		Subdomain,
 		RecoverAndAlert,
 	})
 }
