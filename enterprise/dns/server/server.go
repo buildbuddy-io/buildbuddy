@@ -37,9 +37,14 @@ const (
 	// validation name, which is always _acme-challenge.<domain being validated>.
 	acmeChallengePrefix = "_acme-challenge."
 
-	// acmeReferralTTL is the TTL on the NS records of an _acme-challenge
-	// referral. Short, since challenges are transient.
-	acmeReferralTTL = 300
+	// acmeTTL is the TTL on served _acme-challenge TXT records. Short, since
+	// challenges are transient.
+	acmeTTL = 60
+
+	// acmeBlobstoreTimeout bounds the blobstore reads/writes made on the DNS
+	// request path so a slow or hung backend can't block handler goroutines
+	// indefinitely.
+	acmeBlobstoreTimeout = 10 * time.Second
 )
 
 type handler struct {
@@ -51,17 +56,14 @@ type handler struct {
 	// instead of re-asking us every time. Nil if the zone file has no SOA.
 	soa dns.RR
 
-	// apex is the canonical zone apex (the SOA owner). NS records here describe
-	// this zone; NS records below it are delegations (zone cuts). Empty if the
-	// zone file has no SOA, in which case we can't tell the two apart and treat
-	// nothing as a delegation.
+	// apex is the canonical zone apex (the SOA owner), used to recognize in-zone
+	// names. Empty if the zone file has no SOA.
 	apex string
 
-	// acmeChallengeNS, when non-empty, are the nameservers to which any in-zone
-	// _acme-challenge.* query is referred. This delegates ACME DNS-01 validation
-	// to a dynamic DNS provider (e.g. Cloud DNS) for every name in the zone
-	// without a per-name record -- the leftmost label is always _acme-challenge.
-	acmeChallengeNS []string
+	// acme, when non-nil, makes this server self-host ACME DNS-01 validation:
+	// it accepts RFC2136 UPDATEs for in-zone _acme-challenge.* TXT records and
+	// answers queries for them from the blobstore-backed store.
+	acme *Challenges
 
 	env environment.Env
 }
@@ -86,6 +88,13 @@ func (h *handler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 		}).Observe(float64(time.Since(start).Microseconds()))
 	}()
 
+	// RFC2136 dynamic UPDATE (used by cert-manager to set/remove the ACME
+	// _acme-challenge TXT records we self-host) is handled separately.
+	if r.Opcode == dns.OpcodeUpdate {
+		h.serveUpdate(w, r)
+		return
+	}
+
 	if len(r.Question) != 1 {
 		m.Rcode = dns.RcodeFormatError
 		if err := w.WriteMsg(m); err != nil {
@@ -97,41 +106,26 @@ func (h *handler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 	qName := dns.CanonicalName(r.Question[0].Name)
 	qType := r.Question[0].Qtype
 
-	// If the name lies at or below a zone cut (an in-zone NS record below the
-	// apex), we are not authoritative for it: return a referral to the child's
-	// nameservers instead of answering from this zone. This is how we hand a
-	// subdomain off to another DNS provider -- e.g. delegating an ACME
-	// _acme-challenge validation name back to a cloud DNS zone.
-	//
-	// This runs before the ACME referral below so that a name under a delegation
-	// (including the child's own _acme-challenge names) goes to the child that
-	// owns it, rather than being hijacked to our ACME provider.
-	//
-	// TODO(tylerw): A DS query AT a zone cut is the exception: the DS RRset is
-	// parent-owned authoritative data and must be answered here (or NODATA+SOA),
-	// not referred down to the child (RFC 4035 sec. 3.1.4.1). DS queries strictly
-	// below the cut still refer, so the guard is "for DS, evaluate the delegation
-	// from qName's parent label", not a blanket skip. Inert until we serve
-	// DNSSEC (no DS/RRSIG today), and a full fix also needs signed DS/RRSIG/NSEC.
-	if ns := h.delegation(qName); len(ns) > 0 {
-		m.Authoritative = false
-		m.Ns = append(m.Ns, ns...)
-		m.Extra = append(m.Extra, h.glue(ns)...)
-		if err := w.WriteMsg(m); err != nil {
-			log.Warningf("Failed to write DNS referral for %q: %s", qName, err)
+	// Self-hosted ACME: answer in-zone _acme-challenge.* names from the
+	// blobstore-backed store (records are set/removed via RFC2136 UPDATE). A name
+	// with a current value is answered; one without is authoritative NODATA.
+	if h.acme != nil && h.isACMEChallengeName(qName) {
+		if qType == dns.TypeTXT {
+			ctx, cancel := context.WithTimeout(context.Background(), acmeBlobstoreTimeout)
+			defer cancel()
+			if vals := h.acme.TXT(ctx, qName); len(vals) > 0 {
+				m.Answer = txtRecords(qName, vals)
+				if err := w.WriteMsg(m); err != nil {
+					log.Warningf("Failed to write ACME challenge answer for %q: %s", qName, err)
+				}
+				return
+			}
 		}
-		return
-	}
-
-	// Dynamic ACME delegation: refer any in-zone _acme-challenge.* name that is
-	// not already under a delegation (handled above) to the configured
-	// nameservers, so DNS-01 validation for every cert in the zone -- current and
-	// future -- is handled by a dynamic provider with no per-name record here.
-	if ns := h.acmeChallengeReferral(qName); len(ns) > 0 {
-		m.Authoritative = false
-		m.Ns = append(m.Ns, ns...)
+		if h.soa != nil {
+			m.Ns = append(m.Ns, h.soa)
+		}
 		if err := w.WriteMsg(m); err != nil {
-			log.Warningf("Failed to write ACME challenge referral for %q: %s", qName, err)
+			log.Warningf("Failed to write ACME challenge NODATA for %q: %s", qName, err)
 		}
 		return
 	}
@@ -325,73 +319,102 @@ func (h *handler) lookup(name string) ([]dns.RR, bool) {
 	return nil, false
 }
 
-// delegation returns the NS records at the closest zone cut enclosing name, or
-// nil if name is not under a delegation. A zone cut is any owner below the apex
-// that carries NS records; the apex's own NS records describe this zone, not a
-// delegation, so they are never treated as one. Walking up from name, the first
-// such owner is the cut, since a correct parent holds no data below it.
-func (h *handler) delegation(name string) []dns.RR {
-	if h.apex == "" {
-		return nil
-	}
-	for n := name; n != h.apex; {
-		if ns := filterByType(h.records[n], dns.TypeNS); len(ns) > 0 {
-			return ns
-		}
-		off, end := dns.NextLabel(n, 0)
-		if end {
-			break
-		}
-		n = n[off:]
-	}
-	return nil
+// isACMEChallengeName reports whether name is an in-zone ACME DNS-01 validation
+// name (leftmost label _acme-challenge, under the apex). name is canonicalized
+// (lowercase, fqdn) by ServeDNS and acmeChallengePrefix is lowercase, so the
+// prefix check identifies the leftmost label without allocating.
+func (h *handler) isACMEChallengeName(name string) bool {
+	return h.apex != "" && strings.HasPrefix(name, acmeChallengePrefix) && dns.IsSubDomain(h.apex, name)
 }
 
-// acmeChallengeReferral returns NS records delegating name to the configured
-// ACME nameservers, or nil if ACME delegation is unconfigured or name is not an
-// in-zone _acme-challenge.* name. The referral is synthesized per query (owned
-// by name) so a single config covers every _acme-challenge name in the zone.
-// Callers must check delegation() first: a name under a zone cut belongs to the
-// child, so this does not re-check for one.
-func (h *handler) acmeChallengeReferral(name string) []dns.RR {
-	if len(h.acmeChallengeNS) == 0 || h.apex == "" {
-		return nil
-	}
-	// name is canonicalized (lowercase, fqdn) by ServeDNS, and acmeChallengePrefix
-	// is lowercase, so a prefix check identifies the _acme-challenge leftmost
-	// label without allocating.
-	if !strings.HasPrefix(name, acmeChallengePrefix) || !dns.IsSubDomain(h.apex, name) {
-		return nil
-	}
-	out := make([]dns.RR, 0, len(h.acmeChallengeNS))
-	for _, ns := range h.acmeChallengeNS {
-		out = append(out, &dns.NS{
-			Hdr: dns.RR_Header{Name: name, Rrtype: dns.TypeNS, Class: dns.ClassINET, Ttl: acmeReferralTTL},
-			Ns:  ns,
+// txtRecords builds a TXT RRset owned by name from the given string values.
+func txtRecords(name string, vals []string) []dns.RR {
+	out := make([]dns.RR, 0, len(vals))
+	for _, v := range vals {
+		out = append(out, &dns.TXT{
+			Hdr: dns.RR_Header{Name: name, Rrtype: dns.TypeTXT, Class: dns.ClassINET, Ttl: acmeTTL},
+			Txt: []string{v},
 		})
 	}
 	return out
 }
 
-// glue returns the in-zone (in-bailiwick) address records for the targets of
-// the given NS records, for the additional section of a referral. Out-of-zone
-// targets -- the usual case for our delegations -- contribute no glue and are
-// resolved by the asking resolver itself.
-func (h *handler) glue(nsRecords []dns.RR) []dns.RR {
-	var out []dns.RR
-	for _, rr := range nsRecords {
-		ns, ok := rr.(*dns.NS)
-		if !ok {
-			continue
+// serveUpdate handles RFC2136 dynamic UPDATE messages, used by cert-manager's
+// rfc2136 solver to set and remove the _acme-challenge TXT records we self-host.
+// It requires a valid TSIG signature and only ever touches in-zone
+// _acme-challenge TXT names, so the TSIG key can't be used to rewrite the zone.
+func (h *handler) serveUpdate(w dns.ResponseWriter, r *dns.Msg) {
+	m := new(dns.Msg)
+	m.SetReply(r)
+
+	reqTSIG := r.IsTsig()
+	// TsigStatus() is nil for an unsigned message too, so also require that the
+	// request actually carried a TSIG.
+	if h.acme == nil || reqTSIG == nil || w.TsigStatus() != nil {
+		m.SetRcode(r, dns.RcodeNotAuth)
+		writeUpdateReply(w, m, nil)
+		return
+	}
+
+	// RFC2136 updates are all-or-nothing, so validate every record before
+	// applying any: a record we'd refuse (wrong type/name, or an unsupported
+	// class) must reject the whole update, not leave an earlier record applied.
+	// The RRset-delete form (class ANY) arrives as a *dns.ANY with Rrtype TXT, so
+	// dispatch on the header rather than the concrete type.
+	for _, rr := range r.Ns { // RFC2136: the records to apply live in the Ns section.
+		hdr := rr.Header()
+		if hdr.Rrtype != dns.TypeTXT || !h.isACMEChallengeName(dns.CanonicalName(hdr.Name)) {
+			m.SetRcode(r, dns.RcodeRefused)
+			writeUpdateReply(w, m, reqTSIG)
+			return
 		}
-		for _, a := range h.records[dns.CanonicalName(ns.Ns)] {
-			switch a.Header().Rrtype {
-			case dns.TypeA, dns.TypeAAAA:
-				out = append(out, a)
-			}
+		switch hdr.Class {
+		case dns.ClassINET, dns.ClassNONE, dns.ClassANY:
+		default:
+			m.SetRcode(r, dns.RcodeRefused)
+			writeUpdateReply(w, m, reqTSIG)
+			return
 		}
 	}
-	return out
+
+	ctx, cancel := context.WithTimeout(context.Background(), acmeBlobstoreTimeout)
+	defer cancel()
+	rcode := dns.RcodeSuccess
+	for _, rr := range r.Ns {
+		hdr := rr.Header()
+		name := dns.CanonicalName(hdr.Name)
+		var err error
+		switch hdr.Class {
+		case dns.ClassINET: // add to the RRset
+			if txt, ok := rr.(*dns.TXT); ok {
+				err = h.acme.Add(ctx, name, txt.Txt...)
+			}
+		case dns.ClassNONE: // delete these values from the RRset
+			if txt, ok := rr.(*dns.TXT); ok {
+				err = h.acme.Delete(ctx, name, txt.Txt...)
+			}
+		case dns.ClassANY: // delete the whole RRset
+			err = h.acme.Delete(ctx, name)
+		}
+		if err != nil {
+			log.Warningf("ACME update for %q failed: %s", name, err)
+			rcode = dns.RcodeServerFailure
+			break
+		}
+	}
+	m.SetRcode(r, rcode)
+	writeUpdateReply(w, m, reqTSIG)
+}
+
+// writeUpdateReply writes m, TSIG-signing it (with the request's key and
+// algorithm) when the request was signed so the rfc2136 client accepts it.
+func writeUpdateReply(w dns.ResponseWriter, m *dns.Msg, reqTSIG *dns.TSIG) {
+	if reqTSIG != nil {
+		m.SetTsig(reqTSIG.Hdr.Name, reqTSIG.Algorithm, 300, time.Now().Unix())
+	}
+	if err := w.WriteMsg(m); err != nil {
+		log.Warningf("Failed to write DNS UPDATE reply: %s", err)
+	}
 }
 
 // recordTypeLabel maps a query type to a metric label, collapsing unknown
@@ -480,10 +503,10 @@ func addrFromNetAddr(a net.Addr) netip.Addr {
 	return netip.Addr{}
 }
 
-// NewHandler builds a DNS handler serving resources. acmeChallengeNameservers,
-// if non-empty, are the nameservers to which any in-zone _acme-challenge.* query
-// is referred (delegating ACME DNS-01 validation to a dynamic provider).
-func NewHandler(env environment.Env, resources []dns.RR, acmeChallengeNameservers []string) dns.Handler {
+// NewHandler builds a DNS handler serving resources. acme, if non-nil,
+// self-hosts ACME DNS-01: the handler accepts RFC2136 UPDATEs for
+// _acme-challenge TXT records and answers queries for them from it.
+func NewHandler(env environment.Env, resources []dns.RR, acme *Challenges) dns.Handler {
 	records := make(map[string][]dns.RR, len(resources))
 	var soa dns.RR
 	for _, rr := range resources {
@@ -497,18 +520,12 @@ func NewHandler(env environment.Env, resources []dns.RR, acmeChallengeNameserver
 	if soa != nil {
 		apex = dns.CanonicalName(soa.Header().Name)
 	}
-	var acmeNS []string
-	for _, ns := range acmeChallengeNameservers {
-		if ns = strings.TrimSpace(ns); ns != "" {
-			acmeNS = append(acmeNS, dns.Fqdn(ns))
-		}
-	}
 	return &handler{
-		records:         records,
-		soa:             soa,
-		apex:            apex,
-		acmeChallengeNS: acmeNS,
-		env:             env,
+		records: records,
+		soa:     soa,
+		apex:    apex,
+		acme:    acme,
+		env:     env,
 	}
 }
 

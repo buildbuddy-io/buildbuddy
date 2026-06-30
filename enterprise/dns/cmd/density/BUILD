@@ -14,6 +14,7 @@ go_library(
         "//enterprise/server/backends/configsecrets",
         "//enterprise/server/experiments",
         "//enterprise/server/experiments/gcsflagsync",
+        "//server/backends/blobstore/gcs",
         "//server/config",
         "//server/real_environment",
         "//server/util/flag",

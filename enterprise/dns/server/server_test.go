@@ -1,18 +1,23 @@
 package server_test
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"net/netip"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/dns/server"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/maxmind"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -35,17 +40,6 @@ var zone = []string{
 	"*.aws.buildbuddy.io. 60 IN CNAME elb.amazonaws.example.",
 	"www.buildbuddy.io. 60 IN CNAME external.github.io.",
 	"alias.buildbuddy.io. 60 IN CNAME cache.buildbuddy.io.",
-	// The apex's own NS records describe this zone (not a delegation).
-	"buildbuddy.io. 60 IN NS ns1.example.",
-	// acme.buildbuddy.io is delegated to another provider (out-of-zone NS),
-	// e.g. to hand off ACME DNS-01 validation; queries at or below it (even
-	// ones a wildcard would otherwise cover) are referred, not answered.
-	"acme.buildbuddy.io. 60 IN NS ns1.otherns.example.",
-	"acme.buildbuddy.io. 60 IN NS ns2.otherns.example.",
-	// glued.buildbuddy.io is delegated to an in-bailiwick nameserver, so its
-	// address is glue served in the additional section of the referral.
-	"glued.buildbuddy.io. 60 IN NS ns1.glued.buildbuddy.io.",
-	"ns1.glued.buildbuddy.io. 60 IN A 5.6.7.8",
 }
 
 func mustRecords(tb testing.TB) []dns.RR {
@@ -65,10 +59,14 @@ func newTestHandler(t *testing.T) dns.Handler {
 
 // fakeResponseWriter captures the message written by the handler and reports a
 // configurable transport source address (remote). When remote is nil it reports
-// an empty UDP address, i.e. no usable client IP.
+// an empty UDP address, i.e. no usable client IP. tsigStatus is what
+// TsigStatus() reports -- the real miekg server sets this to the result of TSIG
+// verification, so a non-nil value simulates a request signed with a wrong or
+// unknown key.
 type fakeResponseWriter struct {
-	msg    *dns.Msg
-	remote net.Addr
+	msg        *dns.Msg
+	remote     net.Addr
+	tsigStatus error
 }
 
 func (w *fakeResponseWriter) WriteMsg(m *dns.Msg) error { w.msg = m; return nil }
@@ -81,7 +79,7 @@ func (w *fakeResponseWriter) RemoteAddr() net.Addr {
 }
 func (w *fakeResponseWriter) Write([]byte) (int, error) { return 0, nil }
 func (w *fakeResponseWriter) Close() error              { return nil }
-func (w *fakeResponseWriter) TsigStatus() error         { return nil }
+func (w *fakeResponseWriter) TsigStatus() error         { return w.tsigStatus }
 func (w *fakeResponseWriter) TsigTimersOnly(bool)       {}
 func (w *fakeResponseWriter) Hijack()                   {}
 
@@ -469,124 +467,186 @@ func answers(rrs []dns.RR) []answer {
 	return out
 }
 
-// nsTargets returns the target names of the NS records in rrs.
-func nsTargets(rrs []dns.RR) []string {
+// txtValues returns the string values of the TXT records in rrs.
+func txtValues(rrs []dns.RR) []string {
 	var out []string
 	for _, rr := range rrs {
-		if ns, ok := rr.(*dns.NS); ok {
-			out = append(out, ns.Ns)
+		if t, ok := rr.(*dns.TXT); ok {
+			out = append(out, t.Txt...)
 		}
 	}
 	return out
 }
 
-func TestDelegationReferral(t *testing.T) {
-	h := newTestHandler(t)
-	// A name under the delegated subzone is referred: NOERROR, not
-	// authoritative, NS records in the authority section, no answer, no SOA.
-	m := query(t, h, "_acme-challenge.foo.acme.buildbuddy.io.", dns.TypeTXT)
-	assert.Equal(t, dns.RcodeSuccess, m.Rcode)
-	assert.False(t, m.Authoritative, "a referral must not set the authoritative flag")
-	assert.Empty(t, m.Answer)
-	assert.ElementsMatch(t,
-		[]string{"ns1.otherns.example.", "ns2.otherns.example."}, nsTargets(m.Ns))
-	for _, rr := range m.Ns {
-		assert.NotEqual(t, dns.TypeSOA, rr.Header().Rrtype, "a referral carries NS, not the SOA")
+func mustRR(t *testing.T, line string) dns.RR {
+	t.Helper()
+	rr, err := dns.NewRR(line)
+	require.NoError(t, err, "parsing %q", line)
+	return rr
+}
+
+// memBlobstore is a minimal in-memory interfaces.Blobstore for tests.
+type memBlobstore struct {
+	mu   sync.Mutex
+	data map[string][]byte
+}
+
+func newMemBlobstore() *memBlobstore { return &memBlobstore{data: map[string][]byte{}} }
+
+func (m *memBlobstore) ReadBlob(_ context.Context, name string) ([]byte, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	b, ok := m.data[name]
+	if !ok {
+		return nil, status.NotFoundErrorf("%q not found", name)
 	}
+	return b, nil
+}
+func (m *memBlobstore) WriteBlob(_ context.Context, name string, data []byte) (int, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.data[name] = data
+	return len(data), nil
+}
+func (m *memBlobstore) DeleteBlob(_ context.Context, name string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.data, name)
+	return nil
+}
+func (m *memBlobstore) BlobExists(_ context.Context, name string) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	_, ok := m.data[name]
+	return ok, nil
+}
+func (m *memBlobstore) Writer(context.Context, string) (interfaces.CommittedWriteCloser, error) {
+	return nil, status.UnimplementedError("not used")
 }
 
-func TestDelegationAtCut(t *testing.T) {
-	h := newTestHandler(t)
-	// The delegation point itself is referred, regardless of query type.
-	m := query(t, h, "acme.buildbuddy.io.", dns.TypeA)
+// signedUpdate builds an RFC2136 UPDATE for zone carrying a TSIG so the handler
+// treats it as authenticated (fakeResponseWriter.TsigStatus reports nil).
+func signedUpdate(zone string) *dns.Msg {
+	u := new(dns.Msg)
+	u.SetUpdate(dns.Fqdn(zone))
+	u.SetTsig("acme.", dns.HmacSHA256, 300, time.Now().Unix())
+	return u
+}
+
+func TestSelfHostedACMEChallenge(t *testing.T) {
+	acme, err := server.NewChallenges(newMemBlobstore(), 10*time.Second)
+	require.NoError(t, err)
+	h := server.NewHandler(testenv.GetTestEnv(t), mustRecords(t), acme)
+	const name = "_acme-challenge.cache.buildbuddy.io."
+
+	// Absent challenge: authoritative NODATA (NOERROR, no answer, SOA).
+	m := query(t, h, name, dns.TypeTXT)
 	assert.Equal(t, dns.RcodeSuccess, m.Rcode)
-	assert.False(t, m.Authoritative)
+	assert.True(t, m.Authoritative)
 	assert.Empty(t, m.Answer)
-	require.NotEmpty(t, m.Ns)
-}
+	require.Len(t, m.Ns, 1)
+	assert.Equal(t, dns.TypeSOA, m.Ns[0].Header().Rrtype)
 
-func TestDelegationBeatsWildcard(t *testing.T) {
-	h := newTestHandler(t)
-	// *.buildbuddy.io would otherwise synthesize an A; the zone cut takes
-	// precedence (RFC 4592) and we refer instead.
-	m := query(t, h, "host.acme.buildbuddy.io.", dns.TypeA)
-	assert.False(t, m.Authoritative)
-	assert.Empty(t, m.Answer)
-	require.NotEmpty(t, m.Ns)
-}
-
-func TestDelegationGlue(t *testing.T) {
-	h := newTestHandler(t)
-	// An in-bailiwick nameserver target contributes a glue A in the additional
-	// section so the resolver can reach the child without a lookup loop.
-	m := query(t, h, "x.glued.buildbuddy.io.", dns.TypeA)
-	assert.False(t, m.Authoritative)
-	assert.Equal(t, []answer{{"ns1.glued.buildbuddy.io.", "A", "5.6.7.8"}}, answers(m.Extra))
-}
-
-func TestApexNSIsAuthoritative(t *testing.T) {
-	h := newTestHandler(t)
-	// The apex's own NS records describe this zone and are answered
-	// authoritatively, not as a referral.
-	m := query(t, h, "buildbuddy.io.", dns.TypeNS)
+	// Set it via an RFC2136 UPDATE, then it's served authoritatively.
+	up := signedUpdate("buildbuddy.io.")
+	up.Insert([]dns.RR{mustRR(t, name+` 60 IN TXT "token-a"`)})
+	m = serve(t, h, up, "")
 	assert.Equal(t, dns.RcodeSuccess, m.Rcode)
+	m = query(t, h, name, dns.TypeTXT)
 	assert.True(t, m.Authoritative)
-	require.NotEmpty(t, m.Answer)
-	assert.Empty(t, m.Ns)
+	assert.Equal(t, []string{"token-a"}, txtValues(m.Answer))
+
+	// A second value for the same name coexists (wildcard + apex cert case).
+	up = signedUpdate("buildbuddy.io.")
+	up.Insert([]dns.RR{mustRR(t, name+` 60 IN TXT "token-b"`)})
+	serve(t, h, up, "")
+	m = query(t, h, name, dns.TypeTXT)
+	assert.ElementsMatch(t, []string{"token-a", "token-b"}, txtValues(m.Answer))
+
+	// Remove one value (RFC2136 class NONE); the other remains.
+	up = signedUpdate("buildbuddy.io.")
+	up.Remove([]dns.RR{mustRR(t, name+` 0 IN TXT "token-a"`)})
+	serve(t, h, up, "")
+	m = query(t, h, name, dns.TypeTXT)
+	assert.Equal(t, []string{"token-b"}, txtValues(m.Answer))
+
+	// Remove the whole RRset (class ANY); back to NODATA.
+	up = signedUpdate("buildbuddy.io.")
+	up.RemoveRRset([]dns.RR{mustRR(t, name+` 0 IN TXT ""`)})
+	serve(t, h, up, "")
+	m = query(t, h, name, dns.TypeTXT)
+	assert.Empty(t, m.Answer)
 }
 
-func TestACMEChallengeReferral(t *testing.T) {
-	acmeNS := []string{"ns-cloud-e1.googledomains.com.", "ns-cloud-e2.googledomains.com."}
-	h := server.NewHandler(testenv.GetTestEnv(t), mustRecords(t), acmeNS)
+func TestSelfHostedACMERejectsUnsignedUpdate(t *testing.T) {
+	acme, err := server.NewChallenges(newMemBlobstore(), 10*time.Second)
+	require.NoError(t, err)
+	h := server.NewHandler(testenv.GetTestEnv(t), mustRecords(t), acme)
 
-	// Any in-zone _acme-challenge.* name, at any depth, is referred to the
-	// configured nameservers with no per-name record: NOERROR, not
-	// authoritative, NS in the authority section, no answer.
-	for _, name := range []string{
-		"_acme-challenge.buildbuddy.io.",
-		"_acme-challenge.cache.buildbuddy.io.",
-		"_acme-challenge.a.b.c.buildbuddy.io.",
-	} {
-		m := query(t, h, name, dns.TypeTXT)
-		assert.Equal(t, dns.RcodeSuccess, m.Rcode, name)
-		assert.False(t, m.Authoritative, "%s should be a referral", name)
-		assert.Empty(t, m.Answer, name)
-		assert.ElementsMatch(t,
-			[]string{"ns-cloud-e1.googledomains.com.", "ns-cloud-e2.googledomains.com."},
-			nsTargets(m.Ns), name)
-	}
+	up := new(dns.Msg) // no TSIG
+	up.SetUpdate("buildbuddy.io.")
+	up.Insert([]dns.RR{mustRR(t, `_acme-challenge.x.buildbuddy.io. 60 IN TXT "nope"`)})
+	m := serve(t, h, up, "")
+	assert.Equal(t, dns.RcodeNotAuth, m.Rcode)
 
-	// A normal name is answered authoritatively, unaffected by the ACME rule.
-	m := query(t, h, "cache.buildbuddy.io.", dns.TypeA)
-	assert.True(t, m.Authoritative)
-	assert.Equal(t, []answer{{"cache.buildbuddy.io.", "A", "1.2.3.4"}}, answers(m.Answer))
+	// Nothing was stored.
+	m = query(t, h, "_acme-challenge.x.buildbuddy.io.", dns.TypeTXT)
+	assert.Empty(t, m.Answer)
+}
 
-	// An out-of-zone _acme-challenge name is not ours to refer: normal NXDOMAIN.
-	m = query(t, h, "_acme-challenge.example.com.", dns.TypeTXT)
-	assert.Equal(t, dns.RcodeNameError, m.Rcode)
-	assert.Empty(t, nsTargets(m.Ns))
+func TestSelfHostedACMERejectsWrongKeyUpdate(t *testing.T) {
+	acme, err := server.NewChallenges(newMemBlobstore(), 10*time.Second)
+	require.NoError(t, err)
+	h := server.NewHandler(testenv.GetTestEnv(t), mustRecords(t), acme)
 
-	// A delegated subdomain owns its own _acme-challenge names: the zone-cut
-	// referral is checked first, so it points at the child's nameservers, not our
-	// ACME provider -- even with the ACME flag set.
-	m = query(t, h, "_acme-challenge.acme.buildbuddy.io.", dns.TypeTXT)
-	assert.False(t, m.Authoritative)
-	assert.ElementsMatch(t,
-		[]string{"ns1.otherns.example.", "ns2.otherns.example."}, nsTargets(m.Ns))
+	// A TSIG-signed UPDATE whose signature fails verification (wrong or unknown
+	// key) must be rejected: the real server reports the failure via
+	// TsigStatus(), which the handler checks even though the message carried a
+	// TSIG. This is the realistic attack the unsigned-update test doesn't cover.
+	up := signedUpdate("buildbuddy.io.")
+	up.Insert([]dns.RR{mustRR(t, `_acme-challenge.x.buildbuddy.io. 60 IN TXT "nope"`)})
+	w := &fakeResponseWriter{tsigStatus: dns.ErrSig}
+	h.ServeDNS(w, up)
+	require.NotNil(t, w.msg, "handler wrote no response")
+	assert.Equal(t, dns.RcodeNotAuth, w.msg.Rcode)
 
-	// ...including in-bailiwick glue for a glued delegation (not the ACME NS).
-	m = query(t, h, "_acme-challenge.glued.buildbuddy.io.", dns.TypeTXT)
-	assert.False(t, m.Authoritative)
-	assert.Equal(t, []string{"ns1.glued.buildbuddy.io."}, nsTargets(m.Ns))
-	assert.Equal(t, []answer{{"ns1.glued.buildbuddy.io.", "A", "5.6.7.8"}}, answers(m.Extra))
+	// Nothing was stored.
+	m := query(t, h, "_acme-challenge.x.buildbuddy.io.", dns.TypeTXT)
+	assert.Empty(t, m.Answer)
+}
 
-	// With no ACME nameservers configured, the rule is off: _acme-challenge
-	// names get ordinary handling (here, the *.buildbuddy.io wildcard), staying
-	// authoritative rather than becoming a referral.
-	def := newTestHandler(t)
-	m = query(t, def, "_acme-challenge.cache.buildbuddy.io.", dns.TypeA)
-	assert.True(t, m.Authoritative)
-	assert.Equal(t, []answer{{"_acme-challenge.cache.buildbuddy.io.", "A", "9.9.9.9"}}, answers(m.Answer))
+func TestSelfHostedACMERejectsNonChallengeUpdate(t *testing.T) {
+	acme, err := server.NewChallenges(newMemBlobstore(), 10*time.Second)
+	require.NoError(t, err)
+	h := server.NewHandler(testenv.GetTestEnv(t), mustRecords(t), acme)
+
+	// A signed UPDATE for a name that isn't an _acme-challenge TXT is refused, so
+	// the TSIG key can't be used to rewrite arbitrary zone records.
+	up := signedUpdate("buildbuddy.io.")
+	up.Insert([]dns.RR{mustRR(t, `cache.buildbuddy.io. 60 IN TXT "hijack"`)})
+	m := serve(t, h, up, "")
+	assert.Equal(t, dns.RcodeRefused, m.Rcode)
+}
+
+func TestSelfHostedACMEUpdateIsAtomic(t *testing.T) {
+	acme, err := server.NewChallenges(newMemBlobstore(), 10*time.Second)
+	require.NoError(t, err)
+	h := server.NewHandler(testenv.GetTestEnv(t), mustRecords(t), acme)
+
+	// An UPDATE carrying a valid add followed by a record we refuse (here, an
+	// unsupported class) must reject the whole update without applying the
+	// earlier add -- RFC2136 updates are all-or-nothing.
+	up := signedUpdate("buildbuddy.io.")
+	up.Insert([]dns.RR{mustRR(t, `_acme-challenge.a.buildbuddy.io. 60 IN TXT "keep"`)})
+	bad := mustRR(t, `_acme-challenge.b.buildbuddy.io. 60 IN TXT "bad"`)
+	bad.Header().Class = dns.ClassCHAOS // unsupported update class
+	up.Ns = append(up.Ns, bad)
+	m := serve(t, h, up, "")
+	assert.Equal(t, dns.RcodeRefused, m.Rcode)
+
+	// The valid add was not applied.
+	m = query(t, h, "_acme-challenge.a.buildbuddy.io.", dns.TypeTXT)
+	assert.Empty(t, m.Answer)
 }
 
 func TestExactMatch(t *testing.T) {
