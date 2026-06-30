@@ -8,6 +8,7 @@ import (
 	"math"
 	"math/rand"
 	"sort"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -225,6 +226,67 @@ func randomFileMetadata(t testing.TB, sizeBytes int64, groupID string) *sgpb.Fil
 		LastModifyUsec:     now,
 	}
 	return md
+}
+
+type recordingFileStorer struct {
+	filestore.Store
+	atimeUpdates atomic.Int64
+}
+
+func (s *recordingFileStorer) UpdateBlobAtime(ctx context.Context, b *sgpb.StorageMetadata_GCSMetadata, ts time.Time) error {
+	s.atimeUpdates.Add(1)
+	return nil
+}
+
+func TestFindUpdatesGCSAtime(t *testing.T) {
+	flags.Set(t, "cache.raft.atime_update_threshold", time.Duration(0))
+	flags.Set(t, "cache.raft.atime_buffer_size", 0)
+	flags.Set(t, "cache.raft.atime_write_batch_size", 1)
+
+	conf := getTestConfigs(t, 1)[0]
+	clock := clockwork.NewFakeClock()
+	conf.env.SetClock(clock)
+	fs := &recordingFileStorer{Store: filestore.New()}
+	conf.config.FileStorer = fs
+
+	addr := localAddr(t)
+	gs, err := gossip.NewWithArgs(conf.config.NHID, addr, []string{addr})
+	require.NoError(t, err)
+	conf.config.GossipManager = gs
+	rc, err := metadata.New(conf.env, conf.config, metadata.WithGCSTTLDays(30))
+	require.NoError(t, err)
+	waitForHealthy(t, rc)
+	t.Cleanup(func() {
+		waitForShutdown(t, rc)
+	})
+
+	ctx, err := conf.ta.WithAuthenticatedUser(context.Background(), "user1")
+	require.NoError(t, err)
+
+	md := randomFileMetadata(t, 100, "group1")
+	md.StorageMetadata = &sgpb.StorageMetadata{
+		GcsMetadata: &sgpb.StorageMetadata_GCSMetadata{
+			BlobName:           "gcs-blob",
+			LastCustomTimeUsec: clock.Now().UnixMicro(),
+		},
+	}
+
+	_, err = rc.Set(ctx, &mdpb.SetRequest{
+		SetOperations: []*mdpb.SetRequest_SetOperation{{
+			FileMetadata: md,
+		}},
+	})
+	require.NoError(t, err)
+
+	findRsp, err := rc.Find(ctx, &mdpb.FindRequest{
+		FileRecords: []*sgpb.FileRecord{md.GetFileRecord()},
+	})
+	require.NoError(t, err)
+	require.Len(t, findRsp.GetFindResponses(), 1)
+	require.True(t, findRsp.GetFindResponses()[0].GetPresent())
+
+	require.NoError(t, rc.TestingWaitForGC(context.Background()))
+	require.GreaterOrEqual(t, fs.atimeUpdates.Load(), int64(1))
 }
 
 func TestAutoBringup(t *testing.T) {

@@ -2996,6 +2996,71 @@ func TestGCSBlobStorageReadAfterTTL(t *testing.T) {
 	}
 }
 
+type commitFailingGCS struct {
+	filestore.PebbleGCSStorage
+	commitErr error
+}
+
+type commitFailingWriter struct {
+	err error
+}
+
+func (w *commitFailingWriter) Write(b []byte) (int, error) {
+	return len(b), nil
+}
+
+func (w *commitFailingWriter) Close() error {
+	return nil
+}
+
+func (w *commitFailingWriter) Commit() error {
+	return w.err
+}
+
+func (g *commitFailingGCS) ConditionalWriter(ctx context.Context, blobName string, overwriteExisting bool, customTime time.Time, estimatedSize int64) (interfaces.CommittedWriteCloser, error) {
+	return &commitFailingWriter{err: g.commitErr}, nil
+}
+
+func TestGCSBlobStorageResourceExhaustedCommitDoesNotWriteMetadata(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
+	clock := clockwork.NewFakeClock()
+	ctx := getAnonContext(t, te)
+
+	var minGCSFileSize int64 = 1
+	var gcsTTLDays int64 = 1
+
+	mockGCS := mockgcs.New(clock)
+	require.NoError(t, mockGCS.SetBucketCustomTimeTTL(ctx, gcsTTLDays))
+	fileStorer := filestore.New(filestore.WithGCSBlobstore(&commitFailingGCS{
+		PebbleGCSStorage: mockGCS,
+		commitErr:        status.ResourceExhaustedError("too many concurrent writes"),
+	}, "app-name"))
+	options := &pebble_cache.Options{
+		RootDirectory:          testfs.MakeTempDir(t),
+		MaxSizeBytes:           int64(1_000_000),
+		Clock:                  clock,
+		FileStorer:             fileStorer,
+		MaxInlineFileSizeBytes: 1,
+		MinGCSFileSizeBytes:    &minGCSFileSize,
+		GCSTTLDays:             &gcsTTLDays,
+	}
+	pc, err := pebble_cache.NewPebbleCache(te, options)
+	require.NoError(t, err)
+	require.NoError(t, pc.Start())
+	defer pc.Stop()
+
+	rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+	err = pc.Set(ctx, rn, buf)
+	require.Error(t, err)
+	require.True(t, status.IsUnavailableError(err), "expected Unavailable, got %v", err)
+
+	missing, err := pc.FindMissing(ctx, []*rspb.ResourceName{rn})
+	require.NoError(t, err)
+	require.Len(t, missing, 1)
+	require.Equal(t, rn.GetDigest().GetHash(), missing[0].GetHash())
+}
+
 type fakeAtimeUpdater struct {
 	calls *atomic.Int32
 }
