@@ -3245,7 +3245,7 @@ func expectContentError(t *testing.T, ctx context.Context, c interfaces.Cache, r
 	require.Nil(t, rc, "Reader")
 }
 
-func TestPebbleGCSReadContractPresent(t *testing.T) {
+func TestPebbleGCSBlobPresent(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
 		setup func(t *testing.T, ctx context.Context, c interfaces.Cache, rn *rspb.ResourceName, data []byte)
@@ -3288,7 +3288,7 @@ func TestPebbleGCSReadContractPresent(t *testing.T) {
 	}
 }
 
-func TestPebbleGCSReadContractMissingAfterDelete(t *testing.T) {
+func TestPebbleGCSBlobMissingAfterDelete(t *testing.T) {
 	clock := clockwork.NewFakeClock()
 	te, c := newGCSBackedContractCache(t, clock, mockgcs.New(clock))
 	ctx := getAnonContext(t, te)
@@ -3347,10 +3347,7 @@ func TestPebbleGCSBackingObjectDeleted(t *testing.T) {
 			require.NoError(t, c.Set(ctx, rn, data))
 			require.NoError(t, gcs.DeleteRecordedBlobs(ctx))
 
-			// The metadata methods still report the resource as present because
-			// PebbleCache does not consult backing storage for them, but reading the
-			// content surfaces the now-missing backing blob.
-			expectMetadataPresent(t, ctx, c, rn)
+			expectMetadataMissing(t, ctx, c, rn)
 			tc.read(t, ctx, c, rn)
 		})
 	}
