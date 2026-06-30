@@ -27,6 +27,7 @@ go_library(
         "//cli/metadata",
         "//cli/parser",
         "//cli/parser/arguments",
+        "//cli/parser/bbrc",
         "//cli/parser/options",
         "//cli/parser/parsed",
         "//cli/picker",
