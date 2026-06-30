@@ -63,32 +63,52 @@ class CacheProxySetup extends React.Component<CacheProxySetupProps> {
 }
 
 interface CacheProxiesListProps {
-  proxies: cache_proxy.GetCacheProxiesResponse.ICacheProxy[];
+  regions: RegionalCacheProxyResponse[];
 }
 
 class CacheProxiesList extends React.Component<CacheProxiesListProps> {
   render() {
+    const proxiesByKey = new Map<string, RegionalCacheProxy>();
+    for (const r of this.props.regions) {
+      for (const proxy of r.response.cacheProxy) {
+        if (!proxy.node) {
+          continue;
+        }
+        proxiesByKey.set(`${r.name}-${proxy.node.proxyId}`, {
+          region: r.name,
+          proxy,
+          node: proxy.node as cache_proxy.CacheProxyNode,
+        });
+      }
+    }
+    const keys = Array.from(proxiesByKey.keys()).sort();
+
     return (
       <div className="cache-proxy-cards">
         <div className="cache-proxy-summary">
           <Hash />
           <span>
             <b>
-              {this.props.proxies.length} {this.props.proxies.length === 1 ? "cache proxy" : "cache proxies"}
+              {keys.length} {keys.length === 1 ? "cache proxy" : "cache proxies"}
             </b>
           </span>
         </div>
-        {this.props.proxies.map(
-          (proxy) =>
-            proxy.node && (
-              <CacheProxyCardComponent
-                key={proxy.node.proxyId}
-                node={proxy.node as cache_proxy.CacheProxyNode}
-                lastCheckInTime={proxy.lastCheckInTime}
-                statistics={proxy.statistics}
-              />
-            )
-        )}
+        {keys.map((key) => {
+          const regionalProxy = proxiesByKey.get(key);
+          if (!regionalProxy) {
+            return null;
+          }
+          const { region, proxy, node } = regionalProxy;
+          return (
+            <CacheProxyCardComponent
+              key={key}
+              region={region}
+              node={node}
+              lastCheckInTime={proxy.lastCheckInTime}
+              statistics={proxy.statistics}
+            />
+          );
+        })}
       </div>
     );
   }
@@ -101,8 +121,19 @@ interface Props {
   path: string;
 }
 
+type RegionalCacheProxy = {
+  region: string;
+  proxy: cache_proxy.GetCacheProxiesResponse.ICacheProxy;
+  node: cache_proxy.CacheProxyNode;
+};
+
+type RegionalCacheProxyResponse = {
+  name: string;
+  response: cache_proxy.GetCacheProxiesResponse;
+};
+
 interface State {
-  proxies: cache_proxy.GetCacheProxiesResponse.ICacheProxy[];
+  regions: RegionalCacheProxyResponse[];
   proxyKeys: api_key.IApiKey[];
   loading: FetchType[];
   error: BuildBuddyError | null;
@@ -110,7 +141,7 @@ interface State {
 
 export default class CacheProxiesComponent extends React.Component<Props, State> {
   state: State = {
-    proxies: [],
+    regions: [],
     proxyKeys: [],
     loading: [],
     error: null,
@@ -158,8 +189,28 @@ export default class CacheProxiesComponent extends React.Component<Props, State>
       loading: [...prevState.loading, FetchType.Proxies],
     }));
     try {
-      const response = await rpcService.service.getCacheProxies(cache_proxy.GetCacheProxiesRequest.create({}));
-      this.setState({ proxies: response.cacheProxy });
+      let regions: RegionalCacheProxyResponse[];
+      if (rpcService.regionalServices.size) {
+        const results = await Promise.allSettled(
+          Array.from(rpcService.regionalServices).map(([name, service]) =>
+            service.getCacheProxies(cache_proxy.GetCacheProxiesRequest.create({})).then((resp) => {
+              return { name: name, response: resp };
+            })
+          )
+        );
+        regions = results.flatMap((result) => (result.status === "fulfilled" ? [result.value] : []));
+        if (regions.length == 0) {
+          const rejected = results.find((result): result is PromiseRejectedResult => result.status === "rejected");
+          throw rejected?.reason;
+        }
+      } else {
+        regions = [
+          await rpcService.service.getCacheProxies(cache_proxy.GetCacheProxiesRequest.create({})).then((resp) => {
+            return { name: "", response: resp };
+          }),
+        ];
+      }
+      this.setState({ regions });
     } catch (e) {
       this.setState({ error: BuildBuddyError.parse(e) });
     } finally {
@@ -196,7 +247,7 @@ export default class CacheProxiesComponent extends React.Component<Props, State>
   }
 
   render() {
-    const hasProxies = this.state.proxies.length > 0;
+    const hasProxies = this.state.regions.some((r) => r.response.cacheProxy.some((proxy) => proxy.node));
     const hasKeys = this.state.proxyKeys.length > 0;
     // When neither proxies nor cache-proxy API keys exist, skip the tab UI
     // and show a single clean empty-state view (matching the executors page
@@ -242,7 +293,7 @@ export default class CacheProxiesComponent extends React.Component<Props, State>
                         <p>Click the "Setup" tab for instructions on self-hosting cache proxies.</p>
                       </div>
                     )}
-                    {hasProxies && <CacheProxiesList proxies={this.state.proxies} />}
+                    {hasProxies && <CacheProxiesList regions={this.state.regions} />}
                   </>
                 )}
                 {activeTab === "setup" && <CacheProxySetup user={this.props.user} proxyKeys={this.state.proxyKeys} />}
