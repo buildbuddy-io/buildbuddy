@@ -39,7 +39,7 @@ const (
 
 	// acmeTTL is the TTL on served _acme-challenge TXT records. Short, since
 	// challenges are transient.
-	acmeTTL = 300
+	acmeTTL = 60
 
 	// acmeBlobstoreTimeout bounds the blobstore reads/writes made on the DNS
 	// request path so a slow or hung backend can't block handler goroutines
@@ -356,19 +356,33 @@ func (h *handler) serveUpdate(w dns.ResponseWriter, r *dns.Msg) {
 		return
 	}
 
+	// RFC2136 updates are all-or-nothing, so validate every record before
+	// applying any: a record we'd refuse (wrong type/name, or an unsupported
+	// class) must reject the whole update, not leave an earlier record applied.
+	// The RRset-delete form (class ANY) arrives as a *dns.ANY with Rrtype TXT, so
+	// dispatch on the header rather than the concrete type.
+	for _, rr := range r.Ns { // RFC2136: the records to apply live in the Ns section.
+		hdr := rr.Header()
+		if hdr.Rrtype != dns.TypeTXT || !h.isACMEChallengeName(dns.CanonicalName(hdr.Name)) {
+			m.SetRcode(r, dns.RcodeRefused)
+			writeUpdateReply(w, m, reqTSIG)
+			return
+		}
+		switch hdr.Class {
+		case dns.ClassINET, dns.ClassNONE, dns.ClassANY:
+		default:
+			m.SetRcode(r, dns.RcodeRefused)
+			writeUpdateReply(w, m, reqTSIG)
+			return
+		}
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), acmeBlobstoreTimeout)
 	defer cancel()
 	rcode := dns.RcodeSuccess
-	for _, rr := range r.Ns { // RFC2136: the records to apply live in the Ns section.
+	for _, rr := range r.Ns {
 		hdr := rr.Header()
 		name := dns.CanonicalName(hdr.Name)
-		// Only ever touch in-zone _acme-challenge TXT names; the RRset-delete form
-		// (RFC2136 class ANY) arrives as a *dns.ANY with Rrtype TXT, so dispatch on
-		// the header rather than the concrete type.
-		if hdr.Rrtype != dns.TypeTXT || !h.isACMEChallengeName(name) {
-			rcode = dns.RcodeRefused
-			break
-		}
 		var err error
 		switch hdr.Class {
 		case dns.ClassINET: // add to the RRset
@@ -381,8 +395,6 @@ func (h *handler) serveUpdate(w dns.ResponseWriter, r *dns.Msg) {
 			}
 		case dns.ClassANY: // delete the whole RRset
 			err = h.acme.Delete(ctx, name)
-		default:
-			rcode = dns.RcodeRefused
 		}
 		if err != nil {
 			log.Warningf("ACME update for %q failed: %s", name, err)

@@ -2,8 +2,8 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"slices"
-	"strings"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -34,6 +34,12 @@ const (
 // are cached: an "absent" result is never cached, so a query that races ahead
 // of the UPDATE that creates a name can't pin a stale negative answer on a
 // replica (and a flood of misses can't fill the cache).
+//
+// The cache is per-replica and uncoordinated, so a value removed (or changed)
+// by a write can still be served for up to ttl by a replica that cached it
+// beforehand -- whether because a local lookup raced the eviction or because the
+// replica simply hasn't read the new state yet. This is benign for ACME: ttl is
+// short and challenge cleanup is not time-critical.
 //
 // Writes are read-modify-write without compare-and-swap, so two concurrent adds
 // to the *same* name can lose one value; cert-manager re-presents on its
@@ -138,15 +144,22 @@ func (c *Challenges) Delete(ctx context.Context, fqdn string, vals ...string) er
 
 func (c *Challenges) evict(fqdn string) { c.hot.Remove(fqdn) }
 
-// encodeTXT/decodeTXT store the value set as newline-separated lines.
-func encodeTXT(vals []string) []byte { return []byte(strings.Join(vals, "\n")) }
+// encodeTXT/decodeTXT serialize the value set as a JSON array of strings, so
+// values round-trip exactly regardless of their contents.
+func encodeTXT(vals []string) []byte {
+	// Marshaling a []string cannot fail.
+	data, _ := json.Marshal(vals)
+	return data
+}
 
 func decodeTXT(data []byte) []string {
-	var out []string
-	for line := range strings.SplitSeq(string(data), "\n") {
-		if line = strings.TrimSpace(line); line != "" {
-			out = append(out, line)
-		}
+	if len(data) == 0 {
+		return nil
 	}
-	return out
+	var vals []string
+	if err := json.Unmarshal(data, &vals); err != nil {
+		log.Warningf("ACME challenge blob has invalid JSON (%d bytes): %s", len(data), err)
+		return nil
+	}
+	return vals
 }

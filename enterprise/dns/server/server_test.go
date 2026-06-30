@@ -59,10 +59,14 @@ func newTestHandler(t *testing.T) dns.Handler {
 
 // fakeResponseWriter captures the message written by the handler and reports a
 // configurable transport source address (remote). When remote is nil it reports
-// an empty UDP address, i.e. no usable client IP.
+// an empty UDP address, i.e. no usable client IP. tsigStatus is what
+// TsigStatus() reports -- the real miekg server sets this to the result of TSIG
+// verification, so a non-nil value simulates a request signed with a wrong or
+// unknown key.
 type fakeResponseWriter struct {
-	msg    *dns.Msg
-	remote net.Addr
+	msg        *dns.Msg
+	remote     net.Addr
+	tsigStatus error
 }
 
 func (w *fakeResponseWriter) WriteMsg(m *dns.Msg) error { w.msg = m; return nil }
@@ -75,7 +79,7 @@ func (w *fakeResponseWriter) RemoteAddr() net.Addr {
 }
 func (w *fakeResponseWriter) Write([]byte) (int, error) { return 0, nil }
 func (w *fakeResponseWriter) Close() error              { return nil }
-func (w *fakeResponseWriter) TsigStatus() error         { return nil }
+func (w *fakeResponseWriter) TsigStatus() error         { return w.tsigStatus }
 func (w *fakeResponseWriter) TsigTimersOnly(bool)       {}
 func (w *fakeResponseWriter) Hijack()                   {}
 
@@ -590,6 +594,27 @@ func TestSelfHostedACMERejectsUnsignedUpdate(t *testing.T) {
 	assert.Empty(t, m.Answer)
 }
 
+func TestSelfHostedACMERejectsWrongKeyUpdate(t *testing.T) {
+	acme, err := server.NewChallenges(newMemBlobstore(), 10*time.Second)
+	require.NoError(t, err)
+	h := server.NewHandler(testenv.GetTestEnv(t), mustRecords(t), acme)
+
+	// A TSIG-signed UPDATE whose signature fails verification (wrong or unknown
+	// key) must be rejected: the real server reports the failure via
+	// TsigStatus(), which the handler checks even though the message carried a
+	// TSIG. This is the realistic attack the unsigned-update test doesn't cover.
+	up := signedUpdate("buildbuddy.io.")
+	up.Insert([]dns.RR{mustRR(t, `_acme-challenge.x.buildbuddy.io. 60 IN TXT "nope"`)})
+	w := &fakeResponseWriter{tsigStatus: dns.ErrSig}
+	h.ServeDNS(w, up)
+	require.NotNil(t, w.msg, "handler wrote no response")
+	assert.Equal(t, dns.RcodeNotAuth, w.msg.Rcode)
+
+	// Nothing was stored.
+	m := query(t, h, "_acme-challenge.x.buildbuddy.io.", dns.TypeTXT)
+	assert.Empty(t, m.Answer)
+}
+
 func TestSelfHostedACMERejectsNonChallengeUpdate(t *testing.T) {
 	acme, err := server.NewChallenges(newMemBlobstore(), 10*time.Second)
 	require.NoError(t, err)
@@ -601,6 +626,27 @@ func TestSelfHostedACMERejectsNonChallengeUpdate(t *testing.T) {
 	up.Insert([]dns.RR{mustRR(t, `cache.buildbuddy.io. 60 IN TXT "hijack"`)})
 	m := serve(t, h, up, "")
 	assert.Equal(t, dns.RcodeRefused, m.Rcode)
+}
+
+func TestSelfHostedACMEUpdateIsAtomic(t *testing.T) {
+	acme, err := server.NewChallenges(newMemBlobstore(), 10*time.Second)
+	require.NoError(t, err)
+	h := server.NewHandler(testenv.GetTestEnv(t), mustRecords(t), acme)
+
+	// An UPDATE carrying a valid add followed by a record we refuse (here, an
+	// unsupported class) must reject the whole update without applying the
+	// earlier add -- RFC2136 updates are all-or-nothing.
+	up := signedUpdate("buildbuddy.io.")
+	up.Insert([]dns.RR{mustRR(t, `_acme-challenge.a.buildbuddy.io. 60 IN TXT "keep"`)})
+	bad := mustRR(t, `_acme-challenge.b.buildbuddy.io. 60 IN TXT "bad"`)
+	bad.Header().Class = dns.ClassCHAOS // unsupported update class
+	up.Ns = append(up.Ns, bad)
+	m := serve(t, h, up, "")
+	assert.Equal(t, dns.RcodeRefused, m.Rcode)
+
+	// The valid add was not applied.
+	m = query(t, h, "_acme-challenge.a.buildbuddy.io.", dns.TypeTXT)
+	assert.Empty(t, m.Answer)
 }
 
 func TestExactMatch(t *testing.T) {

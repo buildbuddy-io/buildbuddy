@@ -133,6 +133,12 @@ func startDNSServer(env *real_environment.RealEnv) error {
 	var acme *server.Challenges
 	tsigSecrets := map[string]string{}
 	if *acmeGCSBucket != "" {
+		// Without a TSIG key, every RFC2136 UPDATE fails authentication and
+		// cert-manager's challenge writes are silently rejected, so refuse to
+		// start half-enabled rather than hang issuance with no diagnostic.
+		if *acmeTSIGName == "" {
+			return status.FailedPreconditionError("dns.acme.gcs.bucket is set but dns.acme.tsig_key_name is empty; RFC2136 UPDATEs could not be authenticated")
+		}
 		bs, err := gcs.NewGCSBlobStore(context.Background(), *acmeGCSBucket, *acmeGCSCredFile, *acmeGCSCreds, *acmeGCSProject, false /*=enableCompression*/)
 		if err != nil {
 			return status.WrapError(err, "init ACME challenge blobstore")
@@ -141,9 +147,7 @@ func startDNSServer(env *real_environment.RealEnv) error {
 		if err != nil {
 			return status.WrapError(err, "init ACME challenge store")
 		}
-		if *acmeTSIGName != "" {
-			tsigSecrets[dns.Fqdn(*acmeTSIGName)] = *acmeTSIGSecret
-		}
+		tsigSecrets[dns.Fqdn(*acmeTSIGName)] = *acmeTSIGSecret
 	}
 
 	handler := server.NewHandler(env, records, acme)
