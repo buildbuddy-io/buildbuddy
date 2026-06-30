@@ -23,7 +23,7 @@ load("@rules_multirun//:defs.bzl", "command", "multirun")
 # To delete a release, run:
 #   `bazel run :dev.delete`
 #
-def release(name, run, after, enable_actions = True, **kwargs):
+def release(name, run, after, enable_actions = True, srcs, **kwargs):
     actions = [""]
     if enable_actions:
         actions = [".apply", ".diff", ".delete"]
@@ -34,10 +34,12 @@ def release(name, run, after, enable_actions = True, **kwargs):
         command(
             name = after_action_command,
             command = after + action,
+            srcs = srcs,
         )
         command(
             name = run_action_command,
             command = run + action,
+            srcs = srcs,
         )
         multirun(
             name = name + action,
@@ -45,5 +47,5 @@ def release(name, run, after, enable_actions = True, **kwargs):
                 after_action_command,
                 run_action_command,
             ],
-            **kwargs
+            **kwargs,
         )
