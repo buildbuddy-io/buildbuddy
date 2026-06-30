@@ -84,6 +84,8 @@ var (
 	resolveImageDigests       = flag.Bool("executor.resolve_image_digests", false, "Whether to resolve image names with tags to digests.")
 
 	overlayfsEnabled = flag.Bool("executor.workspace.overlayfs_enabled", false, "Enable overlayfs support for anonymous action workspaces. ** UNSTABLE **")
+
+	measureWorkspaceDiskUsage = flag.Bool("executor.workspace.measure_disk_usage", false, "If set, measure the disk space used by the task's buildroot (workspace) after each task finishes and report it in the task's usage stats. Note: this requires walking the entire workspace tree, which may add CPU/IO overhead for tasks with large workspaces.")
 )
 
 const (
@@ -237,6 +239,11 @@ type taskRunner struct {
 
 	memoryUsageBytes int64
 	diskUsageBytes   int64
+
+	// measuredWorkspaceDiskUsageBytes is the disk usage of the workspace
+	// measured during the recycle/cleanup path (see measureWorkspaceDiskUsage).
+	// Reported via PostCompletionStats.
+	measuredWorkspaceDiskUsageBytes int64
 }
 
 func (r *taskRunner) Metadata() *espb.RunnerMetadata {
@@ -519,6 +526,31 @@ func (r *taskRunner) Run(ctx context.Context, ioStats *repb.IOStats) (res *inter
 	return execResult
 }
 
+// measureWorkspaceDiskUsage measures the disk space used by the task's
+// workspace (buildroot) and stashes it so it can be reported via
+// PostCompletionStats. It is called from the recycle/cleanup path (after the
+// result has been returned to the client and before the workspace is cleaned
+// up), so it doesn't add latency to task completion.
+func (r *taskRunner) measureWorkspaceDiskUsage(ctx context.Context) {
+	if !*measureWorkspaceDiskUsage {
+		return
+	}
+
+	// VM runners report file system usage measured inside the VM. Their host's
+	// workspace only holds the VM disk image, so they are skipped.
+	if _, ok := r.Container.Delegate.(container.VM); ok {
+		return
+	}
+	start := time.Now()
+	usage, err := r.Workspace.DiskUsageBytes()
+	if err != nil {
+		log.CtxWarningf(ctx, "Failed to measure workspace disk usage: %s", err)
+		return
+	}
+	metrics.RemoteExecutionBuildrootDiskUsageMeasurementDurationUsec.Observe(float64(time.Since(start).Microseconds()))
+	r.measuredWorkspaceDiskUsageBytes = usage
+}
+
 func (r *taskRunner) GracefulTerminate(ctx context.Context) error {
 	return r.Container.Signal(ctx, syscall.SIGTERM)
 }
@@ -556,10 +588,17 @@ func (r *taskRunner) GetIsolationType() string {
 	return r.PlatformProperties.WorkloadIsolationType
 }
 
-// PostCompletionStats returns observability data produced by the underlying
-// Container after Exec or Run have completed.
+// PostCompletionStats returns observability data produced after Exec or Run
+// have completed, including data gathered during the recycle/cleanup path.
 func (r *taskRunner) PostCompletionStats() *espb.PostCompletionStats {
-	return r.Container.PostCompletionStats()
+	stats := r.Container.PostCompletionStats()
+	if r.measuredWorkspaceDiskUsageBytes > 0 {
+		if stats == nil {
+			stats = &espb.PostCompletionStats{}
+		}
+		stats.BuildrootDiskUsageBytes = r.measuredWorkspaceDiskUsageBytes
+	}
+	return stats
 }
 
 // shutdown runs any manual cleanup required to clean up processes before
@@ -1565,6 +1604,11 @@ func (p *pool) TryRecycle(ctx context.Context, r interfaces.Runner, finishedClea
 		alert.UnexpectedEvent("unexpected_runner_type", "unexpected runner type %T", r)
 		return
 	}
+
+	// Measure workspace disk usage before the workspace is cleaned up or
+	// removed below. This runs after the result has been returned to the
+	// client, so it doesn't add latency to task completion.
+	cr.measureWorkspaceDiskUsage(ctx)
 
 	recycled := false
 	defer func() {

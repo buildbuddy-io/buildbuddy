@@ -3076,4 +3076,8 @@ message StoredExecution {
   int64 snapshot_saved_bytes = 86;
   // Wall-clock duration of Container.Pause.
   int64 pause_duration_usec = 87;
+  // Disk space used by the task's workspace (buildroot), in bytes, measured
+  // after the task finishes. Only populated when
+  // executor.workspace.measure_disk_usage is enabled.
+  int64 buildroot_disk_usage_bytes = 88;
 }
