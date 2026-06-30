@@ -507,6 +507,11 @@ func (r *statsRecorder) handleTask(ctx context.Context, task *recordStatsTask) {
 
 	artifactsUploaded := make(map[string]struct{}, 0)
 	for _, uri := range task.persist.URIs {
+		// Only persist artifacts from caches that are hosted on the BuildBuddy
+		// domain (but only if we know it).
+		if cache_api_url.String() != "" && urlutil.GetDomain(uri.Hostname()) != urlutil.GetDomain(cache_api_url.WithPath("").Hostname()) {
+			continue
+		}
 		rn, err := digest.ParseDownloadResourceName(uri.Path)
 		if err != nil {
 			log.CtxErrorf(ctx, "Unparseable artifact URI: %s", err)
@@ -525,12 +530,8 @@ func (r *statsRecorder) handleTask(ctx context.Context, task *recordStatsTask) {
 			ctx := usageutil.WithLocalServerLabels(ctx)
 
 			fullPath := path.Join(task.invocationInfo.id, cacheArtifactsBlobstorePath, uri.Path)
-			// Only persist artifacts from caches that are hosted on the BuildBuddy
-			// domain (but only if we know it).
-			if cache_api_url.String() == "" || urlutil.GetDomain(uri.Hostname()) == urlutil.GetDomain(cache_api_url.WithPath("").Hostname()) {
-				if err := persistArtifact(ctx, r.env, uri, fullPath); err != nil {
-					log.CtxError(ctx, err.Error())
-				}
+			if err := persistArtifact(ctx, r.env, uri, fullPath); err != nil {
+				log.CtxError(ctx, err.Error())
 			}
 			return nil
 		})
