@@ -28,6 +28,9 @@ interface Props {
   node: cache_proxy.CacheProxyNode;
   lastCheckInTime?: google_timestamp.protobuf.Timestamp | null;
   statistics?: cache_proxy.IStatistics | null;
+  // When true, the card is in summary mode and the statistics divider and
+  // rings are hidden.
+  summary?: boolean;
 }
 
 // toNumber accepts the int64-as-number-or-Long values that protobuf-ts
@@ -123,7 +126,7 @@ export default class CacheProxyCardComponent extends React.Component<Props> {
                 </div>
               </div>
             )}
-            {this.props.statistics && this.renderStatistics(this.props.statistics)}
+            {!this.props.summary && this.props.statistics && this.renderStatistics(this.props.statistics)}
           </div>
         </div>
       </div>
