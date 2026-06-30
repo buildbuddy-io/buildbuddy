@@ -1589,12 +1589,12 @@ func (p *PebbleCache) handleMetadataMismatch(ctx context.Context, causeErr error
 	if !status.IsNotFoundError(causeErr) && !os.IsNotExist(causeErr) {
 		return false
 	}
-	if fileMetadata.GetStorageMetadata().GetFileMetadata() != nil {
+	if fileMetadata.GetStorageMetadata().GetFileMetadata() != nil || fileMetadata.GetStorageMetadata().GetGcsMetadata() != nil {
 		err := p.deleteMetadataOnly(ctx, key)
 		if err != nil && status.IsNotFoundError(err) {
 			return false
 		}
-		log.Warningf("[%s] Metadata record %q was found but file (%+v) not found on disk: %s", p.name, key.String(), fileMetadata, causeErr)
+		log.Warningf("[%s] Metadata record %q was found but file (%+v) not found in storage: %s", p.name, key.String(), fileMetadata, causeErr)
 		if err != nil {
 			log.Warningf("[%s] Error deleting metadata: %s", p.name, err)
 			return false
