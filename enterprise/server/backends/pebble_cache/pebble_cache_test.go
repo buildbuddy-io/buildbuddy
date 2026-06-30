@@ -3145,6 +3145,106 @@ func newGCSBackedContractCache(t *testing.T, clock clockwork.Clock, gcs filestor
 	return te, pc
 }
 
+// expectMetadataPresent asserts that the metadata-only read methods (Contains,
+// Metadata, FindMissing) report rn as present. PebbleCache answers these from
+// its local index without consulting backing storage.
+func expectMetadataPresent(t *testing.T, ctx context.Context, c interfaces.Cache, rn *rspb.ResourceName) {
+	t.Helper()
+	contains, err := c.Contains(ctx, rn)
+	require.NoError(t, err, "Contains")
+	require.True(t, contains, "Contains")
+
+	_, err = c.Metadata(ctx, rn)
+	require.NoError(t, err, "Metadata")
+
+	missing, err := c.FindMissing(ctx, []*rspb.ResourceName{rn})
+	require.NoError(t, err, "FindMissing")
+	require.Empty(t, missing, "FindMissing")
+}
+
+// expectMetadataMissing asserts that the metadata-only read methods report rn
+// as missing.
+func expectMetadataMissing(t *testing.T, ctx context.Context, c interfaces.Cache, rn *rspb.ResourceName) {
+	t.Helper()
+	contains, err := c.Contains(ctx, rn)
+	require.NoError(t, err, "Contains")
+	require.False(t, contains, "Contains")
+
+	_, err = c.Metadata(ctx, rn)
+	require.True(t, status.IsNotFoundError(err), "Metadata: %v", err)
+
+	missing, err := c.FindMissing(ctx, []*rspb.ResourceName{rn})
+	require.NoError(t, err, "FindMissing")
+	require.Len(t, missing, 1, "FindMissing")
+	require.Equal(t, rn.GetDigest().GetHash(), missing[0].GetHash(), "FindMissing")
+}
+
+// expectContentPresent asserts that the content-returning read methods (Get,
+// GetWithMetadata, GetMulti, Reader) all return data.
+func expectContentPresent(t *testing.T, ctx context.Context, c interfaces.Cache, rn *rspb.ResourceName, data []byte) {
+	t.Helper()
+	got, err := c.Get(ctx, rn)
+	require.NoError(t, err, "Get")
+	require.Equal(t, data, got, "Get")
+
+	got, _, err = c.GetWithMetadata(ctx, rn)
+	require.NoError(t, err, "GetWithMetadata")
+	require.Equal(t, data, got, "GetWithMetadata")
+
+	multi, err := c.GetMulti(ctx, []*rspb.ResourceName{rn})
+	require.NoError(t, err, "GetMulti")
+	require.Equal(t, data, multi[rn.GetDigest()], "GetMulti")
+
+	rc, err := c.Reader(ctx, rn, 0, 0)
+	require.NoError(t, err, "Reader")
+	got, err = io.ReadAll(rc)
+	require.NoError(t, err, "Reader.ReadAll")
+	require.NoError(t, rc.Close(), "Reader.Close")
+	require.Equal(t, data, got, "Reader")
+}
+
+// expectContentNotFound asserts that the content-returning read methods all
+// report rn as missing.
+func expectContentNotFound(t *testing.T, ctx context.Context, c interfaces.Cache, rn *rspb.ResourceName) {
+	t.Helper()
+	_, err := c.Get(ctx, rn)
+	require.True(t, status.IsNotFoundError(err), "Get: %v", err)
+
+	_, _, err = c.GetWithMetadata(ctx, rn)
+	require.True(t, status.IsNotFoundError(err), "GetWithMetadata: %v", err)
+
+	multi, err := c.GetMulti(ctx, []*rspb.ResourceName{rn})
+	require.NoError(t, err, "GetMulti")
+	require.Nil(t, multi[rn.GetDigest()], "GetMulti")
+
+	rc, err := c.Reader(ctx, rn, 0, 0)
+	require.True(t, status.IsNotFoundError(err), "Reader: %v", err)
+	require.Nil(t, rc, "Reader")
+}
+
+// expectContentError asserts that the content-returning read methods all fail
+// with an error containing wantErr that is distinct from a NotFound error (i.e.
+// a transient failure must not be reported as a cache miss).
+func expectContentError(t *testing.T, ctx context.Context, c interfaces.Cache, rn *rspb.ResourceName, wantErr string) {
+	t.Helper()
+	_, err := c.Get(ctx, rn)
+	require.ErrorContains(t, err, wantErr, "Get")
+	require.False(t, status.IsNotFoundError(err), "Get: %v", err)
+
+	_, _, err = c.GetWithMetadata(ctx, rn)
+	require.ErrorContains(t, err, wantErr, "GetWithMetadata")
+	require.False(t, status.IsNotFoundError(err), "GetWithMetadata: %v", err)
+
+	_, err = c.GetMulti(ctx, []*rspb.ResourceName{rn})
+	require.ErrorContains(t, err, wantErr, "GetMulti")
+	require.False(t, status.IsNotFoundError(err), "GetMulti: %v", err)
+
+	rc, err := c.Reader(ctx, rn, 0, 0)
+	require.ErrorContains(t, err, wantErr, "Reader")
+	require.False(t, status.IsNotFoundError(err), "Reader: %v", err)
+	require.Nil(t, rc, "Reader")
+}
+
 func TestPebbleGCSReadContractPresent(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
@@ -3182,39 +3282,8 @@ func TestPebbleGCSReadContractPresent(t *testing.T) {
 
 			tc.setup(t, ctx, c, rn, data)
 
-			t.Run("Contains_Metadata_FindMissing", func(t *testing.T) {
-				contains, err := c.Contains(ctx, rn)
-				require.NoError(t, err, "Contains")
-				require.True(t, contains, "Contains")
-
-				_, err = c.Metadata(ctx, rn)
-				require.NoError(t, err, "Metadata")
-
-				missing, err := c.FindMissing(ctx, []*rspb.ResourceName{rn})
-				require.NoError(t, err, "FindMissing")
-				require.Empty(t, missing, "FindMissing")
-			})
-
-			t.Run("Get_GetWithMetadata_GetMulti_Reader", func(t *testing.T) {
-				got, err := c.Get(ctx, rn)
-				require.NoError(t, err, "Get")
-				require.Equal(t, data, got, "Get")
-
-				got, _, err = c.GetWithMetadata(ctx, rn)
-				require.NoError(t, err, "GetWithMetadata")
-				require.Equal(t, data, got, "GetWithMetadata")
-
-				multi, err := c.GetMulti(ctx, []*rspb.ResourceName{rn})
-				require.NoError(t, err, "GetMulti")
-				require.Equal(t, data, multi[rn.GetDigest()], "GetMulti")
-
-				rc, err := c.Reader(ctx, rn, 0, 0)
-				require.NoError(t, err, "Reader")
-				got, err = io.ReadAll(rc)
-				require.NoError(t, err, "Reader.ReadAll")
-				require.NoError(t, rc.Close(), "Reader.Close")
-				require.Equal(t, data, got, "Reader")
-			})
+			expectMetadataPresent(t, ctx, c, rn)
+			expectContentPresent(t, ctx, c, rn, data)
 		})
 	}
 }
@@ -3228,35 +3297,8 @@ func TestPebbleGCSReadContractMissingAfterDelete(t *testing.T) {
 	require.NoError(t, c.Set(ctx, rn, data))
 	require.NoError(t, c.Delete(ctx, rn))
 
-	t.Run("Contains_Metadata_FindMissing", func(t *testing.T) {
-		contains, err := c.Contains(ctx, rn)
-		require.NoError(t, err, "Contains")
-		require.False(t, contains, "Contains")
-
-		_, err = c.Metadata(ctx, rn)
-		require.True(t, status.IsNotFoundError(err), "Metadata: %v", err)
-
-		missing, err := c.FindMissing(ctx, []*rspb.ResourceName{rn})
-		require.NoError(t, err, "FindMissing")
-		require.Len(t, missing, 1, "FindMissing")
-		require.Equal(t, rn.GetDigest().GetHash(), missing[0].GetHash(), "FindMissing")
-	})
-
-	t.Run("Get_GetWithMetadata_GetMulti_Reader", func(t *testing.T) {
-		_, err := c.Get(ctx, rn)
-		require.True(t, status.IsNotFoundError(err), "Get: %v", err)
-
-		_, _, err = c.GetWithMetadata(ctx, rn)
-		require.True(t, status.IsNotFoundError(err), "GetWithMetadata: %v", err)
-
-		multi, err := c.GetMulti(ctx, []*rspb.ResourceName{rn})
-		require.NoError(t, err, "GetMulti")
-		require.Nil(t, multi[rn.GetDigest()], "GetMulti")
-
-		rc, err := c.Reader(ctx, rn, 0, 0)
-		require.True(t, status.IsNotFoundError(err), "Reader: %v", err)
-		require.Nil(t, rc, "Reader")
-	})
+	expectMetadataMissing(t, ctx, c, rn)
+	expectContentNotFound(t, ctx, c, rn)
 }
 
 func TestPebbleGCSBackingObjectDeleted(t *testing.T) {
@@ -3269,34 +3311,11 @@ func TestPebbleGCSBackingObjectDeleted(t *testing.T) {
 	require.NoError(t, c.Set(ctx, rn, data))
 	require.NoError(t, gcs.DeleteRecordedBlobs(ctx))
 
-	t.Run("Contains_Metadata_FindMissing", func(t *testing.T) {
-		contains, err := c.Contains(ctx, rn)
-		require.NoError(t, err, "Contains")
-		require.True(t, contains, "Contains")
-
-		_, err = c.Metadata(ctx, rn)
-		require.NoError(t, err, "Metadata")
-
-		missing, err := c.FindMissing(ctx, []*rspb.ResourceName{rn})
-		require.NoError(t, err, "FindMissing")
-		require.Empty(t, missing, "FindMissing")
-	})
-
-	t.Run("Get_GetWithMetadata_GetMulti_Reader", func(t *testing.T) {
-		_, err := c.Get(ctx, rn)
-		require.True(t, status.IsNotFoundError(err), "Get: %v", err)
-
-		_, _, err = c.GetWithMetadata(ctx, rn)
-		require.True(t, status.IsNotFoundError(err), "GetWithMetadata: %v", err)
-
-		multi, err := c.GetMulti(ctx, []*rspb.ResourceName{rn})
-		require.NoError(t, err, "GetMulti")
-		require.Nil(t, multi[rn.GetDigest()], "GetMulti")
-
-		rc, err := c.Reader(ctx, rn, 0, 0)
-		require.True(t, status.IsNotFoundError(err), "Reader: %v", err)
-		require.Nil(t, rc, "Reader")
-	})
+	// The metadata methods still report the resource as present because
+	// PebbleCache does not consult backing storage for them, but reading the
+	// content surfaces the now-missing backing blob.
+	expectMetadataPresent(t, ctx, c, rn)
+	expectContentNotFound(t, ctx, c, rn)
 }
 
 func TestPebbleGCSBackingObjectDeletedMetadataMethodsShouldReportMissing(t *testing.T) {
@@ -3347,37 +3366,8 @@ func TestPebbleGCSBackingReadUnavailable(t *testing.T) {
 		err:              status.UnavailableError("gcs read unavailable"),
 	}
 
-	t.Run("Contains_Metadata_FindMissing", func(t *testing.T) {
-		contains, err := c.Contains(ctx, rn)
-		require.NoError(t, err, "Contains")
-		require.True(t, contains, "Contains")
-
-		_, err = c.Metadata(ctx, rn)
-		require.NoError(t, err, "Metadata")
-
-		missing, err := c.FindMissing(ctx, []*rspb.ResourceName{rn})
-		require.NoError(t, err, "FindMissing")
-		require.Empty(t, missing, "FindMissing")
-	})
-
-	t.Run("Get_GetWithMetadata_GetMulti_Reader", func(t *testing.T) {
-		_, err := c.Get(ctx, rn)
-		require.ErrorContains(t, err, "gcs read unavailable", "Get")
-		require.False(t, status.IsNotFoundError(err), "Get: %v", err)
-
-		_, _, err = c.GetWithMetadata(ctx, rn)
-		require.ErrorContains(t, err, "gcs read unavailable", "GetWithMetadata")
-		require.False(t, status.IsNotFoundError(err), "GetWithMetadata: %v", err)
-
-		_, err = c.GetMulti(ctx, []*rspb.ResourceName{rn})
-		require.ErrorContains(t, err, "gcs read unavailable", "GetMulti")
-		require.False(t, status.IsNotFoundError(err), "GetMulti: %v", err)
-
-		rc, err := c.Reader(ctx, rn, 0, 0)
-		require.ErrorContains(t, err, "gcs read unavailable", "Reader")
-		require.False(t, status.IsNotFoundError(err), "Reader: %v", err)
-		require.Nil(t, rc, "Reader")
-	})
+	expectMetadataPresent(t, ctx, c, rn)
+	expectContentError(t, ctx, c, rn, "gcs read unavailable")
 }
 
 func TestPebbleGCSWriteFaults(t *testing.T) {
@@ -3423,35 +3413,8 @@ func TestPebbleGCSWriteFaults(t *testing.T) {
 
 			tc.setup(t, ctx, c, rn, data)
 
-			t.Run("Contains_Metadata_FindMissing", func(t *testing.T) {
-				contains, err := c.Contains(ctx, rn)
-				require.NoError(t, err, "Contains")
-				require.False(t, contains, "Contains")
-
-				_, err = c.Metadata(ctx, rn)
-				require.True(t, status.IsNotFoundError(err), "Metadata: %v", err)
-
-				missing, err := c.FindMissing(ctx, []*rspb.ResourceName{rn})
-				require.NoError(t, err, "FindMissing")
-				require.Len(t, missing, 1, "FindMissing")
-				require.Equal(t, rn.GetDigest().GetHash(), missing[0].GetHash(), "FindMissing")
-			})
-
-			t.Run("Get_GetWithMetadata_GetMulti_Reader", func(t *testing.T) {
-				_, err := c.Get(ctx, rn)
-				require.True(t, status.IsNotFoundError(err), "Get: %v", err)
-
-				_, _, err = c.GetWithMetadata(ctx, rn)
-				require.True(t, status.IsNotFoundError(err), "GetWithMetadata: %v", err)
-
-				multi, err := c.GetMulti(ctx, []*rspb.ResourceName{rn})
-				require.NoError(t, err, "GetMulti")
-				require.Nil(t, multi[rn.GetDigest()], "GetMulti")
-
-				rc, err := c.Reader(ctx, rn, 0, 0)
-				require.True(t, status.IsNotFoundError(err), "Reader: %v", err)
-				require.Nil(t, rc, "Reader")
-			})
+			expectMetadataMissing(t, ctx, c, rn)
+			expectContentNotFound(t, ctx, c, rn)
 		})
 	}
 }
