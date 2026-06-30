@@ -1,4 +1,4 @@
-load("//rules/typescript:index.bzl", "ts_library")
+load("//rules/typescript:index.bzl", "ts_jasmine_node_test", "ts_library")
 
 package(default_visibility = ["//enterprise:__subpackages__"])
 
@@ -28,5 +28,15 @@ ts_library(
         "//app/util:errors",
         "//proto:api_key_ts_proto",
         "//proto:capability_ts_proto",
+    ],
+)
+
+ts_jasmine_node_test(
+    name = "api_keys_test",
+    srcs = ["api_keys_test.ts"],
+    deps = [
+        ":api_keys",
+        "//:node_modules/tslib",
+        "//proto:api_key_ts_proto",
     ],
 )
