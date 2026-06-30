@@ -229,8 +229,10 @@ type asnRoutingConfig struct {
 // the override A records, or nil when the experiment yields no addresses (the
 // caller then keeps the static zone answer).
 func asnRoutedAnswer(efp interfaces.ExperimentFlagProvider, w dns.ResponseWriter, r *dns.Msg, qName string) []dns.RR {
-	asn := clientASN(w, r)
+	ip := clientIP(w, r)
+	asn := clientASN(ip)
 	obj := efp.Object(context.Background(), asnRoutingExperiment, nil,
+		experiments.WithContext("ip", ip.String()),
 		experiments.WithContext("asn", int64(asn)),
 		experiments.WithContext("name", qName))
 	if len(obj) == 0 {
@@ -447,8 +449,7 @@ func filterByType(records []dns.RR, qType uint16) []dns.RR {
 // clientASN returns the autonomous system number of the client the query is on
 // behalf of, for use as an experiment attribute. It returns 0 when the client
 // network is unknown or absent from the ASN database (e.g. private IPs).
-func clientASN(w dns.ResponseWriter, r *dns.Msg) uint32 {
-	ip := clientIP(w, r)
+func clientASN(ip netip.Addr) uint32 {
 	if !ip.IsValid() {
 		return 0
 	}
