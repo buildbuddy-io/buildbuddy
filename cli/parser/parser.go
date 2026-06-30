@@ -1006,36 +1006,6 @@ func GetFirstTargetPattern(args []string) string {
 	return ""
 }
 
-// Returns whether the passed CLI command option is set.
-// These options are expected *after* the Bazel subcommand:
-// Ex. `bazel run --stream_run_logs ...`
-//
-// Also removes the option from the parsed args, so CLI-specific options aren't passed to Bazel.
-func IsCLICommandOptionSet(parsedArgs *parsed.OrderedArgs, optionName string) (bool, error) {
-	isSet, err := options.AccumulateValues[*parsed.IndexedOption](
-		false,
-		parsedArgs.RemoveCommandOptions(optionName),
-	)
-	if err != nil {
-		return false, status.WrapErrorf(err, "failed to accumulate option %s", optionName)
-	}
-	return isSet, nil
-}
-
-// GetCLICommandOptionVal returns the value of the requested CLI command option.
-//
-// Also removes the option from the parsed args, so CLI-specific options aren't passed to Bazel.
-func GetCLICommandOptionVal(parsedArgs *parsed.OrderedArgs, optionName string) (string, error) {
-	val, err := options.AccumulateValues[*parsed.IndexedOption](
-		"",
-		parsedArgs.RemoveCommandOptions(optionName),
-	)
-	if err != nil {
-		return "", status.WrapErrorf(err, "failed to accumulate %s option", optionName)
-	}
-	return val, nil
-}
-
 // GetBazelCommandOptionVal returns the value of the requested Bazel command option.
 // These options are expected *after* the Bazel subcommand:
 // Ex. `bazel run --bes_backend=XXX ...`
