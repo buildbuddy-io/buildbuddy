@@ -41,7 +41,7 @@ def gcs(name, srcs, bucket, gsutil = "gsutil", prefix = "", sha_prefix = "", zip
         name = name + ".apply",
         srcs = srcs,
         outs = [name + ".apply.out"],
-        cmd = "echo \"%s -m %s cp %s $(SRCS) gs://%s/%s\" > $@" % (gsutil, util_options, copy_options, bucket, prefix),
+        cmd = "echo \"PYTHONSAFEPATH=0 %s -m %s cp %s $(SRCS) gs://%s/%s\" > $@" % (gsutil, util_options, copy_options, bucket, prefix),
         local = 1,
         executable = 1,
         **kwargs
@@ -63,7 +63,7 @@ def gcs(name, srcs, bucket, gsutil = "gsutil", prefix = "", sha_prefix = "", zip
         name = name + ".delete",
         srcs = srcs,
         outs = [name + ".delete.out"],
-        cmd = "echo \"%s -m rm -r gs://%s/%s\" > $@" % (gsutil, bucket, prefix),
+        cmd = "echo \"PYTHONSAFEPATH=0 %s -m rm -r gs://%s/%s\" > $@" % (gsutil, bucket, prefix),
         local = 1,
         executable = 1,
         **kwargs
