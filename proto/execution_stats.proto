@@ -392,3 +392,27 @@ message SearchExecutionResponse {
   // more results in the list.
   string next_page_token = 3;
 }
+
+message GetExecutionTimelineRequest {
+  context.RequestContext request_context = 1;
+
+  // A mandatory target to avoid returning tons of data.
+  string target = 2;
+
+  ExecutionQuery query = 3;
+}
+
+message ExecutionTimelineEntry {
+  int64 execution_time_usec = 1;
+  int64 cpu_nanos = 2;
+  int64 peak_memory_bytes = 3;
+
+  // TODO(jdhollen): other useful stuff?  the whole execution is probably too
+  // big.
+}
+
+message GetExecutionTimelineResponse {
+  context.ResponseContext response_context = 1;
+
+  repeated ExecutionTimelineEntry execution = 2;
+}

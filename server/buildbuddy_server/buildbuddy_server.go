@@ -1647,6 +1647,17 @@ func (s *BuildBuddyServer) SearchExecution(ctx context.Context, req *espb.Search
 	return searcher.SearchExecutions(ctx, req)
 }
 
+func (s *BuildBuddyServer) GetExecutionTimeline(ctx context.Context, req *espb.GetExecutionTimelineRequest) (*espb.GetExecutionTimelineResponse, error) {
+	if req == nil {
+		return nil, status.InvalidArgumentErrorf("GetExecutionTimelineRequest cannot be empty")
+	}
+	searcher := s.env.GetExecutionSearchService()
+	if searcher == nil {
+		return nil, fmt.Errorf("No execution service was configured")
+	}
+	return searcher.GetExecutionTimeline(ctx, req)
+}
+
 func (s *BuildBuddyServer) GetTargetHistory(ctx context.Context, req *trpb.GetTargetHistoryRequest) (*trpb.GetTargetHistoryResponse, error) {
 	return target.GetTargetHistory(ctx, s.env, req)
 }

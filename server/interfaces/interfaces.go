@@ -1070,6 +1070,7 @@ type Publisher interface {
 
 type ExecutionSearchService interface {
 	SearchExecutions(ctx context.Context, req *espb.SearchExecutionRequest) (*espb.SearchExecutionResponse, error)
+	GetExecutionTimeline(ctx context.Context, req *espb.GetExecutionTimelineRequest) (*espb.GetExecutionTimelineResponse, error)
 }
 
 // TaskRouter decides which execution nodes should execute a task.
