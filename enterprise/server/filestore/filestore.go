@@ -827,19 +827,15 @@ func (g *gcsMetadataWriter) Commit() error {
 	_, spn := tracing.StartSpan(g.ctx)
 	defer spn.End()
 	err := g.CommittedWriteCloser.Commit()
-
-	switch {
-	case status.IsAlreadyExistsError(err):
-		log.Debugf("Write gcs blob %q (already exists)", g.blobName)
-		return nil
-	case status.IsResourceExhaustedError(err):
-		// gcs.ConditionalWriter returns this when there are too many writes to
-		// the same object. We can assume that another write was successful.
-		log.Debugf("Write gcs blob %q (too many writes)", g.blobName)
-		return nil
-	default:
-		return err
+	if err != nil {
+		if status.IsAlreadyExistsError(err) {
+			log.Debugf("Write gcs blob %q (already exists)", g.blobName)
+			return nil
+		}
+		log.Warningf("Write gcs blob %q failed: %s", g.blobName, err)
+		return status.UnavailableError("write to blob storage failed")
 	}
+	return nil
 }
 
 func (g *gcsMetadataWriter) Close() error {
