@@ -12,6 +12,7 @@ import (
 	"io"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ocicache"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ocifetcher"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
@@ -27,7 +28,10 @@ import (
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
-const cacheDigestFunction = repb.DigestFunction_SHA256
+const (
+	cacheDigestFunction          = repb.DigestFunction_SHA256
+	UseLocalOCIFetcherExperiment = "cache_proxy.use_local_oci_fetcher"
+)
 
 type OCIFetcherServerProxy struct {
 	remote        ofpb.OCIFetcherClient
@@ -39,26 +43,67 @@ type OCIFetcherServerProxy struct {
 	fetchGroup singleflight.Group[ocicache.BlobFetchKey, struct{}]
 }
 
+type SwitchingOCIFetcherServer struct {
+	env   environment.Env
+	local ofpb.OCIFetcherServer
+	proxy ofpb.OCIFetcherServer
+}
+
 func Register(env *real_environment.RealEnv) error {
-	proxy, err := New(env)
+	server, err := New(env)
 	if err != nil {
-		return status.InternalErrorf("Error initializing OCIFetcherServerProxy: %s", err)
+		return status.InternalErrorf("Error initializing SwitchingOCIFetcherServer: %s", err)
 	}
-	env.SetOCIFetcherServer(proxy)
+	env.SetOCIFetcherServer(server)
 	return nil
 }
 
-func New(env environment.Env) (*OCIFetcherServerProxy, error) {
+func New(env environment.Env) (*SwitchingOCIFetcherServer, error) {
 	if env.GetOCIFetcherClient() == nil {
-		return nil, status.FailedPreconditionError("An OCIFetcherClient is required to enable the OCIFetcherServerProxy")
+		return nil, status.FailedPreconditionError("An OCIFetcherClient is required to enable the SwitchingOCIFetcherServer")
 	}
 	if env.GetLocalByteStreamClient() == nil {
-		return nil, status.FailedPreconditionError("A LocalByteStreamClient is required to enable the OCIFetcherServerProxy")
+		return nil, status.FailedPreconditionError("A LocalByteStreamClient is required to enable the SwitchingOCIFetcherServer")
 	}
-	return &OCIFetcherServerProxy{
+	if env.GetLocalActionCacheClient() == nil {
+		return nil, status.FailedPreconditionError("A LocalActionCacheClient is required to enable the SwitchingOCIFetcherServer")
+	}
+	local, err := ocifetcher.NewServer(env.GetLocalByteStreamClient(), env.GetLocalActionCacheClient())
+	if err != nil {
+		return nil, err
+	}
+	proxy := &OCIFetcherServerProxy{
 		remote:        env.GetOCIFetcherClient(),
 		localBSClient: env.GetLocalByteStreamClient(),
+	}
+	return &SwitchingOCIFetcherServer{
+		env:   env,
+		local: local,
+		proxy: proxy,
 	}, nil
+}
+
+func (s *SwitchingOCIFetcherServer) backend(ctx context.Context) ofpb.OCIFetcherServer {
+	if fp := s.env.GetExperimentFlagProvider(); fp != nil && fp.Boolean(ctx, UseLocalOCIFetcherExperiment, false) {
+		return s.local
+	}
+	return s.proxy
+}
+
+func (s *SwitchingOCIFetcherServer) FetchManifest(ctx context.Context, req *ofpb.FetchManifestRequest) (*ofpb.FetchManifestResponse, error) {
+	return s.backend(ctx).FetchManifest(ctx, req)
+}
+
+func (s *SwitchingOCIFetcherServer) FetchManifestMetadata(ctx context.Context, req *ofpb.FetchManifestMetadataRequest) (*ofpb.FetchManifestMetadataResponse, error) {
+	return s.backend(ctx).FetchManifestMetadata(ctx, req)
+}
+
+func (s *SwitchingOCIFetcherServer) FetchBlobMetadata(ctx context.Context, req *ofpb.FetchBlobMetadataRequest) (*ofpb.FetchBlobMetadataResponse, error) {
+	return s.backend(ctx).FetchBlobMetadata(ctx, req)
+}
+
+func (s *SwitchingOCIFetcherServer) FetchBlob(req *ofpb.FetchBlobRequest, stream ofpb.OCIFetcher_FetchBlobServer) error {
+	return s.backend(stream.Context()).FetchBlob(req, stream)
 }
 
 func (s *OCIFetcherServerProxy) FetchManifest(ctx context.Context, req *ofpb.FetchManifestRequest) (*ofpb.FetchManifestResponse, error) {
