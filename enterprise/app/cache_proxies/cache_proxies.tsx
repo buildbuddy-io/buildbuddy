@@ -1,4 +1,4 @@
-import { Hash } from "lucide-react";
+import { Cpu, Globe, Hash, Laptop, LucideIcon } from "lucide-react";
 import React from "react";
 import { Subscription } from "rxjs";
 import { User } from "../../../app/auth/auth_service";
@@ -68,50 +68,75 @@ interface CacheProxiesListProps {
 
 class CacheProxiesList extends React.Component<CacheProxiesListProps> {
   render() {
-    const proxiesByKey = new Map<string, RegionalCacheProxy>();
-    for (const r of this.props.regions) {
-      for (const proxy of r.response.cacheProxy) {
+    // Cluster proxies by region + OS + architecture.
+    const proxiesByCluster = new Map<string, RegionalCacheProxy[]>();
+    for (const region of this.props.regions) {
+      for (const proxy of region.response.cacheProxy) {
         if (!proxy.node) {
           continue;
         }
-        proxiesByKey.set(`${r.name}-${proxy.node.proxyId}`, {
-          region: r.name,
-          proxy,
-          node: proxy.node as cache_proxy.CacheProxyNode,
-        });
+        const node = proxy.node as cache_proxy.CacheProxyNode;
+        const key = `${region.name}-${node.osFamily || ""}-${node.arch || ""}`;
+        if (!proxiesByCluster.has(key)) {
+          proxiesByCluster.set(key, []);
+        }
+        proxiesByCluster.get(key)!.push({ region: region.name, proxy, node });
       }
     }
-    const keys = Array.from(proxiesByKey.keys()).sort();
+    const keys = Array.from(proxiesByCluster.keys()).sort();
 
     return (
       <div className="cache-proxy-cards">
-        <div className="cache-proxy-summary">
-          <Hash />
-          <span>
-            <b>
-              {keys.length} {keys.length === 1 ? "cache proxy" : "cache proxies"}
-            </b>
-          </span>
-        </div>
         {keys.map((key) => {
-          const regionalProxy = proxiesByKey.get(key);
-          if (!regionalProxy) {
+          const proxies = proxiesByCluster.get(key);
+          if (!proxies || proxies.length === 0) {
             return null;
           }
-          const { region, proxy, node } = regionalProxy;
+          const { region, node } = proxies[0];
           return (
-            <CacheProxyCardComponent
-              key={key}
-              region={region}
-              node={node}
-              lastCheckInTime={proxy.lastCheckInTime}
-              statistics={proxy.statistics}
-            />
+            <React.Fragment key={key}>
+              <div className="cache-proxy-details">
+                {region && (
+                  <CacheProxyDetail Icon={Globe} label="">
+                    {region}
+                  </CacheProxyDetail>
+                )}
+                <CacheProxyDetail Icon={Hash} label="">
+                  {proxies.length} {proxies.length === 1 ? "cache proxy" : "cache proxies"}
+                </CacheProxyDetail>
+                <CacheProxyDetail Icon={Laptop} label="OS">
+                  {node.osFamily || "unknown"}
+                </CacheProxyDetail>
+                <CacheProxyDetail Icon={Cpu} label="Arch">
+                  {node.arch || "unknown"}
+                </CacheProxyDetail>
+              </div>
+              {proxies.map((p) => (
+                <CacheProxyCardComponent
+                  key={`${p.region}-${p.node.proxyId}`}
+                  node={p.node}
+                  lastCheckInTime={p.proxy.lastCheckInTime}
+                  statistics={p.proxy.statistics}
+                />
+              ))}
+            </React.Fragment>
           );
         })}
       </div>
     );
   }
+}
+
+function CacheProxyDetail({ Icon, label, children }: { Icon: LucideIcon; label: string; children: React.ReactNode }) {
+  return (
+    <span className="cache-proxy-detail">
+      <Icon />
+      <span>
+        {label && <>{label}: </>}
+        <b>{children}</b>
+      </span>
+    </span>
+  );
 }
 
 type TabId = "status" | "setup";
