@@ -3302,20 +3302,58 @@ func TestPebbleGCSReadContractMissingAfterDelete(t *testing.T) {
 }
 
 func TestPebbleGCSBackingObjectDeleted(t *testing.T) {
-	clock := clockwork.NewFakeClock()
-	gcs := &recordingGCS{PebbleGCSStorage: mockgcs.New(clock)}
-	te, c := newGCSBackedContractCache(t, clock, gcs)
-	ctx := getAnonContext(t, te)
-	rn, data := testdigest.RandomCASResourceBuf(t, 100)
+	for _, tc := range []struct {
+		name string
+		read func(t *testing.T, ctx context.Context, c interfaces.Cache, rn *rspb.ResourceName)
+	}{
+		{
+			name: "get",
+			read: func(t *testing.T, ctx context.Context, c interfaces.Cache, rn *rspb.ResourceName) {
+				_, err := c.Get(ctx, rn)
+				require.True(t, status.IsNotFoundError(err), "Get: %v", err)
+			},
+		},
+		{
+			name: "get_with_metadata",
+			read: func(t *testing.T, ctx context.Context, c interfaces.Cache, rn *rspb.ResourceName) {
+				_, _, err := c.GetWithMetadata(ctx, rn)
+				require.True(t, status.IsNotFoundError(err), "GetWithMetadata: %v", err)
+			},
+		},
+		{
+			name: "get_multi",
+			read: func(t *testing.T, ctx context.Context, c interfaces.Cache, rn *rspb.ResourceName) {
+				multi, err := c.GetMulti(ctx, []*rspb.ResourceName{rn})
+				require.NoError(t, err, "GetMulti")
+				require.Nil(t, multi[rn.GetDigest()], "GetMulti")
+			},
+		},
+		{
+			name: "reader",
+			read: func(t *testing.T, ctx context.Context, c interfaces.Cache, rn *rspb.ResourceName) {
+				rc, err := c.Reader(ctx, rn, 0, 0)
+				require.True(t, status.IsNotFoundError(err), "Reader: %v", err)
+				require.Nil(t, rc, "Reader")
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			clock := clockwork.NewFakeClock()
+			gcs := &recordingGCS{PebbleGCSStorage: mockgcs.New(clock)}
+			te, c := newGCSBackedContractCache(t, clock, gcs)
+			ctx := getAnonContext(t, te)
+			rn, data := testdigest.RandomCASResourceBuf(t, 100)
 
-	require.NoError(t, c.Set(ctx, rn, data))
-	require.NoError(t, gcs.DeleteRecordedBlobs(ctx))
+			require.NoError(t, c.Set(ctx, rn, data))
+			require.NoError(t, gcs.DeleteRecordedBlobs(ctx))
 
-	// The metadata methods still report the resource as present because
-	// PebbleCache does not consult backing storage for them, but reading the
-	// content surfaces the now-missing backing blob.
-	expectMetadataPresent(t, ctx, c, rn)
-	expectContentNotFound(t, ctx, c, rn)
+			// The metadata methods still report the resource as present because
+			// PebbleCache does not consult backing storage for them, but reading the
+			// content surfaces the now-missing backing blob.
+			expectMetadataPresent(t, ctx, c, rn)
+			tc.read(t, ctx, c, rn)
+		})
+	}
 }
 
 func TestPebbleGCSBackingObjectDeletedMetadataMethodsShouldReportMissing(t *testing.T) {
