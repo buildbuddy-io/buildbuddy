@@ -24,6 +24,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/hostid"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
@@ -111,13 +112,15 @@ func Register(env *real_environment.RealEnv) error {
 	}
 	log.Infof("Registering Cache Proxy %s on host %q", proxyID, hostname)
 	node := &cppb.CacheProxyNode{
-		Host:      hostname,
-		ProxyId:   proxyID,
-		OsFamily:  runtime.GOOS,
-		Arch:      runtime.GOARCH,
-		Version:   version.Tag(),
-		StartTime: timestamppb.Now(),
-		Labels:    trimmedLabels,
+		Host:                 hostname,
+		ProxyId:              proxyID,
+		OsFamily:             runtime.GOOS,
+		Arch:                 runtime.GOARCH,
+		Version:              version.Tag(),
+		StartTime:            timestamppb.Now(),
+		Labels:               trimmedLabels,
+		AllocatedCpuMillis:   resources.GetAllocatedCPUMillis(),
+		AllocatedMemoryBytes: resources.GetAllocatedRAMBytes(),
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())

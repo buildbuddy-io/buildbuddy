@@ -13,6 +13,7 @@ go_library(
         "//server/hostid",
         "//server/metrics",
         "//server/real_environment",
+        "//server/resources",
         "//server/util/authutil",
         "//server/util/disk",
         "//server/util/flag",
