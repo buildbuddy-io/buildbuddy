@@ -19,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/go-redis/redis/v8"
 	"github.com/prometheus/client_golang/prometheus"
+	"google.golang.org/grpc/metadata"
 )
 
 const (
@@ -54,6 +55,9 @@ const (
 	// Increment this version to cycle to new keys (and discard all old
 	// action-merging data) during the next rollout.
 	keyVersion = 4
+
+	// gRPC header that can be set to true to disable action merging.
+	disableActionMergingHeaderName = "x-buildbuddy-disable-action-merging"
 )
 
 var (
@@ -106,6 +110,14 @@ func executionIDWithDigestSharding(executionID string) (string, error) {
 	}
 	parts[len(parts)-2] = "{" + parts[len(parts)-2] + "}"
 	return strings.Join(parts, "/"), nil
+}
+
+func isDisabledByHeader(ctx context.Context) bool {
+	disabledHeaders := metadata.ValueFromIncomingContext(ctx, disableActionMergingHeaderName)
+	if len(disabledHeaders) == 0 {
+		return false
+	}
+	return disabledHeaders[len(disabledHeaders)-1] == "true"
 }
 
 // This function records a claimed execution in Redis.
@@ -259,7 +271,7 @@ const (
 // reasonably quickly.
 func GetOrCreateExecutionID(ctx context.Context, rdb redis.UniversalClient, schedulerService interfaces.SchedulerService, adResource *digest.CASResourceName, doNotCache bool) (string, DispatchAction) {
 	newExecutionID := adResource.NewUploadString()
-	if !*enableActionMerging || doNotCache {
+	if !*enableActionMerging || doNotCache || isDisabledByHeader(ctx) {
 		return newExecutionID, New
 	}
 	forwardKey, err := redisKeyForPendingExecutionID(ctx, adResource)
