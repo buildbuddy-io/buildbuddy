@@ -31,7 +31,6 @@
 
 .targets .targets-controls .controls.row label {
   font-weight: 600;
-  color: var(--color-targets-text);
   min-width: 60px;
 }
 
@@ -58,7 +57,7 @@
 }
 
 .targets .error-message {
-  color: var(--color-targets-error);
+  color: var(--color-status-error);
   font-size: 16px;
 }
 
@@ -66,7 +65,6 @@
   font-size: 20px;
   font-weight: 600;
   margin-bottom: 16px;
-  color: var(--color-targets-text);
 }
 
 .targets .targets-chart-section {
@@ -84,38 +82,24 @@
   margin-bottom: 40px;
 }
 
-.targets .targets-table-container {
-  background: var(--color-targets-bg);
-  border-radius: 8px;
-  overflow: hidden;
-}
-
 .targets .targets-table-container .results-table {
-  border: 1px solid var(--color-targets-border);
-  border-radius: 4px;
-  overflow: hidden;
+  border: 1px solid var(--color-border-primary);
+  border-radius: 8px;
 }
 
 .targets .targets-table-container .row {
   display: flex;
-  border-bottom: 1px solid var(--color-targets-border);
-}
-
-.targets .targets-table-container .row:last-child {
-  border-bottom: none;
+  &:not(:last-child) {
+    border-bottom: 1px solid var(--color-border-primary);
+  }
 }
 
 .targets .targets-table-container .column-headers {
   font-weight: 600;
-  color: var(--color-targets-text);
 }
 
 .targets .targets-table-container .result-row {
   transition: background-color 0.2s ease;
-}
-
-.targets .targets-table-container .result-row:hover {
-  background-color: var(--color-targets-row-hover);
 }
 
 .targets .targets-table-container .result-row.clickable {
@@ -123,7 +107,7 @@
 }
 
 .targets .targets-table-container .result-row.clickable:hover {
-  background-color: var(--color-targets-row-hover-clickable);
+  background-color: var(--color-bg-hover);
 }
 
 .targets .targets-table-container .name-column {
@@ -142,7 +126,6 @@
   display: flex;
   justify-content: center;
   padding: 16px;
-  border-top: 1px solid var(--color-targets-border);
 }
 
 .targets .load-more-button {
@@ -170,7 +153,7 @@
 }
 
 .targets .empty-message {
-  color: var(--color-targets-muted);
+  color: var(--color-text-secondary);
   font-size: 16px;
   text-align: center;
 }
@@ -180,10 +163,7 @@
 }
 
 .targets .trend-chart-hover {
-  background: var(--color-targets-bg);
-  border: 1px solid var(--color-targets-border-alt);
   border-radius: 4px;
   padding: 8px 12px;
-  font-size: 12px;
-  box-shadow: 0 2px 8px var(--color-targets-shadow);
+  box-shadow: 0 2px 8px var(--color-shadow-sm);
 }
