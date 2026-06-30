@@ -404,8 +404,9 @@ message GetExecutionTimelineRequest {
 
 message ExecutionTimelineEntry {
   int64 start_time_usec = 1;
-  int64 cpu_nanos = 2;
-  int64 peak_memory_bytes = 3;
+  int64 duration_usec = 2;
+  int64 cpu_nanos = 3;
+  int64 peak_memory_bytes = 4;
 
   // TODO(jdhollen): other useful stuff?  the whole execution is probably too
   // big.

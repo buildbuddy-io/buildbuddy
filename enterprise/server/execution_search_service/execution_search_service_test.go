@@ -12,6 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/stretchr/testify/assert"
@@ -402,6 +403,144 @@ func TestSearchExecutions_PaginationWithEmptyInvocationUUIDs(t *testing.T) {
 	}
 
 	require.Len(t, allExecutions, 15)
+}
+
+func TestGetExecutionTimeline(t *testing.T) {
+	flags.Set(t, "testenv.use_clickhouse", true)
+	flags.Set(t, "testenv.reuse_server", true)
+
+	actionDigest1 := &repb.Digest{Hash: "1c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae", SizeBytes: 142}
+	actionDigest2 := &repb.Digest{Hash: "2cde2b2edba56bf408601fb721fe9b5c338d10ee429ea04fae5511b68fbf8fb9", SizeBytes: 256}
+	actionDigest3 := &repb.Digest{Hash: "3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b8550", SizeBytes: 0}
+	actionDigest4 := &repb.Digest{Hash: "4b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b8550", SizeBytes: 0}
+
+	exid1 := makeExecutionID(actionDigest1)
+	exid2 := makeExecutionID(actionDigest2)
+	exid3 := makeExecutionID(actionDigest3)
+	exid4 := makeExecutionID(actionDigest4)
+
+	const target = "//server/util/timeline:timeline"
+	testTimestampUsec := time.Now().UnixMicro()
+
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1", "US2", "GR2"))
+	env.SetAuthenticator(ta)
+
+	executions := []*olaptables.Execution{
+		// Two executions for the requested target/group, inserted out of
+		// start-time order to verify ordering by start_time_usec.
+		{
+			GroupID:                  "GR1",
+			InvocationUUID:           strings.ReplaceAll(uuid.New(), "-", ""),
+			TargetLabel:              target,
+			Command:                  "build",
+			Stage:                    int64(repb.ExecutionStage_COMPLETED),
+			WorkerStartTimestampUsec: testTimestampUsec + 1000000,
+			CPUNanos:                 2000000000,
+			PeakMemoryBytes:          512 * 1024 * 1024,
+			CreatedAtUsec:            testTimestampUsec + 1000,
+			UpdatedAtUsec:            testTimestampUsec + 1000,
+		},
+		{
+			GroupID:                  "GR1",
+			InvocationUUID:           strings.ReplaceAll(uuid.New(), "-", ""),
+			TargetLabel:              target,
+			Command:                  "test",
+			Stage:                    int64(repb.ExecutionStage_COMPLETED),
+			WorkerStartTimestampUsec: testTimestampUsec,
+			CPUNanos:                 1000000000,
+			PeakMemoryBytes:          256 * 1024 * 1024,
+			CreatedAtUsec:            testTimestampUsec,
+			UpdatedAtUsec:            testTimestampUsec,
+		},
+		// Same group, different target - should be excluded.
+		{
+			GroupID:                  "GR1",
+			InvocationUUID:           strings.ReplaceAll(uuid.New(), "-", ""),
+			TargetLabel:              "//server/util/other:other",
+			WorkerStartTimestampUsec: testTimestampUsec,
+			CreatedAtUsec:            testTimestampUsec + 2000,
+			UpdatedAtUsec:            testTimestampUsec + 2000,
+		},
+		// Matching target but a different group - should be excluded.
+		{
+			GroupID:                  "GR2",
+			InvocationUUID:           strings.ReplaceAll(uuid.New(), "-", ""),
+			TargetLabel:              target,
+			WorkerStartTimestampUsec: testTimestampUsec,
+			CreatedAtUsec:            testTimestampUsec + 3000,
+			UpdatedAtUsec:            testTimestampUsec + 3000,
+		},
+	}
+	executionIDs := []string{exid1, exid2, exid3, exid4}
+	for i, execution := range executions {
+		require.NoError(t, clickhouse.FillExecutionResourceFieldsFromExecutionID(execution, executionIDs[i]))
+		err := env.GetOLAPDBHandle().GORM(ctx, "test_create_execution").Create(execution).Error
+		require.NoError(t, err)
+	}
+
+	service := execution_search_service.NewExecutionSearchService(env, env.GetDBHandle(), env.GetOLAPDBHandle())
+
+	testCtx, err := ta.WithAuthenticatedUser(ctx, "US1")
+	require.NoError(t, err)
+
+	rsp, err := service.GetExecutionTimeline(testCtx, &espb.GetExecutionTimelineRequest{
+		Target: target,
+	})
+	require.NoError(t, err)
+	require.Len(t, rsp.Execution, 2, "should only return GR1 executions for the requested target")
+
+	// Results should be ordered by start_time_usec ascending.
+	assert.Equal(t, testTimestampUsec, rsp.Execution[0].StartTimeUsec)
+	assert.Equal(t, int64(1000000000), rsp.Execution[0].CpuNanos)
+	assert.Equal(t, int64(256*1024*1024), rsp.Execution[0].PeakMemoryBytes)
+	assert.Equal(t, testTimestampUsec+1000000, rsp.Execution[1].StartTimeUsec)
+	assert.Equal(t, int64(2000000000), rsp.Execution[1].CpuNanos)
+	assert.Equal(t, int64(512*1024*1024), rsp.Execution[1].PeakMemoryBytes)
+
+	// The shared ExecutionQuery filters should apply.
+	rsp, err = service.GetExecutionTimeline(testCtx, &espb.GetExecutionTimelineRequest{
+		Target: target,
+		Query:  &espb.ExecutionQuery{Command: "test"},
+	})
+	require.NoError(t, err)
+	require.Len(t, rsp.Execution, 1)
+	assert.Equal(t, testTimestampUsec, rsp.Execution[0].StartTimeUsec)
+}
+
+func TestGetExecutionTimeline_RequiresTarget(t *testing.T) {
+	flags.Set(t, "testenv.use_clickhouse", true)
+	flags.Set(t, "testenv.reuse_server", true)
+
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1"))
+	env.SetAuthenticator(ta)
+
+	service := execution_search_service.NewExecutionSearchService(env, env.GetDBHandle(), env.GetOLAPDBHandle())
+
+	testCtx, err := ta.WithAuthenticatedUser(ctx, "US1")
+	require.NoError(t, err)
+
+	_, err = service.GetExecutionTimeline(testCtx, &espb.GetExecutionTimelineRequest{})
+	require.Error(t, err, "should require a target")
+	assert.True(t, status.IsInvalidArgumentError(err))
+}
+
+func TestGetExecutionTimeline_RequiresAuth(t *testing.T) {
+	flags.Set(t, "testenv.use_clickhouse", true)
+	flags.Set(t, "testenv.reuse_server", true)
+
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1"))
+	env.SetAuthenticator(ta)
+
+	service := execution_search_service.NewExecutionSearchService(env, env.GetDBHandle(), env.GetOLAPDBHandle())
+
+	_, err := service.GetExecutionTimeline(ctx, &espb.GetExecutionTimelineRequest{Target: "//foo:bar"})
+	require.Error(t, err, "should require authentication")
 }
 
 func TestSearchExecutions_RequiresAuth(t *testing.T) {

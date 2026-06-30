@@ -113,6 +113,7 @@ var (
 		buildBuddyServicePrefix + "GetTargetTrends",
 		buildBuddyServicePrefix + "GetSuggestion",
 		buildBuddyServicePrefix + "SearchExecution",
+		buildBuddyServicePrefix + "GetExecutionTimeline",
 		buildBuddyServicePrefix + "GetTargetStats",
 		buildBuddyServicePrefix + "GetDailyTargetStats",
 		buildBuddyServicePrefix + "GetTargetFlakeSamples",

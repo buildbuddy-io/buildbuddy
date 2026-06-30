@@ -44,6 +44,7 @@ go_test(
         "//server/testutil/testenv",
         "//server/util/clickhouse",
         "//server/util/clickhouse/schema",
+        "//server/util/status",
         "//server/util/testing/flags",
         "//server/util/uuid",
         "@com_github_stretchr_testify//assert",
