@@ -20,9 +20,13 @@ const (
 	// root of the Bazel workspace in which the CLI is invoked.
 	WorkspaceRelativeConfigPath = "buildbuddy.yaml"
 
-	// Path where we expect to find the user's plugin configuration, relative
-	// to the user's home directory.
+	// Path where we historically stored the user's plugin configuration,
+	// relative to the user's home directory.
 	HomeRelativeUserConfigPath = "buildbuddy.yaml"
+
+	// Path where we store the user's plugin configuration, relative to the
+	// user's XDG config directory.
+	XDGRelativeUserConfigPath = "buildbuddy/bb.yaml"
 
 	// Environment variable that is set to "1" if we are a sidecar.
 	BbIsSidecar = "_BB_IS_SIDECAR"
@@ -69,13 +73,57 @@ func loadWorkspaceConfig(workspaceDir string) (*File, error) {
 	return LoadFile(filepath.Join(workspaceDir, WorkspaceRelativeConfigPath))
 }
 
+// userConfigCandidates returns paths to check for an existing user config, in
+// precedence order. The first candidate is also where a new config should be
+// created when none already exists.
+func userConfigCandidates() []string {
+	home := os.Getenv("HOME")
+	xdg := os.Getenv("XDG_CONFIG_HOME")
+	if xdg == "" && home != "" {
+		xdg = filepath.Join(home, ".config")
+	}
+
+	var paths []string
+	if xdg != "" {
+		paths = append(paths, filepath.Join(xdg, XDGRelativeUserConfigPath))
+	}
+	if home != "" {
+		paths = append(paths, filepath.Join(home, HomeRelativeUserConfigPath))
+	}
+	if len(paths) == 0 {
+		log.Debugf("cannot determine user config path: $HOME and $XDG_CONFIG_HOME are unset")
+		return nil
+	}
+
+	return paths
+}
+
 func loadUserConfig() (*File, error) {
-	homeDir := os.Getenv("HOME")
-	if homeDir == "" {
-		log.Debugf("not reading ~/%s: $HOME environment variable is not set", HomeRelativeUserConfigPath)
+	path, err := UserConfigPath()
+	if err != nil {
+		return nil, err
+	}
+	if path == "" {
 		return nil, nil
 	}
-	return LoadFile(filepath.Join(homeDir, HomeRelativeUserConfigPath))
+	return LoadFile(path)
+}
+
+func UserConfigPath() (string, error) {
+	paths := userConfigCandidates()
+	if len(paths) == 0 {
+		return "", nil
+	}
+	for _, p := range paths {
+		_, err := os.Stat(p)
+		if err == nil {
+			return p, nil
+		}
+		if !os.IsNotExist(err) {
+			return "", err
+		}
+	}
+	return paths[0], nil
 }
 
 // LoadFile loads a single buildbuddy.yaml from the given path.
