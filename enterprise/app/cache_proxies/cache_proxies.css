@@ -27,7 +27,14 @@
   margin-top: 16px;
 }
 
-.cache-proxies-page .cache-proxy-summary {
+.cache-proxies-page .cache-proxy-details {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-top: 24px;
+}
+
+.cache-proxies-page .cache-proxy-detail {
   display: flex;
   align-items: center;
   gap: 8px;
