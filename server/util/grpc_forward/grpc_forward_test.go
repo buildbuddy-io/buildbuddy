@@ -34,11 +34,11 @@ func TestDirector_ForwardsIncomingMetadataToOutgoingContext(t *testing.T) {
 		{Prefix: "", Target: "grpc://localhost:1985"},
 	})
 
-	const pwHeader = "x-buildbuddy-platform.container-registry-password"
-	const userHeader = "x-buildbuddy-platform.container-registry-username"
+	const header1 = "x-test-client-header-1"
+	const header2 = "x-test-client-header-2"
 	incoming := metadata.New(map[string]string{
-		pwHeader:   "hunter2",
-		userHeader: "aws",
+		header1: "value-1",
+		header2: "value-2",
 	})
 	ctx := metadata.NewIncomingContext(context.Background(), incoming)
 
@@ -48,15 +48,16 @@ func TestDirector_ForwardsIncomingMetadataToOutgoingContext(t *testing.T) {
 
 	outgoing, ok := metadata.FromOutgoingContext(outCtx)
 	require.True(t, ok, "director must attach the incoming metadata to the outgoing context")
-	require.Equal(t, []string{"hunter2"}, outgoing.Get(pwHeader),
-		"client-supplied headers (e.g. container-registry-password) must be forwarded to the backend for unknown RPCs like Execute")
-	require.Equal(t, []string{"aws"}, outgoing.Get(userHeader))
+	require.Equal(t, []string{"value-1"}, outgoing.Get(header1),
+		"client-supplied headers must be forwarded to the backend for unknown RPCs like Execute")
+	require.Equal(t, []string{"value-2"}, outgoing.Get(header2))
 }
 
 // TestForwarding_PropagatesClientHeadersToBackend tests that the unknown-RPC
 // gRPC forwarder preserves client-supplied headers.
 func TestForwarding_PropagatesClientHeadersToBackend(t *testing.T) {
-	const pwHeader = "x-buildbuddy-platform.container-registry-password"
+	t.Cleanup(cleanup)
+	const clientHeader = "x-test-client-header"
 
 	backendLis, err := net.Listen("tcp", "localhost:0")
 	require.NoError(t, err)
@@ -90,14 +91,14 @@ func TestForwarding_PropagatesClientHeadersToBackend(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { clientConn.Close() })
 
-	ctx := metadata.AppendToOutgoingContext(context.Background(), pwHeader, "hunter2")
+	ctx := metadata.AppendToOutgoingContext(context.Background(), clientHeader, "test-value")
 	err = clientConn.Invoke(ctx, "/build.bazel.remote.execution.v2.Execution/Execute", &emptypb.Empty{}, &emptypb.Empty{})
 	require.NoError(t, err)
 
 	mu.Lock()
 	defer mu.Unlock()
-	require.Equal(t, []string{"hunter2"}, gotMD.Get(pwHeader),
-		"the client-supplied container-registry-password header must be forwarded through the proxy to the backend")
+	require.Equal(t, []string{"test-value"}, gotMD.Get(clientHeader),
+		"the client-supplied header must be forwarded through the proxy to the backend")
 }
 
 func TestGetConnectionPool_DedupesConcurrentDialsForSameTarget(t *testing.T) {
