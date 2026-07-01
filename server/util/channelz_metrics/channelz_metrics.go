@@ -183,9 +183,14 @@ func collectSubchannel(ctx context.Context, client channelzpb.ChannelzClient, ta
 		if d == nil {
 			continue
 		}
+		numOpenStreams := d.GetStreamsStarted() - d.GetStreamsSucceeded() - d.GetStreamsFailed()
+		// The counters are not read from a consistent snapshot.
+		if numOpenStreams < 0 {
+			numOpenStreams = 0
+		}
 		c := connState{
 			target:      target,
-			openStreams: d.GetStreamsStarted() - d.GetStreamsSucceeded() - d.GetStreamsFailed(),
+			openStreams: numOpenStreams,
 		}
 		// The window fields are wrapper messages: a nil wrapper means channelz
 		// didn't report the window (unknown), which is distinct from a reported
