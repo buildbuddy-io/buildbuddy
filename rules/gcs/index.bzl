@@ -72,6 +72,7 @@ def gcs(name, srcs, bucket, gsutil = "gsutil", prefix = "", sha_prefix = "", zip
             name + ".push_only.script",
         ],
         data = srcs,
+        use_bash_launcher = True,
         **kwargs,
     )
 
@@ -135,5 +136,6 @@ def gcs(name, srcs, bucket, gsutil = "gsutil", prefix = "", sha_prefix = "", zip
             name + ".delete.script",
         ],
         data = srcs,
+        use_bash_launcher = True,
         **kwargs,
     )
