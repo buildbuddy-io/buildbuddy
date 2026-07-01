@@ -970,7 +970,7 @@ func (s *Store) Stop(ctx context.Context) error {
 	voteBufferStart := time.Now()
 	s.log.Info("Store: dropped leadership for shutdown")
 
-	s.usages.Stop()
+	s.usages.Stop(ctx)
 	if s.egCancel != nil {
 		s.egCancel()
 		// Liveness should be shutdown before leasekeeper; Otherwise,
