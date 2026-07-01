@@ -1,10 +1,11 @@
-package explain
+package timing_profile
 
 import (
 	"context"
 	"errors"
 	"flag"
 	"io"
+	"regexp"
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
@@ -32,9 +33,12 @@ Analyzes the timing profile for the given invocation.
 var (
 	profileFlags  = flag.NewFlagSet("profile", flag.ContinueOnError)
 	profileTarget = profileFlags.String("target", login.DefaultApiTarget, "The API target to use for fetching the timing profile.")
+	maxTopSpans   = profileFlags.Int("n", 100, "The maximum number of slowest actions to include in the output.")
+
+	uuidPattern = regexp.MustCompile("^(?:.*/invocation/)?([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$")
 )
 
-func handleProfile(args []string) (int, error) {
+func HandleProfile(args []string) (int, error) {
 	if err := arg.ParseFlagSet(profileFlags, args); err != nil {
 		if !errors.Is(err, flag.ErrHelp) {
 			log.Printf("Failed to parse flags: %s", err)
@@ -64,6 +68,11 @@ func analyzeTimingProfile(invocationIDOrURL string) (int, error) {
 	}
 	defer profile.Close()
 
+	parsedProfile, err := ParseTimingProfile(profile, *maxTopSpans)
+	if err != nil {
+		return -1, err
+	}
+	log.Printf("Parsed timing profile: %+v", parsedProfile)
 	// TODO: Analyze profile.
 	return 0, nil
 }
