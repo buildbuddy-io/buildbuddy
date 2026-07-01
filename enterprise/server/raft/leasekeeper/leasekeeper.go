@@ -375,6 +375,12 @@ func (lk *LeaseKeeper) watchLeases() {
 			lk.mu.Unlock()
 			if la != nil {
 				if la.replicaID == nodeInfo.ReplicaID {
+					// This is the terminal teardown for the range's replica
+					// on this node. Remove its RaftLeaders series so a stale
+					// leader=1 value doesn't linger: once the lease agent is
+					// gone, later leader-change callbacks find no agent and
+					// are dropped, so nothing else would reset the gauge.
+					metrics.RaftLeaders.Delete(la.labels)
 					la.stop()
 				}
 			}
