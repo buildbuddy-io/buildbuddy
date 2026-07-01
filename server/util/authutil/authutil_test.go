@@ -30,10 +30,7 @@ func (m *mockCIS) IdentityFromContext(context.Context) (*interfaces.ClientIdenti
 func (m *mockCIS) AddIdentityToContext(ctx context.Context) (context.Context, error) {
 	return ctx, nil
 }
-func (m *mockCIS) NewIdentityHeader(*interfaces.ClientIdentity, time.Duration) (string, error) {
-	return "", nil
-}
-func (m *mockCIS) CachedIdentityHeader(*interfaces.ClientIdentity) (string, error) {
+func (m *mockCIS) IdentityHeader(*interfaces.ClientIdentity, time.Duration) (string, error) {
 	return "", nil
 }
 func (m *mockCIS) ValidateIncomingIdentity(ctx context.Context) (context.Context, error) {

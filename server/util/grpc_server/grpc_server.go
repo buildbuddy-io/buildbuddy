@@ -116,7 +116,7 @@ func New(env environment.Env, port int, ssl bool, config GRPCServerConfig) (*GRP
 	} else {
 		log.Infof("gRPC listening on %s", b.hostPort)
 	}
-	if fwdingOptions := grpc_forward.GetForwardingServerOption(env); fwdingOptions != nil {
+	if fwdingOptions := grpc_forward.GetForwardingServerOption(); fwdingOptions != nil {
 		grpcOptions = append(grpcOptions, fwdingOptions)
 	}
 	b.server = grpc.NewServer(grpcOptions...)

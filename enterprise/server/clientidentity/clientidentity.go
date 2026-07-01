@@ -30,74 +30,24 @@ var (
 	required   = flag.Bool("app.client_identity.required", false, "If set, a client identity is required.")
 )
 
-type cachedHeader struct {
-	header   string
-	cachedAt time.Time
-}
-
-// headerCache caches a signed identity header per client identity, re-signing
-// each at most once per cachedHeaderExpiration.
-type headerCache struct {
-	clock clockwork.Clock
-	sign  func(si *interfaces.ClientIdentity) (string, error)
-
-	mu      sync.RWMutex
-	entries map[interfaces.ClientIdentity]cachedHeader
-}
-
-func newHeaderCache(clock clockwork.Clock, sign func(*interfaces.ClientIdentity) (string, error)) *headerCache {
-	return &headerCache{
-		clock:   clock,
-		sign:    sign,
-		entries: make(map[interfaces.ClientIdentity]cachedHeader),
-	}
-}
-
-// Get returns the cached header for si, signing and caching a fresh one when the
-// cached value is missing or older than cachedHeaderExpiration.
-func (c *headerCache) Get(si *interfaces.ClientIdentity) (string, error) {
-	key := *si
-	c.mu.RLock()
-	e, ok := c.entries[key]
-	c.mu.RUnlock()
-	if ok && c.clock.Since(e.cachedAt) < cachedHeaderExpiration {
-		return e.header, nil
-	}
-
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	// Check again in case it was updated while we were waiting for the lock.
-	if e, ok := c.entries[key]; ok && c.clock.Since(e.cachedAt) < cachedHeaderExpiration {
-		return e.header, nil
-	}
-	header, err := c.sign(si)
-	if err != nil {
-		return "", err
-	}
-	c.entries[key] = cachedHeader{header: header, cachedAt: c.clock.Now()}
-	return header, nil
-}
-
 type Service struct {
 	signingKey []byte
 
 	clock clockwork.Clock
 
-	headerCache *headerCache
+	mu               sync.RWMutex
+	cachedHeader     string
+	cachedHeaderTime time.Time
 }
 
 func New(clock clockwork.Clock) (*Service, error) {
 	if *signingKey == "" {
 		return nil, status.InvalidArgumentError("ClientIdentityService requires a signing key")
 	}
-	s := &Service{
+	return &Service{
 		signingKey: []byte(*signingKey),
 		clock:      clock,
-	}
-	s.headerCache = newHeaderCache(clock, func(si *interfaces.ClientIdentity) (string, error) {
-		return s.NewIdentityHeader(si, *expiration)
-	})
-	return s, nil
+	}, nil
 }
 
 func Register(env *real_environment.RealEnv) error {
@@ -129,7 +79,7 @@ func ClearIdentity(ctx context.Context) context.Context {
 	return ctx
 }
 
-func (s *Service) NewIdentityHeader(si *interfaces.ClientIdentity, expiration time.Duration) (string, error) {
+func (s *Service) IdentityHeader(si *interfaces.ClientIdentity, expiration time.Duration) (string, error) {
 	expirationTime := s.clock.Now().Add(expiration)
 	t := jwt.NewWithClaims(jwt.SigningMethodHS256, &claims{
 		StandardClaims: jwt.StandardClaims{ExpiresAt: expirationTime.Unix()},
@@ -138,10 +88,30 @@ func (s *Service) NewIdentityHeader(si *interfaces.ClientIdentity, expiration ti
 	return t.SignedString(s.signingKey)
 }
 
-// CachedIdentityHeader returns a signed identity header for the given identity,
-// re-signing it at most once per cachedHeaderExpiration.
-func (s *Service) CachedIdentityHeader(si *interfaces.ClientIdentity) (string, error) {
-	return s.headerCache.Get(si)
+func (s *Service) getCachedHeader() (string, error) {
+	s.mu.RLock()
+	headerTime := s.cachedHeaderTime
+	header := s.cachedHeader
+	s.mu.RUnlock()
+	if s.clock.Since(headerTime) < cachedHeaderExpiration {
+		return header, nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	// Check again in case it was updated while we were waiting for the lock.
+	if s.clock.Since(s.cachedHeaderTime) < cachedHeaderExpiration {
+		return s.cachedHeader, nil
+	}
+	header, err := s.IdentityHeader(&interfaces.ClientIdentity{
+		Origin: *origin,
+		Client: *client,
+	}, *expiration)
+	if err != nil {
+		return "", err
+	}
+	s.cachedHeader = header
+	s.cachedHeaderTime = s.clock.Now()
+	return header, nil
 }
 
 func (s *Service) AddIdentityToContext(ctx context.Context) (context.Context, error) {
@@ -150,10 +120,7 @@ func (s *Service) AddIdentityToContext(ctx context.Context) (context.Context, er
 			return ctx, nil
 		}
 	}
-	header, err := s.CachedIdentityHeader(&interfaces.ClientIdentity{
-		Origin: *origin,
-		Client: *client,
-	})
+	header, err := s.getCachedHeader()
 	if err != nil {
 		return ctx, err
 	}
