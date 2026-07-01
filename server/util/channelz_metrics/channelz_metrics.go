@@ -126,9 +126,9 @@ func sample(ctx context.Context, client channelzpb.ChannelzClient) error {
 }
 
 // collect walks every client channel -> subchannel -> socket via channelz and
-// returns the flow-control state of each connection. Subchannels and sockets
-// can disappear between calls as connections churn; those are skipped rather
-// than failing the whole pass.
+// returns the flow-control state of each connection. Subchannels, child
+// channels, and sockets can disappear between calls as connections churn; those
+// are skipped rather than failing the whole pass.
 func collect(ctx context.Context, client channelzpb.ChannelzClient) ([]connState, error) {
 	var out []connState
 	var startID int64
@@ -138,10 +138,7 @@ func collect(ctx context.Context, client channelzpb.ChannelzClient) ([]connState
 			return nil, err
 		}
 		for _, ch := range resp.GetChannel() {
-			target := ch.GetData().GetTarget()
-			for _, subRef := range ch.GetSubchannelRef() {
-				out = append(out, collectSubchannel(ctx, client, target, subRef.GetSubchannelId())...)
-			}
+			collectChannel(ctx, client, ch, ch.GetData().GetTarget(), &out)
 			if id := ch.GetRef().GetChannelId(); id >= startID {
 				startID = id + 1
 			}
@@ -149,6 +146,25 @@ func collect(ctx context.Context, client channelzpb.ChannelzClient) ([]connState
 		if resp.GetEnd() {
 			return out, nil
 		}
+	}
+}
+
+// collectChannel gathers connections from a channel's subchannels and,
+// recursively, its nested child channels. Hierarchical LB policies (e.g. xDS)
+// place sockets under child channels rather than directly under the top
+// channel, so we must descend into ChannelRef as well as SubchannelRef. Child
+// channels are labeled with the top-level channel's target, since they may not
+// carry one of their own.
+func collectChannel(ctx context.Context, client channelzpb.ChannelzClient, ch *channelzpb.Channel, target string, out *[]connState) {
+	for _, subRef := range ch.GetSubchannelRef() {
+		*out = append(*out, collectSubchannel(ctx, client, target, subRef.GetSubchannelId())...)
+	}
+	for _, childRef := range ch.GetChannelRef() {
+		resp, err := client.GetChannel(ctx, &channelzpb.GetChannelRequest{ChannelId: childRef.GetChannelId()})
+		if err != nil {
+			continue
+		}
+		collectChannel(ctx, client, resp.GetChannel(), target, out)
 	}
 }
 

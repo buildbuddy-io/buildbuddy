@@ -17,11 +17,12 @@ import (
 // fakeChannelz is a canned channelz server used to drive collect() without a
 // real gRPC connection.
 type fakeChannelz struct {
-	channels    []*channelzpb.Channel
-	subchannels map[int64]*channelzpb.Subchannel
-	sockets     map[int64]*channelzpb.Socket
-	missing     map[int64]bool // socket ids that "vanished" and return an error
-	pageSize    int
+	channels     []*channelzpb.Channel // top-level channels, returned by GetTopChannels
+	channelsByID map[int64]*channelzpb.Channel
+	subchannels  map[int64]*channelzpb.Subchannel
+	sockets      map[int64]*channelzpb.Socket
+	missing      map[int64]bool // socket ids that "vanished" and return an error
+	pageSize     int
 }
 
 func (f *fakeChannelz) GetTopChannels(ctx context.Context, in *channelzpb.GetTopChannelsRequest, opts ...grpc.CallOption) (*channelzpb.GetTopChannelsResponse, error) {
@@ -78,7 +79,11 @@ func (f *fakeChannelz) GetServerSockets(ctx context.Context, in *channelzpb.GetS
 	return nil, nil
 }
 func (f *fakeChannelz) GetChannel(ctx context.Context, in *channelzpb.GetChannelRequest, opts ...grpc.CallOption) (*channelzpb.GetChannelResponse, error) {
-	return nil, nil
+	ch, ok := f.channelsByID[in.GetChannelId()]
+	if !ok {
+		return nil, status.NotFoundError("no such channel")
+	}
+	return &channelzpb.GetChannelResponse{Channel: ch}, nil
 }
 
 func i64(v int64) *int64 { return &v }
@@ -94,14 +99,8 @@ func socket(id int64, remote, local *int64, started, succeeded, failed int64) *c
 	return &channelzpb.Socket{Ref: &channelzpb.SocketRef{SocketId: id}, Data: d}
 }
 
-// channel builds a client channel with a single subchannel pointing at a single
-// socket, and registers the subchannel/socket in the fake.
-func (f *fakeChannelz) addChannel(channelID, subID, socketID int64, target string, sock *channelzpb.Socket) {
-	f.channels = append(f.channels, &channelzpb.Channel{
-		Ref:           &channelzpb.ChannelRef{ChannelId: channelID},
-		Data:          &channelzpb.ChannelData{Target: target},
-		SubchannelRef: []*channelzpb.SubchannelRef{{SubchannelId: subID}},
-	})
+// addSubchannel registers a subchannel owning a single socket.
+func (f *fakeChannelz) addSubchannel(subID, socketID int64, sock *channelzpb.Socket) {
 	f.subchannels[subID] = &channelzpb.Subchannel{
 		Ref:       &channelzpb.SubchannelRef{SubchannelId: subID},
 		SocketRef: []*channelzpb.SocketRef{{SocketId: socketID}},
@@ -111,8 +110,47 @@ func (f *fakeChannelz) addChannel(channelID, subID, socketID int64, target strin
 	}
 }
 
+// addChannel builds a top-level channel with a single subchannel pointing at a
+// single socket, and registers the subchannel/socket in the fake.
+func (f *fakeChannelz) addChannel(channelID, subID, socketID int64, target string, sock *channelzpb.Socket) {
+	ch := &channelzpb.Channel{
+		Ref:           &channelzpb.ChannelRef{ChannelId: channelID},
+		Data:          &channelzpb.ChannelData{Target: target},
+		SubchannelRef: []*channelzpb.SubchannelRef{{SubchannelId: subID}},
+	}
+	f.channels = append(f.channels, ch)
+	f.channelsByID[channelID] = ch
+	f.addSubchannel(subID, socketID, sock)
+}
+
+// addNestedChannel builds a top-level channel whose socket lives under a child
+// channel (as with hierarchical LB policies like xDS): the top channel has no
+// direct subchannel, only a ChannelRef to the child, which owns the subchannel
+// and socket. The child carries no target of its own.
+func (f *fakeChannelz) addNestedChannel(topID, childID, subID, socketID int64, target string, sock *channelzpb.Socket) {
+	child := &channelzpb.Channel{
+		Ref:           &channelzpb.ChannelRef{ChannelId: childID},
+		Data:          &channelzpb.ChannelData{},
+		SubchannelRef: []*channelzpb.SubchannelRef{{SubchannelId: subID}},
+	}
+	f.channelsByID[childID] = child
+	top := &channelzpb.Channel{
+		Ref:        &channelzpb.ChannelRef{ChannelId: topID},
+		Data:       &channelzpb.ChannelData{Target: target},
+		ChannelRef: []*channelzpb.ChannelRef{{ChannelId: childID}},
+	}
+	f.channels = append(f.channels, top)
+	f.channelsByID[topID] = top
+	f.addSubchannel(subID, socketID, sock)
+}
+
 func newFake() *fakeChannelz {
-	return &fakeChannelz{subchannels: map[int64]*channelzpb.Subchannel{}, sockets: map[int64]*channelzpb.Socket{}, missing: map[int64]bool{}}
+	return &fakeChannelz{
+		channelsByID: map[int64]*channelzpb.Channel{},
+		subchannels:  map[int64]*channelzpb.Subchannel{},
+		sockets:      map[int64]*channelzpb.Socket{},
+		missing:      map[int64]bool{},
+	}
 }
 
 func TestCollect(t *testing.T) {
@@ -164,6 +202,21 @@ func TestCollect(t *testing.T) {
 	}
 	require.NotNil(t, unknown)
 	require.Equal(t, int64(0), unknown.openStreams)
+}
+
+func TestCollect_NestedChildChannels(t *testing.T) {
+	f := newFake()
+	const target = "xds:///remote:443"
+	// The top channel (1) has no direct subchannel; its socket lives under child
+	// channel 2, reachable only via ChannelRef + GetChannel.
+	f.addNestedChannel(1, 2, 21, 201, target, socket(201, i64(0), i64(1000), 100, 0, 0))
+
+	conns, err := collect(context.Background(), f)
+	require.NoError(t, err)
+	require.Len(t, conns, 1, "socket under a child channel should be found")
+	require.Equal(t, target, conns[0].target, "child-channel socket should inherit the top channel's target")
+	require.NotNil(t, conns[0].remoteWindow)
+	require.Equal(t, int64(0), *conns[0].remoteWindow)
 }
 
 func TestSampleAggregates(t *testing.T) {
