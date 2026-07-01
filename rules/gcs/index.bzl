@@ -56,7 +56,7 @@ def gcs(name, srcs, bucket, gsutil = "gsutil", prefix = "", sha_prefix = "", zip
         name = name + ".apply",
         args = [shell.quote("$(locations %s)" % sha_prefix) if sha_prefix != "" else ""] + [ shell.quote("$(locations %s)" % src) for src in srcs ],
         srcs = [ name + ".apply.script" ],
-        data = srcs + [sha_prefix] if sha_prefix != "" else [],
+        data = srcs + ([sha_prefix] if sha_prefix != "" else []),
         use_bash_launcher = True,
         **kwargs,
     )
