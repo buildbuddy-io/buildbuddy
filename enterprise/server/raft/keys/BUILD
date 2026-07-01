@@ -6,7 +6,12 @@ go_library(
     name = "keys",
     srcs = ["keys.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys",
-    deps = ["//enterprise/server/filestore"],
+    deps = [
+        "//enterprise/server/filestore",
+        "//proto:raft_go_proto",
+        "//server/metrics",
+        "@com_github_prometheus_client_golang//prometheus",
+    ],
 )
 
 go_test(

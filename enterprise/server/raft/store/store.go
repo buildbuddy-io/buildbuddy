@@ -373,7 +373,7 @@ func New(env environment.Env, cfg *raftConfig.ServerConfig, opts ...Option) (*St
 		openRanges: make(map[uint64]*rfpb.RangeDescriptor),
 		rangeMap:   rangemap.New[*rfpb.RangeDescriptor](),
 
-		leaseKeeper: leasekeeper.New(nodeHost, nhLog, nodeLiveness, raftListener, eventsChan, lkSession),
+		leaseKeeper: leasekeeper.New(nodeHost, zone, nhLog, nodeLiveness, raftListener, eventsChan, lkSession),
 		replicas:    sync.Map{},
 
 		eventsMu:       sync.Mutex{},
@@ -1300,7 +1300,7 @@ func (s *Store) UpdateRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 			metrics.RaftNodeHostIDLabel: s.nodeHost.ID(),
 		}).Inc()
 	}
-	metrics.RaftRangeReplica.With(s.rangeReplicaLabels(rd)).Set(1)
+	metrics.RaftRangeReplica.With(s.rangeMetricLabels(rd)).Set(1)
 
 	if len(rd.GetReplicas()) == 0 {
 		s.log.Debugf("range %d has no replicas (yet?)", rd.GetRangeId())
@@ -1350,7 +1350,7 @@ func (s *Store) RemoveRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 	metrics.RaftRanges.With(prometheus.Labels{
 		metrics.RaftNodeHostIDLabel: s.nodeHost.ID(),
 	}).Dec()
-	metrics.RaftRangeReplica.Delete(s.rangeReplicaLabels(rd))
+	metrics.RaftRangeReplica.Delete(s.rangeMetricLabels(rd))
 
 	if len(rd.GetReplicas()) == 0 {
 		s.log.Debugf("range descriptor had no replicas yet")
@@ -1512,6 +1512,10 @@ func (s *Store) NodeHost() *dragonboat.NodeHost {
 
 func (s *Store) NHID() string {
 	return s.nodeHost.ID()
+}
+
+func (s *Store) Zone() string {
+	return s.zone
 }
 
 func (s *Store) NodeDescriptor() *rfpb.NodeDescriptor {
@@ -2531,9 +2535,7 @@ func (s *Store) checkIfReplicasNeedSplitting(ctx context.Context, targetRangeSiz
 				rangeUsageEvent := e.(events.RangeUsageEvent)
 				rangeID := rangeUsageEvent.RangeDescriptor.GetRangeId()
 				estimatedDiskBytes := rangeUsageEvent.ReplicaUsage.GetEstimatedDiskBytesUsed()
-				metrics.RaftBytes.With(prometheus.Labels{
-					metrics.RaftRangeIDLabel: strconv.FormatUint(rangeID, 10),
-				}).Set(float64(estimatedDiskBytes))
+				metrics.RaftBytes.With(s.rangeMetricLabels(rangeUsageEvent.RangeDescriptor)).Set(float64(estimatedDiskBytes))
 				if rangeID == constants.MetaRangeID {
 					continue
 				}
@@ -4015,25 +4017,10 @@ func (s *Store) getFileSystemUsage() (gosigar.FileSystemUsage, error) {
 	return fsu, err
 }
 
-// rangeReplicaLabels builds the labelset for the RaftRangeReplica gauge.
-func (s *Store) rangeReplicaLabels(rd *rfpb.RangeDescriptor) prometheus.Labels {
-	partitionID := rd.GetPartitionId()
-	if partitionID == "" {
-		partitionID = keys.PartitionIDFromRangeStart(rd.GetStart())
-	}
-	if partitionID == "" {
-		if rd.GetRangeId() == 1 {
-			partitionID = "meta"
-		} else {
-			partitionID = "unknown"
-		}
-	}
-	return prometheus.Labels{
-		metrics.RaftRangeIDLabel:    strconv.FormatUint(rd.GetRangeId(), 10),
-		metrics.RaftNodeHostIDLabel: s.nodeHost.ID(),
-		metrics.PartitionID:         partitionID,
-		metrics.ZoneLabel:           s.zone,
-	}
+// rangeMetricLabels builds the standard per-range labelset (range, nodehost,
+// partition, zone) shared by the raft range metrics.
+func (s *Store) rangeMetricLabels(rd *rfpb.RangeDescriptor) prometheus.Labels {
+	return keys.RangeMetricLabels(rd, s.nodeHost.ID(), s.zone)
 }
 
 func (s *Store) setupPartitions(ctx context.Context) {

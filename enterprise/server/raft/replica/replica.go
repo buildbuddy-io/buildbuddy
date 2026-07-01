@@ -60,6 +60,7 @@ type IStore interface {
 	SnapshotCluster(ctx context.Context, rangeID uint64) error
 	StartShard(ctx context.Context, req *rfpb.StartShardRequest) (*rfpb.StartShardResponse, error)
 	NHID() string
+	Zone() string
 }
 
 // Replica implements the interface IOnDiskStateMachine. More details of
@@ -268,9 +269,7 @@ func (sm *Replica) setRange(val []byte) error {
 		// channel (which can drop under load). The apply path will refresh
 		// it as data is written; this guarantees presence at replica open
 		// and on every range-descriptor mutation.
-		metrics.RaftBytes.With(prometheus.Labels{
-			metrics.RaftRangeIDLabel: strconv.FormatUint(rangeDescriptor.GetRangeId(), 10),
-		}).Set(float64(usage.GetEstimatedDiskBytesUsed()))
+		metrics.RaftBytes.With(keys.RangeMetricLabels(rangeDescriptor, sm.NHID, sm.store.Zone())).Set(float64(usage.GetEstimatedDiskBytesUsed()))
 		sm.notifyListenersOfUsage(rangeDescriptor, usage)
 	} else {
 		sm.log.Errorf("Error computing usage upon opening replica: %s", err)
@@ -1549,10 +1548,7 @@ func (sm *Replica) singleUpdate(db pebble.IPebbleDB, entry dbsm.Entry) (dbsm.Ent
 	sm.rangeMu.RUnlock()
 
 	// Increment QPS counters.
-	rangeID := rd.GetRangeId()
-	metrics.RaftProposals.With(prometheus.Labels{
-		metrics.RaftRangeIDLabel: strconv.Itoa(int(rangeID)),
-	}).Inc()
+	metrics.RaftProposals.With(keys.RangeMetricLabels(rd, sm.NHID, sm.store.Zone())).Inc()
 	sm.raftProposeQPS.Inc()
 
 	batchRsp := &rfpb.BatchCmdResponse{}
@@ -2120,9 +2116,7 @@ func (sm *Replica) Close() error {
 		sm.store.RemoveRange(rangeDescriptor, sm)
 	}
 	if rangeDescriptor != nil {
-		metrics.RaftBytes.Delete(prometheus.Labels{
-			metrics.RaftRangeIDLabel: strconv.FormatUint(rangeDescriptor.GetRangeId(), 10),
-		})
+		metrics.RaftBytes.Delete(keys.RangeMetricLabels(rangeDescriptor, sm.NHID, sm.store.Zone()))
 	}
 
 	sm.readQPS.Stop()

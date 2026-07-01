@@ -10,6 +10,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/events"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/listener"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/nodeliveness"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rangelease"
@@ -64,6 +65,7 @@ func (l leaseInstruction) String() string {
 
 type LeaseKeeper struct {
 	nodeHost  *dragonboat.NodeHost
+	zone      string
 	log       log.Logger
 	liveness  *nodeliveness.Liveness
 	session   *client.Session
@@ -86,11 +88,12 @@ type LeaseKeeper struct {
 	nodeLivenessUpdates <-chan *rfpb.NodeLivenessRecord
 }
 
-func New(nodeHost *dragonboat.NodeHost, log log.Logger, liveness *nodeliveness.Liveness, listener *listener.RaftListener, broadcast chan<- events.Event, session *client.Session) *LeaseKeeper {
+func New(nodeHost *dragonboat.NodeHost, zone string, log log.Logger, liveness *nodeliveness.Liveness, listener *listener.RaftListener, broadcast chan<- events.Event, session *client.Session) *LeaseKeeper {
 	ctx, cancelFunc := context.WithCancel(context.Background())
 	eg, gctx := errgroup.WithContext(ctx)
 	return &LeaseKeeper{
 		nodeHost:            nodeHost,
+		zone:                zone,
 		log:                 log,
 		liveness:            liveness,
 		session:             session,
@@ -140,6 +143,11 @@ type leaseAgent struct {
 	eg        *errgroup.Group
 	broadcast chan<- events.Event
 
+	// labels is the standard per-range metric labelset (range, nodehost,
+	// partition, zone) for this lease agent's range. Computed once at
+	// creation and immutable thereafter, so it can be read without locking.
+	labels prometheus.Labels
+
 	updates *boundedstack.BoundedStack[*leaseInstruction]
 }
 
@@ -150,6 +158,16 @@ func (la *leaseAgent) isStopped() bool {
 	default:
 		return false
 	}
+}
+
+// setLeaderGauge records whether this node is the raft leader for the agent's
+// range, keyed by the full per-range labelset.
+func (la *leaseAgent) setLeaderGauge(leader bool) {
+	v := 0.0
+	if leader {
+		v = 1.0
+	}
+	metrics.RaftLeaders.With(la.labels).Set(v)
 }
 
 func (la *leaseAgent) sendRangeEvent(eventType events.EventType) {
@@ -193,9 +211,7 @@ func (la *leaseAgent) doSingleInstruction(ctx context.Context, instruction *leas
 			return
 		}
 		la.log.Debugf("Acquired lease [%s] %s after callback (%s)", la.l.Desc(ctx), dur, instruction)
-		metrics.RaftLeases.With(prometheus.Labels{
-			metrics.RaftRangeIDLabel: strconv.Itoa(int(la.l.GetRangeID())),
-		}).Inc()
+		metrics.RaftLeases.With(la.labels).Inc()
 		metrics.RaftLeaseActionDurationMsec.With(prometheus.Labels{
 			metrics.RaftLeaseActionLabel: leaseAction,
 		}).Observe(float64(dur.Milliseconds()))
@@ -219,9 +235,7 @@ func (la *leaseAgent) doSingleInstruction(ctx context.Context, instruction *leas
 			return
 		}
 		la.log.Debugf("Dropped lease [%s] %s after callback (%s)", la.l.Desc(ctx), dur, instruction)
-		metrics.RaftLeases.With(prometheus.Labels{
-			metrics.RaftRangeIDLabel: strconv.Itoa(int(rangeID)),
-		}).Dec()
+		metrics.RaftLeases.With(la.labels).Dec()
 		metrics.RaftLeaseActionDurationMsec.With(prometheus.Labels{
 			metrics.RaftLeaseActionLabel: leaseAction,
 		}).Observe(float64(dur.Milliseconds()))
@@ -269,6 +283,7 @@ func (lk *LeaseKeeper) newLeaseAgent(rd *rfpb.RangeDescriptor, r *replica.Replic
 		cancel:    cancel,
 		eg:        eg,
 		broadcast: lk.broadcast,
+		labels:    keys.RangeMetricLabels(rd, lk.nodeHost.ID(), lk.zone),
 		updates:   updates,
 	}
 	la.eg.Go(func() error {
@@ -289,15 +304,6 @@ func (lk *LeaseKeeper) watchLeases() {
 			leader := info.LeaderID == info.ReplicaID && info.Term > 0
 			rangeID := rangeID(info.ShardID)
 
-			rlGauge := metrics.RaftLeaders.With(prometheus.Labels{
-				metrics.RaftRangeIDLabel: strconv.Itoa(int(rangeID)),
-			})
-			if leader {
-				rlGauge.Set(1.0)
-			} else {
-				rlGauge.Set(0.0)
-			}
-
 			lk.mu.Lock()
 			open := lk.open.Contains(rangeID)
 			if leader {
@@ -309,9 +315,14 @@ func (lk *LeaseKeeper) watchLeases() {
 			lk.mu.Unlock()
 
 			if la == nil {
+				// We don't have a lease agent for this range yet, so we
+				// can't build the full RaftLeaders labelset. The gauge is
+				// emitted once the range is added (see setLeaderGauge in
+				// AddRange) and on subsequent leader updates.
 				lk.log.Debugf("Range %d has not been opened yet (ignoring leader update)", rangeID)
 				continue
 			}
+			la.setLeaderGauge(leader)
 			action := Drop
 			if open && leader {
 				action = Acquire
@@ -414,6 +425,8 @@ func (lk *LeaseKeeper) AddRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 	lk.open.Add(rangeID)
 	leader := lk.leaders.Contains(rangeID)
 	lk.mu.Unlock()
+
+	la.setLeaderGauge(leader)
 
 	action := Drop
 	if leader {

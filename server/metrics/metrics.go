@@ -2874,6 +2874,9 @@ var (
 		Help:      "Number of raft leases on each nodehost.",
 	}, []string{
 		RaftRangeIDLabel,
+		RaftNodeHostIDLabel,
+		PartitionID,
+		ZoneLabel,
 	})
 
 	RaftLeaders = promauto.NewGaugeVec(prometheus.GaugeOpts{
@@ -2883,6 +2886,9 @@ var (
 		Help:      "Number of raft leaders on each nodehost.",
 	}, []string{
 		RaftRangeIDLabel,
+		RaftNodeHostIDLabel,
+		PartitionID,
+		ZoneLabel,
 	})
 
 	RaftBytes = promauto.NewGaugeVec(prometheus.GaugeOpts{
@@ -2892,6 +2898,9 @@ var (
 		Help:      "Size (in bytes) of each range.",
 	}, []string{
 		RaftRangeIDLabel,
+		RaftNodeHostIDLabel,
+		PartitionID,
+		ZoneLabel,
 	})
 
 	RaftProposals = promauto.NewCounterVec(prometheus.CounterOpts{
@@ -2901,6 +2910,9 @@ var (
 		Help:      "The total number of statemachine proposals on each range.",
 	}, []string{
 		RaftRangeIDLabel,
+		RaftNodeHostIDLabel,
+		PartitionID,
+		ZoneLabel,
 	})
 
 	RaftSplits = promauto.NewCounterVec(prometheus.CounterOpts{
