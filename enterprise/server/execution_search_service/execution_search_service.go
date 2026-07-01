@@ -3,6 +3,8 @@ package execution_search_service
 import (
 	"context"
 	"fmt"
+	"log"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -26,6 +28,11 @@ import (
 const (
 	defaultLimitSize     = int64(15)
 	pageSizeOffsetPrefix = "offset_"
+)
+
+var (
+	runMatcher   = regexp.MustCompile(`_run_\d+_of_\d+`)
+	shardMatcher = regexp.MustCompile(`/shard_(\d+)_of_\d+/`)
 )
 
 type ExecutionSearchService struct {
@@ -256,7 +263,7 @@ func (s *ExecutionSearchService) GetExecutionTimeline(ctx context.Context, req *
 	}
 
 	q := query_builder.NewQuery(`
-		SELECT worker_start_timestamp_usec, worker_completed_timestamp_usec, cpu_nanos, peak_memory_bytes
+		SELECT worker_start_timestamp_usec, worker_completed_timestamp_usec, cpu_nanos, peak_memory_bytes, action_mnemonic, os, arch, output_path
 		FROM "Executions"
 	`)
 
@@ -280,17 +287,45 @@ func (s *ExecutionSearchService) GetExecutionTimeline(ctx context.Context, req *
 	if err != nil {
 		return nil, err
 	}
+	groupedExecutions := make(map[string][]*schema.Execution)
+	for _, ex := range olapExecutions {
+		cleanedOutput := runMatcher.ReplaceAllString(ex.OutputPath, "")
+		k := cleanedOutput + ex.ActionMnemonic + ex.OS + ex.Arch
+
+		groupedExecutions[k] = append(groupedExecutions[k], ex)
+	}
 
 	rsp := &expb.GetExecutionTimelineResponse{
-		Execution: make([]*expb.ExecutionTimelineEntry, len(olapExecutions)),
+		Timelines: make([]*expb.ExecutionTimeline, 0, len(groupedExecutions)),
 	}
-	for i, ex := range olapExecutions {
-		rsp.Execution[i] = &expb.ExecutionTimelineEntry{
-			StartTimeUsec:   ex.WorkerStartTimestampUsec,
-			DurationUsec:    ex.WorkerCompletedTimestampUsec - ex.WorkerStartTimestampUsec,
-			CpuNanos:        ex.CPUNanos,
-			PeakMemoryBytes: ex.PeakMemoryBytes,
+	for _, tl := range groupedExecutions {
+		executions := make([]*expb.ExecutionTimelineEntry, len(tl))
+		for i, ex := range tl {
+			executions[i] = &expb.ExecutionTimelineEntry{
+				StartTimeUsec:   ex.WorkerStartTimestampUsec,
+				DurationUsec:    ex.WorkerCompletedTimestampUsec - ex.WorkerStartTimestampUsec,
+				CpuNanos:        ex.CPUNanos,
+				PeakMemoryBytes: ex.PeakMemoryBytes,
+			}
 		}
+		cleanedOutput := runMatcher.ReplaceAllString(tl[0].OutputPath, "")
+		shardMatch := shardMatcher.FindStringSubmatch(cleanedOutput)
+		log.Print(cleanedOutput)
+		log.Printf("%+v", shardMatch)
+		shard := int64(0)
+		if len(shardMatch) > 1 {
+			if realShard, err := strconv.Atoi(shardMatch[1]); err == nil {
+				shard = int64(realShard)
+			}
+		}
+		rsp.Timelines = append(rsp.Timelines, &expb.ExecutionTimeline{
+			OutputPath: cleanedOutput,
+			Mnemonic:   tl[0].ActionMnemonic,
+			Os:         tl[0].OS,
+			Arch:       tl[0].Arch,
+			Shard:      shard,
+			Execution:  executions,
+		})
 	}
 	return rsp, nil
 }

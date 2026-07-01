@@ -412,6 +412,15 @@ message ExecutionTimelineEntry {
   // big.
 }
 
+message ExecutionTimeline {
+  string mnemonic = 1;
+  string output_path = 2;
+  string os = 3;
+  string arch = 4;
+  int64 shard = 5;
+  repeated ExecutionTimelineEntry execution = 7;
+}
+
 message GetExecutionTimelineResponse {
   context.ResponseContext response_context = 1;
 
@@ -419,5 +428,5 @@ message GetExecutionTimelineResponse {
   // and query in the request, ordered by start_time_usec - we are basically
   // relying on the fact that we have the target label to constrain the scan
   // size, which might not work, but that's where we're starting.
-  repeated ExecutionTimelineEntry execution = 2;
+  repeated ExecutionTimeline timelines = 2;
 }
