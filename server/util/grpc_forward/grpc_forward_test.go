@@ -25,12 +25,9 @@ func cleanup() {
 	backendConnectionPools = map[string]*grpc_client.ClientConnPool{}
 }
 
-// TestDirector_ForwardsIncomingMetadataToOutgoingContext is a unit test for the
-// metadata-forwarding behavior of director(). Regression guard for the incident
-// where the proxy was changed to read metadata.FromOutgoingContext(ctx) instead
-// of metadata.FromIncomingContext(ctx), which silently dropped all client-
-// supplied headers (e.g. container-registry-password) on unknown RPCs like
-// Execute, causing 401s pulling OCI images.
+// TestDirector_ForwardsIncomingMetadataToOutgoingContext tests that director()
+// copies incoming gRPC metadata into the outgoing backend call context for
+// forwarded unknown RPCs.
 func TestDirector_ForwardsIncomingMetadataToOutgoingContext(t *testing.T) {
 	t.Cleanup(cleanup)
 	flags.Set(t, "app.proxy_targets", []proxyPair{
@@ -49,9 +46,6 @@ func TestDirector_ForwardsIncomingMetadataToOutgoingContext(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, cc)
 
-	// director must copy the incoming metadata onto the outgoing context so the
-	// backend actually receives the client's headers. Reading
-	// FromOutgoingContext (the bug) would produce empty metadata here.
 	outgoing, ok := metadata.FromOutgoingContext(outCtx)
 	require.True(t, ok, "director must attach the incoming metadata to the outgoing context")
 	require.Equal(t, []string{"hunter2"}, outgoing.Get(pwHeader),
