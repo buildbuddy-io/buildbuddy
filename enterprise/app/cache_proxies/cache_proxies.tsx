@@ -64,6 +64,7 @@ class CacheProxySetup extends React.Component<CacheProxySetupProps> {
 
 interface CacheProxiesListProps {
   regions: RegionalCacheProxyResponse[];
+  summary: boolean;
 }
 
 class CacheProxiesList extends React.Component<CacheProxiesListProps> {
@@ -117,6 +118,7 @@ class CacheProxiesList extends React.Component<CacheProxiesListProps> {
                   node={p.node}
                   lastCheckInTime={p.proxy.lastCheckInTime}
                   statistics={p.proxy.statistics}
+                  summary={this.props.summary}
                 />
               ))}
             </React.Fragment>
@@ -157,11 +159,14 @@ type RegionalCacheProxyResponse = {
   response: cache_proxy.GetCacheProxiesResponse;
 };
 
+type ViewMode = "summary" | "details";
+
 interface State {
   regions: RegionalCacheProxyResponse[];
   proxyKeys: api_key.IApiKey[];
   loading: FetchType[];
   error: BuildBuddyError | null;
+  viewMode: ViewMode;
 }
 
 export default class CacheProxiesComponent extends React.Component<Props, State> {
@@ -170,6 +175,7 @@ export default class CacheProxiesComponent extends React.Component<Props, State>
     proxyKeys: [],
     loading: [],
     error: null,
+    viewMode: "summary",
   };
 
   subscription?: Subscription;
@@ -254,6 +260,10 @@ export default class CacheProxiesComponent extends React.Component<Props, State>
     router.navigateTo(`/cache-proxies/${tabId}`);
   }
 
+  onClickViewMode(viewMode: ViewMode) {
+    this.setState({ viewMode });
+  }
+
   renderEmpty() {
     return (
       <div className="empty-state">
@@ -309,6 +319,20 @@ export default class CacheProxiesComponent extends React.Component<Props, State>
                     onClick={this.onClickTab.bind(this, "setup")}>
                     Setup
                   </div>
+                  {activeTab === "status" && hasProxies && (
+                    <div className="view-mode-toggle">
+                      <div
+                        className={`tab ${this.state.viewMode === "summary" ? "selected" : ""}`}
+                        onClick={this.onClickViewMode.bind(this, "summary")}>
+                        Summary
+                      </div>
+                      <div
+                        className={`tab ${this.state.viewMode === "details" ? "selected" : ""}`}
+                        onClick={this.onClickViewMode.bind(this, "details")}>
+                        Details
+                      </div>
+                    </div>
+                  )}
                 </div>
                 {activeTab === "status" && (
                   <>
@@ -318,7 +342,9 @@ export default class CacheProxiesComponent extends React.Component<Props, State>
                         <p>Click the "Setup" tab for instructions on self-hosting cache proxies.</p>
                       </div>
                     )}
-                    {hasProxies && <CacheProxiesList regions={this.state.regions} />}
+                    {hasProxies && (
+                      <CacheProxiesList regions={this.state.regions} summary={this.state.viewMode === "summary"} />
+                    )}
                   </>
                 )}
                 {activeTab === "setup" && <CacheProxySetup user={this.props.user} proxyKeys={this.state.proxyKeys} />}
