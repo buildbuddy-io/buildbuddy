@@ -216,6 +216,9 @@ message FrontendConfig {
 
   // Whether cache proxy keys can be created.
   bool cache_proxy_key_creation_enabled = 70;
+
+  // Whether the login page should automatically start the default OIDC login flow.
+  bool auto_login_enabled = 71;
 }
 
 message Region {

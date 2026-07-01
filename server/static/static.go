@@ -75,6 +75,7 @@ var (
 	userListsUIEnabled                     = flag.Bool("app.user_lists_ui_enabled", false, "If set, show show user list management options in the UI.")
 	darkModeEnabled                        = flag.Bool("app.dark_mode_enabled", false, "If set, show dark mode option in user preferences.")
 	defaultLoginSlug                       = flag.String("app.default_login_slug", "", "If set, the login page will default to using this slug.")
+	autoLoginEnabled                       = flag.Bool("app.auto_login_enabled", false, "If true, the login page will automatically start the default OIDC login flow.")
 
 	jsEntryPointPath = flag.String("js_entry_point_path", "/app/app_bundle/app.js?hash={APP_BUNDLE_HASH}", "Absolute URL path of the app JS entry point")
 	disableGA        = flag.Bool("disable_ga", false, "If true; ga will be disabled")
@@ -236,6 +237,7 @@ func serveIndexTemplate(ctx context.Context, env environment.Env, tpl *template.
 		CspNonce:                               nonce,
 		CommunityLinksEnabled:                  *communityLinksEnabled,
 		DefaultLoginSlug:                       *defaultLoginSlug,
+		AutoLoginEnabled:                       *autoLoginEnabled,
 		ReadOnlyGithubAppEnabled:               env.GetGitHubAppService() != nil && env.GetGitHubAppService().IsReadOnlyAppEnabled(),
 		TargetsPageEnabled:                     *targetsPageEnabled && env.GetOLAPDBHandle() != nil,
 		UserListsUiEnabled:                     *userListsUIEnabled,
