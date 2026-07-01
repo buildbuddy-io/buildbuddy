@@ -420,7 +420,7 @@ func (rc *Server) sendAccessTimeUpdate(a atimeUpdateData) {
 }
 
 func (rc *Server) maybeUpdateGCSAtime(ctx context.Context, gcsMetadata *sgpb.StorageMetadata_GCSMetadata) error {
-	if gcsMetadata != nil {
+	if gcsMetadata == nil {
 		return nil
 	}
 	if gcsutil.ObjectIsPastTTL(rc.clock, gcsMetadata, rc.gcsTTLDays) {
