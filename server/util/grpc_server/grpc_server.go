@@ -222,7 +222,7 @@ func CommonGRPCServerOptionsWithConfig(env environment.Env, config GRPCServerCon
 		workerMultiplier = 0
 	}
 	otelOpts := []otelgrpc.Option{otelgrpc.WithMeterProvider(rpcutil.MeterProvider())}
-	if rpcutil.OTELMessageEventsEnabled() {
+	if *rpcutil.OTELGRPCMessageEventsEnabled {
 		otelOpts = append(otelOpts, otelgrpc.WithMessageEvents(otelgrpc.ReceivedEvents, otelgrpc.SentEvents))
 	}
 	opts := []grpc.ServerOption{
