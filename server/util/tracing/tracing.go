@@ -453,6 +453,17 @@ func AddStringAttributeToCurrentSpan(ctx context.Context, key, value string) {
 	span.SetAttributes(attribute.String(key, value))
 }
 
+func AddErrorEventToCurrentSpan(ctx context.Context, name string, err error) {
+	if err == nil {
+		return
+	}
+	span := trace.SpanFromContext(ctx)
+	if !span.IsRecording() {
+		return
+	}
+	span.AddEvent(name, trace.WithAttributes(attribute.String("error", err.Error())))
+}
+
 // RecordErrorToSpan records a non-nil error to the span; and does nothing if
 // span is not recording or err is nil.
 func RecordErrorToSpan(span trace.Span, err error) {
