@@ -43,9 +43,11 @@ go_test(
     srcs = ["container_test.go"],
     deps = [
         ":container",
+        "//enterprise/server/oci/ocifetcher",
         "//enterprise/server/util/oci",
         "//proto:execution_stats_go_proto",
         "//proto:remote_execution_go_proto",
+        "//server/http/httpclient",
         "//server/interfaces",
         "//server/metrics",
         "//server/testutil/testauth",

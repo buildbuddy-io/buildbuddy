@@ -2,13 +2,19 @@ package container_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
+	"net/http"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ocifetcher"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
+	"github.com/buildbuddy-io/buildbuddy/server/http/httpclient"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
@@ -230,6 +236,12 @@ func TestImagePullMetricStatus(t *testing.T) {
 			wantCounted: false,
 		},
 		{
+			name:        "remote registry HEAD 404",
+			err:         remoteRegistryNotFoundErr(t),
+			wantStatus:  metrics.OCIFetcherStatusUserError,
+			wantCounted: false,
+		},
+		{
 			name:        "unavailable",
 			err:         status.UnavailableError("remote registry unavailable"),
 			wantStatus:  metrics.OCIFetcherStatusError,
@@ -241,6 +253,29 @@ func TestImagePullMetricStatus(t *testing.T) {
 			require.Equal(t, tc.wantCounted, container.ShouldCountImagePullError(tc.err))
 		})
 	}
+}
+
+func remoteRegistryNotFoundErr(t testing.TB) error {
+	statusRecorder := httpclient.NewStatusRecorder()
+	tr := httpclient.NewStatusRecorderTransport(roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusNotFound,
+			Body:       io.NopCloser(strings.NewReader("")),
+			Request:    req,
+		}, nil
+	}), statusRecorder)
+	req, err := http.NewRequest(http.MethodHead, "https://example.com/v2/repo/manifests/sha256:abc", nil)
+	require.NoError(t, err)
+	resp, err := tr.RoundTrip(req)
+	require.NoError(t, err)
+	require.NoError(t, resp.Body.Close())
+	return ocifetcher.RemoteRegistryErrorWithStatus(errors.New("registry request failed"), "cannot retrieve manifest metadata from remote", statusRecorder)
+}
+
+type roundTripperFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
 }
 
 func TestPullImageIfNecessary_ParallelCallsSerialized(t *testing.T) {

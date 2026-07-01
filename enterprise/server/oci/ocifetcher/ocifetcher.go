@@ -730,8 +730,21 @@ func withPullerRetry[T any](
 // back to Unavailable otherwise. msg is a human-readable prefix describing the
 // operation that failed.
 func RemoteRegistryError(err error, msg string) error {
+	return RemoteRegistryErrorWithStatus(err, msg, nil)
+}
+
+// RemoteRegistryErrorWithStatus converts a remote registry request error into
+// a status error using the typed go-containerregistry error when possible, then
+// falling back to the HTTP status captured by statusRecorder.
+func RemoteRegistryErrorWithStatus(err error, msg string, statusRecorder *httpclient.StatusRecorder) error {
 	var transportErr *transport.Error
 	if !errors.As(err, &transportErr) {
+		if httpStatusCode, ok := statusRecorder.HTTPStatusCode(); ok {
+			return RegistryErrorFromHTTPStatusCode(
+				httpStatusCode,
+				fmt.Sprintf("%s: remote registry HTTP status %d: %s", msg, httpStatusCode, err),
+			)
+		}
 		return status.UnavailableErrorf("%s: %s", msg, err)
 	}
 	return RegistryErrorFromHTTPStatusCode(
@@ -757,6 +770,9 @@ func RegistryErrorFromHTTPStatusCode(httpStatusCode int, msg string) error {
 	}
 	if httpStatusCode >= http.StatusBadRequest && httpStatusCode < http.StatusInternalServerError {
 		return status.InvalidArgumentError(msg)
+	}
+	if httpStatusCode >= http.StatusInternalServerError {
+		return status.UnavailableError(msg)
 	}
 	return status.UnavailableError(msg)
 }

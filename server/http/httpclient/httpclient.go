@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"strconv"
+	"sync"
 	"syscall"
 	"time"
 
@@ -134,4 +135,65 @@ func (rc *instrumentedReadCloser) Close() error {
 		metrics.ClientNameLabel:       rc.clientName,
 	}).Observe(float64(rc.bytesRead))
 	return err
+}
+
+// StatusRecorder records the most recent HTTP error status returned by a
+// RoundTripper.
+type StatusRecorder struct {
+	mu         sync.Mutex
+	statusCode int
+}
+
+// NewStatusRecorder returns a recorder for HTTP status codes observed by
+// NewStatusRecorderTransport.
+func NewStatusRecorder() *StatusRecorder {
+	return &StatusRecorder{}
+}
+
+// HTTPStatusCode returns the most recently recorded HTTP error status code.
+func (r *StatusRecorder) HTTPStatusCode() (int, bool) {
+	if r == nil {
+		return 0, false
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.statusCode == 0 {
+		return 0, false
+	}
+	return r.statusCode, true
+}
+
+func (r *StatusRecorder) record(statusCode int) {
+	if r == nil {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if statusCode >= http.StatusBadRequest {
+		r.statusCode = statusCode
+		return
+	}
+	r.statusCode = 0
+}
+
+// NewStatusRecorderTransport wraps inner and records HTTP response status codes
+// without modifying the response.
+func NewStatusRecorderTransport(inner http.RoundTripper, statusRecorder *StatusRecorder) http.RoundTripper {
+	return &statusRecorderTransport{
+		inner:          inner,
+		statusRecorder: statusRecorder,
+	}
+}
+
+type statusRecorderTransport struct {
+	inner          http.RoundTripper
+	statusRecorder *StatusRecorder
+}
+
+func (t *statusRecorderTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	resp, err := t.inner.RoundTrip(req)
+	if resp != nil {
+		t.statusRecorder.record(resp.StatusCode)
+	}
+	return resp, err
 }

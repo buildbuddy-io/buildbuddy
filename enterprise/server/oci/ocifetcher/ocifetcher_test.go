@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -16,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ocifetcher"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testregistry"
+	"github.com/buildbuddy-io/buildbuddy/server/http/httpclient"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
@@ -91,6 +93,69 @@ func TestRemoteRegistryErrorPreservesHTTPStatusAndRegistryMessage(t *testing.T) 
 	msg := status.Message(err)
 	require.Contains(t, msg, "HTTP status 401")
 	require.Contains(t, msg, "UNAUTHORIZED: authentication required")
+}
+
+func TestRemoteRegistryErrorClassifiesRecordedHTTPStatus(t *testing.T) {
+	statusRecorder := httpclient.NewStatusRecorder()
+	tr := httpclient.NewStatusRecorderTransport(roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusNotFound,
+			Body:       io.NopCloser(strings.NewReader("")),
+			Request:    req,
+		}, nil
+	}), statusRecorder)
+	req, err := http.NewRequest(http.MethodHead, "https://example.com/v2/repo/manifests/sha256:abc", nil)
+	require.NoError(t, err)
+	resp, err := tr.RoundTrip(req)
+	require.NoError(t, err)
+	require.NoError(t, resp.Body.Close())
+
+	err = ocifetcher.RemoteRegistryErrorWithStatus(
+		errors.New("registry request failed"),
+		"cannot retrieve manifest metadata from remote",
+		statusRecorder,
+	)
+
+	require.True(t, status.IsNotFoundError(err), "error: %s", err)
+	msg := status.Message(err)
+	require.Contains(t, msg, "HTTP status 404")
+	require.Contains(t, msg, "registry request failed")
+}
+
+func TestRegistryErrorFromHTTPStatusCode(t *testing.T) {
+	for httpStatusCode := http.StatusBadRequest; httpStatusCode < http.StatusInternalServerError; httpStatusCode++ {
+		t.Run(fmt.Sprintf("4xx/%d", httpStatusCode), func(t *testing.T) {
+			err := ocifetcher.RegistryErrorFromHTTPStatusCode(httpStatusCode, "registry request failed")
+			if httpStatusCode == http.StatusTooManyRequests {
+				require.False(t, isActionableError(err), "error: %s", err)
+				return
+			}
+			require.True(t, isActionableError(err), "error: %s", err)
+		})
+	}
+
+	for httpStatusCode := http.StatusInternalServerError; httpStatusCode < 600; httpStatusCode++ {
+		t.Run(fmt.Sprintf("5xx/%d", httpStatusCode), func(t *testing.T) {
+			err := ocifetcher.RegistryErrorFromHTTPStatusCode(httpStatusCode, "registry request failed")
+			require.False(t, isActionableError(err), "error: %s", err)
+		})
+	}
+}
+
+func isActionableError(err error) bool {
+	return status.IsInvalidArgumentError(err) ||
+		status.IsNotFoundError(err) ||
+		status.IsAlreadyExistsError(err) ||
+		status.IsPermissionDeniedError(err) ||
+		status.IsUnauthenticatedError(err) ||
+		status.IsFailedPreconditionError(err) ||
+		status.IsOutOfRangeError(err)
+}
+
+type roundTripperFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
 }
 
 func newTestServerWithCache(t *testing.T, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient) ofpb.OCIFetcherServer {

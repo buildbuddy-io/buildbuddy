@@ -238,10 +238,10 @@ func (r *Resolver) AuthenticateWithRegistry(ctx context.Context, imageName strin
 		return status.InvalidArgumentErrorf("invalid image reference %q: %s", imageName, err)
 	}
 
-	remoteOpts := r.getRemoteOpts(ctx, platform, credentials)
+	remoteOpts, statusRecorder := r.getRemoteOpts(ctx, platform, credentials)
 	_, err = remote.Head(imageRef, remoteOpts...)
 	if err != nil {
-		return ocifetcher.RemoteRegistryError(err, "could not fetch manifest metadata from remote registry")
+		return ocifetcher.RemoteRegistryErrorWithStatus(err, "could not fetch manifest metadata from remote registry", statusRecorder)
 	}
 
 	return nil
@@ -266,10 +266,10 @@ func (r *Resolver) ResolveImageDigest(ctx context.Context, imageName string, pla
 		return nameWithDigest, nil
 	}
 
-	remoteOpts := r.getRemoteOpts(ctx, platform, credentials)
+	remoteOpts, statusRecorder := r.getRemoteOpts(ctx, platform, credentials)
 	desc, err := remote.Head(tagRef, remoteOpts...)
 	if err != nil {
-		return "", ocifetcher.RemoteRegistryError(err, "could not fetch manifest metadata from remote registry")
+		return "", ocifetcher.RemoteRegistryErrorWithStatus(err, "could not fetch manifest metadata from remote registry", statusRecorder)
 	}
 	imageNameWithDigest := tagRef.Context().Digest(desc.Digest.String()).String()
 	r.imageTagToDigestLRU.Add(tagRef.String(), imageNameWithDigest)
@@ -286,7 +286,7 @@ func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb
 	}
 	log.CtxDebugf(ctx, "Resolving image %q", imageRef)
 
-	remoteOpts := r.getRemoteOpts(ctx, platform, credentials)
+	remoteOpts, statusRecorder := r.getRemoteOpts(ctx, platform, credentials)
 	puller, err := remote.NewPuller(remoteOpts...)
 	if err != nil {
 		return nil, status.InternalErrorf("error creating puller: %s", err)
@@ -323,6 +323,7 @@ func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb
 		credentials,
 		useCache,
 		useOCIFetcher,
+		statusRecorder,
 	)
 }
 
@@ -330,7 +331,7 @@ func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb
 // then falls back to fetching from the upstream remote registry.
 // If the referenced manifest is actually an image index, fetchImageFromCacheOrRemote will recur at most once
 // to fetch a child image matching the given platform.
-func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef ctrname.Reference, platform ctr.Platform, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, puller *remote.Puller, ociFetcherClient ofpb.OCIFetcherClient, credentials Credentials, useCache bool, useOCIFetcher bool) (ctr.Image, error) {
+func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef ctrname.Reference, platform ctr.Platform, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, puller *remote.Puller, ociFetcherClient ofpb.OCIFetcherClient, credentials Credentials, useCache bool, useOCIFetcher bool, statusRecorder *httpclient.StatusRecorder) (ctr.Image, error) {
 	// When using OCIFetcher, skip the separate metadata request and just fetch
 	// the full manifest. The OCIFetcher server caches manifests, so this avoids
 	// an extra round trip.
@@ -348,7 +349,7 @@ func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef ctrname.Ref
 		// - Resolves the tag to a digest (if not already present)
 		if !hasDigest || !credentials.bypassRegistry {
 			var err error
-			desc, err = fetchManifestMetadata(ctx, digestOrTagRef, puller)
+			desc, err = fetchManifestMetadata(ctx, digestOrTagRef, puller, statusRecorder)
 			if err != nil {
 				return nil, err
 			}
@@ -392,11 +393,12 @@ func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef ctrname.Ref
 				credentials,
 				useCache,
 				useOCIFetcher,
+				statusRecorder,
 			)
 		}
 	}
 
-	desc, rawManifest, err := fetchManifest(ctx, digestOrTagRef, puller, ociFetcherClient, credentials, useOCIFetcher)
+	desc, rawManifest, err := fetchManifest(ctx, digestOrTagRef, puller, ociFetcherClient, credentials, useOCIFetcher, statusRecorder)
 	if err != nil {
 		return nil, err
 	}
@@ -429,23 +431,24 @@ func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef ctrname.Ref
 		credentials,
 		useCache,
 		useOCIFetcher,
+		statusRecorder,
 	)
 }
 
 // fetchManifestMetadata makes a HEAD request for the manifest metadata using the puller.
 // This is only used when useOCIFetcher=false; when useOCIFetcher=true, we skip the
 // metadata request and fetch the full manifest directly via fetchManifest.
-func fetchManifestMetadata(ctx context.Context, digestOrTagRef ctrname.Reference, puller *remote.Puller) (*ctr.Descriptor, error) {
+func fetchManifestMetadata(ctx context.Context, digestOrTagRef ctrname.Reference, puller *remote.Puller, statusRecorder *httpclient.StatusRecorder) (*ctr.Descriptor, error) {
 	desc, err := puller.Head(ctx, digestOrTagRef)
 	if err != nil {
-		return nil, ocifetcher.RemoteRegistryError(err, "cannot retrieve manifest metadata from remote")
+		return nil, ocifetcher.RemoteRegistryErrorWithStatus(err, "cannot retrieve manifest metadata from remote", statusRecorder)
 	}
 	return desc, nil
 }
 
 // fetchManifest fetches the manifest for the given image reference.
 // ociFetcherClient must be non-nil when useOCIFetcher is true.
-func fetchManifest(ctx context.Context, digestOrTagRef ctrname.Reference, puller *remote.Puller, ociFetcherClient ofpb.OCIFetcherClient, credentials Credentials, useOCIFetcher bool) (*ctr.Descriptor, []byte, error) {
+func fetchManifest(ctx context.Context, digestOrTagRef ctrname.Reference, puller *remote.Puller, ociFetcherClient ofpb.OCIFetcherClient, credentials Credentials, useOCIFetcher bool, statusRecorder *httpclient.StatusRecorder) (*ctr.Descriptor, []byte, error) {
 	if useOCIFetcher && ociFetcherClient == nil {
 		return nil, nil, status.FailedPreconditionError("OCIFetcherClient is required when useOCIFetcher is true")
 	}
@@ -471,7 +474,7 @@ func fetchManifest(ctx context.Context, digestOrTagRef ctrname.Reference, puller
 
 	remoteDesc, err := puller.Get(ctx, digestOrTagRef)
 	if err != nil {
-		return nil, nil, ocifetcher.RemoteRegistryError(err, "could not retrieve manifest from remote")
+		return nil, nil, ocifetcher.RemoteRegistryErrorWithStatus(err, "could not retrieve manifest from remote", statusRecorder)
 	}
 	return &remoteDesc.Descriptor, remoteDesc.Manifest, nil
 }
@@ -480,7 +483,7 @@ func fetchManifest(ctx context.Context, digestOrTagRef ctrname.Reference, puller
 // finds a child image matching the given platform (and fetches a manifest for it) if the given manifest is an index,
 // and otherwise returns an error.
 // ociFetcherClient must be non-nil when useOCIFetcher is true.
-func imageFromDescriptorAndManifest(ctx context.Context, repo ctrname.Repository, desc ctr.Descriptor, rawManifest []byte, platform ctr.Platform, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, puller *remote.Puller, ociFetcherClient ofpb.OCIFetcherClient, credentials Credentials, useCache bool, useOCIFetcher bool) (ctr.Image, error) {
+func imageFromDescriptorAndManifest(ctx context.Context, repo ctrname.Repository, desc ctr.Descriptor, rawManifest []byte, platform ctr.Platform, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, puller *remote.Puller, ociFetcherClient ofpb.OCIFetcherClient, credentials Credentials, useCache bool, useOCIFetcher bool, statusRecorder *httpclient.StatusRecorder) (ctr.Image, error) {
 	if useOCIFetcher && ociFetcherClient == nil {
 		return nil, status.FailedPreconditionError("OCIFetcherClient is required when useOCIFetcher is true")
 	}
@@ -510,6 +513,7 @@ func imageFromDescriptorAndManifest(ctx context.Context, repo ctrname.Repository
 			credentials,
 			useCache,
 			useOCIFetcher,
+			statusRecorder,
 		)
 	}
 
@@ -528,7 +532,7 @@ func imageFromDescriptorAndManifest(ctx context.Context, repo ctrname.Repository
 	), nil
 }
 
-func (r *Resolver) getRemoteOpts(ctx context.Context, platform *rgpb.Platform, credentials Credentials) []remote.Option {
+func (r *Resolver) getRemoteOpts(ctx context.Context, platform *rgpb.Platform, credentials Credentials) ([]remote.Option, *httpclient.StatusRecorder) {
 	remoteOpts := []remote.Option{
 		remote.WithContext(ctx),
 		remote.WithPlatform(
@@ -549,11 +553,12 @@ func (r *Resolver) getRemoteOpts(ctx context.Context, platform *rgpb.Platform, c
 	tr := httpclient.New(r.allowedPrivateIPs, "oci").Transport
 	mirrors := ocifetcher.Mirrors()
 	if len(mirrors) > 0 {
-		remoteOpts = append(remoteOpts, remote.WithTransport(ocifetcher.NewMirrorTransport(tr, mirrors)))
-	} else {
-		remoteOpts = append(remoteOpts, remote.WithTransport(tr))
+		tr = ocifetcher.NewMirrorTransport(tr, mirrors)
 	}
-	return remoteOpts
+	statusRecorder := httpclient.NewStatusRecorder()
+	tr = httpclient.NewStatusRecorderTransport(tr, statusRecorder)
+	remoteOpts = append(remoteOpts, remote.WithTransport(tr))
+	return remoteOpts, statusRecorder
 }
 
 // RuntimePlatform returns the platform on which the program is being executed,
