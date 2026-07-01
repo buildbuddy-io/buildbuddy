@@ -304,20 +304,20 @@ func (pu *partitionUsage) sendDeleteRequests(ctx context.Context, keys []*sender
 
 func (pu *partitionUsage) processEviction(ctx context.Context) {
 	batches := make(chan []*sender.KeyMeta, 1)
-	// sendBatch hands a batch to the dispatcher, but bails out on ctx.Done so the
-	// batcher stops promptly on shutdown instead of blocking until pu.deletes
-	// drains. Returns false if ctx was cancelled (caller should return).
-	sendBatch := func(b []*sender.KeyMeta) bool {
-		select {
-		case batches <- b:
-			return true
-		case <-ctx.Done():
-			return false
-		}
-	}
 	var wg sync.WaitGroup
 	wg.Go(func() {
 		defer close(batches)
+		// sendBatch hands a batch to the dispatcher, but bails out on ctx.Done
+		// so the batcher stops promptly on shutdown instead of blocking until
+		// pu.deletes drains. Returns false if ctx was cancelled (return then).
+		sendBatch := func(b []*sender.KeyMeta) bool {
+			select {
+			case batches <- b:
+				return true
+			case <-ctx.Done():
+				return false
+			}
+		}
 		var batch []*sender.KeyMeta
 		timer := time.NewTimer(evictFlushPeriod)
 		for {
@@ -344,8 +344,8 @@ func (pu *partitionUsage) processEviction(ctx context.Context) {
 			}
 		}
 	})
-	sem := semaphore.NewWeighted(int64(pu.numDeleteWorkers))
 	wg.Go(func() {
+		sem := semaphore.NewWeighted(int64(pu.numDeleteWorkers))
 		// inner tracks the in-flight sendDeleteRequests goroutines — the only
 		// senders to pu.gcsDeletes. Wait for them, then close gcsDeletes so the
 		// GCS workers drain the remainder and exit.
