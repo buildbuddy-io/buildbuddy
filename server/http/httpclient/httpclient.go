@@ -137,8 +137,11 @@ func (rc *instrumentedReadCloser) Close() error {
 	return err
 }
 
-// StatusRecorder records the most recent HTTP error status returned by a
-// RoundTripper.
+// StatusRecorder records the HTTP status code of the most recent HTTP exchange
+// observed by a statusRecorderTransport. Each round trip overwrites the recorded
+// code with its own outcome (0 if the round trip produced no response), so the
+// recorded code always reflects the immediately-preceding request rather than
+// the last error seen at any point.
 type StatusRecorder struct {
 	mu         sync.Mutex
 	statusCode int
@@ -150,14 +153,16 @@ func NewStatusRecorder() *StatusRecorder {
 	return &StatusRecorder{}
 }
 
-// HTTPStatusCode returns the most recently recorded HTTP error status code.
+// HTTPStatusCode returns the status code of the most recent HTTP exchange if it
+// was an error status (>= 400), reporting false otherwise (including for a
+// successful response or a round trip that never received a response).
 func (r *StatusRecorder) HTTPStatusCode() (int, bool) {
 	if r == nil {
 		return 0, false
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.statusCode == 0 {
+	if r.statusCode < http.StatusBadRequest {
 		return 0, false
 	}
 	return r.statusCode, true
@@ -169,11 +174,7 @@ func (r *StatusRecorder) record(statusCode int) {
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if statusCode >= http.StatusBadRequest {
-		r.statusCode = statusCode
-		return
-	}
-	r.statusCode = 0
+	r.statusCode = statusCode
 }
 
 // NewStatusRecorderTransport wraps inner and records HTTP response status codes
@@ -194,6 +195,10 @@ func (t *statusRecorderTransport) RoundTrip(req *http.Request) (*http.Response, 
 	resp, err := t.inner.RoundTrip(req)
 	if resp != nil {
 		t.statusRecorder.record(resp.StatusCode)
+	} else {
+		// The round trip produced no response (e.g. a connection error), so
+		// clear any status recorded by a previous request.
+		t.statusRecorder.record(0)
 	}
 	return resp, err
 }

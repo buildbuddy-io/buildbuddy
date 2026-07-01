@@ -771,9 +771,6 @@ func RegistryErrorFromHTTPStatusCode(httpStatusCode int, msg string) error {
 	if httpStatusCode >= http.StatusBadRequest && httpStatusCode < http.StatusInternalServerError {
 		return status.InvalidArgumentError(msg)
 	}
-	if httpStatusCode >= http.StatusInternalServerError {
-		return status.UnavailableError(msg)
-	}
 	return status.UnavailableError(msg)
 }
 
