@@ -13,15 +13,15 @@ import (
 	"google.golang.org/grpc/metadata"
 )
 
-// proxyPair defines a prefix to match against the incoming grpc method name
+// ProxyTarget defines a prefix to match against the incoming grpc method name
 // and a target to proxy this traffic to.
-type proxyPair struct {
+type ProxyTarget struct {
 	Prefix string `yaml:"prefix" json:"prefix" usage:"The gRPC method prefix to match."`
 	Target string `yaml:"target" json:"target" usage:"The gRPC target to forward requests to."`
 }
 
 var (
-	proxyTargets = flag.Slice("app.proxy_targets", []proxyPair{}, "")
+	proxyTargets = flag.Slice("app.proxy_targets", []ProxyTarget{}, "")
 	poolSize     = flag.Int("app.proxy_pool_size", 0, "Number of gRPC connections to create for proxying unknown RPCs.")
 
 	mu                     sync.RWMutex

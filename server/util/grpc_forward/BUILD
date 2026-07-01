@@ -17,11 +17,17 @@ go_library(
 
 go_test(
     name = "grpc_forward_test",
-    srcs = ["grpc_forward_test.go"],
+    srcs = [
+        "grpc_forward_integration_test.go",
+        "grpc_forward_test.go",
+    ],
     embed = [":grpc_forward"],
     deps = [
         "//server/util/grpc_client",
+        "//server/util/testing/flags",
         "@com_github_stretchr_testify//require",
         "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//metadata",
+        "@org_golang_google_protobuf//types/known/emptypb",
     ],
 )
