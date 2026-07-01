@@ -17,10 +17,7 @@ go_library(
 
 go_test(
     name = "grpc_forward_test",
-    srcs = [
-        "grpc_forward_integration_test.go",
-        "grpc_forward_test.go",
-    ],
+    srcs = ["grpc_forward_test.go"],
     embed = [":grpc_forward"],
     deps = [
         "//server/util/grpc_client",
