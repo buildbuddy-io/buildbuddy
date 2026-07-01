@@ -38,10 +38,19 @@ const (
 	defaultProtocol = "grpcs://"
 )
 
+const (
+	// connPickRoundRobin cycles through pool connections in order.
+	connPickRoundRobin = "round-robin"
+	// connPickLeastPendingRPCs picks a connection using the power of two random
+	// choices over in-flight RPC counts, steering load away from connections
+	// that are backed up.
+	connPickLeastPendingRPCs = "least-pending-rpcs"
+)
+
 var (
 	poolSize = flag.Int("grpc_client.pool_size", 15, "Number of connections to create to each target.")
 
-	loadAwareConnSelection = flag.Bool("grpc_client.load_aware_conn_selection", false, "If true, pick a pool connection for each RPC using the power of two random choices over in-flight RPC counts, instead of round-robin. Steers load away from connections that are backed up.")
+	connPickPolicy = flag.String("grpc_client.conn_pick_policy", connPickRoundRobin, "How to pick a pool connection for each RPC. \""+connPickRoundRobin+"\" cycles through connections in order. \""+connPickLeastPendingRPCs+"\" uses the power of two random choices over in-flight RPC counts to steer load away from connections that are backed up (e.g. stalled behind a load balancer's flow-control or max-concurrent-stream limits).")
 
 	idsMu sync.Mutex
 	ids   = map[string]int{}
@@ -105,14 +114,15 @@ func (p *ClientConnPool) Close() error {
 
 // getConn returns a connection from the pool.
 //
-// When load-aware connection selection is enabled it uses the power of two
-// random choices: it samples two distinct connections and returns whichever
-// has fewer in-flight RPCs. This steers new RPCs away from connections that are
-// backed up (for example, one stalled behind the load balancer's HTTP/2
-// flow-control or max-concurrent-stream limits) and toward idle ones.
+// Under the "least-pending-rpcs" policy it uses the power of two random
+// choices: it samples two distinct connections and returns whichever has fewer
+// in-flight RPCs. This steers new RPCs away from connections that are backed up
+// (for example, one stalled behind the load balancer's HTTP/2 flow-control or
+// max-concurrent-stream limits) and toward idle ones. Otherwise it falls back
+// to round-robin, cycling through connections in order.
 func (p *ClientConnPool) getConn() *clientConn {
 	n := len(p.conns)
-	if *loadAwareConnSelection && n > 1 {
+	if *connPickPolicy == connPickLeastPendingRPCs && n > 1 {
 		// Sample two distinct connections and take the less-loaded one.
 		i := rand.IntN(n)
 		j := rand.IntN(n - 1)

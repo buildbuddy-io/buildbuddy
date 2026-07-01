@@ -21,16 +21,16 @@ func testPool(pending ...int64) *ClientConnPool {
 	return &ClientConnPool{conns: conns}
 }
 
-func TestGetConn_LoadAware_PicksLessLoadedOfTwo(t *testing.T) {
-	flags.Set(t, "grpc_client.load_aware_conn_selection", true)
+func TestGetConn_LeastPending_PicksLessLoadedOfTwo(t *testing.T) {
+	flags.Set(t, "grpc_client.conn_pick_policy", connPickLeastPendingRPCs)
 	p := testPool(10, 3)
 	for i := 0; i < 100; i++ {
 		require.Same(t, p.conns[1], p.getConn())
 	}
 }
 
-func TestGetConn_LoadAware_AvoidsBackedUpConnection(t *testing.T) {
-	flags.Set(t, "grpc_client.load_aware_conn_selection", true)
+func TestGetConn_LeastPending_AvoidsBackedUpConnection(t *testing.T) {
+	flags.Set(t, "grpc_client.conn_pick_policy", connPickLeastPendingRPCs)
 	// Connection 2 is badly backed up; the rest are idle.
 	p := testPool(0, 0, 1000, 0, 0)
 	counts := make([]int, len(p.conns))
@@ -52,10 +52,10 @@ func TestGetConn_LoadAware_AvoidsBackedUpConnection(t *testing.T) {
 }
 
 func TestGetConn_RoundRobinByDefault(t *testing.T) {
-	// With load-aware selection off, selection is round-robin and ignores the
-	// pending counts entirely (connection 1 is heavily loaded but still gets
-	// its turn).
-	flags.Set(t, "grpc_client.load_aware_conn_selection", false)
+	// Under the round-robin policy, selection cycles through connections in
+	// order and ignores the pending counts entirely (connection 1 is heavily
+	// loaded but still gets its turn).
+	flags.Set(t, "grpc_client.conn_pick_policy", connPickRoundRobin)
 	p := testPool(0, 100, 0, 0)
 	want := []int{1, 2, 3, 0, 1, 2, 3, 0}
 	for _, w := range want {
@@ -64,8 +64,8 @@ func TestGetConn_RoundRobinByDefault(t *testing.T) {
 }
 
 func TestGetConn_SingleConnection(t *testing.T) {
-	for _, loadAware := range []bool{false, true} {
-		flags.Set(t, "grpc_client.load_aware_conn_selection", loadAware)
+	for _, policy := range []string{connPickRoundRobin, connPickLeastPendingRPCs} {
+		flags.Set(t, "grpc_client.conn_pick_policy", policy)
 		p := testPool(5)
 		require.Same(t, p.conns[0], p.getConn())
 	}
