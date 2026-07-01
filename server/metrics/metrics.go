@@ -377,6 +377,11 @@ const (
 
 	GRPCMethodLabel = "grpc_method"
 
+	// The direction of an HTTP/2 flow-control window relative to the local
+	// endpoint: `remote` (the window for data we send) or `local` (the window
+	// for data we receive).
+	GRPCFlowControlDirectionLabel = "direction"
+
 	// Destination cloud provider inferred from the remote IP range: `aws`,
 	// `gcp`, or `other`.
 	DestinationProviderLabel = "provider"
@@ -4266,6 +4271,46 @@ var (
 		GRPCMethodLabel,
 		ConnectionIndexLabel,
 	})
+
+	GRPCClientConnectionCount = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "grpc",
+		Name:      "client_connection_count",
+		Help:      "Number of client gRPC connections (channelz sockets) observed per target, sampled from channelz.",
+	}, []string{
+		GRPCTargetLabel,
+	})
+
+	GRPCClientFlowControlBlockedConnections = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "grpc",
+		Name:      "client_flow_control_blocked_connections",
+		Help:      "Number of client gRPC connections whose remote HTTP/2 flow-control (send) window is 0, per target. A nonzero value means connections are send-blocked behind the peer's flow control, which head-of-line-blocks every stream on the connection.",
+	}, []string{
+		GRPCTargetLabel,
+	})
+
+	GRPCClientFlowControlWindowBytes = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "grpc",
+		Name:      "client_flow_control_window_bytes",
+		Help:      "Distribution of HTTP/2 flow-control window sizes across client gRPC connections, sampled periodically from channelz. `direction=remote` is the window for data we send (0 means send-blocked); `direction=local` is the window for data we receive.",
+		Buckets:   []float64{0, 1, 1024, 16384, 65536, 262144, 1048576, 2097152, 4194304, 8388608, 16777216},
+	}, []string{
+		GRPCTargetLabel,
+		GRPCFlowControlDirectionLabel,
+	})
+
+	GRPCClientConnectionOpenStreams = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "grpc",
+		Name:      "client_connection_open_streams",
+		Help:      "Distribution of open HTTP/2 streams across client gRPC connections, sampled periodically from channelz. Values near the peer's max-concurrent-streams limit (commonly 100) indicate connections at capacity.",
+		Buckets:   []float64{0, 1, 5, 10, 25, 50, 75, 90, 95, 100, 110, 150},
+	}, []string{
+		GRPCTargetLabel,
+	})
+
 	GRPCServerEgressBytes = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "grpc",
