@@ -40,7 +40,7 @@ def gcs(name, srcs, bucket, gsutil = "gsutil", prefix = "", sha_prefix = "", zip
         name = name + ".apply.script",
         out = name + ".apply.out",
         content = [
-            "set -x; unset -v PYTHONSAFEPATH; if [ -n \"${1}\" ]; then read SHA_PREFIX < \"${1}\" && export SHA_PREFIX=\"${SHA_PREFIX}/\"; fi; shift; %s -m %s cp %s \"${@}\" \"gs://%s/%s${SHA_PREFIX}\"" % (
+            "set -x; unset -v PYTHONSAFEPATH; if [ -n \"${1}\" ]; then read SHA_PREFIX < \"${1}\" && export SHA_PREFIX=\"${SHA_PREFIX}/\"; else shift; fi; %s -m %s cp %s \"${@}\" \"gs://%s/%s${SHA_PREFIX}\"" % (
                 gsutil,
                 util_options,
                 copy_options,
