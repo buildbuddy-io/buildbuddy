@@ -1705,14 +1705,9 @@ type ClientIdentityService interface {
 	// outgoing context.
 	AddIdentityToContext(ctx context.Context) (context.Context, error)
 
-	// NewIdentityHeader generates a new signed header value for the specified
+	// IdentityHeader generates a signed header value for the specified
 	// identity.
-	NewIdentityHeader(si *ClientIdentity, expiration time.Duration) (string, error)
-
-	// CachedIdentityHeader returns a signed header value for the specified
-	// identity, reusing a cached value that is periodically refreshed instead of
-	// signing a new JWT on every call.
-	CachedIdentityHeader(si *ClientIdentity) (string, error)
+	IdentityHeader(si *ClientIdentity, expiration time.Duration) (string, error)
 
 	// ValidateIncomingIdentity validates the incoming identity and adds the
 	// authenticated identity information to the context. This function is
