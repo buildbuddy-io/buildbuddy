@@ -53,7 +53,7 @@ func Start(env environment.Env) error {
 		return nil
 	}
 	target := fmt.Sprintf("grpc://localhost:%d", grpc_server.InternalGRPCPort())
-	conn, err := grpc_client.DialInternalWithoutPooling(env, target)
+	conn, err := grpc_client.DialSimpleWithoutPooling(target)
 	if err != nil {
 		return status.InternalErrorf("channelz flow-control metrics: dial internal gRPC server: %s", err)
 	}
