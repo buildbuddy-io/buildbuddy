@@ -108,6 +108,15 @@ const (
 	RetryPropertyName                        = "retry"
 	PersistentVolumesPropertyName            = "persistent-volumes"
 	execrootPathPropertyName                 = "execroot-path"
+
+	// CacheProxyActionCacheTTLPropertyName lets clients opt into caching
+	// action results in the cache proxy, rather than always revalidating them
+	// with the authoritative remote cache. The value is the duration to serve
+	// locally cached results for before revalidating, formatted as a Go
+	// duration string (e.g. "15m" or "1h"). A non-positive or unparseable value
+	// disables local caching.
+	CacheProxyActionCacheTTLPropertyName = "cache-proxy-action-cache-ttl"
+
 	// RunUnderPropertyName specifies a wrapper command to run the action
 	// under. The value is shell-tokenized and the resulting tokens are
 	// prepended to the command arguments, so the original executable becomes
