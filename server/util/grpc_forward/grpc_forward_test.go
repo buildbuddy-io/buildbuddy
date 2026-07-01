@@ -42,14 +42,14 @@ func TestDirector_ForwardsIncomingMetadataToOutgoingContext(t *testing.T) {
 	})
 	ctx := metadata.NewIncomingContext(context.Background(), incoming)
 
-	outCtx, cc, err := director(ctx, "/build.bazel.remote.execution.v2.Execution/Execute")
+	outCtx, cc, err := director(ctx, "/test.TestService/TestMethod")
 	require.NoError(t, err)
 	require.NotNil(t, cc)
 
 	outgoing, ok := metadata.FromOutgoingContext(outCtx)
 	require.True(t, ok, "director must attach the incoming metadata to the outgoing context")
 	require.Equal(t, []string{"value-1"}, outgoing.Get(header1),
-		"client-supplied headers must be forwarded to the backend for unknown RPCs like Execute")
+		"client-supplied headers must be forwarded to the backend for unknown RPCs")
 	require.Equal(t, []string{"value-2"}, outgoing.Get(header2))
 }
 
@@ -92,7 +92,7 @@ func TestForwarding_PropagatesClientHeadersToBackend(t *testing.T) {
 	t.Cleanup(func() { clientConn.Close() })
 
 	ctx := metadata.AppendToOutgoingContext(context.Background(), clientHeader, "test-value")
-	err = clientConn.Invoke(ctx, "/build.bazel.remote.execution.v2.Execution/Execute", &emptypb.Empty{}, &emptypb.Empty{})
+	err = clientConn.Invoke(ctx, "/test.TestService/TestMethod", &emptypb.Empty{}, &emptypb.Empty{})
 	require.NoError(t, err)
 
 	mu.Lock()
