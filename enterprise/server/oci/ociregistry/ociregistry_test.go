@@ -19,9 +19,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testhttp"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/require"
 )
 
@@ -32,8 +34,7 @@ type simplePullTestCase struct {
 	blobsOrManifests         string
 	identifierOverride       string
 	expectedStatus           int
-	expectedMirrorRequests   int32
-	expectedUpstreamRequests int32
+	expectedUpstreamRequests func(repository, identifier, manifestDigest string) map[string]int
 	repeatRequestToHitCache  bool
 }
 
@@ -52,10 +53,10 @@ func TestPull(t *testing.T) {
 	testcache.Setup(t, te, localGRPClis)
 	go runServer()
 
-	upstreamCounter := atomic.Int32{}
+	upstreamCounter := testhttp.NewRequestCounter()
 	testreg := testregistry.Run(t, testregistry.Opts{
 		HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
-			upstreamCounter.Add(1)
+			upstreamCounter.Inc(r)
 			return true
 		},
 	})
@@ -70,11 +71,9 @@ func TestPull(t *testing.T) {
 	require.Nil(t, err)
 	port := testport.FindFree(t)
 
-	mirrorCounter := atomic.Int32{}
 	mirrorHostPort := fmt.Sprintf("localhost:%d", port)
 	require.NotEmpty(t, mirrorHostPort)
 	mirrorServer := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		mirrorCounter.Add(1)
 		ocireg.ServeHTTP(w, r)
 	})}
 	lis, err := net.Listen("tcp", mirrorHostPort)
@@ -85,6 +84,28 @@ func TestPull(t *testing.T) {
 		require.NoError(t, err)
 	})
 
+	blobGET := func(repository, identifier, manifestDigest string) map[string]int {
+		return map[string]int{
+			http.MethodGet + " /v2/" + repository + "/blobs/" + identifier: 1,
+		}
+	}
+	manifestHEAD := func(repository, identifier, manifestDigest string) map[string]int {
+		return map[string]int{
+			http.MethodHead + " /v2/" + repository + "/manifests/" + identifier: 1,
+		}
+	}
+	manifestGET := func(repository, identifier, manifestDigest string) map[string]int {
+		return map[string]int{
+			http.MethodGet + " /v2/" + repository + "/manifests/" + identifier: 1,
+		}
+	}
+	manifestHEADThenGET := func(repository, identifier, manifestDigest string) map[string]int {
+		return map[string]int{
+			http.MethodHead + " /v2/" + repository + "/manifests/" + identifier:    1,
+			http.MethodGet + " /v2/" + repository + "/manifests/" + manifestDigest: 1,
+		}
+	}
+
 	tests := []simplePullTestCase{
 		{
 			name:                     "HEAD request for nonexistent blob fails",
@@ -92,16 +113,14 @@ func TestPull(t *testing.T) {
 			blobsOrManifests:         "blobs",
 			identifierOverride:       nonExistentDigest,
 			expectedStatus:           http.StatusNotFound,
-			expectedMirrorRequests:   1,
-			expectedUpstreamRequests: 1,
+			expectedUpstreamRequests: blobGET,
 		},
 		{
 			name:                     "HEAD request for existing blob succeeds",
 			method:                   http.MethodHead,
 			blobsOrManifests:         "blobs",
 			expectedStatus:           http.StatusOK,
-			expectedMirrorRequests:   1,
-			expectedUpstreamRequests: 1,
+			expectedUpstreamRequests: blobGET,
 		},
 		{
 			name:                     "GET request for nonexistent blob fails",
@@ -109,16 +128,14 @@ func TestPull(t *testing.T) {
 			blobsOrManifests:         "blobs",
 			identifierOverride:       nonExistentDigest,
 			expectedStatus:           http.StatusNotFound,
-			expectedMirrorRequests:   1,
-			expectedUpstreamRequests: 1,
+			expectedUpstreamRequests: blobGET,
 		},
 		{
 			name:                     "GET request for existing blob succeeds",
 			method:                   http.MethodGet,
 			blobsOrManifests:         "blobs",
 			expectedStatus:           http.StatusOK,
-			expectedMirrorRequests:   1,
-			expectedUpstreamRequests: 1,
+			expectedUpstreamRequests: blobGET,
 		},
 		{
 			name:                     "HEAD request for nonexistent manifest fails",
@@ -126,8 +143,7 @@ func TestPull(t *testing.T) {
 			blobsOrManifests:         "manifests",
 			identifierOverride:       nonExistentManifestRef,
 			expectedStatus:           http.StatusNotFound,
-			expectedMirrorRequests:   1,
-			expectedUpstreamRequests: 1,
+			expectedUpstreamRequests: manifestHEAD,
 		},
 		{
 			name:                     "HEAD request for existing manifest tag succeeds",
@@ -135,16 +151,14 @@ func TestPull(t *testing.T) {
 			blobsOrManifests:         "manifests",
 			identifierOverride:       "latest",
 			expectedStatus:           http.StatusOK,
-			expectedMirrorRequests:   1,
-			expectedUpstreamRequests: 1,
+			expectedUpstreamRequests: manifestHEAD,
 		},
 		{
 			name:                     "HEAD request for existing manifest digest succeeds",
 			method:                   http.MethodHead,
 			blobsOrManifests:         "manifests",
 			expectedStatus:           http.StatusOK,
-			expectedMirrorRequests:   1,
-			expectedUpstreamRequests: 1,
+			expectedUpstreamRequests: manifestGET,
 		},
 		{
 			name:                     "GET request for nonexistent manifest fails",
@@ -152,96 +166,77 @@ func TestPull(t *testing.T) {
 			blobsOrManifests:         "manifests",
 			identifierOverride:       nonExistentManifestRef,
 			expectedStatus:           http.StatusNotFound,
-			expectedMirrorRequests:   1,
-			expectedUpstreamRequests: 1,
+			expectedUpstreamRequests: manifestHEAD,
 		},
 		{
-			name:                   "GET request for existing manifest tag succeeds",
-			method:                 http.MethodGet,
-			blobsOrManifests:       "manifests",
-			identifierOverride:     "latest",
-			expectedStatus:         http.StatusOK,
-			expectedMirrorRequests: 1,
+			name:               "GET request for existing manifest tag succeeds",
+			method:             http.MethodGet,
+			blobsOrManifests:   "manifests",
+			identifierOverride: "latest",
+			expectedStatus:     http.StatusOK,
 			// The mirror will first make an upstream HEAD request to convert tag to digest,
 			// then make an upstream GET request to fetch the manifest payload.
-			expectedUpstreamRequests: 2,
+			expectedUpstreamRequests: manifestHEADThenGET,
 		},
 		{
 			name:                     "GET request for existing manifest digest succeeds",
 			method:                   http.MethodHead,
 			blobsOrManifests:         "manifests",
 			expectedStatus:           http.StatusOK,
-			expectedMirrorRequests:   1,
-			expectedUpstreamRequests: 1,
+			expectedUpstreamRequests: manifestGET,
 		},
 		{
-			name:                     "POST request to /blobs/uploads/ fails",
-			method:                   http.MethodPost,
-			blobsOrManifests:         "blobs",
-			identifierOverride:       "uploads/",
-			expectedStatus:           http.StatusNotFound,
-			expectedMirrorRequests:   1,
-			expectedUpstreamRequests: 0,
+			name:               "POST request to /blobs/uploads/ fails",
+			method:             http.MethodPost,
+			blobsOrManifests:   "blobs",
+			identifierOverride: "uploads/",
+			expectedStatus:     http.StatusNotFound,
 		},
 		{
-			name:                     "PUT request for new manifest tag fails",
-			method:                   http.MethodPut,
-			blobsOrManifests:         "manifests",
-			identifierOverride:       "newtag",
-			expectedStatus:           http.StatusNotFound,
-			expectedMirrorRequests:   1,
-			expectedUpstreamRequests: 0,
+			name:               "PUT request for new manifest tag fails",
+			method:             http.MethodPut,
+			blobsOrManifests:   "manifests",
+			identifierOverride: "newtag",
+			expectedStatus:     http.StatusNotFound,
 		},
 		{
-			name:                     "PUT request for existing manifest tag fails",
-			method:                   http.MethodPut,
-			blobsOrManifests:         "manifests",
-			identifierOverride:       "latest",
-			expectedStatus:           http.StatusNotFound,
-			expectedMirrorRequests:   1,
-			expectedUpstreamRequests: 0,
+			name:               "PUT request for existing manifest tag fails",
+			method:             http.MethodPut,
+			blobsOrManifests:   "manifests",
+			identifierOverride: "latest",
+			expectedStatus:     http.StatusNotFound,
 		},
 		{
-			name:                     "PUT request for existing manifest digest fails",
-			method:                   http.MethodPut,
-			blobsOrManifests:         "manifests",
-			identifierOverride:       "latest",
-			expectedStatus:           http.StatusNotFound,
-			expectedMirrorRequests:   1,
-			expectedUpstreamRequests: 0,
+			name:               "PUT request for existing manifest digest fails",
+			method:             http.MethodPut,
+			blobsOrManifests:   "manifests",
+			identifierOverride: "latest",
+			expectedStatus:     http.StatusNotFound,
 		},
 		{
-			name:                     "DELETE request for existing manifest tag fails",
-			method:                   http.MethodDelete,
-			blobsOrManifests:         "manifests",
-			expectedStatus:           http.StatusNotFound,
-			expectedMirrorRequests:   1,
-			expectedUpstreamRequests: 0,
+			name:             "DELETE request for existing manifest tag fails",
+			method:           http.MethodDelete,
+			blobsOrManifests: "manifests",
+			expectedStatus:   http.StatusNotFound,
 		},
 		{
-			name:                     "DELETE request for existing manifest digest fails",
-			method:                   http.MethodDelete,
-			blobsOrManifests:         "manifests",
-			expectedStatus:           http.StatusNotFound,
-			expectedMirrorRequests:   1,
-			expectedUpstreamRequests: 0,
+			name:             "DELETE request for existing manifest digest fails",
+			method:           http.MethodDelete,
+			blobsOrManifests: "manifests",
+			expectedStatus:   http.StatusNotFound,
 		},
 		{
-			name:                     "DELETE request for nonexistent blob fails",
-			method:                   http.MethodDelete,
-			blobsOrManifests:         "blobs",
-			identifierOverride:       nonExistentDigest,
-			expectedStatus:           http.StatusNotFound,
-			expectedMirrorRequests:   1,
-			expectedUpstreamRequests: 0,
+			name:               "DELETE request for nonexistent blob fails",
+			method:             http.MethodDelete,
+			blobsOrManifests:   "blobs",
+			identifierOverride: nonExistentDigest,
+			expectedStatus:     http.StatusNotFound,
 		},
 		{
-			name:                     "DELETE request for existing blob fails",
-			method:                   http.MethodDelete,
-			blobsOrManifests:         "blobs",
-			expectedStatus:           http.StatusNotFound,
-			expectedMirrorRequests:   1,
-			expectedUpstreamRequests: 0,
+			name:             "DELETE request for existing blob fails",
+			method:           http.MethodDelete,
+			blobsOrManifests: "blobs",
+			expectedStatus:   http.StatusNotFound,
 		},
 		{
 			name:             "GET request with Range header for existing blob fails",
@@ -250,35 +245,30 @@ func TestPull(t *testing.T) {
 			headers: map[string]string{
 				"Range": "bytes=0-7",
 			},
-			expectedStatus:           http.StatusNotImplemented,
-			expectedMirrorRequests:   1,
-			expectedUpstreamRequests: 0,
+			expectedStatus: http.StatusNotImplemented,
 		},
 		{
 			name:                     "repeated GET requests for existing blob use CAS",
 			method:                   http.MethodGet,
 			blobsOrManifests:         "blobs",
 			expectedStatus:           http.StatusOK,
-			expectedMirrorRequests:   2,
-			expectedUpstreamRequests: 1,
 			repeatRequestToHitCache:  true,
+			expectedUpstreamRequests: blobGET,
 		},
 		{
 			name:                     "repeated GET requests for existing manifest digest use CAS",
 			method:                   http.MethodGet,
 			blobsOrManifests:         "manifests",
 			expectedStatus:           http.StatusOK,
-			expectedMirrorRequests:   2,
-			expectedUpstreamRequests: 1,
 			repeatRequestToHitCache:  true,
+			expectedUpstreamRequests: manifestGET,
 		},
 		{
-			name:                   "repeated GET requests for existing manifest tag use CAS",
-			method:                 http.MethodGet,
-			blobsOrManifests:       "manifests",
-			identifierOverride:     "latest",
-			expectedStatus:         http.StatusOK,
-			expectedMirrorRequests: 2,
+			name:               "repeated GET requests for existing manifest tag use CAS",
+			method:             http.MethodGet,
+			blobsOrManifests:   "manifests",
+			identifierOverride: "latest",
+			expectedStatus:     http.StatusOK,
 			// On the first manifest GET, the mirror makes
 			//   1. an upstream HEAD request to resolve the manifest digest
 			//   2. an upstream GET request to fetch the manifest payload (which is then stored in CAS).
@@ -286,8 +276,8 @@ func TestPull(t *testing.T) {
 			// On the second manifest GET, the tag->digest mapping is served from
 			// the in-memory cache (no auth header), so no upstream HEAD is needed.
 			// The manifest payload is served from CAS.
-			expectedUpstreamRequests: 2,
 			repeatRequestToHitCache:  true,
+			expectedUpstreamRequests: manifestHEADThenGET,
 		},
 	}
 
@@ -341,8 +331,7 @@ func TestPull(t *testing.T) {
 			}
 			path := "/v2/" + testImageName + "/" + tc.blobsOrManifests + "/" + identifier
 
-			mirrorRequestsAtStart := mirrorCounter.Load()
-			upstreamRequestsAtStart := upstreamCounter.Load()
+			upstreamCounter.Reset()
 
 			loops := 1
 			if tc.repeatRequestToHitCache {
@@ -379,8 +368,11 @@ func TestPull(t *testing.T) {
 				}
 			}
 
-			require.Equal(t, tc.expectedMirrorRequests, mirrorCounter.Load()-mirrorRequestsAtStart)
-			require.Equal(t, tc.expectedUpstreamRequests, upstreamCounter.Load()-upstreamRequestsAtStart)
+			expectedUpstreamRequests := map[string]int{}
+			if tc.expectedUpstreamRequests != nil {
+				expectedUpstreamRequests = tc.expectedUpstreamRequests(repository, identifier, expectedDockerContentDigest)
+			}
+			require.Empty(t, cmp.Diff(expectedUpstreamRequests, upstreamCounter.Snapshot()))
 		})
 	}
 }
@@ -398,10 +390,10 @@ func TestTagDigestCacheBypassedWithAuth(t *testing.T) {
 	testcache.Setup(t, te, localGRPClis)
 	go runServer()
 
-	upstreamCounter := atomic.Int32{}
+	upstreamCounter := testhttp.NewRequestCounter()
 	testreg := testregistry.Run(t, testregistry.Opts{
 		HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
-			upstreamCounter.Add(1)
+			upstreamCounter.Inc(r)
 			return true
 		},
 	})
@@ -422,37 +414,45 @@ func TestTagDigestCacheBypassedWithAuth(t *testing.T) {
 	repository := "test_auth_cache_bypass"
 	testImageName, _ := testreg.PushNamedImage(t, repository, nil)
 	path := "/v2/" + testImageName + "/manifests/latest"
+	headResp, err := http.Head("http://" + testreg.Address() + "/v2/" + repository + "/manifests/latest")
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, headResp.StatusCode)
+	manifestDigest := headResp.Header.Get("Docker-Content-Digest")
+	require.NotEmpty(t, manifestDigest)
+	require.NoError(t, headResp.Body.Close())
 
 	// First GET without auth: populates the tag->digest cache.
-	upstreamBefore := upstreamCounter.Load()
+	upstreamCounter.Reset()
 	req, err := http.NewRequest(http.MethodGet, "http://"+mirrorHostPort+path, nil)
 	require.NoError(t, err)
 	resp, err := http.DefaultClient.Do(req)
 	require.NoError(t, err)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
-	// HEAD to resolve tag + GET to fetch manifest = 2 upstream requests.
-	require.Equal(t, int32(2), upstreamCounter.Load()-upstreamBefore)
+	require.Empty(t, cmp.Diff(map[string]int{
+		http.MethodHead + " /v2/" + repository + "/manifests/latest":           1,
+		http.MethodGet + " /v2/" + repository + "/manifests/" + manifestDigest: 1,
+	}, upstreamCounter.Snapshot()))
 
 	// Second GET without auth: should use cache (no HEAD needed).
-	upstreamBefore = upstreamCounter.Load()
+	upstreamCounter.Reset()
 	req, err = http.NewRequest(http.MethodGet, "http://"+mirrorHostPort+path, nil)
 	require.NoError(t, err)
 	resp, err = http.DefaultClient.Do(req)
 	require.NoError(t, err)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
-	// Manifest served from CAS, no upstream requests.
-	require.Equal(t, int32(0), upstreamCounter.Load()-upstreamBefore)
+	require.Empty(t, cmp.Diff(map[string]int{}, upstreamCounter.Snapshot()))
 
 	// Third GET with auth header: should bypass cache and make upstream HEAD.
-	upstreamBefore = upstreamCounter.Load()
+	upstreamCounter.Reset()
 	req, err = http.NewRequest(http.MethodGet, "http://"+mirrorHostPort+path, nil)
 	require.NoError(t, err)
 	req.Header.Set("Authorization", "Bearer some-token")
 	resp, err = http.DefaultClient.Do(req)
 	require.NoError(t, err)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
-	// HEAD to resolve tag (cache bypassed) but manifest served from CAS = 1 upstream request.
-	require.Equal(t, int32(1), upstreamCounter.Load()-upstreamBefore)
+	require.Empty(t, cmp.Diff(map[string]int{
+		http.MethodHead + " /v2/" + repository + "/manifests/latest": 1,
+	}, upstreamCounter.Snapshot()))
 }
 
 func TestMirrorConfig(t *testing.T) {
@@ -470,19 +470,19 @@ func TestMirrorConfig(t *testing.T) {
 	go runServer()
 
 	// Two upstream registries, each with their own request counter.
-	upstream1Counter := atomic.Int32{}
+	upstream1Counter := testhttp.NewRequestCounter()
 	upstream1 := testregistry.Run(t, testregistry.Opts{
 		HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
-			upstream1Counter.Add(1)
+			upstream1Counter.Inc(r)
 			return true
 		},
 	})
 	t.Cleanup(func() { upstream1.Shutdown() })
 
-	upstream2Counter := atomic.Int32{}
+	upstream2Counter := testhttp.NewRequestCounter()
 	upstream2 := testregistry.Run(t, testregistry.Opts{
 		HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
-			upstream2Counter.Add(1)
+			upstream2Counter.Inc(r)
 			return true
 		},
 	})
@@ -522,6 +522,12 @@ func TestMirrorConfig(t *testing.T) {
 	require.Greater(t, len(layers1), 0)
 	layer1Digest, err := layers1[0].Digest()
 	require.NoError(t, err)
+	headResp, err := http.Head("http://" + upstream1.Address() + "/v2/repo1/myimage/manifests/latest")
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, headResp.StatusCode)
+	image1ManifestDigest := headResp.Header.Get("Docker-Content-Digest")
+	require.NotEmpty(t, image1ManifestDigest)
+	require.NoError(t, headResp.Body.Close())
 
 	// Push an image to upstream2 under repo2/myimage (for mirror2).
 	_, image2 := upstream2.PushNamedImage(t, "repo2/myimage", nil)
@@ -550,8 +556,8 @@ func TestMirrorConfig(t *testing.T) {
 	})
 
 	t.Run("pull blob via mirror1 subdomain routes to upstream1", func(t *testing.T) {
-		u1Before := upstream1Counter.Load()
-		u2Before := upstream2Counter.Load()
+		upstream1Counter.Reset()
+		upstream2Counter.Reset()
 
 		// Path uses the mirror namespace: ns1/myimage
 		path := "/v2/ns1/myimage/blobs/" + layer1Digest.String()
@@ -570,14 +576,15 @@ func TestMirrorConfig(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, expectedBody, body)
 
-		// Upstream1 should have received a request, upstream2 should not.
-		require.Greater(t, upstream1Counter.Load()-u1Before, int32(0))
-		require.Equal(t, int32(0), upstream2Counter.Load()-u2Before)
+		require.Empty(t, cmp.Diff(map[string]int{
+			http.MethodGet + " /v2/repo1/myimage/blobs/" + layer1Digest.String(): 1,
+		}, upstream1Counter.Snapshot()))
+		require.Empty(t, cmp.Diff(map[string]int{}, upstream2Counter.Snapshot()))
 	})
 
 	t.Run("pull blob via mirror2 subdomain routes to upstream2", func(t *testing.T) {
-		u1Before := upstream1Counter.Load()
-		u2Before := upstream2Counter.Load()
+		upstream1Counter.Reset()
+		upstream2Counter.Reset()
 
 		path := "/v2/ns2/myimage/blobs/" + layer2Digest.String()
 		req, err := http.NewRequest(http.MethodGet, "http://"+mirrorHostPort+path, nil)
@@ -595,14 +602,15 @@ func TestMirrorConfig(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, expectedBody, body)
 
-		// Upstream2 should have received a request, upstream1 should not.
-		require.Equal(t, int32(0), upstream1Counter.Load()-u1Before)
-		require.Greater(t, upstream2Counter.Load()-u2Before, int32(0))
+		require.Empty(t, cmp.Diff(map[string]int{}, upstream1Counter.Snapshot()))
+		require.Empty(t, cmp.Diff(map[string]int{
+			http.MethodGet + " /v2/repo2/myimage/blobs/" + layer2Digest.String(): 1,
+		}, upstream2Counter.Snapshot()))
 	})
 
 	t.Run("pull manifest via mirror1 subdomain routes to upstream1", func(t *testing.T) {
-		u1Before := upstream1Counter.Load()
-		u2Before := upstream2Counter.Load()
+		upstream1Counter.Reset()
+		upstream2Counter.Reset()
 
 		path := "/v2/ns1/myimage/manifests/latest"
 		req, err := http.NewRequest(http.MethodGet, "http://"+mirrorHostPort+path, nil)
@@ -618,11 +626,17 @@ func TestMirrorConfig(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, expectedManifest, body)
 
-		require.Greater(t, upstream1Counter.Load()-u1Before, int32(0))
-		require.Equal(t, int32(0), upstream2Counter.Load()-u2Before)
+		require.Empty(t, cmp.Diff(map[string]int{
+			http.MethodHead + " /v2/repo1/myimage/manifests/latest":                 1,
+			http.MethodGet + " /v2/repo1/myimage/manifests/" + image1ManifestDigest: 1,
+		}, upstream1Counter.Snapshot()))
+		require.Empty(t, cmp.Diff(map[string]int{}, upstream2Counter.Snapshot()))
 	})
 
 	t.Run("wrong namespace on mirror subdomain returns not found", func(t *testing.T) {
+		upstream1Counter.Reset()
+		upstream2Counter.Reset()
+
 		// ns2 namespace on mirror1 subdomain should not match.
 		path := "/v2/ns2/myimage/blobs/" + layer1Digest.String()
 		req, err := http.NewRequest(http.MethodGet, "http://"+mirrorHostPort+path, nil)
@@ -631,9 +645,14 @@ func TestMirrorConfig(t *testing.T) {
 		resp, err := http.DefaultClient.Do(req)
 		require.NoError(t, err)
 		require.Equal(t, http.StatusNotFound, resp.StatusCode)
+		require.Empty(t, cmp.Diff(map[string]int{}, upstream1Counter.Snapshot()))
+		require.Empty(t, cmp.Diff(map[string]int{}, upstream2Counter.Snapshot()))
 	})
 
 	t.Run("mirror subdomain with port in Host header routes correctly", func(t *testing.T) {
+		upstream1Counter.Reset()
+		upstream2Counter.Reset()
+
 		path := "/v2/ns1/myimage/blobs/" + layer1Digest.String()
 		req, err := http.NewRequest(http.MethodGet, "http://"+mirrorHostPort+path, nil)
 		require.NoError(t, err)
@@ -650,9 +669,14 @@ func TestMirrorConfig(t *testing.T) {
 		expectedBody, err := io.ReadAll(rc)
 		require.NoError(t, err)
 		require.Equal(t, expectedBody, body)
+		require.Empty(t, cmp.Diff(map[string]int{}, upstream1Counter.Snapshot()))
+		require.Empty(t, cmp.Diff(map[string]int{}, upstream2Counter.Snapshot()))
 	})
 
 	t.Run("unknown subdomain returns not found", func(t *testing.T) {
+		upstream1Counter.Reset()
+		upstream2Counter.Reset()
+
 		path := "/v2/ns1/myimage/blobs/" + layer1Digest.String()
 		req, err := http.NewRequest(http.MethodGet, "http://"+mirrorHostPort+path, nil)
 		require.NoError(t, err)
@@ -660,10 +684,13 @@ func TestMirrorConfig(t *testing.T) {
 		resp, err := http.DefaultClient.Do(req)
 		require.NoError(t, err)
 		require.Equal(t, http.StatusNotFound, resp.StatusCode)
+		require.Empty(t, cmp.Diff(map[string]int{}, upstream1Counter.Snapshot()))
+		require.Empty(t, cmp.Diff(map[string]int{}, upstream2Counter.Snapshot()))
 	})
 
 	t.Run("non-registry-domain request uses legacy routing", func(t *testing.T) {
-		u1Before := upstream1Counter.Load()
+		upstream1Counter.Reset()
+		upstream2Counter.Reset()
 
 		// Legacy path: repository includes the upstream host in the URL.
 		path := "/v2/" + legacyImageName + "/blobs/" + legacyLayerDigest.String()
@@ -683,7 +710,10 @@ func TestMirrorConfig(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, expectedBody, body)
 
-		require.Greater(t, upstream1Counter.Load()-u1Before, int32(0))
+		require.Empty(t, cmp.Diff(map[string]int{
+			http.MethodGet + " /v2/legacyimage/blobs/" + legacyLayerDigest.String(): 1,
+		}, upstream1Counter.Snapshot()))
+		require.Empty(t, cmp.Diff(map[string]int{}, upstream2Counter.Snapshot()))
 	})
 }
 

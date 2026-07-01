@@ -46,9 +46,11 @@ go_test(
         "//server/interfaces",
         "//server/testutil/testcache",
         "//server/testutil/testenv",
+        "//server/testutil/testhttp",
         "//server/testutil/testport",
         "//server/util/random",
         "//server/util/testing/flags",
+        "@com_github_google_go_cmp//cmp",
         "@com_github_stretchr_testify//require",
     ],
 )
