@@ -715,7 +715,6 @@ func (s *Sender) RunMultiKey(ctx context.Context, keys []*KeyMeta, fn runMultiKe
 				if err := runForRange(ctx, rk); err != nil {
 					return nil, err
 				}
-				return rsps, nil
 			}
 		} else {
 			eg, egCtx := errgroup.WithContext(ctx)
