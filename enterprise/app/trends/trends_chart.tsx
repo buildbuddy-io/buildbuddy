@@ -17,10 +17,10 @@ import {
 import { CategoricalChartState } from "recharts/types/chart/types";
 import { TrendsChartId } from "../../../app/router/router";
 
-interface ChartDataSeries {
+export interface ChartDataSeries {
   name: string;
   formatHoverValue?: (datum: number) => string;
-  extractValue: (datum: number) => number;
+  extractValue: (datum: number) => number | null;
   onClick?: (datum: number) => void;
   isLine?: boolean;
   usesSecondaryAxis?: boolean;
@@ -172,6 +172,7 @@ export default class TrendsChartComponent extends React.Component<Props, State> 
           dot={false}
           dataKey={ds.extractValue}
           isAnimationActive={false}
+          connectNulls={true}
           stroke={getResolvedColor(ds.color ?? ChartColor.BLUE)}
         />
       );
@@ -216,8 +217,14 @@ export default class TrendsChartComponent extends React.Component<Props, State> 
             onMouseMove={this.props.onZoomSelection && this.onMouseMove.bind(this)}
             onMouseUp={this.props.onZoomSelection && this.onMouseUp.bind(this)}>
             <CartesianGrid strokeDasharray="3 3" />
-            <Legend />
-            <XAxis dataKey={(v) => v} tickFormatter={this.props.formatXAxisLabel} ticks={this.props.ticks} />
+            {/* <Legend /> */}
+            <XAxis
+              type="number"
+              domain={["dataMin", "dataMax"]}
+              dataKey={(v) => v}
+              tickFormatter={this.props.formatXAxisLabel}
+              ticks={this.props.ticks}
+            />
             <YAxis
               yAxisId="primary"
               tickFormatter={this.props.primaryYAxis.formatTickValue}
