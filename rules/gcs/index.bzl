@@ -27,9 +27,6 @@ def gcs(name, srcs, bucket, gsutil = "gsutil", prefix = "", sha_prefix = "", zip
     if prefix != "" and not prefix.endswith("/"):
         prefix += "/"
 
-    if sha_prefix:
-        srcs = srcs + [sha_prefix]
-
     # Zip the files if requested.
     copy_options = "-r"
     if zip:
@@ -53,7 +50,7 @@ def gcs(name, srcs, bucket, gsutil = "gsutil", prefix = "", sha_prefix = "", zip
         name = name + ".push_only.script",
         out = name + ".push_only.out",
         content = [
-            "set -x; unset -v PYTHONSAFEPATH; pwd; [ -n \"${!#}\" ] && read SHA_PREFIX < ${!#} && export SHA_PREFIX=${SHA_PREFIX}/; %s -m %s cp %s ${@:1:$#-1} gs://%s/%s${SHA_PREFIX}" % (
+            "unset -v PYTHONSAFEPATH; if [ -n \"${1}\" ]; then read SHA_PREFIX < \"${1}\" && export SHA_PREFIX=\"${SHA_PREFIX}/\"; fi; shift; %s -m %s cp %s \"${@}\" \"gs://%s/%s${SHA_PREFIX}\"" % (
                 gsutil,
                 util_options,
                 copy_options,
@@ -67,9 +64,9 @@ def gcs(name, srcs, bucket, gsutil = "gsutil", prefix = "", sha_prefix = "", zip
 
     sh_binary(
         name = name + ".push_only",
-        args = [ shell.quote("$(locations %s)" % src) for src in srcs ] + ([""] if sha_prefix == "" else []),
+        args = [ shell.quote("$(locations %s)" % src) for src in ([sha_prefix] if sha_prefix != "" else [""]) + srcs ],
         srcs = [ name + ".push_only.script" ],
-        data = srcs,
+        data = srcs + [sha_prefix] if sha_prefix != "" else [],
         use_bash_launcher = True,
         **kwargs,
     )
