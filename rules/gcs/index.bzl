@@ -1,3 +1,7 @@
+load("@bazel_skylib//rules:write_file.bzl", "write_file")
+load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
+load("@rules_multirun//:defs.bzl", "multirun")
+
 # Handles uploading files to GCS.
 #
 # Example usage:
@@ -36,59 +40,100 @@ def gcs(name, srcs, bucket, gsutil = "gsutil", prefix = "", sha_prefix = "", zip
     if disable_caching:
         util_options += " -h 'Cache-Control:no-store'"
 
-    upload_cmd = "echo \"unset -v PYTHONSAFEPATH; %s -m %s cp %s $(SRCS) gs://%s/%s\" > $@" % (gsutil, util_options, copy_options, bucket, prefix),
-
-    # Generate an .apply rule for uploading.
-    native.genrule(
+    multirun(
         name = name + ".apply",
-        srcs = srcs,
-        outs = [name + ".apply.out"],
-        cmd = upload_cmd,
-        local = 1,
-        executable = 1,
-        **kwargs
+        commands = [
+            name + ".push_only",
+            name + ".apply_only",
+        ]
+        **kwargs,
     )
 
-    # Generate a .push_only rule for uploading to GCS.
-    native.genrule(
+    # Generate an .apply rule for uploading.
+    write_file(
+        name = name + ".push_only.script",
+        out = name + ".push_only.out",
+        content = [
+            "unset -v PYTHONSAFEPATH; %s -m %s cp %s $(SRCS) gs://%s/%s" % (
+                gsutil,
+                util_options,
+                copy_options,
+                bucket,
+                prefix,
+            ),
+        ],
+        is_executable = True,
+        **kwargs,
+    )
+
+    sh_binary(
         name = name + ".push_only",
-        srcs = srcs,
-        outs = [name + ".push_only.out"],
-        cmd = upload_cmd,
-        local = 1,
-        executable = 1,
-        **kwargs
+        srcs = [
+            name + ".push_only.script",
+        ],
+        data = srcs,
+        **kwargs,
     )
 
     # Uploading is the only deployment operation for a GCS bundle, so there
     # is nothing left to do during the apply-only phase.
-    native.genrule(
+    write_file(
+        name = name + ".apply_only.script",
+        out = name + ".apply_only.out",
+        content = [
+            "true",
+        ],
+        is_executable = True,
+        **kwargs,
+    )
+
+    sh_binary(
         name = name + ".apply_only",
-        outs = [name + ".apply_only.out"],
-        cmd = "echo \"true\" > $@",
-        local = 1,
-        executable = 1,
-        **kwargs
+        srcs = [
+            name + ".apply_only.script",
+        ],
+        **kwargs,
     )
 
     # Generate a .diff rule for diffing.
-    native.genrule(
+    write_file(
+        name = name + ".diff.script",
+        out = name + ".diff.out",
+        content = [
+            "echo 'Diff not yet implemented for gcs uploads.'",
+        ],
+        is_executable = True,
+        **kwargs,
+    )
+
+    sh_binary(
         name = name + ".diff",
-        srcs = srcs,
-        outs = [name + ".diff.out"],
-        cmd = "echo \"echo 'Diff not yet implemented for gcs uploads.'\" > $@",
-        local = 1,
-        executable = 1,
-        **kwargs
+        srcs = [
+            name + ".diff.script",
+        ],
+        **kwargs,
     )
 
     # Generate a .delete rule for deleting.
-    native.genrule(
-        name = name + ".delete",
-        srcs = srcs,
-        outs = [name + ".delete.out"],
-        cmd = "echo \"unset -v PYTHONSAFEPATH; %s -m rm -r gs://%s/%s\" > $@" % (gsutil, bucket, prefix),
-        local = 1,
-        executable = 1,
+    write_file(
+        name = name + ".delete.script",
+        out = name + ".delete.out",
+        content = [
+            "unset -v PYTHONSAFEPATH; %s -m rm -r gs://%s/%s" % (
+                gsutil,
+                bucket,
+                prefix,
+            ),
+        ],
+        is_executable = True,
         **kwargs
+    )
+
+    sh_binary(
+        name = name + ".delete",
+        srcs = [
+            name + ".delete.script",
+        ],
+        data = srcs,
+        **kwargs,
     )
