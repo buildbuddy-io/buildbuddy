@@ -50,7 +50,7 @@ type testConfig struct {
 	config *config.ServerConfig
 }
 
-func getTestConfigs(t *testing.T, n int) []testConfig {
+func getTestConfigs(t testing.TB, n int) []testConfig {
 	res := make([]testConfig, 0, n)
 	for i := 0; i < n; i++ {
 		c := testConfig{
@@ -64,11 +64,11 @@ func getTestConfigs(t *testing.T, n int) []testConfig {
 	return res
 }
 
-func localAddr(t *testing.T) string {
+func localAddr(t testing.TB) string {
 	return fmt.Sprintf("127.0.0.1:%d", testport.FindFree(t))
 }
 
-func getCacheConfig(t *testing.T) *config.ServerConfig {
+func getCacheConfig(t testing.TB) *config.ServerConfig {
 	id, err := guuid.NewRandom()
 	require.NoError(t, err)
 	httpPort := testport.FindFree(t)
@@ -115,7 +115,7 @@ func parallelShutdown(caches ...*metadata.Server) {
 	eg.Wait()
 }
 
-func waitForHealthy(t *testing.T, caches ...*metadata.Server) {
+func waitForHealthy(t testing.TB, caches ...*metadata.Server) {
 	log.Infof("wait for healthy")
 	start := time.Now()
 	timeout := 30 * time.Second
@@ -138,7 +138,7 @@ func waitForHealthy(t *testing.T, caches ...*metadata.Server) {
 	}
 }
 
-func waitForShutdown(t *testing.T, caches ...*metadata.Server) {
+func waitForShutdown(t testing.TB, caches ...*metadata.Server) {
 	timeout := 30 * time.Second
 	done := make(chan struct{})
 	go func() {
@@ -154,7 +154,7 @@ func waitForShutdown(t *testing.T, caches ...*metadata.Server) {
 	}
 }
 
-func startNodes(t *testing.T, configs []testConfig) []*metadata.Server {
+func startNodes(t testing.TB, configs []testConfig) []*metadata.Server {
 	eg := errgroup.Group{}
 	n := len(configs)
 	caches := make([]*metadata.Server, n)
