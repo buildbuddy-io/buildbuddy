@@ -3,6 +3,7 @@ package tasksize
 import (
 	"context"
 	"crypto/sha256"
+	"errors"
 	"flag"
 	"fmt"
 	"math"
@@ -31,6 +32,7 @@ import (
 
 var (
 	useMeasuredSizes          = flag.Bool("remote_execution.use_measured_task_sizes", false, "Whether to use measured usage stats to determine task sizes.")
+	oomResizeMultiplier       = flag.Float64("remote_execution.oom_resize_multiplier", 1.2, "When a task is OOM-killed after using more memory than its estimate, its memory estimate for the next attempt is set to this factor times the observed memory usage. Must be at least 1, or 0 to disable resizing. Has no effect if the executor OOM killer is not enabled.")
 	modelEnabled              = flag.Bool("remote_execution.task_size_model.enabled", false, "Whether to enable model-based task size prediction.")
 	psiCorrectionFactor       = flag.Float64("remote_execution.task_size_psi_correction", 1.0, "What percentage of full-stall time should be subtracted from the execution duration.")
 	cpuQuotaLimit             = flag.Duration("remote_execution.cpu_quota_limit", 30*100*time.Millisecond /*30 cores*/, "Maximum CPU time allowed for each quota period.")
@@ -141,6 +143,11 @@ type taskSizer struct {
 }
 
 func NewSizer(env environment.Env) (*taskSizer, error) {
+	// A resize multiplier of 0 disables OOM resizing; any other value must be at
+	// least 1, otherwise the resized estimate wouldn't cover the observed usage.
+	if *oomResizeMultiplier != 0 && *oomResizeMultiplier < 1 {
+		return nil, status.InvalidArgumentErrorf("remote_execution.oom_resize_multiplier must be 0 (disabled) or at least 1, but got %v", *oomResizeMultiplier)
+	}
 	ts := &taskSizer{env: env}
 	if *useMeasuredSizes {
 		if env.GetRemoteExecutionRedisClient() == nil {
@@ -270,6 +277,87 @@ func (s *taskSizer) Update(ctx context.Context, cmd *repb.Command, props *platfo
 	}
 	s.rdb.Set(ctx, key, string(b), sizeMeasurementExpiration)
 	return err
+}
+
+// UpdateForOOM increases the recorded memory estimate for a task that was
+// killed by the executor OOM killer while using more memory than its estimate,
+// so that the next attempt is scheduled with more memory and is less likely to
+// be OOM-killed again. The new estimate is the observed memory usage times the
+// remote_execution.oom_resize_multiplier flag (1.2 by default), so it covers
+// what the task actually used, with some headroom. scheduledSize is the size
+// the task was scheduled with, and observedMemoryBytes is the peak memory usage
+// observed by the OOM killer. If the task didn't actually exceed its estimate,
+// nothing is changed.
+//
+// The estimate is updated using an optimistic Redis transaction so that
+// concurrent updates for the same command (e.g. several copies of a task
+// OOM-killed at once) don't clobber each other. A transaction conflict is not
+// treated as an error: whichever writer wins, the recorded estimate still ends
+// up increased.
+func (s *taskSizer) UpdateForOOM(ctx context.Context, cmd *repb.Command, props *platform.Properties, scheduledSize *scpb.TaskSize, observedMemoryBytes int64) error {
+	if !*useMeasuredSizes {
+		return nil
+	}
+	// A multiplier of 0 disables OOM resizing.
+	if *oomResizeMultiplier == 0 {
+		return nil
+	}
+	estimatedMemoryBytes := scheduledSize.GetEstimatedMemoryBytes()
+	// Only resize if the task actually used more memory than its estimate.
+	if estimatedMemoryBytes <= 0 || observedMemoryBytes <= estimatedMemoryBytes {
+		return nil
+	}
+	// Size the next attempt based on the observed usage (plus headroom), so that
+	// it covers what the task actually used rather than just a multiple of the
+	// estimate it overran.
+	resizedMemoryBytes := int64(*oomResizeMultiplier * float64(observedMemoryBytes))
+	key, err := s.taskSizeKey(ctx, cmd)
+	if err != nil {
+		return err
+	}
+	txf := func(tx *redis.Tx) error {
+		// Read the current recorded size (if any) under WATCH so that a
+		// concurrent write to the same key aborts our transaction.
+		size := &scpb.TaskSize{}
+		serialized, err := tx.Get(ctx, key).Result()
+		if err != nil && !errors.Is(err, redis.Nil) {
+			return err
+		}
+		if err == nil {
+			if err := proto.Unmarshal([]byte(serialized), size); err != nil {
+				return err
+			}
+		}
+		// Apply the resized memory estimate, but never decrease an existing
+		// estimate (a previous measurement or OOM resize may already be higher).
+		size.EstimatedMemoryBytes = max(size.EstimatedMemoryBytes, resizedMemoryBytes)
+		// A recorded size must have a non-zero CPU estimate to be read back, so
+		// fall back to the scheduled CPU estimate (then the default) if we don't
+		// have one yet.
+		if size.EstimatedMilliCpu <= 0 {
+			size.EstimatedMilliCpu = scheduledSize.GetEstimatedMilliCpu()
+		}
+		if size.EstimatedMilliCpu <= 0 {
+			size.EstimatedMilliCpu = DefaultCPUEstimate
+		}
+		b, err := proto.Marshal(size)
+		if err != nil {
+			return err
+		}
+		pipe := tx.TxPipeline()
+		pipe.Set(ctx, key, string(b), sizeMeasurementExpiration)
+		_, err = pipe.Exec(ctx)
+		return err
+	}
+	if err := s.rdb.Watch(ctx, txf, key); err != nil {
+		if errors.Is(err, redis.TxFailedErr) {
+			// A concurrent writer updated the estimate between our read and
+			// write; their value is fine, so don't treat this as an error.
+			return nil
+		}
+		return err
+	}
+	return nil
 }
 
 // EvaluateP90CPUTrial returns whether the command is included in the treatment

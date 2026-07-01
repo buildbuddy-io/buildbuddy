@@ -24,6 +24,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/gcplink"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/action_merger"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/oom"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ci_runner_env"
@@ -1672,6 +1673,14 @@ func (s *ExecutionServer) markTaskComplete(ctx context.Context, actionResourceNa
 		md := executeResponse.GetResult().GetExecutionMetadata()
 		if err := s.taskSizer.Update(ctx, cmd, properties, md); err != nil {
 			log.CtxWarningf(ctx, "Failed to update task size: %s", err)
+		}
+	} else if details, ok := oom.DetailsFromError(execErr); ok {
+		// The task was killed by the executor OOM killer. Record a higher memory
+		// estimate so that the task is scheduled with more memory if the client
+		// retries it.
+		md := executeResponse.GetResult().GetExecutionMetadata()
+		if err := s.taskSizer.UpdateForOOM(ctx, cmd, properties, md.GetEstimatedTaskSize(), details.ObservedMemoryBytes); err != nil {
+			log.CtxWarningf(ctx, "Failed to update task size after OOM: %s", err)
 		}
 	}
 
