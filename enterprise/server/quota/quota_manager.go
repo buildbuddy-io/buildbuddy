@@ -154,16 +154,17 @@ func (b *bucketConfig) validate() error {
 	return nil
 }
 
-type assignedBucket struct {
-	bucket    *bucketConfig
-	quotaKeys []string
-}
-
 type Bucket interface {
 	Config() bucketConfig
 	Allow(ctx context.Context, key string, quantity int64) (bool, error)
 }
 
+// rateLimitedBucket uses GCRA, which is a good fit for request-rate checks
+// like workflow creation, but not for durable cumulative usage accounting like
+// monthly cache download bytes. GCRA models a replenishment rate rather than
+// a running total, and its state lives only in Redis — a flush or restart would
+// wipe month-scale accounting. Use fixed-window usage limits (usagelimits
+// package) for those cases.
 type rateLimitedBucket struct {
 	config      *bucketConfig
 	rateLimiter *throttled.GCRARateLimiterCtx

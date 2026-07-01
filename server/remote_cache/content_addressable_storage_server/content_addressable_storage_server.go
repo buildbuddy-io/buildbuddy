@@ -43,6 +43,7 @@ import (
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
+	usagepb "github.com/buildbuddy-io/buildbuddy/proto/usage"
 	remote_cache_config "github.com/buildbuddy-io/buildbuddy/server/remote_cache/config"
 	statuspb "google.golang.org/genproto/googleapis/rpc/status"
 	gstatus "google.golang.org/grpc/status"
@@ -235,12 +236,17 @@ func (s *ContentAddressableStorageServer) BatchUpdateBlobs(ctx context.Context, 
 		return rsp, nil
 	}
 
+	requestedUploadSize := int64(0)
+	for _, uploadRequest := range req.Requests {
+		requestedUploadSize += uploadRequest.GetDigest().GetSizeBytes()
+	}
 	if qm := s.env.GetQuotaManager(); qm != nil {
-		totalUploadSize := int64(0)
-		for _, uploadRequest := range req.Requests {
-			totalUploadSize += uploadRequest.GetDigest().GetSizeBytes()
+		if err := qm.Allow(ctx, quota.GetSKUKey(sku.RemoteCacheCASUploadedBytes), requestedUploadSize); err != nil {
+			return nil, err
 		}
-		if err := qm.Allow(ctx, quota.GetSKUKey(sku.RemoteCacheCASUploadedBytes), totalUploadSize); err != nil {
+	}
+	if ul := s.env.GetUsageLimiter(); ul != nil {
+		if err := ul.Check(ctx, usagepb.UsageAlertingMetric_TOTAL_UPLOAD_SIZE_BYTES, requestedUploadSize); err != nil {
 			return nil, err
 		}
 	}
@@ -385,6 +391,11 @@ func (s *ContentAddressableStorageServer) BatchReadBlobs(ctx context.Context, re
 	}
 	if qm := s.env.GetQuotaManager(); qm != nil {
 		if err := qm.Allow(ctx, quota.GetSKUKey(sku.RemoteCacheCASDownloadedBytes), totalDownloadSize); err != nil {
+			return nil, err
+		}
+	}
+	if ul := s.env.GetUsageLimiter(); ul != nil {
+		if err := ul.Check(ctx, usagepb.UsageAlertingMetric_TOTAL_DOWNLOAD_SIZE_BYTES, totalDownloadSize); err != nil {
 			return nil, err
 		}
 	}
