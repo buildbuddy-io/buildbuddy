@@ -118,7 +118,7 @@ func TestCtxWithClientIP(t *testing.T) {
 	t.Run("client-supplied client IP header is overwritten with the resolved IP", func(t *testing.T) {
 		cis := &fakeIdentityService{header: identity}
 		// Simulate an attacker pre-setting the client-IP header to a spoofed value.
-		ctx := metadata.AppendToOutgoingContext(ctxWithResolvedClientIP(clientIP), clientip.HeaderName, "9.9.9.9")
+		ctx := metadata.NewIncomingContext(ctxWithResolvedClientIP(clientIP), metadata.Pairs(clientip.HeaderName, "9.9.9.9"))
 		ctx, err := ctxWithClientIP(ctx, cis)
 		require.NoError(t, err)
 
@@ -132,7 +132,7 @@ func TestCtxWithClientIP(t *testing.T) {
 	t.Run("client-supplied client IP is stripped when no IP is resolved", func(t *testing.T) {
 		cis := &fakeIdentityService{header: identity}
 		// Spoofed header present, but the proxy resolved no client IP of its own.
-		ctx := metadata.AppendToOutgoingContext(context.Background(), clientip.HeaderName, "9.9.9.9")
+		ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs(clientip.HeaderName, "9.9.9.9"))
 		ctx, err := ctxWithClientIP(ctx, cis)
 		require.NoError(t, err)
 
@@ -150,5 +150,25 @@ func TestCtxWithClientIP(t *testing.T) {
 		require.True(t, ok)
 		require.Equal(t, []string{clientIP}, md.Get(clientip.HeaderName))
 		require.Empty(t, md.Get(authutil.ClientIdentityHeaderName))
+	})
+
+	t.Run("propagates other incoming metadata to the backend", func(t *testing.T) {
+		cis := &fakeIdentityService{header: identity}
+		incoming := metadata.Pairs(
+			"x-custom-header", "custom-value",
+			"x-buildbuddy-jwt", "some-jwt",
+		)
+		ctx := metadata.NewIncomingContext(ctxWithResolvedClientIP(clientIP), incoming)
+		ctx, err := ctxWithClientIP(ctx, cis)
+		require.NoError(t, err)
+
+		md, ok := metadata.FromOutgoingContext(ctx)
+		require.True(t, ok)
+		// Arbitrary caller headers survive the proxy hop untouched.
+		require.Equal(t, []string{"custom-value"}, md.Get("x-custom-header"))
+		require.Equal(t, []string{"some-jwt"}, md.Get("x-buildbuddy-jwt"))
+		// The client-IP and identity headers are still attested by the proxy.
+		require.Equal(t, []string{clientIP}, md.Get(clientip.HeaderName))
+		require.Equal(t, []string{identity}, md.Get(authutil.ClientIdentityHeaderName))
 	})
 }
