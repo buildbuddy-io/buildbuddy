@@ -71,6 +71,7 @@ go_test(
         "//server/testutil/testfs",
         "//server/util/compression",
         "//server/util/disk",
+        "//server/util/ioutil",
         "//server/util/log",
         "//server/util/prefix",
         "//server/util/proto",
