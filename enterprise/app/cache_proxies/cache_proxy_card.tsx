@@ -20,6 +20,7 @@ function cssColor(name: string, fallback: string): string {
 
 const HIT_COLOR = cssColor("--color-green-500", "#4caf50");
 const MISS_COLOR = cssColor("--color-status-error", "#f44336");
+const UNCACHEABLE_COLOR = cssColor("--color-amber-500", "#f59e0b");
 const READ_COLOR = cssColor("--color-light-blue-500", "#03a9f4");
 const WRITE_COLOR = cssColor("--color-indigo-500", "#3f51b5");
 const EMPTY_COLOR = "#eee";
@@ -143,23 +144,31 @@ export default class CacheProxyCardComponent extends React.Component<Props> {
         <div className="cache-proxy-stats-divider"></div>
         <div className="cache-proxy-stats-heading">Statistics</div>
         <div className="cache-proxy-stat-rings">
-          {this.renderReadRing("AC reads (digests)", toNumber(s.acReadHits), toNumber(s.acReadMisses), format.count)}
+          {this.renderReadRing("AC reads (digests)", toNumber(s.acReadHits), toNumber(s.acReadMisses), 0, format.count)}
           {this.renderReadWriteRing("AC reads/writes (digests)", acReads, toNumber(s.acWrites), format.count)}
           {this.renderReadRing(
             "AC reads (bytes)",
             toNumber(s.acReadHitBytes),
             toNumber(s.acReadMissBytes),
+            0,
             format.bytes
           )}
           {this.renderReadWriteRing("AC reads/writes (bytes)", acReadBytes, toNumber(s.acWriteBytes), format.bytes)}
         </div>
         <div className="cache-proxy-stat-rings">
-          {this.renderReadRing("CAS reads (digests)", toNumber(s.casReadHits), toNumber(s.casReadMisses), format.count)}
+          {this.renderReadRing(
+            "CAS reads (digests)",
+            toNumber(s.casReadHits),
+            toNumber(s.casReadMisses),
+            toNumber(s.casReadUncacheable),
+            format.count
+          )}
           {this.renderReadWriteRing("CAS reads/writes (digests)", casReads, toNumber(s.casWrites), format.count)}
           {this.renderReadRing(
             "CAS reads (bytes)",
             toNumber(s.casReadHitBytes),
             toNumber(s.casReadMissBytes),
+            toNumber(s.casReadUncacheableBytes),
             format.bytes
           )}
           {this.renderReadWriteRing("CAS reads/writes (bytes)", casReadBytes, toNumber(s.casWriteBytes), format.bytes)}
@@ -168,12 +177,12 @@ export default class CacheProxyCardComponent extends React.Component<Props> {
     );
   }
 
-  renderReadRing(title: string, hits: number, misses: number, formatValue: (v: number) => string) {
+  renderReadRing(title: string, hits: number, misses: number, uncacheable: number, formatValue: (v: number) => string) {
     return (
       <div className="cache-proxy-stat-ring">
         <div className="cache-proxy-stat-ring-title">{title}</div>
         <div className="cache-proxy-stat-ring-row">
-          {drawReadRing(hits, misses)}
+          {drawReadRing(hits, misses, uncacheable)}
           <div className="cache-proxy-stat-ring-labels">
             <div className="cache-proxy-stat-ring-rate">{hitRate(hits, misses)}</div>
             <div className="cache-chart-label">
@@ -186,6 +195,13 @@ export default class CacheProxyCardComponent extends React.Component<Props> {
               <span className="cache-stat">{formatValue(misses)}</span>
               &nbsp;misses
             </div>
+            {uncacheable > 0 && (
+              <div className="cache-chart-label">
+                <span className="color-swatch cache-uncacheable-color-swatch"></span>
+                <span className="cache-stat">{formatValue(uncacheable)}</span>
+                &nbsp;uncacheable
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -229,12 +245,13 @@ function readWriteRatio(reads: number, writes: number): string {
   return `1:${r < 10 ? r.toFixed(1) : Math.round(r)}`;
 }
 
-function drawReadRing(hits: number, misses: number) {
+function drawReadRing(hits: number, misses: number, uncacheable: number = 0) {
   let colorHit = HIT_COLOR;
   let colorMiss = MISS_COLOR;
+  let colorUncacheable = UNCACHEABLE_COLOR;
   let h = hits;
   let m = misses;
-  if (h === 0 && m === 0) {
+  if (h === 0 && m === 0 && uncacheable === 0) {
     colorHit = EMPTY_COLOR;
     colorMiss = EMPTY_COLOR;
     h = 1;
@@ -242,6 +259,7 @@ function drawReadRing(hits: number, misses: number) {
   return drawPie([
     { value: h, color: colorHit },
     { value: m, color: colorMiss },
+    { value: uncacheable, color: colorUncacheable },
   ]);
 }
 
