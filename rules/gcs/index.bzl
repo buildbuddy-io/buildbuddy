@@ -1,3 +1,6 @@
+load("@bazel_skylib//rules:write_file.bzl", "write_file")
+load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
+
 # Handles uploading files to GCS.
 #
 # Example usage:
@@ -37,34 +40,70 @@ def gcs(name, srcs, bucket, gsutil = "gsutil", prefix = "", sha_prefix = "", zip
         util_options += " -h 'Cache-Control:no-store'"
 
     # Generate an .apply rule for uploading.
-    native.genrule(
+    write_file(
+        name = name + ".apply.script",
+        out = name + ".apply.out",
+        content = [
+            "unset -v PYTHONSAFEPATH; %s -m %s cp %s $(SRCS) gs://%s/%s" % (
+                gsutil,
+                util_options,
+                copy_options,
+                bucket,
+                prefix,
+            ),
+        ],
+        is_executable = True,
+        **kwargs,
+    )
+
+    sh_binary(
         name = name + ".apply",
-        srcs = srcs,
-        outs = [name + ".apply.out"],
-        cmd = "echo \"unset -v PYTHONSAFEPATH; %s -m %s cp %s $(SRCS) gs://%s/%s\" > $@" % (gsutil, util_options, copy_options, bucket, prefix),
-        local = 1,
-        executable = 1,
-        **kwargs
+        srcs = [
+            name + ".apply.script",
+        ],
+        data = srcs,
+        **kwargs,
     )
 
     # Generate a .diff rule for diffing.
-    native.genrule(
+    write_file(
+        name = name + ".diff.script",
+        out = name + ".diff.out",
+        content = [
+            "echo 'Diff not yet implemented for gcs uploads.'",
+        ],
+        is_executable = True,
+        **kwargs,
+    )
+
+    sh_binary(
         name = name + ".diff",
-        srcs = srcs,
-        outs = [name + ".diff.out"],
-        cmd = "echo \"echo 'Diff not yet implemented for gcs uploads.'\" > $@",
-        local = 1,
-        executable = 1,
-        **kwargs
+        srcs = [
+            name + ".diff.script",
+        ],
+        **kwargs,
     )
 
     # Generate a .delete rule for deleting.
-    native.genrule(
-        name = name + ".delete",
-        srcs = srcs,
-        outs = [name + ".delete.out"],
-        cmd = "echo \"unset -v PYTHONSAFEPATH; %s -m rm -r gs://%s/%s\" > $@" % (gsutil, bucket, prefix),
-        local = 1,
-        executable = 1,
+    write_file(
+        name = name + ".delete.script",
+        out = name + ".delete.out",
+        content = [
+            "unset -v PYTHONSAFEPATH; %s -m rm -r gs://%s/%s" % (
+                gsutil,
+                bucket,
+                prefix,
+            ),
+        ],
+        is_executable = True,
         **kwargs
+    )
+
+    sh_binary(
+        name = name + ".delete",
+        srcs = [
+            name + ".delete.script",
+        ],
+        data = srcs,
+        **kwargs,
     )
