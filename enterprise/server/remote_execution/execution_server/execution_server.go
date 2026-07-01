@@ -86,6 +86,49 @@ const (
 	completedPubSubChanExpiration = 15 * time.Minute
 )
 
+type containerImageRewriteRule struct {
+	prefix      string
+	replacement string
+}
+
+func containerImageRewriteRules(rewriteConfig map[string]any) []containerImageRewriteRule {
+	if rewriteConfig == nil {
+		return nil
+	}
+
+	if rewriteConfig["prefix"] != nil || rewriteConfig["replacement"] != nil {
+		prefix, _ := rewriteConfig["prefix"].(string)
+		replacement, _ := rewriteConfig["replacement"].(string)
+		return []containerImageRewriteRule{{prefix: prefix, replacement: replacement}}
+	}
+
+	rawRewrites, _ := rewriteConfig["rewrites"].([]any)
+	rules := make([]containerImageRewriteRule, 0, len(rawRewrites))
+	for _, rawRewrite := range rawRewrites {
+		rewrite, ok := rawRewrite.(map[string]any)
+		if !ok {
+			continue
+		}
+		prefix, _ := rewrite["prefix"].(string)
+		replacement, _ := rewrite["replacement"].(string)
+		rules = append(rules, containerImageRewriteRule{prefix: prefix, replacement: replacement})
+	}
+	return rules
+}
+
+func rewriteContainerImage(imageName string, rules []containerImageRewriteRule) (string, bool) {
+	imageName = strings.TrimPrefix(imageName, platform.DockerPrefix)
+	for _, rule := range rules {
+		if rule.prefix == "" || rule.replacement == "" {
+			continue
+		}
+		if after, ok := strings.CutPrefix(imageName, rule.prefix); ok {
+			return platform.DockerPrefix + rule.replacement + after, true
+		}
+	}
+	return "", false
+}
+
 var (
 	enableRedisAvailabilityMonitoring = flag.Bool("remote_execution.enable_redis_availability_monitoring", false, "If enabled, the execution server will detect if Redis has lost state and will ask Bazel to retry executions.")
 
@@ -881,18 +924,13 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 		const containerImageRewriteExperiment = "remote_execution.container_image_rewrite"
 		rewriteConfig, details := fp.ObjectDetails(ctx, containerImageRewriteExperiment, nil)
 		if rewriteConfig != nil {
-			prefix, _ := rewriteConfig["prefix"].(string)
-			replacement, _ := rewriteConfig["replacement"].(string)
-			imageName := strings.TrimPrefix(props.ContainerImage, platform.DockerPrefix)
-			if prefix != "" && replacement != "" {
-				if after, ok := strings.CutPrefix(imageName, prefix); ok {
-					executionTask.PlatformOverrides.Properties = append(
-						executionTask.PlatformOverrides.Properties,
-						&repb.Platform_Property{
-							Name:  "container-image",
-							Value: "docker://" + replacement + after,
-						})
-				}
+			if imageName, ok := rewriteContainerImage(props.ContainerImage, containerImageRewriteRules(rewriteConfig)); ok {
+				executionTask.PlatformOverrides.Properties = append(
+					executionTask.PlatformOverrides.Properties,
+					&repb.Platform_Property{
+						Name:  "container-image",
+						Value: imageName,
+					})
 			}
 		}
 		if details.Variant() != "" {
