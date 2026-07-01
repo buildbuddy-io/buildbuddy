@@ -19,7 +19,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebble"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
-	"github.com/buildbuddy-io/buildbuddy/server/util/canary"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lib/set"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
@@ -1715,7 +1714,6 @@ func (sm *Replica) Update(entries []dbsm.Entry) ([]dbsm.Entry, error) {
 // The Lookup method is a read only method, it should never change the state
 // of IOnDiskStateMachine.
 func (sm *Replica) Lookup(key interface{}) (interface{}, error) {
-	defer canary.Start("replica.Lookup", time.Second)()
 	reqBuf, ok := key.([]byte)
 	if !ok {
 		return nil, status.FailedPreconditionError("Cannot convert key to []byte")
