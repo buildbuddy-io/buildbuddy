@@ -25,34 +25,6 @@ func cleanup() {
 	backendConnectionPools = map[string]*grpc_client.ClientConnPool{}
 }
 
-// TestDirector_ForwardsIncomingMetadataToOutgoingContext tests that director()
-// copies incoming gRPC metadata into the outgoing backend call context for
-// forwarded unknown RPCs.
-func TestDirector_ForwardsIncomingMetadataToOutgoingContext(t *testing.T) {
-	t.Cleanup(cleanup)
-	flags.Set(t, "app.proxy_targets", []proxyPair{
-		{Prefix: "", Target: "grpc://localhost:1985"},
-	})
-
-	const header1 = "x-test-client-header-1"
-	const header2 = "x-test-client-header-2"
-	incoming := metadata.New(map[string]string{
-		header1: "value-1",
-		header2: "value-2",
-	})
-	ctx := metadata.NewIncomingContext(context.Background(), incoming)
-
-	outCtx, cc, err := director(ctx, "/test.TestService/TestMethod")
-	require.NoError(t, err)
-	require.NotNil(t, cc)
-
-	outgoing, ok := metadata.FromOutgoingContext(outCtx)
-	require.True(t, ok, "director must attach the incoming metadata to the outgoing context")
-	require.Equal(t, []string{"value-1"}, outgoing.Get(header1),
-		"client-supplied headers must be forwarded to the backend for unknown RPCs")
-	require.Equal(t, []string{"value-2"}, outgoing.Get(header2))
-}
-
 // TestForwarding_PropagatesClientHeadersToBackend tests that the unknown-RPC
 // gRPC forwarder preserves client-supplied headers.
 func TestForwarding_PropagatesClientHeadersToBackend(t *testing.T) {
