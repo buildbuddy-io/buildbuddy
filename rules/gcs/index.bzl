@@ -1,5 +1,6 @@
-load("@bazel_skylib//rules:write_file.bzl", "write_file")
 load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
+load("@bazel_skylib//lib:shell.bzl", "shell")
+load("@bazel_skylib//rules:write_file.bzl", "write_file")
 
 # Handles uploading files to GCS.
 #
@@ -44,12 +45,11 @@ def gcs(name, srcs, bucket, gsutil = "gsutil", prefix = "", sha_prefix = "", zip
         name = name + ".apply.script",
         out = name + ".apply.out",
         content = [
-            "unset -v PYTHONSAFEPATH; %s -m %s cp %s $(SRCS) gs://%s/%s" % (
+            "unset -v PYTHONSAFEPATH; %s -m %s cp %s ${@:1:$#-1} gs://%s/${!#}" % (
                 gsutil,
                 util_options,
                 copy_options,
                 bucket,
-                prefix,
             ),
         ],
         is_executable = True,
@@ -58,9 +58,8 @@ def gcs(name, srcs, bucket, gsutil = "gsutil", prefix = "", sha_prefix = "", zip
 
     sh_binary(
         name = name + ".apply",
-        srcs = [
-            name + ".apply.script",
-        ],
+        args = [ "$(rlocationpaths %s)" % src for src in srcs ] + [ prefix ],
+        srcs = [ name + ".apply.script" ],
         data = srcs,
         use_bash_launcher = True,
         **kwargs,
@@ -79,9 +78,7 @@ def gcs(name, srcs, bucket, gsutil = "gsutil", prefix = "", sha_prefix = "", zip
 
     sh_binary(
         name = name + ".diff",
-        srcs = [
-            name + ".diff.script",
-        ],
+        srcs = [ name + ".diff.script" ],
         **kwargs,
     )
 
@@ -102,9 +99,7 @@ def gcs(name, srcs, bucket, gsutil = "gsutil", prefix = "", sha_prefix = "", zip
 
     sh_binary(
         name = name + ".delete",
-        srcs = [
-            name + ".delete.script",
-        ],
+        srcs = [ name + ".delete.script" ],
         data = srcs,
         use_bash_launcher = True,
         **kwargs,
