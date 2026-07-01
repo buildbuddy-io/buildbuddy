@@ -211,7 +211,7 @@ func (la *leaseAgent) doSingleInstruction(ctx context.Context, instruction *leas
 			return
 		}
 		la.log.Debugf("Acquired lease [%s] %s after callback (%s)", la.l.Desc(ctx), dur, instruction)
-		metrics.RaftLeases.With(la.labels).Inc()
+		metrics.RaftLeases.With(la.labels).Set(1.0)
 		metrics.RaftLeaseActionDurationMsec.With(prometheus.Labels{
 			metrics.RaftLeaseActionLabel: leaseAction,
 		}).Observe(float64(dur.Milliseconds()))
@@ -235,7 +235,7 @@ func (la *leaseAgent) doSingleInstruction(ctx context.Context, instruction *leas
 			return
 		}
 		la.log.Debugf("Dropped lease [%s] %s after callback (%s)", la.l.Desc(ctx), dur, instruction)
-		metrics.RaftLeases.With(la.labels).Dec()
+		metrics.RaftLeases.With(la.labels).Set(0.0)
 		metrics.RaftLeaseActionDurationMsec.With(prometheus.Labels{
 			metrics.RaftLeaseActionLabel: leaseAction,
 		}).Observe(float64(dur.Milliseconds()))
@@ -376,11 +376,13 @@ func (lk *LeaseKeeper) watchLeases() {
 			if la != nil {
 				if la.replicaID == nodeInfo.ReplicaID {
 					// This is the terminal teardown for the range's replica
-					// on this node. Remove its RaftLeaders series so a stale
-					// leader=1 value doesn't linger: once the lease agent is
-					// gone, later leader-change callbacks find no agent and
-					// are dropped, so nothing else would reset the gauge.
+					// on this node. Remove its RaftLeaders/RaftLeases series
+					// so a stale leader=1 or lease=1 value doesn't linger:
+					// once the lease agent is gone, later callbacks find no
+					// agent and are dropped, so nothing else would reset the
+					// gauges. (stop() does not process a lease Drop.)
 					metrics.RaftLeaders.Delete(la.labels)
+					metrics.RaftLeases.Delete(la.labels)
 					la.stop()
 				}
 			}
