@@ -2,7 +2,6 @@ package priority_queue
 
 import (
 	"container/heap"
-	"slices"
 	"sync"
 	"time"
 )
@@ -92,9 +91,16 @@ func New[V any]() *ThreadSafePriorityQueue[V] {
 func (pq *ThreadSafePriorityQueue[V]) Clone() *ThreadSafePriorityQueue[V] {
 	pq.mu.Lock()
 	defer pq.mu.Unlock()
-	return &ThreadSafePriorityQueue[V]{
-		inner: slices.Clone(pq.inner),
+
+	// Dereference and copy each item, since the priority queue holds a slice of
+	// pointers, and [Item.index] may be concurrently accessed.
+	inner := make([]*Item[V], len(pq.inner))
+	for i := range pq.inner {
+		clone := *pq.inner[i]
+		inner[i] = &clone
 	}
+
+	return &ThreadSafePriorityQueue[V]{inner: inner}
 }
 
 func (pq *ThreadSafePriorityQueue[V]) zeroValue() V {
@@ -181,20 +187,15 @@ func (pq *ThreadSafePriorityQueue[V]) GetAllUnordered() []V {
 //
 // It has complexity O(n*log(n)).
 func (pq *ThreadSafePriorityQueue[V]) GetAllOrdered() []V {
-	pq.mu.Lock()
-	defer pq.mu.Unlock()
-	// Pop all items to get them in priority order, then push the items back
-	// to restore the queue. Pushing back the original items (rather than
-	// re-creating them) preserves their insertion times.
-	allValues := make([]V, 0, len(pq.inner))
-	items := make([]*Item[V], 0, len(pq.inner))
-	for len(pq.inner) > 0 {
-		item := heap.Pop(&pq.inner).(*Item[V])
+	// Create an O(n) clone with the lock held. The loop below is O(n*log(n)) so
+	// this reduces the time spent with the queue locked.
+	tmp := pq.Clone().inner
+
+	// Repeatedly pop and append the highest priority element to a new slice.
+	allValues := make([]V, 0, len(tmp))
+	for len(tmp) > 0 {
+		item := heap.Pop(&tmp).(*Item[V])
 		allValues = append(allValues, item.value)
-		items = append(items, item)
-	}
-	for _, item := range items {
-		heap.Push(&pq.inner, item)
 	}
 	return allValues
 }
