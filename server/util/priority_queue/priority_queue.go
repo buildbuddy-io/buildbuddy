@@ -160,12 +160,41 @@ func (pq *ThreadSafePriorityQueue[V]) RemoveAt(index int) (V, bool) {
 	return item.(*Item[V]).value, true
 }
 
-func (pq *ThreadSafePriorityQueue[V]) GetAll() []V {
+// GetAllUnordered returns all values in the queue, in an unspecified order
+// that is generally NOT priority order. Use GetAllOrdered if the order
+// matters.
+//
+// It has complexity O(n).
+func (pq *ThreadSafePriorityQueue[V]) GetAllUnordered() []V {
 	pq.mu.Lock()
 	defer pq.mu.Unlock()
 	allValues := make([]V, len(pq.inner))
 	for i, v := range pq.inner {
 		allValues[i] = v.value
+	}
+	return allValues
+}
+
+// GetAllOrdered returns all values in the queue in priority order, highest
+// priority first. Ties in priority are broken by insertion time, earliest
+// first. The queue is left unchanged.
+//
+// It has complexity O(n*log(n)).
+func (pq *ThreadSafePriorityQueue[V]) GetAllOrdered() []V {
+	pq.mu.Lock()
+	defer pq.mu.Unlock()
+	// Pop all items to get them in priority order, then push the items back
+	// to restore the queue. Pushing back the original items (rather than
+	// re-creating them) preserves their insertion times.
+	allValues := make([]V, 0, len(pq.inner))
+	items := make([]*Item[V], 0, len(pq.inner))
+	for len(pq.inner) > 0 {
+		item := heap.Pop(&pq.inner).(*Item[V])
+		allValues = append(allValues, item.value)
+		items = append(items, item)
+	}
+	for _, item := range items {
+		heap.Push(&pq.inner, item)
 	}
 	return allValues
 }
