@@ -107,7 +107,7 @@ func newWithOpts(env environment.Env, clock clockwork.Clock, opts *crypter_key_c
 	return c, nil
 }
 
-func derivedKey(groupID string, key *tables.EncryptionKeyVersion, kms interfaces.KMS) ([]byte, error) {
+func derivedKey(groupID string, scope crypter_key_cache.KeyScope, key *tables.EncryptionKeyVersion, kms interfaces.KMS) ([]byte, error) {
 	bbmk, err := kms.FetchMasterKey()
 	if err != nil {
 		return nil, err
@@ -131,7 +131,19 @@ func derivedKey(groupID string, key *tables.EncryptionKeyVersion, kms interfaces
 	ckSrc = append(ckSrc, masterKeyPortion...)
 	ckSrc = append(ckSrc, groupKeyPortion...)
 
-	info := append([]byte{crypter.EncryptedDataHeaderVersion}, []byte(groupID)...)
+	var info []byte
+	if scope == crypter_key_cache.KeyScopeCustomerDeployment {
+		// Domain-separate customer-deployment-scoped keys from cloud-scoped
+		// ones so that keys served to customer-managed deployments cannot
+		// decrypt content stored in the cloud cache. See
+		// CustomerDeploymentKeyInfoPrefix.
+		info = []byte{crypter.CustomerDeploymentKeyInfoPrefix, crypter.EncryptedDataHeaderVersion}
+	} else if scope == crypter_key_cache.KeyScopeCloud {
+		info = []byte{crypter.EncryptedDataHeaderVersion}
+	} else {
+		return nil, status.InvalidArgumentErrorf("Invalid key-cache scope: %v", scope)
+	}
+	info = append(info, []byte(groupID)...)
 	derivedKey := make([]byte, 32)
 	r := hkdf.Expand(sha256.New, ckSrc, info)
 	n, err := r.Read(derivedKey)
@@ -171,7 +183,7 @@ func refreshKey(ctx context.Context, ck crypter_key_cache.CacheKey, dbh interfac
 		}
 		return nil, nil, err
 	}
-	key, err := derivedKey(ck.GroupID, ekv, kms)
+	key, err := derivedKey(ck.GroupID, ck.Scope, ekv, kms)
 	if err != nil {
 		return nil, nil, err
 	}

@@ -204,6 +204,108 @@ func TestNotFound(t *testing.T) {
 	require.Equal(t, int32(2), refreshCount.Load())
 }
 
+func TestKeyScopeDistinctness(t *testing.T) {
+	clock := clockwork.NewFakeClock()
+	env := testenv.GetTestEnv(t)
+	ctx := setupAuth(t, env)
+
+	backendCK := crypter_key_cache.CacheKey{GroupID: "group1"}
+	customerCK := crypter_key_cache.CacheKey{GroupID: "group1", Scope: crypter_key_cache.KeyScopeCustomerDeployment}
+	versionedBackendCK := crypter_key_cache.CacheKey{GroupID: "group1", KeyID: "key1", Version: 1}
+	versionedCustomerCK := crypter_key_cache.CacheKey{GroupID: "group1", KeyID: "key1", Version: 1, Scope: crypter_key_cache.KeyScopeCustomerDeployment}
+
+	// Keys differing only in scope must never collide in the cache or the
+	// singleflight group, which are both keyed on String().
+	require.NotEqual(t, backendCK.String(), customerCK.String())
+	require.NotEqual(t, versionedBackendCK.String(), versionedCustomerCK.String())
+
+	backendKey := []byte("backend-key")
+	customerKey := []byte("customer-deployment-key")
+	md := &sgpb.EncryptionMetadata{EncryptionKeyId: "key1", Version: 1}
+
+	refreshCount := 0
+	refreshFn := func(ctx context.Context, ck crypter_key_cache.CacheKey) ([]byte, *sgpb.EncryptionMetadata, error) {
+		refreshCount++
+		if ck.Scope == crypter_key_cache.KeyScopeCustomerDeployment {
+			return customerKey, md, nil
+		}
+		return backendKey, md, nil
+	}
+
+	cache := crypter_key_cache.New(env, refreshFn, clock)
+
+	// Loading the same group's key under each scope should trigger separate
+	// refreshes and return separate keys.
+	key, err := cache.LoadKey(ctx, backendCK)
+	require.NoError(t, err)
+	require.Equal(t, backendKey, key.Key)
+	require.Equal(t, 1, refreshCount)
+
+	key, err = cache.LoadKey(ctx, customerCK)
+	require.NoError(t, err)
+	require.Equal(t, customerKey, key.Key)
+	require.Equal(t, 2, refreshCount)
+
+	// Subsequent loads should be served from the cache, each scope keeping
+	// its own entry.
+	key, err = cache.LoadKey(ctx, backendCK)
+	require.NoError(t, err)
+	require.Equal(t, backendKey, key.Key)
+	key, err = cache.LoadKey(ctx, customerCK)
+	require.NoError(t, err)
+	require.Equal(t, customerKey, key.Key)
+	require.Equal(t, 2, refreshCount)
+
+	// EncryptionKey uses the backend scope and should share the backend
+	// entry.
+	key, err = cache.EncryptionKey(ctx)
+	require.NoError(t, err)
+	require.Equal(t, backendKey, key.Key)
+	require.Equal(t, 2, refreshCount)
+}
+
+func TestPermissionDeniedNotRetried(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		err     error
+		checkFn func(error) bool
+	}{
+		{"PermissionDenied", status.PermissionDeniedError("no key for you"), status.IsPermissionDeniedError},
+		{"Unauthenticated", status.UnauthenticatedError("who are you"), status.IsUnauthenticatedError},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			clock := clockwork.NewFakeClock()
+			env := testenv.GetTestEnv(t)
+			ctx := setupAuth(t, env)
+
+			refreshCount := atomic.Int32{}
+			refreshFn := func(ctx context.Context, ck crypter_key_cache.CacheKey) ([]byte, *sgpb.EncryptionMetadata, error) {
+				refreshCount.Add(1)
+				return nil, nil, tc.err
+			}
+
+			opts := &crypter_key_cache.Opts{
+				KeyRefreshScanFrequency: time.Hour,
+				KeyErrCacheTime:         5 * time.Second,
+			}
+			cache := crypter_key_cache.NewWithOpts(env, refreshFn, clock, opts)
+
+			// The error should not be retried and its status should be
+			// preserved so that callers (e.g. a misconfigured customer-managed
+			// deployment) can tell it apart from transient refresh failures.
+			_, err := cache.EncryptionKey(ctx)
+			require.True(t, tc.checkFn(err))
+			require.Equal(t, int32(1), refreshCount.Load())
+
+			// A second call within the error cache time should be served from
+			// the error cache without another refresh.
+			_, err = cache.EncryptionKey(ctx)
+			require.True(t, tc.checkFn(err))
+			require.Equal(t, int32(1), refreshCount.Load())
+		})
+	}
+}
+
 func TestCanceledRefreshIsNotCached(t *testing.T) {
 	clock := clockwork.NewFakeClock()
 	env := testenv.GetTestEnv(t)
