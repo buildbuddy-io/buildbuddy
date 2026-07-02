@@ -75,7 +75,9 @@ func (h *handler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 	m.Authoritative = true
 
 	recordType := "NO_QUESTION"
-	if len(r.Question) >= 1 {
+	if r.Opcode == dns.OpcodeUpdate {
+		recordType = "UPDATE"
+	} else if len(r.Question) >= 1 {
 		recordType = recordTypeLabel(r.Question[0].Qtype)
 	}
 	defer func() {
@@ -90,14 +92,16 @@ func (h *handler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 		if len(r.Question) >= 1 {
 			qName = r.Question[0].Name
 		}
-		log.Debugf("dns query: client=%s type=%s name=%q rcode=%s answers=%d dur=%s",
+		log.Debugf("dns: client=%s type=%s name=%q rcode=%s answers=%d dur=%s",
 			w.RemoteAddr(), recordType, qName, rcodeLabel(m.Rcode), len(m.Answer), time.Since(start))
 	}()
 
 	// RFC2136 dynamic UPDATE (used by cert-manager to set/remove the ACME
 	// _acme-challenge TXT records we self-host) is handled separately.
+	// serveUpdate replies on its own message, so surface its rcode on m for the
+	// metric + log above.
 	if r.Opcode == dns.OpcodeUpdate {
-		h.serveUpdate(w, r)
+		m.Rcode = h.serveUpdate(w, r)
 		return
 	}
 
@@ -351,7 +355,7 @@ func txtRecords(name string, vals []string) []dns.RR {
 // rfc2136 solver to set and remove the _acme-challenge TXT records we self-host.
 // It requires a valid TSIG signature and only ever touches in-zone
 // _acme-challenge TXT names, so the TSIG key can't be used to rewrite the zone.
-func (h *handler) serveUpdate(w dns.ResponseWriter, r *dns.Msg) {
+func (h *handler) serveUpdate(w dns.ResponseWriter, r *dns.Msg) int {
 	m := new(dns.Msg)
 	m.SetReply(r)
 
@@ -361,7 +365,7 @@ func (h *handler) serveUpdate(w dns.ResponseWriter, r *dns.Msg) {
 	if h.acme == nil || reqTSIG == nil || w.TsigStatus() != nil {
 		m.SetRcode(r, dns.RcodeNotAuth)
 		writeUpdateReply(w, m, nil)
-		return
+		return dns.RcodeNotAuth
 	}
 
 	// RFC2136 updates are all-or-nothing, so validate every record before
@@ -374,14 +378,14 @@ func (h *handler) serveUpdate(w dns.ResponseWriter, r *dns.Msg) {
 		if hdr.Rrtype != dns.TypeTXT || !h.isACMEChallengeName(dns.CanonicalName(hdr.Name)) {
 			m.SetRcode(r, dns.RcodeRefused)
 			writeUpdateReply(w, m, reqTSIG)
-			return
+			return dns.RcodeRefused
 		}
 		switch hdr.Class {
 		case dns.ClassINET, dns.ClassNONE, dns.ClassANY:
 		default:
 			m.SetRcode(r, dns.RcodeRefused)
 			writeUpdateReply(w, m, reqTSIG)
-			return
+			return dns.RcodeRefused
 		}
 	}
 
@@ -412,6 +416,7 @@ func (h *handler) serveUpdate(w dns.ResponseWriter, r *dns.Msg) {
 	}
 	m.SetRcode(r, rcode)
 	writeUpdateReply(w, m, reqTSIG)
+	return rcode
 }
 
 // writeUpdateReply writes m, TSIG-signing it (with the request's key and
