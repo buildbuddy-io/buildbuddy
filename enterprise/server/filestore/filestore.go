@@ -821,6 +821,7 @@ type gcsMetadataWriter struct {
 	ctx        context.Context
 	blobName   string
 	customTime time.Time
+	digest     *repb.Digest
 }
 
 func (g *gcsMetadataWriter) Commit() error {
@@ -832,7 +833,7 @@ func (g *gcsMetadataWriter) Commit() error {
 			log.Debugf("Write gcs blob %q (already exists)", g.blobName)
 			return nil
 		}
-		log.Warningf("Write gcs blob %q failed: %s", g.blobName, err)
+		log.CtxWarningf(g.ctx, "Write %s to gcs blob %q failed: %s", digest.String(g.digest), g.blobName, err)
 		return status.UnavailableError("write to blob storage failed")
 	}
 	return nil
@@ -888,6 +889,7 @@ func (fs *fileStorer) BlobWriter(ctx context.Context, fileRecord *sgpb.FileRecor
 		CommittedWriteCloser: wc,
 		blobName:             string(blobName),
 		customTime:           customTime,
+		digest:               fileRecord.GetDigest(),
 	}, nil
 }
 
