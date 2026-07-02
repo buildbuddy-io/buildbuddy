@@ -54,23 +54,16 @@ type CacheKey struct {
 	Scope   KeyScope
 }
 
+// String must map every scope to a distinct string: it keys both the cache
+// map and the singleflight group, so two scopes rendering identically could
+// hand one scope's derived key to a caller expecting the other, defeating
+// the domain separation. The scope is included unconditionally so this holds
+// for any scope value without needing per-scope cases.
 func (ck CacheKey) String() string {
-	s := ck.GroupID
-	if ck.KeyID != "" {
-		s = fmt.Sprintf("%s/%s/%d", ck.GroupID, ck.KeyID, ck.Version)
+	if ck.KeyID == "" {
+		return fmt.Sprintf("%s/scope-%d", ck.GroupID, ck.Scope)
 	}
-	// This must map every scope to a distinct string: String() keys both the
-	// cache map and the singleflight group, so two scopes rendering
-	// identically could hand one scope's derived key to a caller expecting
-	// the other, defeating the domain separation.
-	switch ck.Scope {
-	case KeyScopeCloud:
-		return s
-	case KeyScopeCustomerDeployment:
-		return s + "/customer-deployment"
-	default:
-		return fmt.Sprintf("%s/scope-%d", s, ck.Scope)
-	}
+	return fmt.Sprintf("%s/%s/%d/scope-%d", ck.GroupID, ck.KeyID, ck.Version, ck.Scope)
 }
 
 type cacheEntry struct {
