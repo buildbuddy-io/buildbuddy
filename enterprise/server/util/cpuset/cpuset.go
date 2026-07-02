@@ -247,9 +247,7 @@ func (l *CPULeaser) Acquire(milliCPU int64, taskID string, opts ...any) (int, []
 	}
 
 	// Get the set of CPUs, in order of load (incr).
-	// TODO: use GetAllOrdered here instead - GetAllUnordered does not
-	// return CPUs in order of load.
-	leastLoaded := pq.GetAllUnordered()
+	leastLoaded := pq.GetAllOrdered()
 
 	// Find the numa node with the largest number of cores in the first
 	// numCPUs CPUs.
