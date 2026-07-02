@@ -30,10 +30,19 @@ func New(clock clockwork.Clock) *mockGCS {
 // N.B. This implementation only mocks out the bits of GCS needed
 // to implement the pebble.PebbleGCSStorage interface.
 type mockGCS struct {
-	clock     clockwork.Clock
-	ageInDays int64
-	items     map[string]*timestampedBlob
-	mu        sync.Mutex
+	clock                     clockwork.Clock
+	ageInDays                 int64
+	items                     map[string]*timestampedBlob
+	mu                        sync.Mutex
+	updateCustomTimeCallCount int
+}
+
+// UpdateCustomTimeCallCount returns the number of times UpdateCustomTime has
+// been called. It is intended for use by tests.
+func (m *mockGCS) UpdateCustomTimeCallCount() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.updateCustomTimeCallCount
 }
 
 func (m *mockGCS) expired(blobName string) bool {
@@ -107,6 +116,7 @@ func (m *mockGCS) DeleteBlob(ctx context.Context, blobName string) error {
 func (m *mockGCS) UpdateCustomTime(ctx context.Context, blobName string, t time.Time) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	m.updateCustomTimeCallCount++
 	blob, ok := m.items[blobName]
 	if !ok {
 		return status.NotFoundError("mock gcs blob not found")
