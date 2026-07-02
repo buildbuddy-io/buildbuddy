@@ -1629,6 +1629,152 @@ func TestServerCacheAccessProof(t *testing.T) {
 	})
 }
 
+// blobHeadRejector mimics public.ecr.aws, which responds 401 to every HEAD
+// request on blob endpoints, even with credentials that authorize GETs.
+type blobHeadRejector struct {
+	enabled atomic.Bool
+}
+
+func (b *blobHeadRejector) intercept(w http.ResponseWriter, r *http.Request) bool {
+	if b.enabled.Load() && r.Method == http.MethodHead && strings.Contains(r.URL.Path, "/blobs/") {
+		w.WriteHeader(http.StatusUnauthorized)
+		return false
+	}
+	return true
+}
+
+// setupRegistryWithoutBlobHEAD runs a registry that mimics public.ecr.aws by
+// rejecting HEAD requests on blob endpoints, pushes an image to it, and
+// returns the image name along with its first layer's digest and data.
+func setupRegistryWithoutBlobHEAD(t *testing.T) (*testhttp.RequestCounter, string, ctr.Hash, []byte) {
+	rejector := &blobHeadRejector{}
+	reg, counter := setupRegistry(t, nil, rejector.intercept)
+	imageName, img := reg.PushNamedImage(t, "test-image", nil)
+	layers, err := img.Layers()
+	require.NoError(t, err)
+	require.NotEmpty(t, layers)
+	layer := layers[0]
+	digest, err := layer.Digest()
+	require.NoError(t, err)
+	data := layerData(t, layer)
+	// Pushing the image makes blob HEAD requests, so only start rejecting
+	// them once the image is in place.
+	rejector.enabled.Store(true)
+	return counter, imageName, digest, data
+}
+
+func TestRegistryWithoutBlobHEADSupport(t *testing.T) {
+	t.Run("FetchBlob/CacheMissLearnsSizeFromRangedGET", func(t *testing.T) {
+		counter, imageName, digest, data := setupRegistryWithoutBlobHEAD(t)
+		_, bsClient, acClient := setupCacheEnv(t)
+		flags.Set(t, "ocifetcher.public_registries", []string{nameRef(t, imageName).Context().RegistryStr()})
+		server := newTestServerWithCache(t, bsClient, acClient)
+		ref := imageName + "@" + digest.String()
+
+		counter.Reset()
+		stream := &mockFetchBlobServer{ctx: context.Background()}
+		err := server.FetchBlob(&ofpb.FetchBlobRequest{Ref: ref}, stream)
+		require.NoError(t, err)
+		require.Equal(t, data, stream.collectData())
+
+		blobPath := "/v2/test-image/blobs/" + digest.String()
+		assertRequests(t, counter, map[string]int{
+			http.MethodGet + " /v2/":         2, // puller ping + ranged GET transport ping
+			http.MethodHead + " " + blobPath: 1, // rejected with 401
+			http.MethodGet + " " + blobPath:  2, // ranged size probe + blob fetch
+		})
+
+		// The ranged GET recovered the blob size, so the blob was cached.
+		metadata, err := ocicache.FetchBlobMetadataFromCache(context.Background(), bsClient, acClient, nameRef(t, ref).Context(), digest)
+		require.NoError(t, err)
+		require.Equal(t, int64(len(data)), metadata.GetContentLength())
+	})
+
+	t.Run("FetchBlob/PublicRegistryCacheHitSkipsAccessProof", func(t *testing.T) {
+		counter, imageName, digest, data := setupRegistryWithoutBlobHEAD(t)
+		_, bsClient, acClient := setupCacheEnv(t)
+		flags.Set(t, "ocifetcher.public_registries", []string{nameRef(t, imageName).Context().RegistryStr()})
+		ref := imageName + "@" + digest.String()
+
+		// Populate the cache with a first fetch.
+		server := newTestServerWithCache(t, bsClient, acClient)
+		stream := &mockFetchBlobServer{ctx: context.Background()}
+		err := server.FetchBlob(&ofpb.FetchBlobRequest{Ref: ref}, stream)
+		require.NoError(t, err)
+		require.Equal(t, data, stream.collectData())
+
+		// Reuse the cache with a fresh server so access is not proven in
+		// memory. The registry is configured as public, so the blob is served
+		// from cache without any registry requests.
+		server = newTestServerWithCache(t, bsClient, acClient)
+		counter.Reset()
+		stream = &mockFetchBlobServer{ctx: context.Background()}
+		err = server.FetchBlob(&ofpb.FetchBlobRequest{Ref: ref}, stream)
+		require.NoError(t, err)
+		require.Equal(t, data, stream.collectData())
+		assertRequests(t, counter, map[string]int{})
+	})
+
+	t.Run("FetchBlob/CacheHitStillRequiresAccessProofWithoutFlag", func(t *testing.T) {
+		_, imageName, digest, data := setupRegistryWithoutBlobHEAD(t)
+		_, bsClient, acClient := setupCacheEnv(t)
+		ref := imageName + "@" + digest.String()
+		seedBlobCache(t, bsClient, acClient, ref, data, "application/vnd.buildbuddy.cached.layer")
+
+		// Without the public_registries flag, serving the cached blob must
+		// prove access with a blob HEAD, which this registry rejects.
+		server := newTestServerWithCache(t, bsClient, acClient)
+		stream := &mockFetchBlobServer{ctx: context.Background()}
+		err := server.FetchBlob(&ofpb.FetchBlobRequest{Ref: ref}, stream)
+		require.Error(t, err)
+		require.True(t, status.IsUnauthenticatedError(err), "expected Unauthenticated, got: %v", err)
+	})
+
+	t.Run("FetchBlobMetadata/PublicRegistryUsesCache", func(t *testing.T) {
+		counter, imageName, digest, data := setupRegistryWithoutBlobHEAD(t)
+		_, bsClient, acClient := setupCacheEnv(t)
+		flags.Set(t, "ocifetcher.public_registries", []string{nameRef(t, imageName).Context().RegistryStr()})
+		ref := imageName + "@" + digest.String()
+		cachedMediaType := "application/vnd.buildbuddy.cached.layer"
+		seedBlobCache(t, bsClient, acClient, ref, data, cachedMediaType)
+
+		server := newTestServerWithCache(t, bsClient, acClient)
+		counter.Reset()
+		resp, err := server.FetchBlobMetadata(context.Background(), &ofpb.FetchBlobMetadataRequest{Ref: ref})
+		require.NoError(t, err)
+		require.Equal(t, int64(len(data)), resp.GetSize())
+		require.Equal(t, cachedMediaType, resp.GetMediaType())
+		assertRequests(t, counter, map[string]int{})
+	})
+
+	t.Run("FetchManifest/PublicRegistryDigestRefCacheHitSkipsAccessProof", func(t *testing.T) {
+		reg, counter := setupRegistry(t, nil, nil)
+		imageName, img := reg.PushNamedImage(t, "test-image", nil)
+		digest, _, _ := imageMetadata(t, img)
+		expectedManifest, err := img.RawManifest()
+		require.NoError(t, err)
+
+		_, bsClient, acClient := setupCacheEnv(t)
+		flags.Set(t, "ocifetcher.public_registries", []string{nameRef(t, imageName).Context().RegistryStr()})
+		ref := imageName + "@" + digest
+
+		server := newTestServerWithCache(t, bsClient, acClient)
+		resp, err := server.FetchManifest(context.Background(), &ofpb.FetchManifestRequest{Ref: ref})
+		require.NoError(t, err)
+		require.Equal(t, expectedManifest, resp.GetManifest())
+
+		// Reuse the cache with a fresh server so access is not proven in
+		// memory. The registry is configured as public, so the manifest is
+		// served from cache without any registry requests.
+		server = newTestServerWithCache(t, bsClient, acClient)
+		counter.Reset()
+		resp, err = server.FetchManifest(context.Background(), &ofpb.FetchManifestRequest{Ref: ref})
+		require.NoError(t, err)
+		require.Equal(t, expectedManifest, resp.GetManifest())
+		assertRequests(t, counter, map[string]int{})
+	})
+}
+
 // runConcurrentFetchBlob runs numRequests concurrent FetchBlob calls and returns results.
 func runConcurrentFetchBlob(
 	t *testing.T,

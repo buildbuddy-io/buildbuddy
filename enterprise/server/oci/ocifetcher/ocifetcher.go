@@ -10,6 +10,9 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"slices"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -50,6 +53,7 @@ var (
 	enabled           = flag.Bool("ocifetcher.enabled", false, "Whether to enable the OCI fetcher service.")
 	mirrors           = flag.Slice("executor.container_registry_mirrors", []interfaces.MirrorConfig{}, "")
 	allowedPrivateIPs = flag.Slice("executor.container_registry_allowed_private_ips", []string{}, "Allowed private IP ranges for container registries. Private IPs are disallowed by default.")
+	publicRegistries  = flag.Slice("ocifetcher.public_registries", []string{"public.ecr.aws"}, "Registries that serve only publicly accessible content. Access checks against the upstream registry are skipped when serving content from these registries out of the cache.")
 
 	blobBufPool = bytebufferpool.VariableSize(blobChunkSize)
 )
@@ -57,6 +61,7 @@ var (
 type ociFetcherServer struct {
 	allowedPrivateIPs []*net.IPNet
 	mirrors           []interfaces.MirrorConfig
+	publicRegistries  []string
 
 	bsClient bspb.ByteStreamClient
 	acClient repb.ActionCacheClient
@@ -114,6 +119,7 @@ func NewServer(bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient) 
 	return &ociFetcherServer{
 		allowedPrivateIPs: allowedPrivateIPs,
 		mirrors:           Mirrors(),
+		publicRegistries:  *publicRegistries,
 		bsClient:          bsClient,
 		acClient:          acClient,
 		pullerLRU:         pullerLRU,
@@ -188,7 +194,7 @@ func (s *ociFetcherServer) FetchBlobMetadata(ctx context.Context, req *ofpb.Fetc
 	repo := digestRef.Context()
 
 	accessKey := repoAccessKey(repo, req.GetCredentials())
-	if req.GetBypassRegistry() || s.accessProofCache.Contains(accessKey) {
+	if req.GetBypassRegistry() || s.isPublicRegistry(repo) || s.accessProofCache.Contains(accessKey) {
 		if resp, err := s.fetchBlobMetadataFromCache(ctx, digestRef, hash); err == nil {
 			return resp, nil
 		} else if !status.IsNotFoundError(err) {
@@ -394,10 +400,17 @@ func (s *ociFetcherServer) fetchBlobFromRemoteWriteToCacheAndResponse(ctx contex
 		} else {
 			mediaType = string(mt)
 		}
-		if sz, err := layer.Size(); err != nil {
-			log.CtxWarningf(ctx, "Could not get size for layer: %s", err)
-		} else {
+		if sz, err := layer.Size(); err == nil {
 			size = sz
+		} else if !s.isPublicRegistry(repo) {
+			log.CtxWarningf(ctx, "Could not get size for layer: %s", err)
+		} else if sz, rangeErr := s.blobSizeFromRangedGET(ctx, digestRef, creds); rangeErr == nil {
+			// Some public registries (e.g. public.ecr.aws) reject HEAD
+			// requests on blob endpoints, which is how layer.Size() gets
+			// the size.
+			size = sz
+		} else {
+			log.CtxWarningf(ctx, "Could not get size for layer: HEAD: %s; ranged GET: %s", err, rangeErr)
 		}
 		return layer.Compressed()
 	})
@@ -477,6 +490,72 @@ func (s *ociFetcherServer) fetchBlobMetadataFromRemote(ctx context.Context, dige
 	})
 }
 
+// blobSizeFromRangedGET determines a blob's size for registries that do not
+// support HEAD requests on blob endpoints (e.g. public.ecr.aws, which responds
+// 401 to every blob HEAD request). It requests the blob's first byte with an
+// authenticated ranged GET and reads the total size from the Content-Range
+// response header, so at most one byte of blob data is transferred.
+func (s *ociFetcherServer) blobSizeFromRangedGET(ctx context.Context, digestRef ctrname.Digest, creds *rgpb.Credentials) (int64, error) {
+	repo := digestRef.Context()
+	var auth authn.Authenticator = authn.Anonymous
+	if creds != nil && creds.GetUsername() != "" && creds.GetPassword() != "" {
+		auth = &authn.Basic{
+			Username: creds.GetUsername(),
+			Password: creds.GetPassword(),
+		}
+	}
+	var base http.RoundTripper = httpclient.New(s.allowedPrivateIPs, "oci_fetcher").Transport
+	if len(s.mirrors) > 0 {
+		base = NewMirrorTransport(base, s.mirrors)
+	}
+	tr, err := transport.NewWithContext(ctx, repo.Registry, auth, base, []string{repo.Scope(transport.PullScope)})
+	if err != nil {
+		return 0, RemoteRegistryError(err, "could not authenticate to remote registry for ranged blob GET")
+	}
+	u := url.URL{
+		Scheme: repo.Registry.Scheme(),
+		Host:   repo.RegistryStr(),
+		Path:   fmt.Sprintf("/v2/%s/blobs/%s", repo.RepositoryStr(), digestRef.DigestStr()),
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	if err != nil {
+		return 0, status.InternalErrorf("could not create ranged blob GET request: %s", err)
+	}
+	req.Header.Set("Range", "bytes=0-0")
+	resp, err := (&http.Client{Transport: tr}).Do(req)
+	if err != nil {
+		return 0, RemoteRegistryError(err, "ranged blob GET failed")
+	}
+	defer resp.Body.Close()
+	switch resp.StatusCode {
+	case http.StatusPartialContent:
+		return parseContentRangeTotalSize(resp.Header.Get("Content-Range"))
+	case http.StatusOK:
+		// The registry ignored the Range header and is responding with the
+		// entire blob; only the Content-Length header is read.
+		if resp.ContentLength < 0 {
+			return 0, status.UnavailableErrorf("no Content-Length for blob %q", digestRef)
+		}
+		return resp.ContentLength, nil
+	default:
+		return 0, RegistryErrorFromHTTPStatusCode(resp.StatusCode, fmt.Sprintf("ranged GET for blob %q: remote registry HTTP status %d", digestRef, resp.StatusCode))
+	}
+}
+
+// parseContentRangeTotalSize extracts the total blob size from a Content-Range
+// header of the form "bytes 0-0/1234".
+func parseContentRangeTotalSize(contentRange string) (int64, error) {
+	_, total, found := strings.Cut(contentRange, "/")
+	if !found || total == "" || total == "*" {
+		return 0, status.UnavailableErrorf("cannot determine blob size from Content-Range header %q", contentRange)
+	}
+	size, err := strconv.ParseInt(total, 10, 64)
+	if err != nil {
+		return 0, status.UnavailableErrorf("cannot determine blob size from Content-Range header %q: %s", contentRange, err)
+	}
+	return size, nil
+}
+
 func parseManifestRef(ref string) (ctrname.Reference, error) {
 	imageRef, err := ctrname.ParseReference(ref)
 	if err != nil {
@@ -504,10 +583,20 @@ func (s *ociFetcherServer) resolveManifestDigest(ctx context.Context, imageRef c
 	return s.resolveTagToDigest(ctx, imageRef, creds)
 }
 
+// isPublicRegistry returns whether the repository's registry is configured as
+// serving only publicly accessible content, in which case everyone may access
+// everything in it and upstream access checks prove nothing.
+func (s *ociFetcherServer) isPublicRegistry(repo ctrname.Repository) bool {
+	return slices.Contains(s.publicRegistries, repo.RegistryStr())
+}
+
 // proveManifestAccess checks that the caller's credentials allow accessing
 // the given manifest ref in the remote registry.
 func (s *ociFetcherServer) proveManifestAccess(ctx context.Context, imageRef ctrname.Reference, creds *rgpb.Credentials) error {
 	repo := imageRef.Context()
+	if s.isPublicRegistry(repo) {
+		return nil
+	}
 	if s.accessProofCache.Contains(repoAccessKey(repo, creds)) {
 		return nil
 	}
@@ -524,6 +613,9 @@ func (s *ociFetcherServer) proveManifestAccess(ctx context.Context, imageRef ctr
 // blob's repository in the remote registry (via a metadata HEAD).
 func (s *ociFetcherServer) proveBlobAccess(ctx context.Context, digestRef ctrname.Digest, creds *rgpb.Credentials) error {
 	repo := digestRef.Context()
+	if s.isPublicRegistry(repo) {
+		return nil
+	}
 	if s.accessProofCache.Contains(repoAccessKey(repo, creds)) {
 		return nil
 	}
