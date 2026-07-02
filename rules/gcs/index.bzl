@@ -31,7 +31,7 @@ def gcs(name, srcs, bucket, gsutil = "gsutil", prefix = "", sha_prefix = "", zip
     if zip:
         copy_options += " -Z"
 
-    util_options = ""
+    util_options = "-m"
     if disable_caching:
         util_options += " -h 'Cache-Control:no-store'"
 
@@ -40,12 +40,18 @@ def gcs(name, srcs, bucket, gsutil = "gsutil", prefix = "", sha_prefix = "", zip
         name = name + ".apply.script",
         out = name + ".apply.out",
         content = [
-            "set -x; unset -v PYTHONSAFEPATH; if [ -n \"${1}\" ]; then read SHA_PREFIX < \"${1}\" && export SHA_PREFIX=\"${SHA_PREFIX}/\"; else shift; fi; %s -m %s cp %s \"${@}\" \"gs://%s/%s${SHA_PREFIX}\"" % (
-                gsutil,
-                util_options,
-                copy_options,
-                bucket,
-                prefix,
+            "unset -v PYTHONSAFEPATH",
+            "if [ -n \"${1}\" ]; then",
+            "  read SHA_PREFIX < \"${1}\" && export SHA_PREFIX=\"${SHA_PREFIX}/\"",
+            "else",
+            "  shift",
+            "fi",
+            "{gsutil} {util_options} cp {copy_options} \"${{@}}\" \"gs://{bucket}/{prefix}${{SHA_PREFIX}}\"".format(
+                gsutil=gsutil,
+                util_options=util_options,
+                copy_options=copy_options,
+                bucket=bucket,
+                prefix=prefix,
             ),
         ],
         is_executable = True,
@@ -83,10 +89,16 @@ def gcs(name, srcs, bucket, gsutil = "gsutil", prefix = "", sha_prefix = "", zip
         name = name + ".delete.script",
         out = name + ".delete.out",
         content = [
-            "unset -v PYTHONSAFEPATH; %s -m rm -r gs://%s/%s" % (
-                gsutil,
-                bucket,
-                prefix,
+            "unset -v PYTHONSAFEPATH",
+            "if [ -n \"${1}\" ]; then",
+            "  read SHA_PREFIX < \"${1}\" && export SHA_PREFIX=\"${SHA_PREFIX}/\"",
+            "else",
+            "  shift",
+            "fi",
+            "{gsutil} -m rm -r gs://{bucket}/{prefix}${{SHA_PREFIX}}".format(
+                gsutil=gsutil,
+                bucket=bucket,
+                prefix=prefix,
             ),
         ],
         is_executable = True,
@@ -95,8 +107,9 @@ def gcs(name, srcs, bucket, gsutil = "gsutil", prefix = "", sha_prefix = "", zip
 
     sh_binary(
         name = name + ".delete",
+        args = [shell.quote("$(locations %s)" % sha_prefix) if sha_prefix != "" else ""],
         srcs = [ name + ".delete.script" ],
-        data = srcs,
+        data = [sha_prefix] if sha_prefix != "" else [],
         use_bash_launcher = True,
         **kwargs,
     )
