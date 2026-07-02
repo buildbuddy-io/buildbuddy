@@ -803,19 +803,27 @@ func filterToHostnamePattern(ctx context.Context, nodes []*executionNode, patter
 }
 
 func filterToRoutingConfig(ctx context.Context, nodes []*executionNode, routingConfig *scpb.RoutingConfig) []*executionNode {
-	if routingConfig.GetHostnamePattern() == "" || len(nodes) == 0 {
+	if (routingConfig.GetHostnamePattern() == "" && len(routingConfig.GetLabels()) == 0) || len(nodes) == 0 {
 		return nodes
 	}
-	p, err := regexp.Compile(routingConfig.GetHostnamePattern())
-	if err != nil {
-		alert.CtxUnexpectedEvent(ctx, "invalid_hostname_pattern", "invalid hostname pattern %q in experiment config", routingConfig.GetHostnamePattern())
-		return nodes
+	var p *regexp.Regexp
+	if pattern := routingConfig.GetHostnamePattern(); pattern != "" {
+		var err error
+		p, err = regexp.Compile(pattern)
+		if err != nil {
+			alert.CtxUnexpectedEvent(ctx, "invalid_hostname_pattern", "invalid hostname pattern %q in experiment config", pattern)
+			p = nil
+		}
 	}
 	var out []*executionNode
 	for _, n := range nodes {
-		if p.MatchString(n.GetHost()) {
-			out = append(out, n)
+		if p != nil && !p.MatchString(n.GetHost()) {
+			continue
 		}
+		if !executorHasAllLabels(n.GetLabels(), routingConfig.GetLabels()) {
+			continue
+		}
+		out = append(out, n)
 	}
 	if len(out) == 0 {
 		if routingConfig.GetBestEffort() {
@@ -1876,6 +1884,12 @@ func (s *SchedulerServer) sampleUnclaimedTasks(ctx context.Context, count int, n
 				// match the hostname pattern.
 				continue
 			}
+		}
+		if !executorHasAllLabels(node.GetLabels(), task.metadata.GetRoutingConfig().GetLabels()) {
+			// Regardless of whether the routing config is best-effort or not,
+			// don't allow tasks to be stolen by executors that don't match the
+			// executor labels.
+			continue
 		}
 
 		// Don't try to re-assign tasks intended to run on a specific executor.
