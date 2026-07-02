@@ -756,6 +756,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
       const isLeaf = i === segments.length - 1;
       if (isLeaf) {
         // View links are only useful for files so ignore anything else
+        // At this point nodes contains only the children of the earlier path segments
         for (const node of nodes) {
           if (node.type === "file" && node.obj.name === segment) {
             return node.obj.digest ?? null;
