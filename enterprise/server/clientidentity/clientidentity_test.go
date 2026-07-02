@@ -230,6 +230,19 @@ func TestCachedIdentityHeader(t *testing.T) {
 	require.Equal(t, "internal", got.Origin)
 }
 
+func TestNew_RejectsExpirationBelowCacheWindow(t *testing.T) {
+	key, err := random.RandomString(16)
+	require.NoError(t, err)
+	flags.Set(t, "app.client_identity.key", string(key))
+
+	// A JWT lifetime shorter than the header cache window would let the cache
+	// serve an already-expired token, so New must reject it.
+	flags.Set(t, "app.client_identity.expiration", 30*time.Second)
+	_, err = clientidentity.New(clockwork.NewFakeClock())
+	require.Error(t, err)
+	require.True(t, status.IsInvalidArgumentError(err), "expected InvalidArgument, got %v", err)
+}
+
 func BenchmarkAddIdentityToContext(b *testing.B) {
 	sis := newService(b, clockwork.NewRealClock())
 

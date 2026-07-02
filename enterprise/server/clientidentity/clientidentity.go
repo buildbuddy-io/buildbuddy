@@ -45,12 +45,19 @@ type headerCache struct {
 	entries map[interfaces.ClientIdentity]cachedHeader
 }
 
-func newHeaderCache(clock clockwork.Clock, sign func(*interfaces.ClientIdentity) (string, error)) *headerCache {
+func newHeaderCache(clock clockwork.Clock, expiration time.Duration, sign func(*interfaces.ClientIdentity) (string, error)) (*headerCache, error) {
+	// A cached header is reused for up to cachedHeaderExpiration, so if the
+	// signed JWT's own lifetime doesn't exceed that window we could hand out a
+	// token that has already expired. Require expiration > cachedHeaderExpiration
+	// rather than silently serving stale identities.
+	if expiration <= cachedHeaderExpiration {
+		return nil, status.InvalidArgumentErrorf("app.client_identity.expiration (%s) must be greater than the header cache expiration (%s)", expiration, cachedHeaderExpiration)
+	}
 	return &headerCache{
 		clock:   clock,
 		sign:    sign,
 		entries: make(map[interfaces.ClientIdentity]cachedHeader),
-	}
+	}, nil
 }
 
 // Get returns the cached header for si, signing and caching a fresh one when the
@@ -94,9 +101,13 @@ func New(clock clockwork.Clock) (*Service, error) {
 		signingKey: []byte(*signingKey),
 		clock:      clock,
 	}
-	s.headerCache = newHeaderCache(clock, func(si *interfaces.ClientIdentity) (string, error) {
+	headerCache, err := newHeaderCache(clock, *expiration, func(si *interfaces.ClientIdentity) (string, error) {
 		return s.NewIdentityHeader(si, *expiration)
 	})
+	if err != nil {
+		return nil, err
+	}
+	s.headerCache = headerCache
 	return s, nil
 }
 
