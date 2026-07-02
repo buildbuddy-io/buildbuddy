@@ -34,6 +34,10 @@ bazel_dep(name = "rules_go", version = "0.61.1", repo_name = "io_bazel_rules_go"
 archive_override(
     module_name = "rules_go",
     integrity = "sha256-bmrXqyDJ3AEdVIcyUAeh/k7k6NQxlWmvHsM+aK8Kh/g=",
+    patch_strip = 1,
+    patches = [
+        "//buildpatches:rules_go_pathmap.patch",
+    ],
     strip_prefix = "rules_go-3615c2c28d73fb4f71b37ec729069a7e06399474",
     urls = [
         "https://github.com/bazelbuild/rules_go/archive/3615c2c28d73fb4f71b37ec729069a7e06399474.tar.gz",
