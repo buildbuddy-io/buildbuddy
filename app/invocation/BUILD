@@ -139,7 +139,6 @@ ts_library(
         "//app/components/button",
         "//app/components/dialog",
         "//app/components/digest",
-        "//app/components/icons:file_icon",
         "//app/components/link",
         "//app/components/menu",
         "//app/components/modal",

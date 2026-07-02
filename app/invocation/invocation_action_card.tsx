@@ -30,7 +30,6 @@ import Dialog, {
   DialogTitle,
 } from "../components/dialog/dialog";
 import DigestComponent from "../components/digest/digest";
-import { FileIcon } from "../components/icons/file_icon";
 import { TextLink } from "../components/link/link";
 import Menu, { MenuItem } from "../components/menu/menu";
 import Modal from "../components/modal/modal";
@@ -84,8 +83,8 @@ interface State {
   executeResponse?: build.bazel.remote.execution.v2.ExecuteResponse;
   actionResult?: build.bazel.remote.execution.v2.ActionResult;
   measuredMemoryPeakBytes?: number;
-  inputFilePathToDigest: Map<string, IDigest | null>;
-  argumentToInputFile: Map<string, InputFileReference | null>;
+  inputFilePathToDigest: Map<string, IDigest>;
+  argumentToInputFile: Map<string, InputFileReference>;
   // The first entry in the tuple is the size, the second is the number of files.
   treeShaToTotalSizeMap: Map<string, [Number, Number]>;
   command?: build.bazel.remote.execution.v2.Command;
@@ -118,8 +117,8 @@ export default class InvocationActionCardComponent extends React.Component<Props
     treeShaToExpanded: new Map<string, boolean>(),
     treeShaToChildrenMap: new Map<string, TreeNode[]>(),
     treeShaToTotalSizeMap: new Map<string, [Number, Number]>(),
-    inputFilePathToDigest: new Map<string, IDigest | null>(),
-    argumentToInputFile: new Map<string, InputFileReference | null>(),
+    inputFilePathToDigest: new Map<string, IDigest>(),
+    argumentToInputFile: new Map<string, InputFileReference>(),
     serverLogs: [],
     inputNodes: [],
     loadingAction: true,
@@ -207,8 +206,8 @@ export default class InvocationActionCardComponent extends React.Component<Props
       command: undefined,
       inputRoot: undefined,
       inputNodes: [],
-      inputFilePathToDigest: new Map<string, IDigest | null>(),
-      argumentToInputFile: new Map<string, InputFileReference | null>(),
+      inputFilePathToDigest: new Map<string, IDigest>(),
+      argumentToInputFile: new Map<string, InputFileReference>(),
     });
     const digestParam = this.props.search.get("actionDigest");
     if (!digestParam) {
@@ -700,7 +699,10 @@ export default class InvocationActionCardComponent extends React.Component<Props
     const argumentToCandidates = new Map<string, string[]>();
     for (const argument of this.state.command.arguments) {
       if (this.state.argumentToInputFile.has(argument)) continue;
-      argumentToCandidates.set(argument, getArgumentInputFilePathCandidates(argument));
+      const candidates = getArgumentInputFilePathCandidates(argument);
+      if (candidates.length) {
+        argumentToCandidates.set(argument, candidates);
+      }
     }
     if (!argumentToCandidates.size) return;
 
@@ -712,12 +714,19 @@ export default class InvocationActionCardComponent extends React.Component<Props
       this.setState((prevState) => {
         const inputFilePathToDigest = new Map(prevState.inputFilePathToDigest);
         for (const [path, digest] of results) {
-          inputFilePathToDigest.set(path, digest);
+          if (digest) {
+            inputFilePathToDigest.set(path, digest);
+          }
         }
         const argumentToInputFile = new Map(prevState.argumentToInputFile);
         for (const [argument, candidates] of argumentToCandidates) {
-          const path = candidates.find((candidate) => inputFilePathToDigest.get(candidate));
-          argumentToInputFile.set(argument, path ? { path, digest: inputFilePathToDigest.get(path) as IDigest } : null);
+          for (const path of candidates) {
+            const digest = inputFilePathToDigest.get(path);
+            if (digest) {
+              argumentToInputFile.set(argument, { path, digest });
+              break;
+            }
+          }
         }
         return { inputFilePathToDigest, argumentToInputFile };
       });
