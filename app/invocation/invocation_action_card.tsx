@@ -132,6 +132,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
   };
 
   private executionDownloadsContainerRef = React.createRef<HTMLDivElement>();
+  private treeShaToChildrenPromiseMap = new Map<string, Promise<TreeNode[]>>();
 
   componentDidMount() {
     this.fetchAction();
@@ -998,11 +999,13 @@ export default class InvocationActionCardComponent extends React.Component<Props
 
   private fetchDirectoryChildren(digest: IDigest, type: "dir" | "tree"): Promise<TreeNode[]> {
     const digestString = digest.hash ?? "";
-    const cachedChildren = this.state.treeShaToChildrenMap.get(digestString);
+    const cachedChildren = digestString ? this.state.treeShaToChildrenMap.get(digestString) : undefined;
     if (cachedChildren) return Promise.resolve(cachedChildren);
+    const cachedPromise = digestString ? this.treeShaToChildrenPromiseMap.get(digestString) : undefined;
+    if (cachedPromise) return cachedPromise;
 
     const dirUrl = this.props.model.getBytestreamURL(digest);
-    return rpcService
+    const fetchPromise = rpcService
       .fetchBytestreamFile(dirUrl, this.props.model.getInvocationId(), "arraybuffer")
       .then((buffer: ArrayBuffer) => new Uint8Array(buffer))
       .then((array: Uint8Array) =>
@@ -1019,6 +1022,14 @@ export default class InvocationActionCardComponent extends React.Component<Props
         }
         return nodes;
       });
+    if (digestString) {
+      this.treeShaToChildrenPromiseMap.set(digestString, fetchPromise);
+      fetchPromise.then(
+        () => this.treeShaToChildrenPromiseMap.delete(digestString),
+        () => this.treeShaToChildrenPromiseMap.delete(digestString)
+      );
+    }
+    return fetchPromise;
   }
 
   private treeNodesForDirectory(dir: build.bazel.remote.execution.v2.Directory): TreeNode[] {
