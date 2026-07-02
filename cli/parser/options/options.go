@@ -105,6 +105,8 @@ type Definition struct {
 	// --subcommands=true //false:false".
 	requiresValue bool
 
+	expansion []Option
+
 	// The list of commands that support this option.
 	supportedCommands set.Set[string]
 
@@ -136,6 +138,20 @@ func (d *Definition) HasNegative() bool {
 
 func (d *Definition) RequiresValue() bool {
 	return d.requiresValue
+}
+
+func (d *Definition) HasExpansion() bool {
+	return d.expansion != nil
+}
+
+func (d *Definition) Expansion() iter.Seq[Option] {
+	return func(yield func(Option) bool) {
+		for o := range d.Expansion() {
+			if !yield(o.Clone()) {
+				return
+			}
+		}
+	}
 }
 
 func (d *Definition) HasSupportedCommands() bool {
@@ -326,6 +342,7 @@ func DefinitionFrom(info *bfpb.FlagInfo) *Definition {
 type Option interface {
 	arguments.Argument
 	Defined
+	Clone() Option
 	HasValue() bool
 	ExpectsValue() bool
 	ClearValue()
@@ -391,6 +408,13 @@ func NewOptionBase(opt string, d *Definition) (*optionBase, error) {
 		Definition: d,
 		Form:       form,
 	}, nil
+}
+
+func (o *optionBase) Clone() *optionBase {
+	return &optionBase{
+		Definition: o.Definition,
+		Form:       o.Form,
+	}
 }
 
 // Coerce this option base to use the standard name for this option.
@@ -522,6 +546,19 @@ type RequiredValueOption struct {
 	Joined bool
 }
 
+func (o *RequiredValueOption) Clone() Option {
+	var value *string
+	if o.Value != nil {
+		v := *o.Value
+		value = &v
+	}
+	return &RequiredValueOption{
+		optionBase: o.optionBase.Clone(),
+		Value:      value,
+		Joined:     o.Joined,
+	}
+}
+
 func (o *RequiredValueOption) GetDefinition() *Definition {
 	return o.Definition
 }
@@ -565,10 +602,10 @@ func (o *RequiredValueOption) Format() []string {
 }
 
 func (o *RequiredValueOption) Normalized() Option {
-	normalizedOptionBase := *o.optionBase
+	normalizedOptionBase := o.optionBase.Clone()
 	normalizedOptionBase.UseName()
 	return &RequiredValueOption{
-		optionBase: &normalizedOptionBase,
+		optionBase: normalizedOptionBase,
 		Value:      o.Value,
 		Joined:     true,
 	}
@@ -592,6 +629,18 @@ type BoolOrEnumOption struct {
 
 	// The string Value of this option, if any
 	Value *string
+}
+
+func (o *BoolOrEnumOption) Clone() Option {
+	var value *string
+	if o.Value != nil {
+		v := *o.Value
+		value = &v
+	}
+	return &BoolOrEnumOption{
+		optionBase: o.optionBase.Clone(),
+		Value:      value,
+	}
 }
 
 func (o *BoolOrEnumOption) GetDefinition() *Definition {
@@ -661,7 +710,7 @@ func (o *BoolOrEnumOption) AsBool() (bool, error) {
 }
 
 func (o *BoolOrEnumOption) Normalized() Option {
-	normalizedOptionBase := *o.optionBase
+	normalizedOptionBase := o.optionBase.Clone()
 	normalizedOptionBase.UseName()
 	if v, err := o.AsBool(); err == nil {
 		if !v {
@@ -670,12 +719,12 @@ func (o *BoolOrEnumOption) Normalized() Option {
 			normalizedOptionBase.SetNegative()
 		}
 		return &BoolOrEnumOption{
-			optionBase: &normalizedOptionBase,
+			optionBase: normalizedOptionBase,
 			Value:      nil,
 		}
 	}
 	return &BoolOrEnumOption{
-		optionBase: &normalizedOptionBase,
+		optionBase: normalizedOptionBase,
 		Value:      o.Value,
 	}
 }
@@ -687,14 +736,19 @@ func (o *BoolOrEnumOption) BoolLike() BoolLike {
 // starlarkOption is used to represent an option that has been identified as
 // having a starlark option prefix.
 type starlarkOption struct {
-	BoolOrEnumOption
+	*BoolOrEnumOption
+}
+
+func (o *starlarkOption) Clone() Option {
+	return &starlarkOption{
+		BoolOrEnumOption: o.BoolOrEnumOption.Clone().(*BoolOrEnumOption),
+	}
 }
 
 func (o *starlarkOption) Normalized() Option {
 	// don't normalize starlark flags
-	normalizedOptionBase := *o.optionBase
 	return &BoolOrEnumOption{
-		optionBase: &normalizedOptionBase,
+		optionBase: o.optionBase.Clone(),
 		Value:      o.Value,
 	}
 }
@@ -721,6 +775,12 @@ func (_ *starlarkOption) Supports(command string) bool {
 // false).
 type ExpansionOption struct {
 	*optionBase
+}
+
+func (o *ExpansionOption) Clone() Option {
+	return &ExpansionOption{
+		optionBase: o.optionBase.Clone(),
+	}
 }
 
 func (o *ExpansionOption) GetDefinition() *Definition {
@@ -757,10 +817,10 @@ func (o *ExpansionOption) Format() []string {
 }
 
 func (o *ExpansionOption) Normalized() Option {
-	normalizedOptionBase := *o.optionBase
+	normalizedOptionBase := o.optionBase.Clone()
 	normalizedOptionBase.UseName()
 	return &ExpansionOption{
-		optionBase: &normalizedOptionBase,
+		optionBase: normalizedOptionBase,
 	}
 }
 
@@ -773,6 +833,12 @@ func (o *ExpansionOption) BoolLike() BoolLike {
 // be misspellings of known options by users.
 type UnknownOption struct {
 	Option
+}
+
+func (o *UnknownOption) Clone() Option {
+	return &UnknownOption{
+		Option: o.Option.Clone(),
+	}
 }
 
 func (o *UnknownOption) Normalized() Option {
@@ -827,7 +893,7 @@ func newOptionImpl(optName string, v *string, d *Definition) (Option, error) {
 
 	if d.PluginID() == StarlarkBuiltinPluginID {
 		return &starlarkOption{
-			BoolOrEnumOption: BoolOrEnumOption{
+			BoolOrEnumOption: &BoolOrEnumOption{
 				optionBase: base,
 				Value:      v,
 			},

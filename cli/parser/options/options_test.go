@@ -2019,3 +2019,43 @@ func TestExpansionOptionBase(t *testing.T) {
 		assert.Error(t, err)
 	})
 }
+
+func TestCloneRequiredValueOption(t *testing.T) {
+	name := "name"
+	oldName := "experimental_name"
+	shortName := "n"
+	value := "value"
+	otherValue := "other"
+	definition := RequiredValueDefinition(name, oldName, shortName)
+
+	opt, err := options.NewOption(name, nil, definition)
+	require.NoError(t, err)
+	requiredOpt, ok := opt.(*options.RequiredValueOption)
+	require.True(t, ok)
+
+	opt.SetValue(value)
+
+	clone := opt.Clone()
+	requiredClone, ok := opt.(*options.RequiredValueOption)
+	require.True(t, ok)
+
+	assert.Equal(t, value, clone.GetValue())
+	assert.Equal(t, definition, clone.GetDefinition())
+	assert.True(t, clone.UsesName())
+	assert.True(t, requiredClone.Joined)
+
+	clone.SetValue(otherValue)
+	assert.Equal(t, value, opt.GetValue())
+	assert.Equal(t, otherValue, clone.GetValue())
+
+	clone.SetDefinition(nil)
+	assert.Equal(t, definition, opt.GetDefinition())
+	assert.Nil(t, clone.GetDefinition())
+
+	clone.UseOldName()
+	assert.True(t, opt.UsesName())
+	assert.True(t, clone.UsesOldName())
+
+	requiredClone.Joined = false
+	assert.True(t, requiredOpt.Joined)
+}
