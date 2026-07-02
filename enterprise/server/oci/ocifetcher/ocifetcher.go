@@ -168,7 +168,7 @@ func (s *ociFetcherServer) FetchBlob(req *ofpb.FetchBlobRequest, stream ofpb.OCI
 		}
 		return status.NotFoundErrorf("bypassing registry, but blob %q not found in cache", digestRef)
 	}
-	return s.dedupedFetchBlob(ctx, stream, digestRef, hash, req.GetCredentials())
+	return s.dedupedFetchBlob(ctx, stream, digestRef, hash, req.GetManifestRef(), req.GetCredentials())
 }
 
 // FetchBlobMetadata returns OCI blob metadata (size, media type).
@@ -300,7 +300,7 @@ func (s *ociFetcherServer) streamBlobFromCache(ctx context.Context, stream ofpb.
 	return ocicache.FetchBlobFromCache(ctx, &grpcStreamWriter{stream: stream}, s.bsClient, hash, metadata.GetContentLength())
 }
 
-func (s *ociFetcherServer) dedupedFetchBlob(ctx context.Context, stream ofpb.OCIFetcher_FetchBlobServer, digestRef ctrname.Digest, hash ctr.Hash, creds *rgpb.Credentials) error {
+func (s *ociFetcherServer) dedupedFetchBlob(ctx context.Context, stream ofpb.OCIFetcher_FetchBlobServer, digestRef ctrname.Digest, hash ctr.Hash, manifestRef string, creds *rgpb.Credentials) error {
 	start := time.Now()
 	repo := digestRef.Context()
 	key := ocicache.NewBlobFetchKey(repo, hash, creds)
@@ -312,7 +312,7 @@ func (s *ociFetcherServer) dedupedFetchBlob(ctx context.Context, stream ofpb.OCI
 		// to prove the caller may access the repo before serving it from cache.
 		metadata, err := ocicache.FetchBlobMetadataFromCache(ctx, s.bsClient, s.acClient, repo, hash)
 		if err == nil {
-			if err := s.proveBlobAccess(ctx, digestRef, creds); err != nil {
+			if err := s.proveBlobAccessWithManifestHint(ctx, digestRef, hash, manifestRef, creds); err != nil {
 				return 0, err
 			}
 			contentLength := metadata.GetContentLength()
@@ -533,6 +533,49 @@ func (s *ociFetcherServer) proveBlobAccess(ctx context.Context, digestRef ctrnam
 	}
 	s.accessProofCache.Add(repoAccessKey(repo, creds), struct{}{})
 	return nil
+}
+
+// proveBlobAccessWithManifestHint checks that the caller's credentials allow
+// accessing the blob's repository in the remote registry. When the caller
+// provided a manifest ref hint, access is proven via a manifest metadata HEAD
+// instead of a blob metadata HEAD, which works on registries that reject HEAD
+// requests on blob endpoints (e.g. public.ecr.aws). If the hint is unusable
+// (e.g. the manifest is not cached, or does not reference the blob), access
+// is proven via the blob directly.
+func (s *ociFetcherServer) proveBlobAccessWithManifestHint(ctx context.Context, digestRef ctrname.Digest, hash ctr.Hash, manifestRef string, creds *rgpb.Credentials) error {
+	repo := digestRef.Context()
+	if s.accessProofCache.Contains(repoAccessKey(repo, creds)) {
+		return nil
+	}
+	if manifestRef != "" {
+		_, err := s.proveBlobAccessViaManifest(ctx, digestRef, hash, manifestRef, creds)
+		if err == nil {
+			return nil
+		}
+		// The registry denied the caller access to a manifest in the blob's
+		// repository; a blob metadata request would be denied the same way.
+		if status.IsUnauthenticatedError(err) || status.IsPermissionDeniedError(err) {
+			return err
+		}
+		log.CtxDebugf(ctx, "Could not prove access to blob %q via manifest ref %q, falling back to blob metadata: %s", digestRef, manifestRef, err)
+	}
+	return s.proveBlobAccess(ctx, digestRef, creds)
+}
+
+// proveBlobAccessViaManifest checks that the caller's credentials allow
+// accessing the manifest identified by manifestRef, after verifying that the
+// manifest actually references the blob. Since registry pull authorization is
+// repository-scoped, access to the manifest proves access to the blob.
+// On success it returns the manifest's descriptor for the blob.
+func (s *ociFetcherServer) proveBlobAccessViaManifest(ctx context.Context, digestRef ctrname.Digest, hash ctr.Hash, manifestRef string, creds *rgpb.Credentials) (*ctr.Descriptor, error) {
+	mRef, desc, err := s.verifiedBlobDescriptorFromCachedManifest(ctx, digestRef, hash, manifestRef)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.proveManifestAccess(ctx, mRef, creds); err != nil {
+		return nil, err
+	}
+	return desc, nil
 }
 
 // verifiedBlobDescriptorFromCachedManifest returns the blob's descriptor from

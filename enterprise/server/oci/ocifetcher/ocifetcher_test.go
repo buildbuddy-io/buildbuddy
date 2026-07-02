@@ -1629,6 +1629,177 @@ func TestServerCacheAccessProof(t *testing.T) {
 	})
 }
 
+// blobHeadRejector mimics public.ecr.aws, which responds 401 to every HEAD
+// request on blob endpoints, even with credentials that authorize GETs.
+type blobHeadRejector struct {
+	enabled atomic.Bool
+}
+
+func (b *blobHeadRejector) intercept(w http.ResponseWriter, r *http.Request) bool {
+	if b.enabled.Load() && r.Method == http.MethodHead && strings.Contains(r.URL.Path, "/blobs/") {
+		w.WriteHeader(http.StatusUnauthorized)
+		return false
+	}
+	return true
+}
+
+// setupRegistryWithoutBlobHEAD runs a registry that mimics public.ecr.aws by
+// rejecting HEAD requests on blob endpoints, pushes an image to it, and
+// returns the image name and manifest digest along with the digest and data
+// of the image's first layer.
+func setupRegistryWithoutBlobHEAD(t *testing.T) (counter *testhttp.RequestCounter, imageName string, manifestDigest string, blobDigest ctr.Hash, blobData []byte) {
+	rejector := &blobHeadRejector{}
+	reg, counter := setupRegistry(t, nil, rejector.intercept)
+	imageName, img := reg.PushNamedImage(t, "test-image", nil)
+	manifestDigest, _, _ = imageMetadata(t, img)
+	layers, err := img.Layers()
+	require.NoError(t, err)
+	require.NotEmpty(t, layers)
+	layer := layers[0]
+	blobDigest, err = layer.Digest()
+	require.NoError(t, err)
+	blobData = layerData(t, layer)
+	// Pushing the image makes blob HEAD requests, so only start rejecting
+	// them once the image is in place.
+	rejector.enabled.Store(true)
+	return counter, imageName, manifestDigest, blobDigest, blobData
+}
+
+func mustParseHash(t *testing.T, digest string) ctr.Hash {
+	hash, err := ctr.NewHash(digest)
+	require.NoError(t, err)
+	return hash
+}
+
+func TestFetchBlobManifestRefHint(t *testing.T) {
+	t.Run("FetchBlob/CacheHitProvenViaManifestHEAD", func(t *testing.T) {
+		counter, imageName, manifestDigest, blobDigest, blobData := setupRegistryWithoutBlobHEAD(t)
+		_, bsClient, acClient := setupCacheEnv(t)
+		blobRef := imageName + "@" + blobDigest.String()
+		manifestRef := imageName + "@" + manifestDigest
+
+		// Fetching the manifest writes it to the cache. The blob and its
+		// metadata are seeded directly: populating them with a read-through
+		// FetchBlob against this registry requires the manifest descriptor
+		// fallback for layer.Size(), which is a separate upcoming change.
+		server := newTestServerWithCache(t, bsClient, acClient)
+		_, err := server.FetchManifest(context.Background(), &ofpb.FetchManifestRequest{Ref: manifestRef})
+		require.NoError(t, err)
+		seedBlobCache(t, bsClient, acClient, blobRef, blobData, "application/vnd.buildbuddy.cached.layer")
+
+		// Reuse the cache with a fresh server so access is not proven in
+		// memory. A blob HEAD access proof is impossible on this registry,
+		// but the manifest ref hint proves access with a manifest HEAD.
+		server = newTestServerWithCache(t, bsClient, acClient)
+		counter.Reset()
+		stream := &mockFetchBlobServer{ctx: context.Background()}
+		err = server.FetchBlob(&ofpb.FetchBlobRequest{Ref: blobRef, ManifestRef: manifestRef}, stream)
+		require.NoError(t, err)
+		require.Equal(t, blobData, stream.collectData())
+		manifestPath := "/v2/test-image/manifests/" + manifestDigest
+		assertRequests(t, counter, map[string]int{
+			http.MethodGet + " /v2/":             1,
+			http.MethodHead + " " + manifestPath: 1,
+		})
+
+		// The manifest HEAD proof is repository-scoped, so further blob
+		// requests, even without the hint, are served from cache directly.
+		counter.Reset()
+		stream = &mockFetchBlobServer{ctx: context.Background()}
+		err = server.FetchBlob(&ofpb.FetchBlobRequest{Ref: blobRef}, stream)
+		require.NoError(t, err)
+		require.Equal(t, blobData, stream.collectData())
+		assertRequests(t, counter, map[string]int{})
+	})
+
+	t.Run("FetchBlob/HintFromDifferentRepositoryDenied", func(t *testing.T) {
+		counter, imageName, manifestDigest, blobDigest, blobData := setupRegistryWithoutBlobHEAD(t)
+		_, bsClient, acClient := setupCacheEnv(t)
+		blobRef := imageName + "@" + blobDigest.String()
+		seedBlobCache(t, bsClient, acClient, blobRef, blobData, "application/vnd.buildbuddy.cached.layer")
+
+		// A manifest ref in a different repository must be rejected without
+		// even consulting the registry: proving access to another repository
+		// proves nothing about the blob's repository. The fallback blob HEAD
+		// is rejected by this registry, so the fetch fails.
+		otherRepoManifestRef := strings.Replace(imageName, "test-image", "other-image", 1) + "@" + manifestDigest
+		server := newTestServerWithCache(t, bsClient, acClient)
+		counter.Reset()
+		stream := &mockFetchBlobServer{ctx: context.Background()}
+		err := server.FetchBlob(&ofpb.FetchBlobRequest{Ref: blobRef, ManifestRef: otherRepoManifestRef}, stream)
+		require.Error(t, err)
+		require.True(t, status.IsUnauthenticatedError(err), "expected Unauthenticated, got: %v", err)
+		for path := range counter.Snapshot() {
+			require.NotContains(t, path, "/manifests/", "a cross-repository hint must not trigger manifest requests")
+		}
+	})
+
+	t.Run("FetchBlob/HintManifestNotReferencingBlobDenied", func(t *testing.T) {
+		counter, imageName, manifestDigest, _, _ := setupRegistryWithoutBlobHEAD(t)
+		_, bsClient, acClient := setupCacheEnv(t)
+
+		// Request the manifest's own digest as a blob: the cached manifest is
+		// genuine, but does not reference itself, so the hint must be
+		// rejected, and the fallback blob HEAD fails on this registry.
+		blobRef := imageName + "@" + manifestDigest
+		manifestRef := imageName + "@" + manifestDigest
+		server := newTestServerWithCache(t, bsClient, acClient)
+		_, err := server.FetchManifest(context.Background(), &ofpb.FetchManifestRequest{Ref: manifestRef})
+		require.NoError(t, err)
+		cachedManifest, err := ocicache.FetchManifestFromAC(context.Background(), acClient, nameRef(t, imageName).Context(), mustParseHash(t, manifestDigest), nameRef(t, manifestRef))
+		require.NoError(t, err)
+		seedBlobCache(t, bsClient, acClient, blobRef, cachedManifest.GetRaw(), "application/vnd.buildbuddy.cached.layer")
+
+		server = newTestServerWithCache(t, bsClient, acClient)
+		counter.Reset()
+		stream := &mockFetchBlobServer{ctx: context.Background()}
+		err = server.FetchBlob(&ofpb.FetchBlobRequest{Ref: blobRef, ManifestRef: manifestRef}, stream)
+		require.Error(t, err)
+		require.True(t, status.IsUnauthenticatedError(err), "expected Unauthenticated, got: %v", err)
+		for path := range counter.Snapshot() {
+			require.NotContains(t, path, "/manifests/", "a non-referencing hint must not trigger manifest requests")
+		}
+	})
+
+	t.Run("FetchBlob/HintWithWrongCredentialsDenied", func(t *testing.T) {
+		registryCreds := &testregistry.BasicAuthCreds{Username: "testuser", Password: "testpass"}
+		validCreds := &rgpb.Credentials{Username: "testuser", Password: "testpass"}
+		wrongCreds := &rgpb.Credentials{Username: "testuser", Password: "wrong"}
+
+		reg, counter := setupRegistry(t, registryCreds, nil)
+		imageName, img := reg.PushNamedImage(t, "test-image", registryCreds)
+		manifestDigest, _, _ := imageMetadata(t, img)
+		layers, err := img.Layers()
+		require.NoError(t, err)
+		require.NotEmpty(t, layers)
+		blobDigest, err := layers[0].Digest()
+		require.NoError(t, err)
+		blobRef := imageName + "@" + blobDigest.String()
+		manifestRef := imageName + "@" + manifestDigest
+
+		// Populate the manifest and blob caches with valid credentials.
+		_, bsClient, acClient := setupCacheEnv(t)
+		server := newTestServerWithCache(t, bsClient, acClient)
+		_, err = server.FetchManifest(context.Background(), &ofpb.FetchManifestRequest{Ref: manifestRef, Credentials: validCreds})
+		require.NoError(t, err)
+		stream := &mockFetchBlobServer{ctx: context.Background()}
+		err = server.FetchBlob(&ofpb.FetchBlobRequest{Ref: blobRef, Credentials: validCreds}, stream)
+		require.NoError(t, err)
+
+		// A genuine hint with wrong credentials is denied by the manifest
+		// HEAD, without wasting a doomed fallback blob request.
+		server = newTestServerWithCache(t, bsClient, acClient)
+		counter.Reset()
+		stream = &mockFetchBlobServer{ctx: context.Background()}
+		err = server.FetchBlob(&ofpb.FetchBlobRequest{Ref: blobRef, ManifestRef: manifestRef, Credentials: wrongCreds}, stream)
+		require.Error(t, err)
+		require.True(t, status.IsUnauthenticatedError(err), "expected Unauthenticated, got: %v", err)
+		for path := range counter.Snapshot() {
+			require.NotContains(t, path, "/blobs/", "denied manifest access must not fall back to blob requests")
+		}
+	})
+}
+
 // runConcurrentFetchBlob runs numRequests concurrent FetchBlob calls and returns results.
 func runConcurrentFetchBlob(
 	t *testing.T,
