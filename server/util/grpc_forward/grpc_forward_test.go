@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
@@ -52,7 +53,7 @@ func TestForwarding_PropagatesClientHeadersToBackend(t *testing.T) {
 	backendTarget := fmt.Sprintf("grpc://localhost:%d", backendLis.Addr().(*net.TCPAddr).Port)
 
 	flags.Set(t, "app.proxy_targets", []proxyPair{{Prefix: "", Target: backendTarget}})
-	fwdOpt := GetForwardingServerOption()
+	fwdOpt := GetForwardingServerOption(real_environment.NewRealEnv(nil))
 	require.NotNil(t, fwdOpt, "forwarding must be enabled when app.proxy_targets is set")
 
 	proxyLis, err := net.Listen("tcp", "localhost:0")

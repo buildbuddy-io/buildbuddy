@@ -25,6 +25,7 @@ go_test(
     embed = [":grpc_forward"],
     deps = [
         "//server/interfaces",
+        "//server/real_environment",
         "//server/util/authutil",
         "//server/util/clientip",
         "//server/util/grpc_client",
