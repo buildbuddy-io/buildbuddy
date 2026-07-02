@@ -1024,10 +1024,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
       });
     if (digestString) {
       this.treeShaToChildrenPromiseMap.set(digestString, fetchPromise);
-      fetchPromise.then(
-        () => this.treeShaToChildrenPromiseMap.delete(digestString),
-        () => this.treeShaToChildrenPromiseMap.delete(digestString)
-      );
+      fetchPromise.finally(() => this.treeShaToChildrenPromiseMap.delete(digestString));
     }
     return fetchPromise;
   }
