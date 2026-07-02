@@ -173,7 +173,7 @@ func TestCtxWithClientIP(t *testing.T) {
 	t.Run("client-supplied client IP header is overwritten with the resolved IP", func(t *testing.T) {
 		cis := &fakeIdentityService{header: identity}
 		// Simulate an attacker pre-setting the client-IP header to a spoofed value.
-		ctx := metadata.AppendToOutgoingContext(ctxWithResolvedClientIP(clientIP), clientip.HeaderName, "9.9.9.9")
+		ctx := metadata.NewIncomingContext(ctxWithResolvedClientIP(clientIP), metadata.Pairs(clientip.HeaderName, "9.9.9.9"))
 		ctx, err := ctxWithClientIP(ctx, cis)
 		require.NoError(t, err)
 
@@ -187,7 +187,7 @@ func TestCtxWithClientIP(t *testing.T) {
 	t.Run("client-supplied client IP is stripped when no IP is resolved", func(t *testing.T) {
 		cis := &fakeIdentityService{header: identity}
 		// Spoofed header present, but the proxy resolved no client IP of its own.
-		ctx := metadata.AppendToOutgoingContext(context.Background(), clientip.HeaderName, "9.9.9.9")
+		ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs(clientip.HeaderName, "9.9.9.9"))
 		ctx, err := ctxWithClientIP(ctx, cis)
 		require.NoError(t, err)
 

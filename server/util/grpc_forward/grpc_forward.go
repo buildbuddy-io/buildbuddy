@@ -81,20 +81,26 @@ func getConnectionPool(dialer dialFn, target string) (*grpc_client.ClientConnPoo
 	return newPool, nil
 }
 
-// ctxWithClientIP overwrites the outgoing client-IP header with the IP this
-// proxy resolved (clientip.Get) and attaches a grpc-proxy identity that attests
-// to it. Any client-supplied client-IP header is stripped first: the proxy is
-// the sole authority for this value, so a caller can't smuggle an allowed IP
-// past the backend's IP-rule checks. The caller's other headers are forwarded by
-// the server's metadata-propagation interceptor (see GetForwardingServerOption).
+// ctxWithClientIP forwards the incoming request metadata to the backend,
+// overwriting the client-IP header with the IP this proxy resolved
+// (clientip.Get) and attaching a grpc-proxy identity that attests to it. Any
+// client-supplied client-IP header is stripped first: the proxy is the sole
+// authority for this value, so a caller can't smuggle an allowed IP past the
+// backend's IP-rule checks. All of the caller's other headers are propagated
+// verbatim.
 //
 // This composes across proxy hops without trusting raw headers: each hop's
 // clientIP interceptor only honors an incoming client-IP header when it carries
 // a verified grpc-proxy identity, so clientip.Get already reflects an upstream
 // proxy's attested IP, and we re-attest it here.
 func ctxWithClientIP(ctx context.Context, cis interfaces.ClientIdentityService) (context.Context, error) {
-	md, ok := metadata.FromOutgoingContext(ctx)
-	if !ok {
+	// Propagate the caller's incoming metadata to the backend. This is a
+	// blanket copy so that arbitrary headers survive the proxy hop; we then
+	// overwrite only the client-IP and client-identity headers below.
+	md, ok := metadata.FromIncomingContext(ctx)
+	if ok {
+		md = md.Copy()
+	} else {
 		md = metadata.MD{}
 	}
 
