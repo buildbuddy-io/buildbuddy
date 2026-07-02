@@ -157,14 +157,11 @@ common:linux --workspace_status_command=$(pwd)/workspace_status.sh
 common:macos --workspace_status_command=$(pwd)/workspace_status.sh
 common:windows --workspace_status_command="bash workspace_status.sh"
 
-# XCode flags
-common:macos --action_env=DEVELOPER_DIR
-common:macos --host_action_env=DEVELOPER_DIR
+# Ensure that we don't use any default toolchains and instead get @llvm's
+common --repo_env=BAZEL_NO_APPLE_CPP_TOOLCHAIN=1
+common --repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=1
 
-# Ensure that we don't use the apple_support cc_toolchain
-common:macos --repo_env=BAZEL_NO_APPLE_CPP_TOOLCHAIN=1
-
-# Ensure that our executors can run on macOS 11.0+
+# Set the minimum OS version for macOS binaries
 common:macos --macos_minimum_os=12.0
 common:macos --host_macos_minimum_os=12.0
 
@@ -264,21 +261,21 @@ common:remote-dev-shared --test_tag_filters=-performance
 # Build with --config=remote to use BuildBuddy RBE, generally as a human from
 # the command line. Other configs shoudn't embed this.
 common:remote --config=remote-prod-shared
-common:remote --config=target-linux-x86
+common:remote --extra_execution_platforms=@toolchains_buildbuddy//platforms:linux_x86_64
 common:remote --remote_download_toplevel
 # Build with --config=remote-dev to use BuildBuddy RBE.
 common:remote-dev --config=remote-dev-shared
-common:remote-dev --config=target-linux-x86
+common:remote-dev --extra_execution_platforms=@toolchains_buildbuddy//platforms:linux_x86_64
 common:remote-dev --remote_download_toplevel
 
 # Build with --config=remote-minimal to use BuildBuddy RBE in automated
 # processes, (probers, workflows, ci, etc.) where the outputs shouldn't be
 # downloaded.
 common:remote-minimal --config=remote-prod-shared
-common:remote-minimal --config=target-linux-x86
+common:remote-minimal --extra_execution_platforms=@toolchains_buildbuddy//platforms:linux_x86_64
 common:remote-minimal --config=download-minimal
 common:remote-dev-minimal --config=remote-dev-shared
-common:remote-dev-minimal --config=target-linux-x86
+common:remote-dev-minimal --extra_execution_platforms=@toolchains_buildbuddy//platforms:linux_x86_64
 common:remote-dev-minimal --config=download-minimal
 
 # Specify arch to do cross-platform builds on remote until the go toolchain can
