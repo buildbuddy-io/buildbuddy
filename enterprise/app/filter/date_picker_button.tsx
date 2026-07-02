@@ -14,7 +14,7 @@ import {
   getDateRangeForPicker,
 } from "./filter_util";
 
-const LAST_N_DAYS_OPTIONS = [7, 30, 90, 180, 365];
+const LAST_N_DAYS_OPTIONS = [1, 2, 7, 30, 90, 180, 365];
 
 type PresetRange = {
   label: string;
