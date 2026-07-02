@@ -86,6 +86,12 @@ func (h *handler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 		metrics.DNSServerHandlerDurationUsec.With(prometheus.Labels{
 			metrics.DNSRecordTypeLabel: recordType,
 		}).Observe(float64(time.Since(start).Microseconds()))
+		qName := "."
+		if len(r.Question) >= 1 {
+			qName = r.Question[0].Name
+		}
+		log.Debugf("dns query: client=%s type=%s name=%q rcode=%s answers=%d dur=%s",
+			w.RemoteAddr(), recordType, qName, rcodeLabel(m.Rcode), len(m.Answer), time.Since(start))
 	}()
 
 	// RFC2136 dynamic UPDATE (used by cert-manager to set/remove the ACME
