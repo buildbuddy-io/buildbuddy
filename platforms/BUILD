@@ -2,24 +2,16 @@ package(default_visibility = ["//visibility:public"])
 
 # Target this platforms with --platforms for a static build linked against musl libc.
 # Only meant to be used as a target platform.
-platform(
+alias(
     name = "linux_x86_64_musl",
-    constraint_values = [
-        "@platforms//cpu:x86_64",
-        "@platforms//os:linux",
-        "//toolchains:musl_on",
-    ],
+    actual = "@llvm//platforms:linux_x86_64_musl",
 )
 
 # Target this platforms with --platforms for a static build linked against musl libc.
 # Only meant to be used as a target platform.
-platform(
+alias(
     name = "linux_arm64_musl",
-    constraint_values = [
-        "@platforms//cpu:arm64",
-        "@platforms//os:linux",
-        "//toolchains:musl_on",
-    ],
+    actual = "@llvm//platforms:linux_arm64_musl",
 )
 
 platform(
@@ -34,6 +26,14 @@ platform(
     name = "linux_arm64",
     constraint_values = [
         "@platforms//os:linux",
+        "@platforms//cpu:arm64",
+    ],
+)
+
+platform(
+    name = "macos_arm64",
+    constraint_values = [
+        "@platforms//os:macos",
         "@platforms//cpu:arm64",
     ],
 )
