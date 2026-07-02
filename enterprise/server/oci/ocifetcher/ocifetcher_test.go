@@ -1263,6 +1263,38 @@ func TestServerBypassRegistry(t *testing.T) {
 		assertRequests(t, counter, map[string]int{})
 	})
 
+	// Test that FetchBlobMetadata with bypass_registry for admin still serves
+	// the manifest hint's verified descriptor when blob metadata is uncached
+	// but a matching manifest is cached. That descriptor lookup requires no
+	// registry request, so bypass_registry must not preempt it with a
+	// NotFound.
+	t.Run("FetchBlobMetadata/CacheMiss/Admin/ServedFromCachedManifestDescriptor", func(t *testing.T) {
+		flags.Set(t, "auth.admin_group_id", adminGroupID)
+
+		counter, imageName, manifestDigest, blobDigest, blobData := setupRegistryWithoutBlobHEAD(t)
+		_, bsClient, acClient := setupCacheEnv(t)
+		blobRef := imageName + "@" + blobDigest.String()
+		manifestRef := imageName + "@" + manifestDigest
+
+		server := newTestServerWithCache(t, bsClient, acClient)
+		_, err := server.FetchManifest(context.Background(), &ofpb.FetchManifestRequest{Ref: manifestRef})
+		require.NoError(t, err)
+
+		ctx := testauth.WithAuthenticatedUserInfo(context.Background(), adminUser)
+		counter.Reset()
+		resp, err := server.FetchBlobMetadata(ctx, &ofpb.FetchBlobMetadataRequest{
+			Ref:            blobRef,
+			ManifestRef:    manifestRef,
+			BypassRegistry: true,
+		})
+		require.NoError(t, err)
+		require.Equal(t, int64(len(blobData)), resp.GetSize())
+		require.NotEmpty(t, resp.GetMediaType())
+
+		// Verify no registry requests were made.
+		assertRequests(t, counter, map[string]int{})
+	})
+
 	// Test that FetchManifest returns cached manifest when available (digest ref)
 	t.Run("FetchManifest/WithCaching/DigestRef", func(t *testing.T) {
 		reg, counter := setupRegistry(t, nil, nil)

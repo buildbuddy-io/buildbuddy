@@ -212,9 +212,6 @@ func (s *ociFetcherServer) FetchBlobMetadata(ctx context.Context, req *ofpb.Fetc
 		} else if !status.IsNotFoundError(err) {
 			log.CtxWarningf(ctx, "Error fetching blob metadata from cache: %s", err)
 		}
-		if req.GetBypassRegistry() {
-			return nil, status.NotFoundErrorf("bypassing registry, but blob metadata for %q not found in cache", digestRef)
-		}
 		if manifestDesc == nil && req.GetManifestRef() != "" {
 			// Access was already proven (e.g. by an earlier FetchManifest on
 			// this repo), so we don't need another manifest HEAD here -- just
@@ -230,6 +227,9 @@ func (s *ociFetcherServer) FetchBlobMetadata(ctx context.Context, req *ofpb.Fetc
 				Size:      manifestDesc.Size,
 				MediaType: string(manifestDesc.MediaType),
 			}, nil
+		}
+		if req.GetBypassRegistry() {
+			return nil, status.NotFoundErrorf("bypassing registry, but blob metadata for %q not found in cache", digestRef)
 		}
 	}
 
