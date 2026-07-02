@@ -156,7 +156,7 @@ func (t *taskQueue) GetAll(ctx context.Context) []*scpb.EnqueueTaskReservationRe
 			log.CtxError(ctx, "not a *groupPriorityQueue!??!")
 			continue
 		}
-		for _, t := range pq.GetAll() {
+		for _, t := range pq.GetAllUnordered() {
 			reservations = append(reservations, t.EnqueueTaskReservationRequest)
 		}
 	}
