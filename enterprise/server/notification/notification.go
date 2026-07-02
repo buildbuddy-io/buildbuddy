@@ -78,10 +78,6 @@ func (s *Service) sendNondeterminismDetected(ctx context.Context, groupID string
 	if len(event.GetBuildInvocationIds()) != 2 {
 		return nil, status.InvalidArgumentError("expected 2 build invocation IDs")
 	}
-	buildURLs := make([]string, 0, 2)
-	for _, id := range event.GetBuildInvocationIds() {
-		buildURLs = append(buildURLs, build_buddy_url.WithPath("/invocation/"+id).String())
-	}
 	var workflowURL string
 	if parentInvocationID := event.GetParentInvocationId(); parentInvocationID != "" {
 		workflowURL = build_buddy_url.WithPath("/invocation/" + parentInvocationID).String()
@@ -91,11 +87,11 @@ func (s *Service) sendNondeterminismDetected(ctx context.Context, groupID string
 	for _, channel := range channels {
 		switch c := channel.GetChannel().(type) {
 		case *npb.NotificationChannel_Email:
-			if err := s.sendNondeterminismEmail(ctx, groupID, buildURLs, workflowURL); err != nil {
+			if err := s.sendNondeterminismEmail(ctx, groupID, event.GetBuildInvocationIds(), workflowURL); err != nil {
 				errs = append(errs, err)
 			}
 		case *npb.NotificationChannel_Slack:
-			if err := s.sendNondeterminismSlack(ctx, groupID, c.Slack.GetWebhookUrlSecretName(), buildURLs, workflowURL); err != nil {
+			if err := s.sendNondeterminismSlack(ctx, groupID, c.Slack.GetWebhookUrlSecretName(), event.GetBuildInvocationIds(), workflowURL); err != nil {
 				errs = append(errs, err)
 			}
 		default:
@@ -108,7 +104,7 @@ func (s *Service) sendNondeterminismDetected(ctx context.Context, groupID string
 	return &npb.SendNotificationResponse{}, nil
 }
 
-func (s *Service) sendNondeterminismEmail(ctx context.Context, groupID string, buildURLs []string, workflowURL string) error {
+func (s *Service) sendNondeterminismEmail(ctx context.Context, groupID string, buildIIDs []string, workflowURL string) error {
 	recipients, err := s.getAdminEmails(ctx, groupID)
 	if err != nil {
 		return err
@@ -116,19 +112,19 @@ func (s *Service) sendNondeterminismEmail(ctx context.Context, groupID string, b
 	if err := s.email.Send(ctx, &email.Message{
 		ToAddresses: recipients.recipients,
 		Subject:     "Nondeterminism detected in your build",
-		Body:        nondeterminismEmailBody(buildURLs, workflowURL),
+		Body:        nondeterminismEmailBody(buildIIDs, workflowURL),
 	}); err != nil {
 		return status.WrapErrorf(err, "send nondeterminism notification email")
 	}
 	return nil
 }
 
-func (s *Service) sendNondeterminismSlack(ctx context.Context, groupID, secretName string, buildURLs []string, workflowURL string) error {
+func (s *Service) sendNondeterminismSlack(ctx context.Context, groupID, secretName string, buildIIDs []string, workflowURL string) error {
 	webhookURL, err := s.resolveSlackWebhookURL(ctx, groupID, secretName)
 	if err != nil {
 		return err
 	}
-	if err := s.slack.Post(ctx, webhookURL, nondeterminismSlackPayload(buildURLs, workflowURL)); err != nil {
+	if err := s.slack.Post(ctx, webhookURL, nondeterminismSlackPayload(buildIIDs, workflowURL)); err != nil {
 		return status.WrapErrorf(err, "post nondeterminism notification to Slack")
 	}
 	return nil
@@ -154,7 +150,7 @@ func (s *Service) resolveSlackWebhookURL(ctx context.Context, groupID, secretNam
 	return "", status.NotFoundErrorf("Slack webhook secret %q is not set", secretName)
 }
 
-func nondeterminismSlackPayload(buildURLs []string, workflowURL string) *slack.Payload {
+func nondeterminismSlackPayload(buildIIDs []string, workflowURL string) *slack.Payload {
 	red := "#ad1411"
 	a := slack.Attachment{
 		Color: &red,
@@ -166,7 +162,7 @@ func nondeterminismSlackPayload(buildURLs []string, workflowURL string) *slack.P
 	})
 	actionURL := workflowURL
 	if actionURL == "" {
-		actionURL = build_buddy_url.WithPath(fmt.Sprintf("/compare/%s...%s", buildURLs[0], buildURLs[1])).String()
+		actionURL = build_buddy_url.WithPath(fmt.Sprintf("/compare/%s...%s", buildIIDs[0], buildIIDs[1])).String()
 	}
 	a.AddAction(slack.Action{
 		Type: "button",
@@ -176,14 +172,14 @@ func nondeterminismSlackPayload(buildURLs []string, workflowURL string) *slack.P
 	return &slack.Payload{Attachments: []slack.Attachment{a}}
 }
 
-func nondeterminismEmailBody(buildURLs []string, parentURL string) string {
+func nondeterminismEmailBody(buildIIDs []string, parentURL string) string {
 	var b strings.Builder
 	b.WriteString(`<p>BuildBuddy detected nondeterminism in your repository. Running the same command twice produced different outputs.</p>`)
 	if parentURL != "" {
 		fmt.Fprintf(&b, "\n"+`<p><a href="%s">See the affected actions.</a></p>`,
 			html.EscapeString(parentURL))
 	} else {
-		compareURL := build_buddy_url.WithPath(fmt.Sprintf("/compare/%s...%s", buildURLs[0], buildURLs[1])).String()
+		compareURL := build_buddy_url.WithPath(fmt.Sprintf("/compare/%s...%s", buildIIDs[0], buildIIDs[1])).String()
 		fmt.Fprintf(&b, "\n"+`<p><a href="%s">Compare the two builds.</a></p>`, html.EscapeString(compareURL))
 		b.WriteString("To see the affected actions, click `Run bb explain` at the top of the Compare page.")
 	}
