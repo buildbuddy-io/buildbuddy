@@ -696,6 +696,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
   private resolveArgumentInputFilesIfNeeded() {
     if (!this.state.command || !this.state.inputRoot) return;
 
+    // Collect potential paths for command line arguments
     const actionDigest = this.props.search.get("actionDigest") ?? "";
     const argumentToCandidates = new Map<string, string[]>();
     for (const argument of this.state.command.arguments) {
@@ -707,9 +708,11 @@ export default class InvocationActionCardComponent extends React.Component<Props
     }
     if (!argumentToCandidates.size) return;
 
+    // Resolve each potential path only once
     const inputFilePaths = new Set([...argumentToCandidates.values()].flat());
     const pathsToResolve = [...inputFilePaths].filter((path) => !this.state.inputFilePathToDigest.has(path));
 
+    // For each argument attempt to resolve the path to a real input file digest
     Promise.all(pathsToResolve.map((path) => this.resolveInputFilePath(path))).then((results) => {
       if ((this.props.search.get("actionDigest") ?? "") !== actionDigest) return;
       this.setState((prevState) => {
@@ -752,6 +755,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
       const segment = segments[i];
       const isLeaf = i === segments.length - 1;
       if (isLeaf) {
+        // View links are only useful for files so ignore anything else
         for (const node of nodes) {
           if (node.type === "file" && node.obj.name === segment) {
             return node.obj.digest ?? null;
@@ -759,6 +763,8 @@ export default class InvocationActionCardComponent extends React.Component<Props
         }
         return null;
       }
+
+      // The dirname of paths must be fetched first so the children exist in the inputNodes
       let child: Extract<TreeNode, { type: "dir" | "tree" }> | undefined;
       for (const node of nodes) {
         if ((node.type === "dir" || node.type === "tree") && node.obj.name === segment) {
