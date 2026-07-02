@@ -14,24 +14,22 @@ buildbuddy.msvc_toolchain(
     windows_kits_version = "10.0.26100.0",
 )
 
-# Explicitly register the toolchains in the order which we want to use.
-#
-# Note: Both rules_cc and toolschains_buildbuddy modules automatically register
-# their respective toolchains automatically. Bazel will prioritize which ever bazel_dep
-# was declared first. By explicitly registering the toolchains here, we can control
-# the prioritization order.
-#
-# If none of the toolchains listed here matched against
-# the target+exec platform combintation, Bazel will pick one from the toolchains that
-# were automatically registered toolchains by these dependencies modules.
-#
-# Reference: https://bazel.build/external/migration#register-toolchains
-register_toolchains(
-    # CC toolchains
-    "@toolchains_buildbuddy//toolchains/cc:ubuntu_gcc_x86_64",
-    "@toolchains_buildbuddy//toolchains/cc:ubuntu_gcc_arm64",
-    "@toolchains_buildbuddy//toolchains/cc:windows_msvc_x86_64",
-)
+# TODO: Switch when hermetic-llvm supports Windows a bit better
+register_toolchains("@toolchains_buildbuddy//toolchains/cc:windows_msvc_x86_64")
+
+register_toolchains("@llvm//toolchain:all")
+
+# Specify only the frameworks we actually link
+osx = use_extension("@llvm//extensions:osx.bzl", "osx")
+osx.frameworks(names = [
+    "CFNetwork",
+    "CoreFoundation",
+    "CoreServices",
+    "DiskArbitration",
+    "Foundation",
+    "IOKit",
+    "Security",
+])
 
 go_sdk = use_extension("@io_bazel_rules_go//go:extensions.bzl", "go_sdk")
 go_sdk.from_file(go_mod = "@com_github_buildbuddy_io_buildbuddy//:go.mod")
@@ -47,14 +45,6 @@ node.toolchain(
     name = "nodejs",
     node_version = "22.20.0",
 )
-
-toolchains_musl = use_extension("@toolchains_musl//:toolchains_musl.bzl", "toolchains_musl", dev_dependency = True)
-toolchains_musl.config(
-    extra_target_compatible_with = ["@com_github_buildbuddy_io_buildbuddy//toolchains:musl_on"],
-)
-use_repo(toolchains_musl, "musl_toolchains_hub")
-
-register_toolchains("@musl_toolchains_hub//:all")
 
 # Bazel binaries for integration testing
 bazel_binaries = use_extension(
