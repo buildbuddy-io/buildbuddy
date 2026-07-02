@@ -73,6 +73,16 @@ message FetchBlobRequest {
   bool bypass_registry = 3;
   optional int64 size = 4;
   optional string media_type = 5;
+  // Optional digest reference (e.g. gcr.io/org/repo@sha256:...) of a manifest
+  // in the same repository that references the blob. Implementations may
+  // prove registry access via a HEAD request for this manifest instead of the
+  // blob itself, which allows serving cached blobs from registries that
+  // reject HEAD requests on blob endpoints (e.g. public.ecr.aws).
+  //
+  // The hint cannot be forged to gain access to unrelated cached blobs:
+  // implementations only honor it after confirming that a cached manifest
+  // whose contents match this digest actually references the blob.
+  string manifest_ref = 6;
 }
 
 message FetchBlobResponse {
@@ -83,6 +93,10 @@ message FetchBlobMetadataRequest {
   string ref = 1;
   registry.Credentials credentials = 2;
   bool bypass_registry = 3;
+  // See FetchBlobRequest.manifest_ref. In addition to proving access, the
+  // referenced manifest's descriptor for the blob may be used to serve the
+  // blob's size and media type when the registry rejects blob HEAD requests.
+  string manifest_ref = 4;
 }
 
 message FetchBlobMetadataResponse {

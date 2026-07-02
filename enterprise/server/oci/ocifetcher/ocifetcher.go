@@ -3,6 +3,7 @@
 package ocifetcher
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -532,6 +533,61 @@ func (s *ociFetcherServer) proveBlobAccess(ctx context.Context, digestRef ctrnam
 	}
 	s.accessProofCache.Add(repoAccessKey(repo, creds), struct{}{})
 	return nil
+}
+
+// verifiedBlobDescriptorFromCachedManifest returns the blob's descriptor from
+// the cached manifest identified by manifestRef. The manifest ref is supplied
+// by the caller and cannot be trusted, so it must be a digest reference in
+// the blob's repository, the cached manifest's contents must match that
+// digest, and the manifest must reference the blob as its config or one of
+// its layers. The descriptor of a manifest that passes these checks is
+// authoritative for the blob, but proves nothing about registry access:
+// callers granting access to the blob's contents must still prove access to
+// the manifest against the remote registry.
+func (s *ociFetcherServer) verifiedBlobDescriptorFromCachedManifest(ctx context.Context, digestRef ctrname.Digest, hash ctr.Hash, manifestRef string) (ctrname.Digest, *ctr.Descriptor, error) {
+	if manifestRef == "" {
+		return ctrname.Digest{}, nil, status.NotFoundError("no manifest ref provided")
+	}
+	repo := digestRef.Context()
+	ref, err := ctrname.ParseReference(manifestRef)
+	if err != nil {
+		return ctrname.Digest{}, nil, status.InvalidArgumentErrorf("invalid manifest ref %q: %s", manifestRef, err)
+	}
+	mRef, ok := ref.(ctrname.Digest)
+	if !ok {
+		return ctrname.Digest{}, nil, status.InvalidArgumentErrorf("manifest ref must be a digest reference (e.g., repo@sha256:...), got %q", manifestRef)
+	}
+	if mRef.Context().Name() != repo.Name() {
+		return ctrname.Digest{}, nil, status.InvalidArgumentErrorf("manifest ref %q is not in blob repository %q", manifestRef, repo.Name())
+	}
+	mHash, err := ctr.NewHash(mRef.DigestStr())
+	if err != nil {
+		return ctrname.Digest{}, nil, status.InvalidArgumentErrorf("invalid manifest digest %q: %s", mRef.DigestStr(), err)
+	}
+	cached, err := ocicache.FetchManifestFromAC(ctx, s.acClient, repo, mHash, mRef)
+	if err != nil {
+		return ctrname.Digest{}, nil, err
+	}
+	contentHash, _, err := ctr.SHA256(bytes.NewReader(cached.GetRaw()))
+	if err != nil {
+		return ctrname.Digest{}, nil, err
+	}
+	if mHash.Algorithm != "sha256" || contentHash.Hex != mHash.Hex {
+		return ctrname.Digest{}, nil, status.FailedPreconditionErrorf("cached manifest contents do not match digest %q", mRef.DigestStr())
+	}
+	manifest, err := ctr.ParseManifest(bytes.NewReader(cached.GetRaw()))
+	if err != nil {
+		return ctrname.Digest{}, nil, status.InvalidArgumentErrorf("could not parse cached manifest %q: %s", manifestRef, err)
+	}
+	if manifest.Config.Digest == hash {
+		return mRef, &manifest.Config, nil
+	}
+	for _, desc := range manifest.Layers {
+		if desc.Digest == hash {
+			return mRef, &desc, nil
+		}
+	}
+	return ctrname.Digest{}, nil, status.NotFoundErrorf("manifest %q does not reference blob %q", manifestRef, digestRef)
 }
 
 func (s *ociFetcherServer) resolveTagToDigest(ctx context.Context, imageRef ctrname.Reference, creds *rgpb.Credentials) (ctr.Hash, error) {
