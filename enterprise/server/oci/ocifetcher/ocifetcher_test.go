@@ -1854,6 +1854,29 @@ func TestFetchBlobManifestRefHint(t *testing.T) {
 			http.MethodHead + " " + manifestPath: 1,
 		})
 	})
+
+	t.Run("FetchBlobMetadata/ServedFromManifestDescriptorWhenAlreadyProven", func(t *testing.T) {
+		counter, imageName, manifestDigest, blobDigest, blobData := setupRegistryWithoutBlobHEAD(t)
+		_, bsClient, acClient := setupCacheEnv(t)
+		blobRef := imageName + "@" + blobDigest.String()
+		manifestRef := imageName + "@" + manifestDigest
+
+		// Reuse the same server so that the repo's access proof, established
+		// by FetchManifest, is already in the LRU when FetchBlobMetadata
+		// runs. Blob metadata is still uncached, and the registry rejects
+		// blob HEADs, so the verified manifest's descriptor must be
+		// consulted even though no new access proof is needed.
+		server := newTestServerWithCache(t, bsClient, acClient)
+		_, err := server.FetchManifest(context.Background(), &ofpb.FetchManifestRequest{Ref: manifestRef})
+		require.NoError(t, err)
+
+		counter.Reset()
+		resp, err := server.FetchBlobMetadata(context.Background(), &ofpb.FetchBlobMetadataRequest{Ref: blobRef, ManifestRef: manifestRef})
+		require.NoError(t, err)
+		require.Equal(t, int64(len(blobData)), resp.GetSize())
+		require.NotEmpty(t, resp.GetMediaType())
+		assertRequests(t, counter, map[string]int{})
+	})
 }
 
 // runConcurrentFetchBlob runs numRequests concurrent FetchBlob calls and returns results.

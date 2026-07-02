@@ -215,6 +215,16 @@ func (s *ociFetcherServer) FetchBlobMetadata(ctx context.Context, req *ofpb.Fetc
 		if req.GetBypassRegistry() {
 			return nil, status.NotFoundErrorf("bypassing registry, but blob metadata for %q not found in cache", digestRef)
 		}
+		if manifestDesc == nil && req.GetManifestRef() != "" {
+			// Access was already proven (e.g. by an earlier FetchManifest on
+			// this repo), so we don't need another manifest HEAD here -- just
+			// the verified descriptor, which requires no registry request.
+			if _, desc, err := s.verifiedBlobDescriptorFromCachedManifest(ctx, digestRef, hash, req.GetManifestRef()); err == nil {
+				manifestDesc = desc
+			} else {
+				log.CtxDebugf(ctx, "Could not get blob metadata from cached manifest ref %q: %s", req.GetManifestRef(), err)
+			}
+		}
 		if manifestDesc != nil {
 			return &ofpb.FetchBlobMetadataResponse{
 				Size:      manifestDesc.Size,
