@@ -215,8 +215,13 @@ func TestKeyScopeDistinctness(t *testing.T) {
 	versionedCustomerCK := crypter_key_cache.CacheKey{GroupID: "group1", KeyID: "key1", Version: 1, Scope: crypter_key_cache.KeyScopeCustomerDeployment}
 
 	// Keys differing only in scope must never collide in the cache or the
-	// singleflight group, which are both keyed on String().
-	require.NotEqual(t, backendCK.String(), customerCK.String())
+	// singleflight group, which are both keyed on String(). This must hold
+	// for scopes that don't exist yet too.
+	unknownScopeCK := crypter_key_cache.CacheKey{GroupID: "group1", Scope: crypter_key_cache.KeyScope(99)}
+	for _, ck := range []crypter_key_cache.CacheKey{customerCK, unknownScopeCK} {
+		require.NotEqual(t, backendCK.String(), ck.String())
+	}
+	require.NotEqual(t, customerCK.String(), unknownScopeCK.String())
 	require.NotEqual(t, versionedBackendCK.String(), versionedCustomerCK.String())
 
 	backendKey := []byte("backend-key")
@@ -264,7 +269,7 @@ func TestKeyScopeDistinctness(t *testing.T) {
 	require.Equal(t, 2, refreshCount)
 }
 
-func TestPermissionDeniedNotRetried(t *testing.T) {
+func TestNonRetryableErrors(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
 		err     error
@@ -272,6 +277,7 @@ func TestPermissionDeniedNotRetried(t *testing.T) {
 	}{
 		{"PermissionDenied", status.PermissionDeniedError("no key for you"), status.IsPermissionDeniedError},
 		{"Unauthenticated", status.UnauthenticatedError("who are you"), status.IsUnauthenticatedError},
+		{"InvalidArgument", status.InvalidArgumentError("what is this"), status.IsInvalidArgumentError},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			clock := clockwork.NewFakeClock()

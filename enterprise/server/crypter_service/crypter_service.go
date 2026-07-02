@@ -141,7 +141,7 @@ func derivedKey(groupID string, scope crypter_key_cache.KeyScope, key *tables.En
 	} else if scope == crypter_key_cache.KeyScopeCloud {
 		info = []byte{crypter.EncryptedDataHeaderVersion}
 	} else {
-		return nil, status.InvalidArgumentErrorf("Invalid key-cache scope: %v", scope)
+		return nil, status.InvalidArgumentErrorf("invalid key-cache scope: %v", scope)
 	}
 	info = append(info, []byte(groupID)...)
 	derivedKey := make([]byte, 32)

@@ -59,10 +59,18 @@ func (ck CacheKey) String() string {
 	if ck.KeyID != "" {
 		s = fmt.Sprintf("%s/%s/%d", ck.GroupID, ck.KeyID, ck.Version)
 	}
-	if ck.Scope == KeyScopeCustomerDeployment {
-		s += "/customer-deployment"
+	// This must map every scope to a distinct string: String() keys both the
+	// cache map and the singleflight group, so two scopes rendering
+	// identically could hand one scope's derived key to a caller expecting
+	// the other, defeating the domain separation.
+	switch ck.Scope {
+	case KeyScopeCloud:
+		return s
+	case KeyScopeCustomerDeployment:
+		return s + "/customer-deployment"
+	default:
+		return fmt.Sprintf("%s/scope-%d", s, ck.Scope)
 	}
-	return s
 }
 
 type cacheEntry struct {
@@ -226,6 +234,22 @@ func (c *KeyCache) cacheGet(ck CacheKey) (*cacheEntry, bool) {
 	return e, true
 }
 
+// isNonRetryable returns true for errors that a refresh retry cannot fix:
+// the key doesn't exist, the caller isn't allowed to fetch it, or the request
+// itself is malformed. Auth-class errors are treated as durable (matching
+// standard gRPC retry policies); for CMEK this is also the desired behavior,
+// since a PermissionDenied from the customer's KMS means they revoked our
+// access and we should stop deriving keys promptly rather than retry.
+// Refreshes are singleflighted, so retrying a durable failure would also
+// block all concurrent key loads for the same group while the retry loop
+// runs down the caller's deadline.
+func isNonRetryable(err error) bool {
+	return status.IsNotFoundError(err) ||
+		status.IsPermissionDeniedError(err) ||
+		status.IsUnauthenticatedError(err) ||
+		status.IsInvalidArgumentError(err)
+}
+
 func (c *KeyCache) refreshKeyWithRetries(ctx context.Context, ck CacheKey, cacheError bool) (*crypter.DerivedKey, error) {
 	opts := retry.DefaultOptions()
 	opts.Clock = c.clock
@@ -233,7 +257,7 @@ func (c *KeyCache) refreshKeyWithRetries(ctx context.Context, ck CacheKey, cache
 	key, err := retry.Do(ctx, opts, func(ctx context.Context) (*crypter.DerivedKey, error) {
 		keyBytes, md, err := c.refreshFn(ctx, ck)
 		// TODO(vadim): figure out if there are other KMS errors we can treat as immediate failures
-		if status.IsNotFoundError(err) || status.IsPermissionDeniedError(err) || status.IsUnauthenticatedError(err) {
+		if isNonRetryable(err) {
 			return nil, retry.NonRetryableError(err)
 		} else if err != nil {
 			return nil, err
@@ -261,14 +285,12 @@ func (c *KeyCache) refreshKeyWithRetries(ctx context.Context, ck CacheKey, cache
 			expiresAfter: c.clock.Now().Add(c.errCacheTime),
 		})
 	}
-	if status.IsNotFoundError(err) || status.IsPermissionDeniedError(err) || status.IsUnauthenticatedError(err) {
-		// Preserve the NotFound status so that callers can tell "key does
-		// not exist" apart from transient refresh failures. In particular,
-		// the app returns this error over the GetEncryptionKey RPC, and the
-		// proxy's KeyCache uses the NotFound status to decide that the
-		// refresh should not be retried (see the check above). The same
-		// applies to PermissionDenied/Unauthenticated, which a misconfigured
-		// customer-run proxy can receive from the app.
+	if isNonRetryable(err) {
+		// Preserve the status of non-retryable errors so that callers can
+		// tell them apart from transient refresh failures. In particular,
+		// the app returns these errors over the GetEncryptionKey RPC, and
+		// the proxy's KeyCache uses the status to decide that the refresh
+		// should not be retried (see isNonRetryable above).
 		return nil, err
 	}
 	return nil, status.UnavailableErrorf("exhausted attempts to refresh key, last error: %s", err)
