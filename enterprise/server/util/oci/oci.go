@@ -841,6 +841,10 @@ func (l *layerFromDigest) fetchFromRemote() (io.ReadCloser, error) {
 			Ref:            ref.String(),
 			Credentials:    l.image.credentials.ToProto(),
 			BypassRegistry: l.image.credentials.bypassRegistry,
+			// The manifest this layer came from lets the server prove
+			// registry access without a blob HEAD request, which some
+			// registries (e.g. public.ecr.aws) reject.
+			ManifestRef: l.repo.Digest(l.image.desc.Digest.String()).String(),
 		})
 		if err != nil {
 			cancel()

@@ -118,6 +118,7 @@ func (s *OCIFetcherServerProxy) fetchBlobMetadataSize(ctx context.Context, req *
 		Ref:            req.GetRef(),
 		Credentials:    req.GetCredentials(),
 		BypassRegistry: req.GetBypassRegistry(),
+		ManifestRef:    req.GetManifestRef(),
 	})
 	if err != nil {
 		return 0, err

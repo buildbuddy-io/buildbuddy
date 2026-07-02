@@ -3,6 +3,7 @@
 package ocifetcher
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -167,7 +168,7 @@ func (s *ociFetcherServer) FetchBlob(req *ofpb.FetchBlobRequest, stream ofpb.OCI
 		}
 		return status.NotFoundErrorf("bypassing registry, but blob %q not found in cache", digestRef)
 	}
-	return s.dedupedFetchBlob(ctx, stream, digestRef, hash, req.GetCredentials())
+	return s.dedupedFetchBlob(ctx, stream, digestRef, hash, req.GetManifestRef(), req.GetCredentials())
 }
 
 // FetchBlobMetadata returns OCI blob metadata (size, media type).
@@ -188,7 +189,24 @@ func (s *ociFetcherServer) FetchBlobMetadata(ctx context.Context, req *ofpb.Fetc
 	repo := digestRef.Context()
 
 	accessKey := repoAccessKey(repo, req.GetCredentials())
-	if req.GetBypassRegistry() || s.accessProofCache.Contains(accessKey) {
+	proven := req.GetBypassRegistry() || s.accessProofCache.Contains(accessKey)
+	// A manifest ref hint proves access via a manifest metadata HEAD, and its
+	// descriptor for the blob can serve the metadata itself. Both matter for
+	// registries that reject HEAD requests on blob endpoints (e.g.
+	// public.ecr.aws).
+	var manifestDesc *ctr.Descriptor
+	if !proven && req.GetManifestRef() != "" {
+		desc, err := s.proveBlobAccessViaManifest(ctx, digestRef, hash, req.GetManifestRef(), req.GetCredentials())
+		if err == nil {
+			proven = true
+			manifestDesc = desc
+		} else if status.IsUnauthenticatedError(err) || status.IsPermissionDeniedError(err) {
+			return nil, err
+		} else {
+			log.CtxDebugf(ctx, "Could not prove access to blob %q via manifest ref %q, falling back to blob metadata: %s", digestRef, req.GetManifestRef(), err)
+		}
+	}
+	if proven {
 		if resp, err := s.fetchBlobMetadataFromCache(ctx, digestRef, hash); err == nil {
 			return resp, nil
 		} else if !status.IsNotFoundError(err) {
@@ -196,6 +214,12 @@ func (s *ociFetcherServer) FetchBlobMetadata(ctx context.Context, req *ofpb.Fetc
 		}
 		if req.GetBypassRegistry() {
 			return nil, status.NotFoundErrorf("bypassing registry, but blob metadata for %q not found in cache", digestRef)
+		}
+		if manifestDesc != nil {
+			return &ofpb.FetchBlobMetadataResponse{
+				Size:      manifestDesc.Size,
+				MediaType: string(manifestDesc.MediaType),
+			}, nil
 		}
 	}
 
@@ -299,7 +323,7 @@ func (s *ociFetcherServer) streamBlobFromCache(ctx context.Context, stream ofpb.
 	return ocicache.FetchBlobFromCache(ctx, &grpcStreamWriter{stream: stream}, s.bsClient, hash, metadata.GetContentLength())
 }
 
-func (s *ociFetcherServer) dedupedFetchBlob(ctx context.Context, stream ofpb.OCIFetcher_FetchBlobServer, digestRef ctrname.Digest, hash ctr.Hash, creds *rgpb.Credentials) error {
+func (s *ociFetcherServer) dedupedFetchBlob(ctx context.Context, stream ofpb.OCIFetcher_FetchBlobServer, digestRef ctrname.Digest, hash ctr.Hash, manifestRef string, creds *rgpb.Credentials) error {
 	start := time.Now()
 	repo := digestRef.Context()
 	key := ocicache.NewBlobFetchKey(repo, hash, creds)
@@ -311,7 +335,7 @@ func (s *ociFetcherServer) dedupedFetchBlob(ctx context.Context, stream ofpb.OCI
 		// to prove the caller may access the repo before serving it from cache.
 		metadata, err := ocicache.FetchBlobMetadataFromCache(ctx, s.bsClient, s.acClient, repo, hash)
 		if err == nil {
-			if err := s.proveBlobAccess(ctx, digestRef, creds); err != nil {
+			if err := s.proveBlobAccessWithManifestHint(ctx, digestRef, hash, manifestRef, creds); err != nil {
 				return 0, err
 			}
 			contentLength := metadata.GetContentLength()
@@ -332,7 +356,7 @@ func (s *ociFetcherServer) dedupedFetchBlob(ctx context.Context, stream ofpb.OCI
 
 		// Cache miss: fetch from the registry, which proves access and writes
 		// the blob through to the cache.
-		size, err := s.fetchBlobFromRemoteWriteToCacheAndResponse(ctx, digestRef, repo, hash, creds, stream)
+		size, err := s.fetchBlobFromRemoteWriteToCacheAndResponse(ctx, digestRef, repo, hash, manifestRef, creds, stream)
 		if err == nil {
 			s.accessProofCache.Add(repoAccessKey(repo, creds), struct{}{})
 		}
@@ -371,7 +395,7 @@ func recordFetchBlobMetrics(role string, err error, duration time.Duration) {
 // registry, streams it to the response, and writes it to the cache
 // simultaneously using read-through caching.
 // It returns the content length of the blob (0 if metadata was unavailable).
-func (s *ociFetcherServer) fetchBlobFromRemoteWriteToCacheAndResponse(ctx context.Context, digestRef ctrname.Digest, repo ctrname.Repository, hash ctr.Hash, creds *rgpb.Credentials, stream ofpb.OCIFetcher_FetchBlobServer) (int64, error) {
+func (s *ociFetcherServer) fetchBlobFromRemoteWriteToCacheAndResponse(ctx context.Context, digestRef ctrname.Digest, repo ctrname.Repository, hash ctr.Hash, manifestRef string, creds *rgpb.Credentials, stream ofpb.OCIFetcher_FetchBlobServer) (int64, error) {
 	// All HTTP-triggering calls (Compressed, MediaType, Size) must be
 	// inside the retry scope so that token refresh covers them, not just
 	// the lazy Layer() reference creation.
@@ -394,10 +418,16 @@ func (s *ociFetcherServer) fetchBlobFromRemoteWriteToCacheAndResponse(ctx contex
 		} else {
 			mediaType = string(mt)
 		}
-		if sz, err := layer.Size(); err != nil {
-			log.CtxWarningf(ctx, "Could not get size for layer: %s", err)
-		} else {
+		if sz, err := layer.Size(); err == nil {
 			size = sz
+		} else if _, desc, descErr := s.verifiedBlobDescriptorFromCachedManifest(ctx, digestRef, hash, manifestRef); descErr == nil {
+			// Some registries (e.g. public.ecr.aws) reject the HEAD requests
+			// layer.Size() makes on blob endpoints. The digest-verified cached
+			// manifest is an authoritative source for the blob's descriptor.
+			size = desc.Size
+			mediaType = string(desc.MediaType)
+		} else {
+			log.CtxWarningf(ctx, "Could not get size for layer: HEAD: %s; cached manifest: %s", err, descErr)
 		}
 		return layer.Compressed()
 	})
@@ -532,6 +562,104 @@ func (s *ociFetcherServer) proveBlobAccess(ctx context.Context, digestRef ctrnam
 	}
 	s.accessProofCache.Add(repoAccessKey(repo, creds), struct{}{})
 	return nil
+}
+
+// proveBlobAccessWithManifestHint checks that the caller's credentials allow
+// accessing the blob's repository in the remote registry. When the caller
+// provided a manifest ref hint, access is proven via a manifest metadata HEAD
+// instead of a blob metadata HEAD, which works on registries that reject HEAD
+// requests on blob endpoints (e.g. public.ecr.aws). If the hint is unusable
+// (e.g. the manifest is not cached, or does not reference the blob), access
+// is proven via the blob directly.
+func (s *ociFetcherServer) proveBlobAccessWithManifestHint(ctx context.Context, digestRef ctrname.Digest, hash ctr.Hash, manifestRef string, creds *rgpb.Credentials) error {
+	repo := digestRef.Context()
+	if s.accessProofCache.Contains(repoAccessKey(repo, creds)) {
+		return nil
+	}
+	if manifestRef != "" {
+		_, err := s.proveBlobAccessViaManifest(ctx, digestRef, hash, manifestRef, creds)
+		if err == nil {
+			return nil
+		}
+		// The registry denied the caller access to a manifest in the blob's
+		// repository; a blob metadata request would be denied the same way.
+		if status.IsUnauthenticatedError(err) || status.IsPermissionDeniedError(err) {
+			return err
+		}
+		log.CtxDebugf(ctx, "Could not prove access to blob %q via manifest ref %q, falling back to blob metadata: %s", digestRef, manifestRef, err)
+	}
+	return s.proveBlobAccess(ctx, digestRef, creds)
+}
+
+// proveBlobAccessViaManifest checks that the caller's credentials allow
+// accessing the manifest identified by manifestRef, after verifying that the
+// manifest actually references the blob. Since registry pull authorization is
+// repository-scoped, access to the manifest proves access to the blob.
+// On success it returns the manifest's descriptor for the blob.
+func (s *ociFetcherServer) proveBlobAccessViaManifest(ctx context.Context, digestRef ctrname.Digest, hash ctr.Hash, manifestRef string, creds *rgpb.Credentials) (*ctr.Descriptor, error) {
+	mRef, desc, err := s.verifiedBlobDescriptorFromCachedManifest(ctx, digestRef, hash, manifestRef)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.proveManifestAccess(ctx, mRef, creds); err != nil {
+		return nil, err
+	}
+	return desc, nil
+}
+
+// verifiedBlobDescriptorFromCachedManifest returns the blob's descriptor from
+// the cached manifest identified by manifestRef. The manifest ref is supplied
+// by the caller and cannot be trusted, so it must be a digest reference in
+// the blob's repository, the cached manifest's contents must match that
+// digest, and the manifest must reference the blob as its config or one of
+// its layers. The descriptor of a manifest that passes these checks is
+// authoritative for the blob, but proves nothing about registry access:
+// callers granting access to the blob's contents must still prove access to
+// the manifest against the remote registry.
+func (s *ociFetcherServer) verifiedBlobDescriptorFromCachedManifest(ctx context.Context, digestRef ctrname.Digest, hash ctr.Hash, manifestRef string) (ctrname.Digest, *ctr.Descriptor, error) {
+	if manifestRef == "" {
+		return ctrname.Digest{}, nil, status.NotFoundError("no manifest ref provided")
+	}
+	repo := digestRef.Context()
+	ref, err := ctrname.ParseReference(manifestRef)
+	if err != nil {
+		return ctrname.Digest{}, nil, status.InvalidArgumentErrorf("invalid manifest ref %q: %s", manifestRef, err)
+	}
+	mRef, ok := ref.(ctrname.Digest)
+	if !ok {
+		return ctrname.Digest{}, nil, status.InvalidArgumentErrorf("manifest ref must be a digest reference (e.g., repo@sha256:...), got %q", manifestRef)
+	}
+	if mRef.Context().Name() != repo.Name() {
+		return ctrname.Digest{}, nil, status.InvalidArgumentErrorf("manifest ref %q is not in blob repository %q", manifestRef, repo.Name())
+	}
+	mHash, err := ctr.NewHash(mRef.DigestStr())
+	if err != nil {
+		return ctrname.Digest{}, nil, status.InvalidArgumentErrorf("invalid manifest digest %q: %s", mRef.DigestStr(), err)
+	}
+	cached, err := ocicache.FetchManifestFromAC(ctx, s.acClient, repo, mHash, mRef)
+	if err != nil {
+		return ctrname.Digest{}, nil, err
+	}
+	contentHash, _, err := ctr.SHA256(bytes.NewReader(cached.GetRaw()))
+	if err != nil {
+		return ctrname.Digest{}, nil, err
+	}
+	if mHash.Algorithm != "sha256" || contentHash.Hex != mHash.Hex {
+		return ctrname.Digest{}, nil, status.FailedPreconditionErrorf("cached manifest contents do not match digest %q", mRef.DigestStr())
+	}
+	manifest, err := ctr.ParseManifest(bytes.NewReader(cached.GetRaw()))
+	if err != nil {
+		return ctrname.Digest{}, nil, status.InvalidArgumentErrorf("could not parse cached manifest %q: %s", manifestRef, err)
+	}
+	if manifest.Config.Digest == hash {
+		return mRef, &manifest.Config, nil
+	}
+	for _, desc := range manifest.Layers {
+		if desc.Digest == hash {
+			return mRef, &desc, nil
+		}
+	}
+	return ctrname.Digest{}, nil, status.NotFoundErrorf("manifest %q does not reference blob %q", manifestRef, digestRef)
 }
 
 func (s *ociFetcherServer) resolveTagToDigest(ctx context.Context, imageRef ctrname.Reference, creds *rgpb.Credentials) (ctr.Hash, error) {
