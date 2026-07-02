@@ -1829,10 +1829,22 @@ func (c *FirecrackerContainer) getJailerConfig(ctx context.Context, kernelImageP
 		return nil, status.WrapError(err, "get cgroup version")
 	}
 
-	numaNode := 0
+	// We normally apply cpuset config in cgroup.Setup(), but the go
+	// SDK clobbers our setting when applying the NUMA node setting.
+	// Override this manually for now.
+	var cgroupArgs []string
+	// If we don't have a leased NUMA node, pass -1, which tells the
+	// (patched) SDK to skip its default cpuset config. The SDK would
+	// otherwise pin the VM to NUMA node 0.
+	numaNode := -1
 	if c.cgroupSettings.NumaNode != nil {
 		numaNode = int(c.cgroupSettings.GetNumaNode())
+		cgroupArgs = append(cgroupArgs, fmt.Sprintf("cpuset.mems=%d", numaNode))
 	}
+	if cpus := c.cgroupSettings.CpusetCpus; len(cpus) > 0 {
+		cgroupArgs = append(cgroupArgs, fmt.Sprintf("cpuset.cpus=%s", cpuset.Format(cpus...)))
+	}
+
 	return &fcclient.JailerConfig{
 		JailerBinary:   c.executorConfig.JailerBinaryPath,
 		ChrootBaseDir:  c.jailerRoot,
@@ -1845,13 +1857,7 @@ func (c *FirecrackerContainer) getJailerConfig(ctx context.Context, kernelImageP
 		Stdout:         c.vmLogWriter(),
 		Stderr:         c.vmLogWriter(),
 		CgroupVersion:  cgroupVersion,
-		// We normally set cpuset.cpus in cgroup.Setup(), but the go
-		// SDK clobbers our setting when applying the NUMA node setting.
-		// Override this manually for now.
-		CgroupArgs: []string{
-			fmt.Sprintf("cpuset.cpus=%s", cpuset.Format(c.cgroupSettings.GetCpusetCpus()...)),
-			fmt.Sprintf("cpuset.mems=%d", numaNode),
-		},
+		CgroupArgs:     cgroupArgs,
 		// The jailer computes the full cgroup path by appending three path
 		// components:
 		// 1. The cgroup FS root: "/sys/fs/cgroup"
@@ -3386,16 +3392,17 @@ func (c *FirecrackerContainer) cleanupOldSnapshots(ctx context.Context, snapshot
 }
 
 func (c *FirecrackerContainer) setupCgroup(ctx context.Context) error {
-	// Lease CPUs for task execution, and set cleanup function.
-	leaseID := uuid.New()
-	numaNode, leasedCPUs, cleanupFunc := c.env.GetCPULeaser().Acquire(c.vmConfig.NumCpus*1000, leaseID, cpuset.WithNoOverhead())
-	log.CtxInfof(ctx, "Lease %s granted %+v cpus on numa node: %d", leaseID, leasedCPUs, numaNode)
-	c.releaseCPUs = cleanupFunc
-	c.cgroupSettings.CpusetCpus = toInt32s(leasedCPUs)
-	c.cgroupSettings.NumaNode = pointer(int32(numaNode))
-
 	if *debugDisableCgroup {
 		return nil
+	}
+	if c.env.GetCPULeaser() != nil {
+		// Lease CPUs for task execution, and set cleanup function.
+		leaseID := uuid.New()
+		numaNode, leasedCPUs, cleanupFunc := c.env.GetCPULeaser().Acquire(c.vmConfig.NumCpus*1000, leaseID, cpuset.WithNoOverhead())
+		log.CtxInfof(ctx, "Lease %s granted %+v cpus on numa node: %d", leaseID, leasedCPUs, numaNode)
+		c.releaseCPUs = cleanupFunc
+		c.cgroupSettings.CpusetCpus = toInt32s(leasedCPUs)
+		c.cgroupSettings.NumaNode = pointer(int32(numaNode))
 	}
 	if err := os.MkdirAll(c.cgroupPath(), 0755); err != nil {
 		return status.UnavailableErrorf("create cgroup: %s", err)

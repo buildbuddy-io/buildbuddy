@@ -187,53 +187,6 @@ func TestCPUSetOverhead(t *testing.T) {
 	require.Equal(t, 3, len(cpus4))
 }
 
-func TestCPUSetDisabled(t *testing.T) {
-	flags.Set(t, "executor.cpu_leaser.enable", false)
-	flags.Set(t, "executor.cpu_leaser.cpuset", "0:0-47")
-
-	cs, err := cpuset.NewLeaser(cpuset.LeaserOpts{SystemCPUs: getTestCPUs()})
-	require.NoError(t, err)
-	task1 := uuid.New()
-	numa1, cpus1, cancel1 := cs.Acquire(1100, task1)
-	defer cancel1()
-
-	assert.Equal(t, 0, numa1)
-	assert.Equal(t, 48, len(cpus1))
-}
-
-func TestCPUSetDisabledNumaBalancing(t *testing.T) {
-	flags.Set(t, "executor.cpu_leaser.enable", false)
-	flags.Set(t, "executor.cpu_leaser.cpuset", "0:0-3,1:130-133")
-
-	cs, err := cpuset.NewLeaser(cpuset.LeaserOpts{SystemCPUs: getTestCPUs()})
-	require.NoError(t, err)
-	nodeFrequency := make(map[int]int, 0)
-	for i := 0; i < 1000; i++ {
-		task := uuid.New()
-		numa, _, cancel := cs.Acquire(1100, task)
-		nodeFrequency[numa]++
-		cancel()
-	}
-	assert.Equal(t, 2, len(nodeFrequency))
-	// TODO: figure out why the node frequencies are sometimes slightly
-	// different, e.g. 498/502 instead of an even 500/500 split.
-	assert.InDelta(t, nodeFrequency[0], nodeFrequency[1], 4)
-}
-
-func TestCPUSetDisabledManualCPUSet(t *testing.T) {
-	flags.Set(t, "executor.cpu_leaser.enable", false)
-	flags.Set(t, "executor.cpu_leaser.cpuset", "0:0-1,3")
-
-	cs, err := cpuset.NewLeaser(cpuset.LeaserOpts{SystemCPUs: getTestCPUs()})
-	require.NoError(t, err)
-	task1 := uuid.New()
-	numa1, cpus1, cancel1 := cs.Acquire(1100, task1)
-	defer cancel1()
-	assert.Equal(t, 0, numa1)
-	// Should return all configured CPUs.
-	assert.Equal(t, []int{0, 1, 3}, cpus1)
-}
-
 func TestNumaNodeFairness(t *testing.T) {
 	flags.Set(t, "executor.cpu_leaser.enable", true)
 	flags.Set(t, "executor.cpu_leaser.overhead", 0)
