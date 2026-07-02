@@ -685,7 +685,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
         {argument}
         <TextLink
           className="artifact-view"
-          href={this.getInputFileViewUrl(inputFile.path, inputFile.digest)}
+          href={this.getFileViewUrl(inputFile.path, inputFile.digest)}
           target="_blank">
           <FileIcon extension={getPathBasename(inputFile.path)} /> View
         </TextLink>
