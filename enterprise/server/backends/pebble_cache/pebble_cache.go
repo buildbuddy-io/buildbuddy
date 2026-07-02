@@ -100,11 +100,12 @@ var (
 	minBytesAutoZstdCompression = flag.Int64("cache.pebble.min_bytes_auto_zstd_compression", DefaultMinBytesAutoZstdCompression, "Blobs larger than this will be zstd compressed before written to disk.")
 
 	// GCS Large File Support
-	gcsBucket      = flag.String("cache.pebble.gcs.bucket", "", "The name of the GCS bucket to store build artifact files in.")
-	gcsTTLDays     = flag.Int64("cache.pebble.gcs.ttl_days", 0, "An object TTL, specified in days, to apply to the GCS bucket (0 means disabled).")
-	gcsCredentials = flag.String("cache.pebble.gcs.credentials", "", "Credentials in JSON format that will be used to authenticate to GCS.", flag.Secret)
-	gcsProjectID   = flag.String("cache.pebble.gcs.project_id", "", "The Google Cloud project ID of the project owning the above credentials and GCS bucket.")
-	gcsAppName     = flag.String("cache.pebble.gcs.app_name", "", "The app name, under which blobstore data will be stored.")
+	gcsBucket               = flag.String("cache.pebble.gcs.bucket", "", "The name of the GCS bucket to store build artifact files in.")
+	gcsTTLDays              = flag.Int64("cache.pebble.gcs.ttl_days", 0, "An object TTL, specified in days, to apply to the GCS bucket (0 means disabled).")
+	gcsCredentials          = flag.String("cache.pebble.gcs.credentials", "", "Credentials in JSON format that will be used to authenticate to GCS.", flag.Secret)
+	gcsProjectID            = flag.String("cache.pebble.gcs.project_id", "", "The Google Cloud project ID of the project owning the above credentials and GCS bucket.")
+	gcsAppName              = flag.String("cache.pebble.gcs.app_name", "", "The app name, under which blobstore data will be stored.")
+	gcsAtimeUpdateThreshold = flag.Duration("cache.pebble.gcs.atime_update_threshold", 0, "Don't update a GCS object's custom time (its atime) if it was updated more recently than this (0 updates on every atime update).")
 )
 
 var (
@@ -207,7 +208,11 @@ type Options struct {
 	GCSAppName          string
 	GCSTTLDays          *int64
 	MinGCSFileSizeBytes *int64
-	FileStorer          filestore.Store
+	// GCSAtimeUpdateThreshold suppresses a GCS object's custom time (atime)
+	// refresh if it was updated more recently than this. 0 updates on every
+	// atime update.
+	GCSAtimeUpdateThreshold *time.Duration
+	FileStorer              filestore.Store
 }
 
 type sizeUpdate struct {
@@ -277,8 +282,9 @@ type PebbleCache struct {
 	oldMetrics       pebble.Metrics
 	metricsCollector *pebble.MetricsCollector
 
-	minGCSFileSizeBytes int64
-	gcsTTLDays          int64
+	minGCSFileSizeBytes     int64
+	gcsTTLDays              int64
+	gcsAtimeUpdateThreshold time.Duration
 
 	metrics struct {
 		compressedBlobSizeWrite   prometheus.Counter
@@ -376,6 +382,7 @@ func Register(env *real_environment.RealEnv) error {
 		GCSAppName:                  *gcsAppName,
 		GCSTTLDays:                  gcsTTLDays,
 		MinGCSFileSizeBytes:         minGCSFileSizeBytesFlag,
+		GCSAtimeUpdateThreshold:     gcsAtimeUpdateThreshold,
 		EnableAutoRatchet:           *enableAutoRatchet,
 	}
 	c, err := NewPebbleCache(env, opts)
@@ -481,6 +488,10 @@ func SetOptionDefaults(opts *Options) {
 	if opts.GCSTTLDays == nil || *opts.GCSTTLDays == 0 {
 		var ttlInDays int64 = 0
 		opts.GCSTTLDays = &ttlInDays
+	}
+	if opts.GCSAtimeUpdateThreshold == nil {
+		var threshold time.Duration = 0
+		opts.GCSAtimeUpdateThreshold = &threshold
 	}
 	if opts.MinBytesAutoZstdCompression == nil {
 		opts.MinBytesAutoZstdCompression = &DefaultMinBytesAutoZstdCompression
@@ -684,6 +695,7 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 		includeMetadataSize:         opts.IncludeMetadataSize,
 		minGCSFileSizeBytes:         *opts.MinGCSFileSizeBytes,
 		gcsTTLDays:                  *opts.GCSTTLDays,
+		gcsAtimeUpdateThreshold:     *opts.GCSAtimeUpdateThreshold,
 		fileStorer:                  fileStorer,
 	}
 	zstdLabels := prometheus.Labels{metrics.CacheNameLabel: pc.name, metrics.CompressionType: "zstd"}
@@ -952,18 +964,25 @@ func (p *PebbleCache) updateAtime(update *accessTimeUpdate) error {
 		metrics.CacheNameLabel: p.name,
 	}
 
-	// If this is a GCS object, update the custom time and record the new
-	// custom time.
+	// If this is a GCS object, refresh the custom time and record the new
+	// custom time. Each refresh is a billed GCS Class A operation and the custom
+	// time is only a defensive TTL backstop, so it does not need to track the
+	// pebble atime closely: skip the refresh unless the recorded custom time is
+	// older than gcsAtimeUpdateThreshold. The pebble atime below is still
+	// updated on every access past the atime threshold.
 	if gcsMetadata := md.GetStorageMetadata().GetGcsMetadata(); gcsMetadata != nil {
 		if gcsutil.ObjectIsPastTTL(p.clock, gcsMetadata, p.gcsTTLDays) {
 			return nil
 		}
-		if err := p.fileStorer.UpdateBlobAtime(p.env.GetServerContext(), gcsMetadata, newAtime); err != nil {
-			metrics.PebbleCacheAtimeUpdateGCSErrorCount.With(lbls).Inc()
-			log.Errorf("Error updating GCS custom time (%q): %s", update.key, err)
-			return err
+		lastCustomTime := time.UnixMicro(gcsMetadata.GetLastCustomTimeUsec())
+		if newAtime.Sub(lastCustomTime) >= p.gcsAtimeUpdateThreshold {
+			if err := p.fileStorer.UpdateBlobAtime(p.env.GetServerContext(), gcsMetadata, newAtime); err != nil {
+				metrics.PebbleCacheAtimeUpdateGCSErrorCount.With(lbls).Inc()
+				log.Errorf("Error updating GCS custom time (%q): %s", update.key, err)
+				return err
+			}
+			md.StorageMetadata.GcsMetadata.LastCustomTimeUsec = newAtime.UnixMicro()
 		}
-		md.StorageMetadata.GcsMetadata.LastCustomTimeUsec = newAtime.UnixMicro()
 	}
 
 	md.LastAccessUsec = newAtime.UnixMicro()

@@ -2792,6 +2792,72 @@ func TestGCSBlobStorageOverwriteObjects(t *testing.T) {
 	}
 }
 
+func TestGCSAtimeUpdateThreshold(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
+	// sendAtimeUpdate gates on wall-clock time (time.Since), so start the fake
+	// clock well in the past. Otherwise, once an atime update moves the stored
+	// atime to a fake-future timestamp, subsequent accesses would be skipped.
+	clock := clockwork.NewFakeClockAt(time.Now().Add(-30 * 24 * time.Hour))
+	ctx := getAnonContext(t, te)
+
+	var minGCSFileSize int64 = 1
+	var gcsTTLDays int64 = 1
+	atimeThreshold := 10 * time.Hour
+
+	mockGCS := mockgcs.New(clock)
+	require.NoError(t, mockGCS.SetBucketCustomTimeTTL(ctx, gcsTTLDays))
+	fileStorer := filestore.New(filestore.WithGCSBlobstore(mockGCS, "app-name"), filestore.WithClock(clock))
+	options := &pebble_cache.Options{
+		RootDirectory:           testfs.MakeTempDir(t),
+		MaxSizeBytes:            int64(1_000_000), // 1MB
+		Clock:                   clock,
+		FileStorer:              fileStorer,
+		MaxInlineFileSizeBytes:  1,
+		MinGCSFileSizeBytes:     &minGCSFileSize,
+		GCSTTLDays:              &gcsTTLDays,
+		GCSAtimeUpdateThreshold: &atimeThreshold,
+		AtimeUpdateThreshold:    pointer(time.Duration(0)), // update atime on every access
+		AtimeBufferSize:         pointer(0),                // blocking channel of atime updates
+	}
+	pc, err := pebble_cache.NewPebbleCache(te, options)
+	require.NoError(t, err)
+	require.NoError(t, pc.Start())
+	defer pc.Stop()
+
+	rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+	require.NoError(t, pc.Set(ctx, rn, buf))
+
+	// Writing the object sets its custom time; it does not call UpdateCustomTime.
+	require.Equal(t, 0, mockGCS.UpdateCustomTimeCallCount())
+
+	// waitForAtime blocks until the object's pebble atime reaches the current
+	// (fake) clock time, i.e. until the queued atime update has been processed.
+	waitForAtime := func() {
+		want := clock.Now().UnixMicro()
+		require.Eventually(t, func() bool {
+			md, err := pc.Metadata(ctx, rn)
+			return err == nil && md.LastAccessTimeUsec == want
+		}, time.Minute, 10*time.Millisecond)
+	}
+
+	// Access the object before the threshold elapses. The pebble atime is
+	// updated, but the GCS custom time is left alone.
+	clock.Advance(1 * time.Hour)
+	_, err = pc.Get(ctx, rn)
+	require.NoError(t, err)
+	waitForAtime()
+	require.Equal(t, 0, mockGCS.UpdateCustomTimeCallCount())
+
+	// Access the object once its custom time is older than the threshold.
+	// Now the GCS custom time is refreshed.
+	clock.Advance(10 * time.Hour)
+	_, err = pc.Get(ctx, rn)
+	require.NoError(t, err)
+	waitForAtime()
+	require.Equal(t, 1, mockGCS.UpdateCustomTimeCallCount())
+}
+
 func pointer[T any](value T) *T {
 	return &value
 }
