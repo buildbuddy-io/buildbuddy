@@ -19,8 +19,15 @@ type timestampedBlob struct {
 }
 
 func New(clock clockwork.Clock) *mockGCS {
+	return NewWithBucket(clock, "")
+}
+
+// NewWithBucket returns a mockGCS that reports the given bucket name from
+// Bucket(). Use this when testing bucket sharding across multiple stores.
+func NewWithBucket(clock clockwork.Clock, bucket string) *mockGCS {
 	return &mockGCS{
 		clock:     clock,
+		bucket:    bucket,
 		ageInDays: 0,
 		items:     make(map[string]*timestampedBlob),
 		mu:        sync.Mutex{},
@@ -31,10 +38,23 @@ func New(clock clockwork.Clock) *mockGCS {
 // to implement the pebble.PebbleGCSStorage interface.
 type mockGCS struct {
 	clock                     clockwork.Clock
+	bucket                    string
 	ageInDays                 int64
 	items                     map[string]*timestampedBlob
 	mu                        sync.Mutex
 	updateCustomTimeCallCount int
+}
+
+// Bucket returns the name of the bucket this mock represents.
+func (m *mockGCS) Bucket() string {
+	return m.bucket
+}
+
+// BlobCount returns the number of blobs currently stored. Intended for tests.
+func (m *mockGCS) BlobCount() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return len(m.items)
 }
 
 // UpdateCustomTimeCallCount returns the number of times UpdateCustomTime has

@@ -582,6 +582,8 @@ type Store interface {
 }
 
 type PebbleGCSStorage interface {
+	// Bucket returns the name of the GCS bucket this store writes to.
+	Bucket() string
 	SetBucketCustomTimeTTL(ctx context.Context, ageInDays int64) error
 	Reader(ctx context.Context, blobName string, offset, limit int64) (io.ReadCloser, error)
 	ConditionalWriter(ctx context.Context, blobName string, overwriteExisting bool, customTime time.Time, estimatedSize int64) (interfaces.CommittedWriteCloser, error)
@@ -589,11 +591,18 @@ type PebbleGCSStorage interface {
 	UpdateCustomTime(ctx context.Context, blobName string, t time.Time) error
 }
 
+// ShardDeciderFunc reports whether a blob with the given digest hash should be
+// written to the sharded GCS buckets instead of the default bucket. It is how
+// the caller plugs in an experiment-gated, gradually-ramped rollout.
+type ShardDeciderFunc func(ctx context.Context, digestHash string) bool
+
 type Options struct {
-	tmpDir  string
-	gcs     PebbleGCSStorage
-	appName string
-	clock   clockwork.Clock
+	tmpDir       string
+	gcs          PebbleGCSStorage
+	shardedGCS   []PebbleGCSStorage
+	shardDecider ShardDeciderFunc
+	appName      string
+	clock        clockwork.Clock
 }
 
 type Option func(*Options)
@@ -602,6 +611,18 @@ func WithGCSBlobstore(gcs PebbleGCSStorage, appName string) Option {
 	return func(o *Options) {
 		o.gcs = gcs
 		o.appName = appName
+	}
+}
+
+// WithShardedGCSBlobstores configures a set of sharded GCS buckets that writes
+// may be distributed across (in addition to the default bucket configured via
+// WithGCSBlobstore). A write is sharded when shardDecider returns true for its
+// digest; the chosen shard is picked by hashing the digest, and the shard's
+// bucket name is recorded in the blob metadata so reads target it directly.
+func WithShardedGCSBlobstores(sharded []PebbleGCSStorage, shardDecider ShardDeciderFunc) Option {
+	return func(o *Options) {
+		o.shardedGCS = sharded
+		o.shardDecider = shardDecider
 	}
 }
 
@@ -618,10 +639,18 @@ func WithTmpDir(tmpDir string) Option {
 }
 
 type fileStorer struct {
-	tmpDir  string
-	gcs     PebbleGCSStorage
-	appName string
-	clock   clockwork.Clock
+	tmpDir string
+	gcs    PebbleGCSStorage
+	// shardedGCS holds the sharded buckets that writes may be distributed
+	// across; it is empty when sharding is not configured.
+	shardedGCS []PebbleGCSStorage
+	// gcsByBucket maps a (non-empty) bucket name to the store that owns it, so
+	// reads/deletes/atime updates can be routed to the bucket recorded in the
+	// blob metadata.
+	gcsByBucket  map[string]PebbleGCSStorage
+	shardDecider ShardDeciderFunc
+	appName      string
+	clock        clockwork.Clock
 }
 
 // New creates a new filestorer interface.
@@ -633,12 +662,50 @@ func New(opts ...Option) Store {
 	if options.clock == nil {
 		options.clock = clockwork.NewRealClock()
 	}
-	return &fileStorer{
-		tmpDir:  options.tmpDir,
-		gcs:     options.gcs,
-		appName: options.appName,
-		clock:   options.clock,
+	gcsByBucket := make(map[string]PebbleGCSStorage, len(options.shardedGCS))
+	for _, s := range options.shardedGCS {
+		gcsByBucket[s.Bucket()] = s
 	}
+	return &fileStorer{
+		tmpDir:       options.tmpDir,
+		gcs:          options.gcs,
+		shardedGCS:   options.shardedGCS,
+		gcsByBucket:  gcsByBucket,
+		shardDecider: options.shardDecider,
+		appName:      options.appName,
+		clock:        options.clock,
+	}
+}
+
+// gcsForBucket returns the GCS store that holds objects recorded with the given
+// bucket name. An empty bucket name (legacy objects and non-sharded writes)
+// maps to the default store.
+func (fs *fileStorer) gcsForBucket(bucket string) (PebbleGCSStorage, error) {
+	if bucket == "" {
+		return fs.gcs, nil
+	}
+	store, ok := fs.gcsByBucket[bucket]
+	if !ok {
+		return nil, status.NotFoundErrorf("no GCS blobstore configured for bucket %q", bucket)
+	}
+	return store, nil
+}
+
+// gcsWriteStore selects the GCS store a new blob should be written to. When
+// sharded buckets are configured and the shard decider opts this digest in, the
+// blob is sharded (by digest hash) across the sharded buckets; otherwise it goes
+// to the default bucket. The returned bucket name is recorded in the blob
+// metadata (empty for the default bucket).
+func (fs *fileStorer) gcsWriteStore(ctx context.Context, d *repb.Digest) (PebbleGCSStorage, string) {
+	if len(fs.shardedGCS) == 0 || fs.shardDecider == nil {
+		return fs.gcs, ""
+	}
+	if !fs.shardDecider(ctx, d.GetHash()) {
+		return fs.gcs, ""
+	}
+	shard := int(crc32.ChecksumIEEE([]byte(d.GetHash())) % uint32(len(fs.shardedGCS)))
+	store := fs.shardedGCS[shard]
+	return store, store.Bucket()
 }
 
 func (fs *fileStorer) FilePath(fileDir string, f *sgpb.StorageMetadata_FileMetadata) string {
@@ -813,13 +880,18 @@ func (fs *fileStorer) BlobReader(ctx context.Context, b *sgpb.StorageMetadata_GC
 	if fs.gcs == nil || fs.appName == "" {
 		return nil, status.FailedPreconditionError("gcs blobstore or appName not configured")
 	}
-	return fs.gcs.Reader(ctx, b.GetBlobName(), offset, limit)
+	store, err := fs.gcsForBucket(b.GetBucket())
+	if err != nil {
+		return nil, err
+	}
+	return store.Reader(ctx, b.GetBlobName(), offset, limit)
 }
 
 type gcsMetadataWriter struct {
 	interfaces.CommittedWriteCloser
 	ctx        context.Context
 	blobName   string
+	bucket     string
 	customTime time.Time
 	digest     *repb.Digest
 }
@@ -851,6 +923,7 @@ func (g *gcsMetadataWriter) Metadata() *sgpb.StorageMetadata {
 	return &sgpb.StorageMetadata{
 		GcsMetadata: &sgpb.StorageMetadata_GCSMetadata{
 			BlobName:           g.blobName,
+			Bucket:             g.bucket,
 			LastCustomTimeUsec: g.customTime.UnixMicro(),
 		},
 	}
@@ -879,8 +952,9 @@ func (fs *fileStorer) BlobWriter(ctx context.Context, fileRecord *sgpb.FileRecor
 		// underestimate.
 		estimatedSize /= 5
 	}
+	store, bucket := fs.gcsWriteStore(ctx, fileRecord.GetDigest())
 	customTime := fs.clock.Now()
-	wc, err := fs.gcs.ConditionalWriter(ctx, blobName, true /*=overwriteExisting*/, customTime, estimatedSize)
+	wc, err := store.ConditionalWriter(ctx, blobName, true /*=overwriteExisting*/, customTime, estimatedSize)
 	if err != nil {
 		return nil, err
 	}
@@ -888,6 +962,7 @@ func (fs *fileStorer) BlobWriter(ctx context.Context, fileRecord *sgpb.FileRecor
 		ctx:                  ctx,
 		CommittedWriteCloser: wc,
 		blobName:             string(blobName),
+		bucket:               bucket,
 		customTime:           customTime,
 		digest:               fileRecord.GetDigest(),
 	}, nil
@@ -897,7 +972,11 @@ func (fs *fileStorer) DeleteStoredBlob(ctx context.Context, b *sgpb.StorageMetad
 	if fs.gcs == nil || fs.appName == "" {
 		return status.FailedPreconditionError("gcs blobstore or appName not configured")
 	}
-	err := fs.gcs.DeleteBlob(ctx, b.GetBlobName())
+	store, err := fs.gcsForBucket(b.GetBucket())
+	if err != nil {
+		return err
+	}
+	err = store.DeleteBlob(ctx, b.GetBlobName())
 	log.Debugf("Deleted gcs blob: %q with err: %s", b.GetBlobName(), err)
 	return err
 }
@@ -906,7 +985,11 @@ func (fs *fileStorer) UpdateBlobAtime(ctx context.Context, b *sgpb.StorageMetada
 	if fs.gcs == nil || fs.appName == "" {
 		return status.FailedPreconditionError("gcs blobstore or appName not configured")
 	}
-	err := fs.gcs.UpdateCustomTime(ctx, b.GetBlobName(), t)
+	store, err := fs.gcsForBucket(b.GetBucket())
+	if err != nil {
+		return err
+	}
+	err = store.UpdateCustomTime(ctx, b.GetBlobName(), t)
 	log.Debugf("Updated gcs blob: %q atime to %d with err: %s", b.GetBlobName(), t.UnixMicro(), err)
 	return err
 }

@@ -47,6 +47,13 @@ message StorageMetadata {
     // This is used in conjunction with a bucket LifecycleCondition that
     // deletes objects after DaysSinceCustomTime is exceeded.
     int64 last_custom_time_usec = 2;
+
+    // The GCS bucket the blob was written to. An empty value means the default
+    // bucket (cache.pebble.gcs.bucket); a non-empty value is one of the sharded
+    // buckets (cache.pebble.gcs.sharded_buckets). This is recorded at write
+    // time so that reads, deletes, and custom time updates target the right
+    // bucket regardless of the current sharding rollout percentage.
+    string bucket = 3;
   }
   GCSMetadata gcs_metadata = 5;
 
