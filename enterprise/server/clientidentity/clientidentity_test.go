@@ -31,7 +31,7 @@ func TestIdentity(t *testing.T) {
 
 	origin := "space"
 	client := "aliens"
-	headerValue, err := sis.IdentityHeader(&interfaces.ClientIdentity{
+	headerValue, err := sis.NewIdentityHeader(&interfaces.ClientIdentity{
 		Origin: origin,
 		Client: client,
 	}, clientidentity.DefaultExpiration)
@@ -53,7 +53,7 @@ func TestDuplicateHeaders(t *testing.T) {
 
 	origin := "space"
 	client := "aliens"
-	headerValue, err := sis.IdentityHeader(&interfaces.ClientIdentity{
+	headerValue, err := sis.NewIdentityHeader(&interfaces.ClientIdentity{
 		Origin: origin,
 		Client: client,
 	}, clientidentity.DefaultExpiration)
@@ -97,7 +97,7 @@ func TestStaleIdentity(t *testing.T) {
 
 	origin := "space"
 	client := "aliens"
-	headerValue, err := sis.IdentityHeader(&interfaces.ClientIdentity{
+	headerValue, err := sis.NewIdentityHeader(&interfaces.ClientIdentity{
 		Origin: origin,
 		Client: client,
 	}, clientidentity.DefaultExpiration)
@@ -118,7 +118,7 @@ func TestRequired(t *testing.T) {
 
 	origin := "space"
 	client := "aliens"
-	headerValue, err := sis.IdentityHeader(&interfaces.ClientIdentity{
+	headerValue, err := sis.NewIdentityHeader(&interfaces.ClientIdentity{
 		Origin: origin,
 		Client: client,
 	}, clientidentity.DefaultExpiration)
@@ -139,7 +139,7 @@ func TestClearIdentity(t *testing.T) {
 	clock := clockwork.NewFakeClock()
 	sis := newService(t, clock)
 
-	headerValue, err := sis.IdentityHeader(&interfaces.ClientIdentity{
+	headerValue, err := sis.NewIdentityHeader(&interfaces.ClientIdentity{
 		Origin: "origin",
 		Client: "client",
 	}, clientidentity.DefaultExpiration)
@@ -160,7 +160,7 @@ func TestAddIdentityToContext_PreservesExisting(t *testing.T) {
 	clock := clockwork.NewFakeClock()
 	sis := newService(t, clock)
 
-	existingHeader, err := sis.IdentityHeader(&interfaces.ClientIdentity{
+	existingHeader, err := sis.NewIdentityHeader(&interfaces.ClientIdentity{
 		Origin: "upstream-origin",
 		Client: "upstream",
 	}, clientidentity.DefaultExpiration)
@@ -191,6 +191,43 @@ func TestAddIdentityToContext_AddsWhenMissing(t *testing.T) {
 	require.True(t, ok)
 	vals := md.Get(authutil.ClientIdentityHeaderName)
 	require.Equal(t, 1, len(vals), "expected a new header to be added")
+}
+
+func TestCachedIdentityHeader(t *testing.T) {
+	clock := clockwork.NewFakeClock()
+	sis := newService(t, clock)
+
+	si := &interfaces.ClientIdentity{Origin: "internal", Client: "grpc-proxy"}
+
+	h1, err := sis.CachedIdentityHeader(si)
+	require.NoError(t, err)
+
+	// Within the cache TTL, the same header is returned without re-signing
+	// (a re-sign at a later time would change the JWT's expiration claim).
+	clock.Advance(30 * time.Second)
+	h2, err := sis.CachedIdentityHeader(si)
+	require.NoError(t, err)
+	require.Equal(t, h1, h2)
+
+	// A different identity is cached independently.
+	other, err := sis.CachedIdentityHeader(&interfaces.ClientIdentity{Origin: "internal", Client: "app"})
+	require.NoError(t, err)
+	require.NotEqual(t, h1, other)
+
+	// Past the cache TTL, the header is re-signed.
+	clock.Advance(2 * time.Minute)
+	h3, err := sis.CachedIdentityHeader(si)
+	require.NoError(t, err)
+	require.NotEqual(t, h1, h3)
+
+	// The cached header is a valid identity for the requested client.
+	ctx := metadata.NewIncomingContext(t.Context(), metadata.Pairs(authutil.ClientIdentityHeaderName, h3))
+	ctx, err = sis.ValidateIncomingIdentity(ctx)
+	require.NoError(t, err)
+	got, err := sis.IdentityFromContext(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "grpc-proxy", got.Client)
+	require.Equal(t, "internal", got.Origin)
 }
 
 func BenchmarkAddIdentityToContext(b *testing.B) {

@@ -6,6 +6,10 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/util/grpc_forward",
     visibility = ["//visibility:public"],
     deps = [
+        "//server/environment",
+        "//server/interfaces",
+        "//server/util/authutil",
+        "//server/util/clientip",
         "//server/util/flag",
         "//server/util/grpc_client",
         "//server/util/status",
@@ -20,6 +24,10 @@ go_test(
     srcs = ["grpc_forward_test.go"],
     embed = [":grpc_forward"],
     deps = [
+        "//server/interfaces",
+        "//server/real_environment",
+        "//server/util/authutil",
+        "//server/util/clientip",
         "//server/util/grpc_client",
         "//server/util/testing/flags",
         "@com_github_stretchr_testify//require",
