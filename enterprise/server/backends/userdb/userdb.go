@@ -439,6 +439,11 @@ func (d *UserDB) UpdateGroupSamlIdpMetadataUrl(ctx context.Context, groupID stri
 		if err != nil {
 			return err
 		}
+		// A parent group manages other groups by shared metadata URL, so it must
+		// always have one. Refuse to clear a parent's URL.
+		if group.IsParent && url == "" {
+			return status.FailedPreconditionError("cannot clear the SAML IdP metadata URL of a parent group")
+		}
 		// A "parent" group manages every group that shares its SAML IdP metadata
 		// URL: updating the parent cascades the new URL to all of them.
 		if group.IsParent && group.SamlIdpMetadataUrl != "" {

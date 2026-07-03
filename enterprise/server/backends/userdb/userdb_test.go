@@ -607,6 +607,30 @@ func TestUpdateGroupSamlIdpMetadataUrl_ParentEmptyURLDoesNotCascade(t *testing.T
 	requireGroupSamlURL(t, ctx, env, other.GroupID, "")
 }
 
+func TestUpdateGroupSamlIdpMetadataUrl_ParentCannotClearURL(t *testing.T) {
+	env := newTestEnv(t)
+	flags.Set(t, "app.create_group_per_user", true)
+	flags.Set(t, "app.no_default_user_group", true)
+	udb := env.GetUserDB()
+	ctx := context.Background()
+
+	const url = "https://idp.example.com/shared"
+
+	createUser(t, ctx, env, "US1", "parent.io")
+	parentCtx := authUserCtx(ctx, env, t, "US1")
+	parent := getGroup(t, parentCtx, env).Group
+	parent.URLIdentifier = "parent"
+	parent.SamlIdpMetadataUrl = url
+	parent.IsParent = true
+	_, err := udb.UpdateGroup(parentCtx, &parent)
+	require.NoError(t, err)
+
+	// Clearing a parent group's URL is rejected, and the URL is left unchanged.
+	err = udb.UpdateGroupSamlIdpMetadataUrl(parentCtx, parent.GroupID, "")
+	require.Truef(t, status.IsFailedPreconditionError(err), "expected FailedPrecondition, got: %v", err)
+	requireGroupSamlURL(t, ctx, env, parent.GroupID, url)
+}
+
 func TestCreateGroup(t *testing.T) {
 	env := newTestEnv(t)
 	flags.Set(t, "app.create_group_per_user", true)
