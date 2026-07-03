@@ -38,6 +38,7 @@ enum TabId {
   OrgSecrets = "org/secrets",
   OrgCacheEncryption = "org/cache-encryption",
   OrgIpRules = "org/ip-rules",
+  OrgSSO = "org/sso",
 
   PersonalPreferences = "personal/preferences",
   PersonalApiKeys = "personal/api-keys",
@@ -169,6 +170,11 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
                     IP rules
                   </SettingsTab>
                 )}
+                {router.canAccessOrgSSOPage(this.props.user) && (
+                  <SettingsTab id={TabId.OrgSSO} activeTabId={activeTabId}>
+                    Single sign-on
+                  </SettingsTab>
+                )}
               </div>
               <div className="settings-tab-group-header">
                 <div className="settings-tab-group-title">Personal settings</div>
@@ -278,7 +284,6 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
                       {this.props.user.isImpersonating && (
                         <div className="settings-internal-section">
                           <GroupStatusComponent user={this.props.user} />
-                          <SSOConfigComponent user={this.props.user} />
                         </div>
                       )}
                     </>
@@ -394,6 +399,7 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
                       <IpRulesComponent user={this.props.user} />
                     </>
                   )}
+                  {activeTabId === TabId.OrgSSO && <SSOConfigComponent user={this.props.user} />}
                 </>
               )}
             </div>

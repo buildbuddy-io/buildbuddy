@@ -12,9 +12,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/buildbuddy_server"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/http/httpclient"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -77,7 +79,7 @@ func TestCreateGroup(t *testing.T) {
 	adminKey, err := te.GetAuthDB().CreateAPIKey(
 		userCtx, parentGroup.GroupID, "admin",
 		[]cappb.Capability{cappb.Capability_ORG_ADMIN},
-		0, /*=expiresIn*/
+		0,    /*=expiresIn*/
 		false /*=visibleToDevelopers*/)
 	require.NoError(t, err)
 	adminKeyCtx := te.GetAuthenticator().AuthContextFromAPIKey(ctx, adminKey.Value)
@@ -160,7 +162,7 @@ func TestCreateGroup_StatusRestrictions(t *testing.T) {
 			adminKey, err := te.GetAuthDB().CreateAPIKey(
 				userCtx, group.GroupID, "admin",
 				[]cappb.Capability{cappb.Capability_ORG_ADMIN},
-				0, /*=expiresIn*/
+				0,    /*=expiresIn*/
 				false /*=visibleToDevelopers*/)
 			require.NoError(t, err)
 			adminKeyCtx := te.GetAuthenticator().AuthContextFromAPIKey(ctx, adminKey.Value)
@@ -232,13 +234,6 @@ func TestSetGroupStatus(t *testing.T) {
 	assert.Equal(t, grpb.Group_BLOCKED_GROUP_STATUS, updatedGroup.Status)
 }
 
-const validSamlMetadata = `<?xml version="1.0"?>
-<md:EntityDescriptor xmlns:md="urn:oasis:names:tc:SAML:2.0:metadata" entityID="https://idp.example.com/saml">
-  <md:IDPSSODescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol">
-    <md:SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect" Location="https://idp.example.com/sso"/>
-  </md:IDPSSODescriptor>
-</md:EntityDescriptor>`
-
 func setUpSSOConfigTest(t *testing.T) (context.Context, *buildbuddy_server.BuildBuddyServer, environment.Env, *tables.Group) {
 	te := enterprise_testenv.New(t)
 	enterprise_testauth.Configure(t, te)
@@ -286,24 +281,55 @@ func TestGetSSOConfig(t *testing.T) {
 	assert.Equal(t, "https://idp.example.com/meta", rsp.GetConfig().GetSamlIdpMetadataUrl())
 }
 
-func TestSetSSOConfig_ValidMetadata(t *testing.T) {
-	userCtx, server, te, group := setUpSSOConfigTest(t)
+const testSamlMetadata = `<?xml version="1.0"?>
+<EntityDescriptor xmlns="urn:oasis:names:tc:SAML:2.0:metadata" entityID="https://idp.example.com/metadata">
+  <IDPSSODescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol">
+    <SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect" Location="https://idp.example.com/sso"/>
+  </IDPSSODescriptor>
+</EntityDescriptor>`
 
-	idp := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+func TestValidateSamlIdpMetadataURL(t *testing.T) {
+	// A TLS test server standing in for the IdP. Its client trusts the
+	// server's self-signed cert, so we use it in place of the SSRF-blocking
+	// production client for these unit tests.
+	idp := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/samlmetadata+xml")
-		_, _ = w.Write([]byte(validSamlMetadata))
+		_, _ = w.Write([]byte(testSamlMetadata))
 	}))
 	defer idp.Close()
 
-	_, err := server.SetSSOConfig(userCtx, &grpb.SetSSOConfigRequest{
-		RequestContext: &ctxpb.RequestContext{GroupId: group.GroupID},
-		Config:         &grpb.SSOConfig{SamlIdpMetadataUrl: idp.URL},
-	})
-	require.NoError(t, err)
+	notSaml := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`<html><body>not saml</body></html>`))
+	}))
+	defer notSaml.Close()
 
-	updated, err := te.GetUserDB().GetGroupByID(context.Background(), group.GroupID)
-	require.NoError(t, err)
-	assert.Equal(t, idp.URL, updated.SamlIdpMetadataUrl)
+	for _, tc := range []struct {
+		name    string
+		url     string
+		client  *http.Client
+		wantErr bool
+	}{
+		{name: "valid_https_metadata", url: idp.URL, client: idp.Client(), wantErr: false},
+		{name: "non_saml_content", url: notSaml.URL, client: notSaml.Client(), wantErr: true},
+		{name: "http_scheme_rejected", url: "http://idp.example.com/meta", client: http.DefaultClient, wantErr: true},
+		{name: "file_scheme_rejected", url: "file:///etc/passwd", client: http.DefaultClient, wantErr: true},
+		{name: "missing_host_rejected", url: "https:///meta", client: http.DefaultClient, wantErr: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := buildbuddy_server.ValidateSamlIdpMetadataURL(context.Background(), tc.client, tc.url)
+			if tc.wantErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestValidateSamlIdpMetadataURL_BlocksPrivateIP(t *testing.T) {
+	client := httpclient.New(nil /*=allowedPrivateIPNets*/, "test")
+	err := buildbuddy_server.ValidateSamlIdpMetadataURL(context.Background(), client, "https://10.0.0.1/metadata")
+	require.Error(t, err)
 }
 
 func TestSetSSOConfig_ClearsURL(t *testing.T) {
@@ -323,57 +349,88 @@ func TestSetSSOConfig_ClearsURL(t *testing.T) {
 	assert.Equal(t, "", updated.SamlIdpMetadataUrl)
 }
 
-func TestSetSSOConfig_RejectsInvalidMetadata(t *testing.T) {
+func TestSetSSOConfig_RejectsNonHTTPSScheme(t *testing.T) {
 	userCtx, server, _, group := setUpSSOConfigTest(t)
 
-	notSaml := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte(`<html><body>hello</body></html>`))
-	}))
-	defer notSaml.Close()
-
-	_, err := server.SetSSOConfig(userCtx, &grpb.SetSSOConfigRequest{
-		RequestContext: &ctxpb.RequestContext{GroupId: group.GroupID},
-		Config:         &grpb.SSOConfig{SamlIdpMetadataUrl: notSaml.URL},
-	})
-	require.Error(t, err)
+	for _, metadataURL := range []string{"http://idp.example.com/meta", "file:///etc/passwd"} {
+		_, err := server.SetSSOConfig(userCtx, &grpb.SetSSOConfigRequest{
+			RequestContext: &ctxpb.RequestContext{GroupId: group.GroupID},
+			Config:         &grpb.SSOConfig{SamlIdpMetadataUrl: metadataURL},
+		})
+		require.Errorf(t, err, "expected %q to be rejected", metadataURL)
+	}
 }
 
-func TestSetSSOConfig_RejectsNonHTTPScheme(t *testing.T) {
-	userCtx, server, _, group := setUpSSOConfigTest(t)
-
-	_, err := server.SetSSOConfig(userCtx, &grpb.SetSSOConfigRequest{
-		RequestContext: &ctxpb.RequestContext{GroupId: group.GroupID},
-		Config:         &grpb.SSOConfig{SamlIdpMetadataUrl: "file:///etc/passwd"},
-	})
-	require.Error(t, err)
-}
-
-func TestSetSSOConfig_RequiresServerAdmin(t *testing.T) {
-	// Create a group that is NOT a server admin and verify the RPC is rejected.
+// TestSetSSOConfig_RejectsNonAdmin verifies that a non-admin member of a group
+// cannot change the group's SSO config.
+func TestSetSSOConfig_RejectsNonAdmin(t *testing.T) {
 	te := enterprise_testenv.New(t)
 	enterprise_testauth.Configure(t, te)
-
 	flags.Set(t, "app.create_group_per_user", true)
 	flags.Set(t, "app.no_default_user_group", true)
-	// Point admin_group_id at a different group ID so US1's group isn't admin.
-	flags.Set(t, "auth.admin_group_id", "GR-NOT-MY-GROUP")
+	// Point admin_group_id at a nonexistent group so group members aren't
+	// server admins.
+	flags.Set(t, "auth.admin_group_id", "GR-NONEXISTENT")
 
 	ctx := context.Background()
-	require.NoError(t, te.GetUserDB().InsertUser(ctx, &tables.User{UserID: "US1", SubID: "US1SubID"}))
-	userCtx := authUserCtx(ctx, te, t, "US1")
-	group := getGroup(t, userCtx, te).Group
+	const domain = "sso-nonadmin-test.io"
+	admin := enterprise_testauth.CreateRandomUser(t, te, domain)
+	adminCtx := authUserCtx(ctx, te, t, admin.UserID)
+	group := getGroup(t, adminCtx, te).Group
+	// Own the domain so the next user auto-joins the group as a (non-admin)
+	// developer.
+	_, err := te.GetUserDB().UpdateGroup(adminCtx, &tables.Group{
+		GroupID:       group.GroupID,
+		URLIdentifier: "sso-nonadmin-slug",
+		OwnedDomain:   domain,
+	})
+	require.NoError(t, err)
+	dev := enterprise_testauth.CreateRandomUser(t, te, domain)
+	devCtx := authUserCtx(ctx, te, t, dev.UserID)
 
 	server, err := buildbuddy_server.NewBuildBuddyServer(te, nil)
 	require.NoError(t, err)
 
-	_, err = server.SetSSOConfig(userCtx, &grpb.SetSSOConfigRequest{
+	_, err = server.SetSSOConfig(devCtx, &grpb.SetSSOConfigRequest{
 		RequestContext: &ctxpb.RequestContext{GroupId: group.GroupID},
 		Config:         &grpb.SSOConfig{SamlIdpMetadataUrl: "https://idp.example.com/meta"},
 	})
-	require.Error(t, err)
+	// Rejected specifically for lacking admin capability, not some other error.
+	require.Truef(t, status.IsPermissionDeniedError(err), "expected PermissionDenied, got: %v", err)
+	require.Contains(t, status.Message(err), "missing required capabilities")
+}
 
-	_, err = server.GetSSOConfig(userCtx, &grpb.GetSSOConfigRequest{
-		RequestContext: &ctxpb.RequestContext{GroupId: group.GroupID},
+// TestSetSSOConfig_RejectsCrossTenantAdmin verifies that an admin of one org
+// cannot read or change the SSO config of a different org.
+func TestSetSSOConfig_RejectsCrossTenantAdmin(t *testing.T) {
+	te := enterprise_testenv.New(t)
+	enterprise_testauth.Configure(t, te)
+	flags.Set(t, "app.create_group_per_user", true)
+	flags.Set(t, "app.no_default_user_group", true)
+	flags.Set(t, "auth.admin_group_id", "GR-NONEXISTENT")
+
+	ctx := context.Background()
+	adminA := enterprise_testauth.CreateRandomUser(t, te, "tenant-a.io")
+	adminACtx := authUserCtx(ctx, te, t, adminA.UserID)
+	adminB := enterprise_testauth.CreateRandomUser(t, te, "tenant-b.io")
+	adminBCtx := authUserCtx(ctx, te, t, adminB.UserID)
+	groupB := getGroup(t, adminBCtx, te).Group
+
+	server, err := buildbuddy_server.NewBuildBuddyServer(te, nil)
+	require.NoError(t, err)
+
+	// Admin of tenant A targeting tenant B's group is rejected specifically for
+	// not being a member of tenant B, not some other error.
+	_, err = server.SetSSOConfig(adminACtx, &grpb.SetSSOConfigRequest{
+		RequestContext: &ctxpb.RequestContext{GroupId: groupB.GroupID},
+		Config:         &grpb.SSOConfig{SamlIdpMetadataUrl: "https://idp.example.com/meta"},
 	})
-	require.Error(t, err)
+	require.Truef(t, status.IsPermissionDeniedError(err), "expected PermissionDenied from SetSSOConfig, got: %v", err)
+	require.Contains(t, status.Message(err), "not a member of the requested organization")
+
+	_, err = server.GetSSOConfig(adminACtx, &grpb.GetSSOConfigRequest{
+		RequestContext: &ctxpb.RequestContext{GroupId: groupB.GroupID},
+	})
+	require.Truef(t, status.IsPermissionDeniedError(err), "expected PermissionDenied from GetSSOConfig, got: %v", err)
+	require.Contains(t, status.Message(err), "not a member of the requested organization")
 }
