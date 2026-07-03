@@ -434,12 +434,28 @@ func (d *UserDB) UpdateGroupSamlIdpMetadataUrl(ctx context.Context, groupID stri
 		return err
 	}
 
-	return d.h.NewQuery(ctx, "userdb_update_group_saml_idp_metadata_url").Raw(`
-		UPDATE "Groups" SET saml_idp_metadata_url = ?
-		WHERE group_id = ?`,
-		url,
-		groupID,
-	).Exec().Error
+	return d.h.Transaction(ctx, func(tx interfaces.DB) error {
+		group, err := d.getGroupByID(ctx, tx, groupID)
+		if err != nil {
+			return err
+		}
+		// A "parent" group manages every group that shares its SAML IdP metadata
+		// URL: updating the parent cascades the new URL to all of them.
+		if group.IsParent && group.SamlIdpMetadataUrl != "" {
+			return tx.NewQuery(ctx, "userdb_update_group_saml_idp_metadata_url_cascade").Raw(`
+				UPDATE "Groups" SET saml_idp_metadata_url = ?
+				WHERE saml_idp_metadata_url = ?`,
+				url,
+				group.SamlIdpMetadataUrl,
+			).Exec().Error
+		}
+		return tx.NewQuery(ctx, "userdb_update_group_saml_idp_metadata_url").Raw(`
+			UPDATE "Groups" SET saml_idp_metadata_url = ?
+			WHERE group_id = ?`,
+			url,
+			groupID,
+		).Exec().Error
+	})
 }
 
 func (d *UserDB) DeleteGroupGitHubToken(ctx context.Context, groupID string) error {

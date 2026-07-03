@@ -493,6 +493,120 @@ func TestUpdateGroup(t *testing.T) {
 	require.NoError(t, err)
 }
 
+// createGroupWithSamlURL creates a self-owned (non-parent) group for userID and
+// sets its SAML IdP metadata URL. Returns the group ID.
+func createGroupWithSamlURL(t *testing.T, ctx context.Context, env environment.Env, userID, domain, slug, url string) string {
+	createUser(t, ctx, env, userID, domain)
+	userCtx := authUserCtx(ctx, env, t, userID)
+	g := getGroup(t, userCtx, env).Group
+	g.URLIdentifier = slug
+	g.SamlIdpMetadataUrl = url
+	_, err := env.GetUserDB().UpdateGroup(userCtx, &g)
+	require.NoError(t, err)
+	return g.GroupID
+}
+
+func requireGroupSamlURL(t *testing.T, ctx context.Context, env environment.Env, groupID, want string) {
+	g, err := env.GetUserDB().GetGroupByID(ctx, groupID)
+	require.NoError(t, err)
+	require.Equalf(t, want, g.SamlIdpMetadataUrl, "SAML URL for group %s", groupID)
+}
+
+func TestUpdateGroupSamlIdpMetadataUrl_CascadesForParent(t *testing.T) {
+	env := newTestEnv(t)
+	flags.Set(t, "app.create_group_per_user", true)
+	flags.Set(t, "app.no_default_user_group", true)
+	udb := env.GetUserDB()
+	ctx := context.Background()
+
+	const sharedURL = "https://idp.example.com/shared"
+	const otherURL = "https://idp.example.com/other"
+	const newURL = "https://idp.example.com/new"
+
+	// Parent group (marked as parent) with the shared URL.
+	createUser(t, ctx, env, "US1", "parent.io")
+	parentCtx := authUserCtx(ctx, env, t, "US1")
+	parent := getGroup(t, parentCtx, env).Group
+	parent.URLIdentifier = "parent"
+	parent.SamlIdpMetadataUrl = sharedURL
+	parent.IsParent = true
+	_, err := udb.UpdateGroup(parentCtx, &parent)
+	require.NoError(t, err)
+
+	// Two child groups that share the parent's URL, plus an unrelated group.
+	child1 := createGroupWithSamlURL(t, ctx, env, "US2", "child1.io", "child1", sharedURL)
+	child2 := createGroupWithSamlURL(t, ctx, env, "US3", "child2.io", "child2", sharedURL)
+	other := createGroupWithSamlURL(t, ctx, env, "US4", "other.io", "other", otherURL)
+
+	// Updating the parent cascades the new URL to every group that shared the
+	// parent's old URL, but leaves unrelated groups alone.
+	require.NoError(t, udb.UpdateGroupSamlIdpMetadataUrl(parentCtx, parent.GroupID, newURL))
+
+	requireGroupSamlURL(t, ctx, env, parent.GroupID, newURL)
+	requireGroupSamlURL(t, ctx, env, child1, newURL)
+	requireGroupSamlURL(t, ctx, env, child2, newURL)
+	requireGroupSamlURL(t, ctx, env, other, otherURL)
+}
+
+func TestUpdateGroupSamlIdpMetadataUrl_NoCascadeForNonParent(t *testing.T) {
+	env := newTestEnv(t)
+	flags.Set(t, "app.create_group_per_user", true)
+	flags.Set(t, "app.no_default_user_group", true)
+	udb := env.GetUserDB()
+	ctx := context.Background()
+
+	const sharedURL = "https://idp.example.com/shared"
+	const newURL = "https://idp.example.com/new"
+
+	// Two groups share a URL; neither is marked as a parent.
+	createUser(t, ctx, env, "US1", "g1.io")
+	g1Ctx := authUserCtx(ctx, env, t, "US1")
+	g1 := getGroup(t, g1Ctx, env).Group
+	g1.URLIdentifier = "g1"
+	g1.SamlIdpMetadataUrl = sharedURL
+	_, err := udb.UpdateGroup(g1Ctx, &g1)
+	require.NoError(t, err)
+
+	g2 := createGroupWithSamlURL(t, ctx, env, "US2", "g2.io", "g2", sharedURL)
+
+	// Updating a non-parent group updates only itself.
+	require.NoError(t, udb.UpdateGroupSamlIdpMetadataUrl(g1Ctx, g1.GroupID, newURL))
+
+	requireGroupSamlURL(t, ctx, env, g1.GroupID, newURL)
+	requireGroupSamlURL(t, ctx, env, g2, sharedURL)
+}
+
+func TestUpdateGroupSamlIdpMetadataUrl_ParentEmptyURLDoesNotCascade(t *testing.T) {
+	env := newTestEnv(t)
+	flags.Set(t, "app.create_group_per_user", true)
+	flags.Set(t, "app.no_default_user_group", true)
+	udb := env.GetUserDB()
+	ctx := context.Background()
+
+	const newURL = "https://idp.example.com/new"
+
+	// Parent group with no URL set yet.
+	createUser(t, ctx, env, "US1", "parent.io")
+	parentCtx := authUserCtx(ctx, env, t, "US1")
+	parent := getGroup(t, parentCtx, env).Group
+	parent.URLIdentifier = "parent"
+	parent.IsParent = true
+	_, err := udb.UpdateGroup(parentCtx, &parent)
+	require.NoError(t, err)
+
+	// Another group that also has no SAML URL.
+	createUser(t, ctx, env, "US2", "other.io")
+	otherCtx := authUserCtx(ctx, env, t, "US2")
+	other := getGroup(t, otherCtx, env).Group
+
+	// Setting the parent's URL for the first time must not cascade to every other
+	// group that also has an empty URL.
+	require.NoError(t, udb.UpdateGroupSamlIdpMetadataUrl(parentCtx, parent.GroupID, newURL))
+
+	requireGroupSamlURL(t, ctx, env, parent.GroupID, newURL)
+	requireGroupSamlURL(t, ctx, env, other.GroupID, "")
+}
+
 func TestCreateGroup(t *testing.T) {
 	env := newTestEnv(t)
 	flags.Set(t, "app.create_group_per_user", true)
