@@ -79,7 +79,7 @@ func TestCreateGroup(t *testing.T) {
 	adminKey, err := te.GetAuthDB().CreateAPIKey(
 		userCtx, parentGroup.GroupID, "admin",
 		[]cappb.Capability{cappb.Capability_ORG_ADMIN},
-		0,    /*=expiresIn*/
+		0, /*=expiresIn*/
 		false /*=visibleToDevelopers*/)
 	require.NoError(t, err)
 	adminKeyCtx := te.GetAuthenticator().AuthContextFromAPIKey(ctx, adminKey.Value)
@@ -162,7 +162,7 @@ func TestCreateGroup_StatusRestrictions(t *testing.T) {
 			adminKey, err := te.GetAuthDB().CreateAPIKey(
 				userCtx, group.GroupID, "admin",
 				[]cappb.Capability{cappb.Capability_ORG_ADMIN},
-				0,    /*=expiresIn*/
+				0, /*=expiresIn*/
 				false /*=visibleToDevelopers*/)
 			require.NoError(t, err)
 			adminKeyCtx := te.GetAuthenticator().AuthContextFromAPIKey(ctx, adminKey.Value)
