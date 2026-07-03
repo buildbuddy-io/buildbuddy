@@ -361,6 +361,41 @@ func TestSetSSOConfig_RejectsNonHTTPSScheme(t *testing.T) {
 	}
 }
 
+// TestSetSSOConfig_OrgAdminNotServerAdmin verifies that an org admin who is not
+// a server admin can manage their own group's SSO config (the self-serve case).
+func TestSetSSOConfig_OrgAdminNotServerAdmin(t *testing.T) {
+	te := enterprise_testenv.New(t)
+	enterprise_testauth.Configure(t, te)
+	flags.Set(t, "app.create_group_per_user", true)
+	flags.Set(t, "app.no_default_user_group", true)
+	// Point admin_group_id at a nonexistent group so the org admin is NOT also a
+	// server admin.
+	flags.Set(t, "auth.admin_group_id", "GR-NONEXISTENT")
+
+	ctx := context.Background()
+	admin := enterprise_testauth.CreateRandomUser(t, te, "sso-selfserve-test.io")
+	adminCtx := authUserCtx(ctx, te, t, admin.UserID)
+	group := getGroup(t, adminCtx, te).Group
+
+	server, err := buildbuddy_server.NewBuildBuddyServer(te, nil)
+	require.NoError(t, err)
+
+	// Seeding directly exercises the DB-layer authorization: an org admin (not a
+	// server admin) can set the URL.
+	require.NoError(t, te.GetUserDB().UpdateGroupSamlIdpMetadataUrl(adminCtx, group.GroupID, "https://idp.example.com/meta"))
+
+	// Clearing via the RPC exercises the end-to-end self-serve path.
+	_, err = server.SetSSOConfig(adminCtx, &grpb.SetSSOConfigRequest{
+		RequestContext: &ctxpb.RequestContext{GroupId: group.GroupID},
+		Config:         &grpb.SSOConfig{SamlIdpMetadataUrl: ""},
+	})
+	require.NoError(t, err)
+
+	updated, err := te.GetUserDB().GetGroupByID(context.Background(), group.GroupID)
+	require.NoError(t, err)
+	assert.Equal(t, "", updated.SamlIdpMetadataUrl)
+}
+
 // TestSetSSOConfig_RejectsNonAdmin verifies that a non-admin member of a group
 // cannot change the group's SSO config.
 func TestSetSSOConfig_RejectsNonAdmin(t *testing.T) {
