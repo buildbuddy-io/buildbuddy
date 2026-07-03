@@ -867,15 +867,35 @@ func (e *EventChannel) FinalizeInvocation(iid string) error {
 	invocation.Attempt = e.attempt
 	invocation.HasChunkedEventLogs = e.logWriter != nil
 
+	disconnected := invocation.GetInvocationStatus() == inspb.InvocationStatus_DISCONNECTED_INVOCATION_STATUS
+
+	// Flush/close blobstore writers (raw event protos and build logs).
 	if e.pw != nil {
 		if err := e.pw.Flush(ctx); err != nil {
-			return err
+			// Return the error so that the client can retry sending events,
+			// giving us another chance to write them to blobstore. If the
+			// client disconnected, just log the error since they won't get the
+			// error that we return here. This also ensures that we properly
+			// mark the invocation disconnected below.
+			if disconnected {
+				log.CtxWarningf(ctx, "Failed to flush invocation events to blobstore: %s", err)
+			} else {
+				return err
+			}
 		}
 	}
-
 	if e.logWriter != nil {
 		if err := e.logWriter.Close(ctx); err != nil {
-			return err
+			// Return the error so that the client can retry sending events,
+			// giving us another chance to write them to blobstore. If the
+			// client disconnected, just log the error since they won't get the
+			// error that we return here. This also ensures that we properly
+			// mark the invocation disconnected in the DB below.
+			if disconnected {
+				log.CtxWarningf(ctx, "Failed to flush invocation logs to blobstore: %s", err)
+			} else {
+				return err
+			}
 		}
 		invocation.LastChunkId = e.logWriter.GetLastChunkId(ctx)
 	}
@@ -900,7 +920,7 @@ func (e *EventChannel) FinalizeInvocation(iid string) error {
 	// Report a disconnect only if we successfully updated the invocation.
 	// This reduces the likelihood that the disconnected invocation's status
 	// will overwrite any statuses written by a more recent attempt.
-	if invocation.GetInvocationStatus() == inspb.InvocationStatus_DISCONNECTED_INVOCATION_STATUS {
+	if disconnected {
 		log.CtxWarning(ctx, "Reporting disconnected status for invocation")
 		e.statusReporter.ReportDisconnect(ctx)
 	}

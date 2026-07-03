@@ -8,6 +8,7 @@ import (
 	"math"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/backends/chunkstore"
 	"github.com/buildbuddy-io/buildbuddy/server/eventlog"
@@ -267,4 +268,43 @@ func TestGetEventLogChunk_RunLogs(t *testing.T) {
 	)
 	require.NoError(t, err)
 	assert.Equal(t, "Chunk 0\nChunk 1\n", string(rsp.Buffer))
+}
+
+func TestANSICursorBufferWriterCloseAfterWriteLoopShutsDown(t *testing.T) {
+	m := mockstore.New()
+	ctx, cancel := context.WithCancel(t.Context())
+
+	// Create a chunkstore writer with a write hook that signals when the
+	// write loop shuts down.
+	shutdown := make(chan struct{})
+	cw := chunkstore.New(m, &chunkstore.ChunkstoreOptions{}).Writer(ctx, "eventlog", &chunkstore.ChunkstoreWriterOptions{
+		WriteHook: func(_ context.Context, _ *chunkstore.WriteRequest, result *chunkstore.WriteResult, _, _ []byte) {
+			if result.Close {
+				close(shutdown)
+			}
+		},
+	})
+	screen, err := terminal.NewScreenWriter(math.MaxInt, 4)
+	require.NoError(t, err)
+	w := eventlog.NewANSICursorBufferWriter(cw, screen)
+
+	// Write log output containing a carriage return, like the progress output
+	// bazel writes when curses are enabled. This makes Close write the final
+	// screen contents before closing the underlying writer.
+	_, err = w.Write(ctx, []byte("Analyzing: //foo:foo\r"))
+	require.NoError(t, err)
+
+	// Cancel the context, simulating an abrupt client disconnect. The write
+	// loop notices the cancellation on its own, flushes the log contents, and
+	// shuts down.
+	cancel()
+	select {
+	case <-shutdown:
+	case <-time.After(15 * time.Second):
+		require.FailNow(t, "timed out waiting for the write loop to shut down")
+	}
+
+	// Closing the writer should succeed even though the write loop already
+	// flushed the log contents and shut down.
+	require.NoError(t, w.Close(t.Context()))
 }
