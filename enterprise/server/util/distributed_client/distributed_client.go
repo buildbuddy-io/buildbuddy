@@ -567,7 +567,10 @@ func (c *Proxy) RemoteReader(ctx context.Context, peer string, r *rspb.ResourceN
 type distributedCacheReader struct {
 	stream dcpb.DistributedCache_ReadClient
 	rsp    *dcpb.ReadResponse
-	err    error
+	// offset into rsp.Data so we don't muck with rsp.Data
+	// advancing rsp.Data prevents vtproto from reusing the backing buffer.
+	off int
+	err error
 }
 
 func newDistributedCacheReader(stream dcpb.DistributedCache_ReadClient, expectEOF bool) (*distributedCacheReader, error) {
@@ -590,18 +593,21 @@ func newDistributedCacheReader(stream dcpb.DistributedCache_ReadClient, expectEO
 // moreData fetches the next batch of data if necessary, and returns true if
 // there is more data.
 func (r *distributedCacheReader) moreData() bool {
-	if r.err == nil && len(r.rsp.GetData()) == 0 {
+	if r.err == nil && r.off == len(r.rsp.GetData()) {
 		r.err = r.stream.RecvMsg(r.rsp)
+		if r.err == nil {
+			r.off = 0
+		}
 	}
-	return r.err == nil || len(r.rsp.GetData()) > 0
+	return r.err == nil || r.off < len(r.rsp.GetData())
 }
 
 func (r *distributedCacheReader) Read(out []byte) (int, error) {
 	if !r.moreData() {
 		return 0, r.err
 	}
-	n := copy(out, r.rsp.GetData())
-	r.rsp.Data = r.rsp.Data[n:]
+	n := copy(out, r.rsp.GetData()[r.off:])
+	r.off += n
 	if !r.moreData() {
 		// If there is no more data, allow returning a possible EOF. This lets
 		// the client skip making another Read call just to get EOF.
@@ -613,12 +619,12 @@ func (r *distributedCacheReader) Read(out []byte) (int, error) {
 func (r *distributedCacheReader) WriteTo(w io.Writer) (int64, error) {
 	var total int64
 	for r.moreData() {
-		n, err := w.Write(r.rsp.GetData())
+		n, err := w.Write(r.rsp.GetData()[r.off:])
 		total += int64(n)
 		if err != nil {
 			return total, err
 		}
-		r.rsp.Data = r.rsp.Data[n:]
+		r.off += n
 	}
 	if r.err == io.EOF {
 		return total, nil
