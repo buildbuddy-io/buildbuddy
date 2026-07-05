@@ -1,6 +1,7 @@
 import React from "react";
 import { User } from "../../../app/auth/auth_service";
 import capabilities from "../../../app/capabilities/capabilities";
+import DateRangePickerButton from "../../../app/components/date_range_picker/date_range_picker_button";
 import TextInput from "../../../app/components/input/input";
 import Select, { Option } from "../../../app/components/select/select";
 import errorService from "../../../app/errors/error_service";
@@ -9,7 +10,6 @@ import router, { Path } from "../../../app/router/router";
 import rpcService from "../../../app/service/rpc_service";
 import { normalizeRepoURL } from "../../../app/util/git";
 import { invocation } from "../../../proto/invocation_ts_proto";
-import DatePickerButton from "../filter/date_picker_button";
 import { getProtoFilterParams } from "../filter/filter_util";
 import FlakesComponent from "./flakes";
 import TestGridComponent from "./grid";
@@ -177,7 +177,7 @@ export default class TapComponent extends React.Component<Props, State> {
                 </div>
                 <div className="controls">
                   {tab === "grid" && <GridSortControlsComponent search={this.props.search}></GridSortControlsComponent>}
-                  {tab === "flakes" && <DatePickerButton search={this.props.search}></DatePickerButton>}
+                  {tab === "flakes" && <DateRangePickerButton search={this.props.search} />}
                 </div>
               </div>
             </div>

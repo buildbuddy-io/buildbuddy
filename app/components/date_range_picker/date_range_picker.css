@@ -1,0 +1,161 @@
+.date-range-picker {
+  display: flex;
+  font-size: 14px;
+  /* Clip square corners (e.g. preset option hover) when shown in a rounded popup. */
+  border-radius: inherit;
+  overflow: hidden;
+}
+
+.date-range-picker .preset-picker,
+.date-range-picker .calendar-input {
+  user-select: none;
+}
+
+.date-range-picker .preset-picker {
+  border-right: 1px solid var(--color-border-primary);
+}
+
+.date-range-picker .preset-option {
+  padding: 12px 20px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.date-range-picker .preset-option:hover {
+  background: var(--color-bg-hover);
+}
+
+.date-range-picker .preset-option.selected {
+  font-weight: 600;
+}
+
+.date-range-picker .preset-option + .preset-option {
+  border-top: 1px solid var(--color-border-primary);
+}
+
+.date-range-picker .custom-picker {
+  width: 360px;
+  flex-shrink: 0;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.date-range-picker .text-inputs {
+  display: flex;
+  gap: 8px;
+}
+
+.date-range-picker .text-inputs .text-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.date-range-picker .calendar-input {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.date-range-picker .month-picker {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.date-range-picker .weekdays,
+.date-range-picker .days {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+}
+
+.date-range-picker .weekday {
+  text-align: center;
+  padding: 4px 0;
+  color: var(--color-text-muted);
+}
+
+.date-range-picker .day {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 36px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.date-range-picker .day.passive {
+  color: var(--color-text-tertiary);
+}
+
+.date-range-picker .day.in-selection {
+  color: var(--color-button-primary-text);
+}
+
+.date-range-picker .day .day-number {
+  position: relative;
+}
+
+.date-range-picker .day.today .day-number::after {
+  content: "";
+  position: absolute;
+  bottom: -2px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 18px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--color-status-info);
+}
+
+.date-range-picker .day.in-selection.today .day-number::after {
+  background: var(--color-button-primary-text);
+}
+
+.date-range-picker .day .selection {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  left: 0;
+  right: 0;
+  background: var(--color-button-primary-bg);
+}
+
+.date-range-picker .day .preview {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  left: 0;
+  right: 0;
+  border: solid var(--color-button-primary-bg);
+  border-width: 1px 0;
+}
+
+/* Round only the true ends of a range: a range that continues onto another
+ * row (or into another month) keeps a square edge at the row boundary. */
+.date-range-picker .day .round-l {
+  border-top-left-radius: 18px;
+  border-bottom-left-radius: 18px;
+  left: 2px;
+}
+
+.date-range-picker .day .round-r {
+  border-top-right-radius: 18px;
+  border-bottom-right-radius: 18px;
+  right: 2px;
+}
+
+.date-range-picker .day .preview.round-l {
+  border-left-width: 1px;
+}
+
+.date-range-picker .day .preview.round-r {
+  border-right-width: 1px;
+}

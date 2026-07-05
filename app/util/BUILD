@@ -280,3 +280,8 @@ ts_library(
     name = "url",
     srcs = ["url.ts"],
 )
+
+ts_library(
+    name = "date",
+    srcs = ["date.ts"],
+)

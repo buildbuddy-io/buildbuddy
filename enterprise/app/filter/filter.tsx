@@ -20,6 +20,7 @@ import React from "react";
 import capabilities from "../../../app/capabilities/capabilities";
 import FilledButton, { OutlinedButton } from "../../../app/components/button/button";
 import Checkbox from "../../../app/components/checkbox/checkbox";
+import DateRangePickerButton from "../../../app/components/date_range_picker/date_range_picker_button";
 import TextInput from "../../../app/components/input/input";
 import Popup from "../../../app/components/popup/popup";
 import Radio from "../../../app/components/radio/radio";
@@ -49,7 +50,6 @@ import {
 } from "../../../app/router/router_params";
 import { invocation_status } from "../../../proto/invocation_status_ts_proto";
 import { stat_filter } from "../../../proto/stat_filter_ts_proto";
-import DatePickerButton from "./date_picker_button";
 import {
   DURATION_SLIDER_MAX_INDEX,
   DURATION_SLIDER_MAX_VALUE,
@@ -74,7 +74,6 @@ export interface FilterProps {
 }
 
 interface State {
-  isDatePickerOpen: boolean;
   isFilterMenuOpen: boolean;
   isSortMenuOpen: boolean;
 
@@ -107,7 +106,6 @@ export default class FilterComponent extends React.Component<FilterProps, State>
 
   newFilterState(search: URLSearchParams): State {
     return {
-      isDatePickerOpen: false,
       isFilterMenuOpen: false,
       isSortMenuOpen: false,
       user: search.get(USER_PARAM_NAME) || undefined,
@@ -628,7 +626,7 @@ export default class FilterComponent extends React.Component<FilterProps, State>
             </div>
           </Popup>
         </div>
-        <DatePickerButton search={this.props.search}></DatePickerButton>
+        <DateRangePickerButton search={this.props.search} />
       </div>
     );
   }

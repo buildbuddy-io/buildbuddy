@@ -1,16 +1,15 @@
 import Long from "long";
 import moment from "moment";
 import capabilities from "../../../app/capabilities/capabilities";
-import { differenceInCalendarDays, durationMillis, formatDateRange } from "../../../app/format/format";
+import { getEndDate, getStartDate } from "../../../app/components/date_range_picker/date_range_picker_button";
+import { differenceInCalendarDays, durationMillis } from "../../../app/format/format";
 import {
   BRANCH_PARAM_NAME,
   COMMAND_PARAM_NAME,
   COMMIT_PARAM_NAME,
   DIMENSION_PARAM_NAME,
-  END_DATE_PARAM_NAME,
   GENERIC_FILTER_PARAM_NAME,
   HOST_PARAM_NAME,
-  LAST_N_DAYS_PARAM_NAME,
   MAXIMUM_DURATION_PARAM_NAME,
   MINIMUM_DURATION_PARAM_NAME,
   PATTERN_PARAM_NAME,
@@ -18,7 +17,6 @@ import {
   ROLE_PARAM_NAME,
   SORT_BY_PARAM_NAME,
   SORT_ORDER_PARAM_NAME,
-  START_DATE_PARAM_NAME,
   STATUS_PARAM_NAME,
   TAG_PARAM_NAME,
   USER_PARAM_NAME,
@@ -31,10 +29,6 @@ import { google as google_timestamp } from "../../../proto/timestamp_ts_proto";
 
 // URL param value representing the empty role (""), which is the default.
 const DEFAULT_ROLE_PARAM_VALUE = "DEFAULT";
-
-export const DATE_PARAM_FORMAT = "YYYY-MM-DD";
-
-export const DEFAULT_LAST_N_DAYS = 7;
 
 export type SortBy =
   | "start-time"
@@ -388,7 +382,7 @@ export function getProtoFilterParams(search: URLSearchParams, now?: moment.Momen
   return {
     role: parseRoleParam(search.get(ROLE_PARAM_NAME)),
     status: parseStatusParam(search.get(STATUS_PARAM_NAME)),
-    updatedAfter: proto.dateToTimestamp(getStartDate(search, now)),
+    updatedAfter: proto.dateToTimestamp(getStartDate(search, now?.toDate())),
     updatedBefore: endDate ? proto.dateToTimestamp(endDate) : undefined,
 
     user: search.get(USER_PARAM_NAME) || undefined,
@@ -430,80 +424,6 @@ export function getDimensionName(d: stat_filter.Dimension): string {
     }
   }
   return "";
-}
-
-export function getDefaultStartDate(now?: moment.Moment): Date {
-  return (now ? moment(now) : moment())
-    .add(-DEFAULT_LAST_N_DAYS + 1, "days")
-    .startOf("day")
-    .toDate();
-}
-
-export function getStartDate(search: URLSearchParams, now?: moment.Moment): Date {
-  const dateString = search.get(START_DATE_PARAM_NAME);
-  if (dateString) {
-    const dateNumber = Number(dateString);
-    if (Number.isInteger(dateNumber)) {
-      return new Date(dateNumber);
-    }
-    return moment(dateString).toDate();
-  }
-  if (search.get(LAST_N_DAYS_PARAM_NAME)) {
-    return (now ? moment(now) : moment())
-      .add(-Number(search.get(LAST_N_DAYS_PARAM_NAME)) + 1, "days")
-      .startOf("day")
-      .toDate();
-  }
-  return getDefaultStartDate(now);
-}
-
-export function getDateRangeForPicker(search: URLSearchParams): { startDate: Date; endDate?: Date } {
-  // Not using `getEndDate` here because it's set to "start of day after the one specified
-  // in the URL" which causes an off-by-one error if we were to render that directly in
-  // the calendar.
-  let endDate = undefined;
-  const dateString = search.get(END_DATE_PARAM_NAME);
-  if (dateString) {
-    const dateNumber = Number(dateString);
-    if (Number.isInteger(dateNumber)) {
-      endDate = moment
-        .unix(dateNumber / 1000)
-        .startOf("day")
-        .toDate();
-    } else {
-      endDate = moment(dateString).toDate();
-    }
-  }
-  return { startDate: getStartDate(search), endDate };
-}
-
-function getDateRangeForStringFromUrlParams(search: URLSearchParams): { startDate: Date; endDate?: Date } {
-  // Not using `getEndDate` here because it's set to "start of day after the one specified
-  // in the URL" which causes an off-by-one error if we were to render that directly in
-  // the calendar.
-  let endDate = undefined;
-  const dateString = search.get(END_DATE_PARAM_NAME);
-  if (dateString) {
-    const dateNumber = Number(dateString);
-    if (Number.isInteger(dateNumber)) {
-      endDate = new Date(dateNumber);
-    } else {
-      endDate = getEndDate(search);
-    }
-  }
-  return { startDate: getStartDate(search), endDate };
-}
-
-export function getEndDate(search: URLSearchParams): Date | undefined {
-  const dateString = search.get(END_DATE_PARAM_NAME);
-  if (!dateString) {
-    return undefined;
-  }
-  const dateNumber = Number(dateString);
-  if (Number.isInteger(dateNumber)) {
-    return new Date(dateNumber);
-  }
-  return moment(search.get(END_DATE_PARAM_NAME)).add(1, "days").toDate();
 }
 
 const STATUS_TO_STRING = Object.fromEntries(
@@ -564,11 +484,6 @@ export function formatDateRangeDurationFromSearchParams(search: URLSearchParams)
 
   const diff = differenceInCalendarDays(startDate, endDate ?? new Date());
   return diff == 1 ? "day" : `${diff} days`;
-}
-
-export function formatDateRangeFromUrlParams(search: URLSearchParams): string {
-  const { startDate, endDate } = getDateRangeForStringFromUrlParams(search);
-  return formatDateRange(startDate, endDate);
 }
 
 export function isAnyDimensionFilterSet(param: string): boolean {

@@ -1,13 +1,10 @@
 import { Cpu, Hash, Package } from "lucide-react";
 import React from "react";
 
+import { formatDateRangeFromUrlParams } from "../../../app/components/date_range_picker/date_range_picker_button";
 import * as format from "../../../app/format/format";
 import { stats } from "../../../proto/stats_ts_proto";
-import {
-  formatDateRangeDurationFromSearchParams,
-  formatDateRangeFromUrlParams,
-  isAnyNonDateFilterSet,
-} from "../filter/filter_util";
+import { formatDateRangeDurationFromSearchParams, isAnyNonDateFilterSet } from "../filter/filter_util";
 
 interface Props {
   search: URLSearchParams;
