@@ -259,6 +259,11 @@ export function formatDate(date: Date): string {
   return formatTimestampMillis(date.getTime());
 }
 
+/** Formats the given date as a date without a time, e.g. "Jul 5, 2026". */
+export function formatDateOnly(date: Date): string {
+  return moment(date).format("MMM D, YYYY");
+}
+
 export function formatDateFromUsec(timestamp: number | Long, { compact = false } = {}) {
   const format = compact ? "MMM D" : "MMMM Do";
   return `${moment(+timestamp / 1000).format(format)}`;
