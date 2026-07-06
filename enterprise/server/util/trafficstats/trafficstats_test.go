@@ -16,7 +16,7 @@ import (
 )
 
 func TestStatsHandler_RecordsTrafficByDestination(t *testing.T) {
-	handler := newTestHandler(t)
+	classifier := newTestClassifier(t)
 
 	testCases := []struct {
 		name     string
@@ -120,6 +120,7 @@ func TestStatsHandler_RecordsTrafficByDestination(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			metrics.GRPCServerEgressBytes.Reset()
 			metrics.GRPCServerIngressBytes.Reset()
+			handler := &StatsHandler{classifier: classifier}
 
 			// TagRPC runs before interceptors, so claims and clientip
 			// are not yet in the context. Peer info is available.
