@@ -458,6 +458,10 @@ type InvocationDB interface {
 	DeleteInvocationWithPermsCheck(ctx context.Context, authenticatedUser *UserInfo, invocationID string) error
 	FillCounts(ctx context.Context, log *telpb.TelemetryStat) error
 	SetNowFunc(now func() time.Time)
+
+	// GetInvocationReconnectWindow returns how long after an incomplete
+	// invocation's last DB update the invocation may still be retried.
+	GetInvocationReconnectWindow() time.Duration
 }
 
 type APIKeyGroup interface {

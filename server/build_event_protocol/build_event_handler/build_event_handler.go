@@ -843,6 +843,10 @@ type EventChannel struct {
 	// when we're retrying an invocation that is already complete, or is
 	// incomplete but was created too far in the past.
 	isVoid bool
+
+	// lastDBUpdateTime is when the invocation row was last written to the DB.
+	// It is used to periodically update the row while events are streaming.
+	lastDBUpdateTime time.Time
 }
 
 func (e *EventChannel) Context() context.Context {
@@ -1088,10 +1092,11 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 		}
 		if !created {
 			// We failed to retry an existing invocation
-			log.CtxWarningf(e.ctx, "Voiding EventChannel for invocation %s: invocation already exists and is either completed or was last updated over 4 hours ago, so may not be retried.", iid)
+			log.CtxWarningf(e.ctx, "Voiding EventChannel for invocation %s: invocation already exists and is either completed or past its reconnect window, so may not be retried.", iid)
 			e.isVoid = true
 			return nil
 		}
+		e.lastDBUpdateTime = e.env.GetClock().Now()
 		e.attempt = ti.Attempt
 		e.ctx = log.EnrichContext(e.ctx, "invocation_attempt", fmt.Sprintf("%d", e.attempt))
 		log.CtxInfof(e.ctx, "Created invocation %q, attempt %d", ti.InvocationID, ti.Attempt)
@@ -1283,6 +1288,25 @@ func (e *EventChannel) processSingleEvent(event *inpb.InvocationEvent, iid strin
 		e.wroteBuildMetadata = true
 	}
 
+	// While events are still streaming, periodically update the invocation
+	// row. The row is otherwise only updated at creation, when metadata is
+	// loaded, and at finalization, so an invocation that runs longer than the
+	// reconnect window would look abandoned and could never be retried if it
+	// got disconnected.
+	updatePeriod := e.env.GetInvocationDB().GetInvocationReconnectWindow() / 2
+	if e.env.GetClock().Since(e.lastDBUpdateTime) >= updatePeriod {
+		ti := &tables.Invocation{InvocationID: iid, Attempt: e.attempt}
+		if updated, err := e.env.GetInvocationDB().UpdateInvocation(e.ctx, ti); err != nil {
+			log.CtxErrorf(e.ctx, "Error updating invocation row while streaming events: %s", err)
+			return status.UnavailableErrorf("write periodic metadata update: %s", err)
+		} else if !updated {
+			e.isVoid = true
+			return status.CanceledErrorf("Attempt %d of invocation %s pre-empted by more recent attempt.", e.attempt, iid)
+		} else {
+			e.lastDBUpdateTime = e.env.GetClock().Now()
+		}
+	}
+
 	return nil
 }
 
@@ -1383,6 +1407,7 @@ func (e *EventChannel) writeBuildMetadata(ctx context.Context, invocationID stri
 		e.isVoid = true
 		return status.CanceledErrorf("Attempt %d of invocation %s pre-empted by more recent attempt, no build metadata written.", e.attempt, invocationID)
 	}
+	e.lastDBUpdateTime = e.env.GetClock().Now()
 	return nil
 }
 
