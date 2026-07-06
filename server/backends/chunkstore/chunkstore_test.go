@@ -2,6 +2,7 @@ package chunkstore
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"testing"
 	"time"
@@ -467,4 +468,50 @@ func TestWriteInvalidChunk(t *testing.T) {
 	assert.Equal(t, 0, n)
 	assert.Error(t, err)
 	assert.True(t, status.IsResourceExhaustedError(err))
+}
+
+func TestWriteAfterWriteLoopShutsDown(t *testing.T) {
+	m := mockstore.New()
+	c := New(m, &ChunkstoreOptions{})
+	ctx, cancel := context.WithCancel(t.Context())
+
+	// Create a writer with a write hook that signals when the write loop
+	// shuts down.
+	shutdown := make(chan struct{})
+	w := c.Writer(ctx, "foo", &ChunkstoreWriterOptions{
+		WriteHook: func(_ context.Context, _ *WriteRequest, result *WriteResult, _, _ []byte) {
+			if result.Close {
+				close(shutdown)
+			}
+		},
+	})
+
+	// Write some data with a volatile tail while the write loop is running.
+	_, err := w.WriteWithTail(ctx, []byte("hello, "), []byte("world"))
+	require.NoError(t, err)
+
+	// Cancel the context. The write loop notices the cancellation on its own,
+	// flushes the buffered data along with the volatile tail, and shuts down.
+	cancel()
+	select {
+	case <-shutdown:
+	case <-time.After(15 * time.Second):
+		require.FailNow(t, "timed out waiting for the write loop to shut down")
+	}
+
+	// A write that discovers the write loop has shut down should report
+	// success with 0 bytes written, just like a write to a writer that is
+	// already known to be closed.
+	n, err := w.Write(t.Context(), []byte("dropped"))
+	require.NoError(t, err)
+	assert.Equal(t, 0, n)
+
+	// Closing the writer afterwards should succeed.
+	require.NoError(t, w.Close(t.Context()))
+
+	// The data buffered before the cancellation, including the volatile tail,
+	// should have been flushed to storage.
+	blob, err := m.ReadBlob(t.Context(), "foo_0000")
+	require.NoError(t, err)
+	assert.Equal(t, "hello, world", string(blob))
 }
