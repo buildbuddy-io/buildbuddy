@@ -19,7 +19,7 @@ ts_library(
         "//app/router",
         "//app/service:rpc_service",
         "//app/util:git",
-        "//enterprise/app/filter:date_picker_button",
+        "//enterprise/app/filter:date_range_picker_button",
         "//enterprise/app/filter:filter_util",
         "//enterprise/app/tap:flakes",
         "//enterprise/app/tap:grid",
