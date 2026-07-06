@@ -11,9 +11,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/login"
-	"github.com/buildbuddy-io/buildbuddy/cli/parser"
 	"github.com/buildbuddy-io/buildbuddy/cli/util/download"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
+	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
@@ -57,7 +57,7 @@ func analyzeTimingProfile(invocationIDOrURL string) (int, error) {
 	ctx := context.Background()
 
 	invocationID := invocationIDOrURL
-	if matches := parser.UuidPattern.FindStringSubmatch(invocationIDOrURL); matches != nil {
+	if matches := uuid.Pattern.FindStringSubmatch(invocationIDOrURL); matches != nil {
 		invocationID = matches[1]
 	}
 

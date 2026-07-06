@@ -19,11 +19,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/explain/timing_profile"
 	"github.com/buildbuddy-io/buildbuddy/cli/flaghistory"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
-	"github.com/buildbuddy-io/buildbuddy/cli/parser"
 	"github.com/buildbuddy-io/buildbuddy/cli/util/download"
 	"github.com/buildbuddy-io/buildbuddy/proto/spawn"
 	"github.com/buildbuddy-io/buildbuddy/proto/spawn_diff"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
+	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
@@ -267,10 +267,10 @@ func openLog(pathOrId string) (io.ReadCloser, error) {
 	f, err := os.Open(pathOrId)
 	if err == nil {
 		return f, nil
-	} else if !os.IsNotExist(err) || !parser.UuidPattern.MatchString(pathOrId) {
+	} else if !os.IsNotExist(err) || !uuid.Pattern.MatchString(pathOrId) {
 		return nil, err
 	}
-	matches := parser.UuidPattern.FindStringSubmatch(pathOrId)
+	matches := uuid.Pattern.FindStringSubmatch(pathOrId)
 	invocationId := matches[1]
 
 	ctx := context.Background()

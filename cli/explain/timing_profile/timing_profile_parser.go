@@ -20,8 +20,8 @@ const unlimitedMaxTopSpans = -1
 // the outermost layer - to avoid returning duplicates.
 const actionCategory = "action processing"
 
-// TimingProfile is a distilled summary of a Bazel build's timing profile.
-type TimingProfile struct {
+// ProfileSummary is a summary of a Bazel build's timing profile.
+type ProfileSummary struct {
 	// EventCount is the total number of raw trace events in the profile,
 	// including untimed ones such as metadata and counters. It mainly indicates
 	// the profile's size.
@@ -90,7 +90,7 @@ type timingProfileParser struct {
 	spans              []TimingSpan
 }
 
-func ParseTimingProfile(r io.Reader, maxTopSpans int) (*TimingProfile, error) {
+func ParseTimingProfile(r io.Reader, maxTopSpans int) (*ProfileSummary, error) {
 	parser := &timingProfileParser{
 		durationByCategory: make(map[string]*TimingAggregate),
 		maxTopSpans:        maxTopSpans,
@@ -144,8 +144,8 @@ func (p *timingProfileParser) addSpan(event trace_events.Event) {
 	})
 }
 
-func (p *timingProfileParser) profile() *TimingProfile {
-	return &TimingProfile{
+func (p *timingProfileParser) profile() *ProfileSummary {
+	return &ProfileSummary{
 		EventCount:         p.eventCount,
 		SpanCount:          p.spanCount,
 		TotalDuration:      Duration(time.Duration(p.totalDurationUsec) * time.Microsecond),
