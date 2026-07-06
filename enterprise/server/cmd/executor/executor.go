@@ -47,6 +47,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/monitoring"
+	"github.com/buildbuddy-io/buildbuddy/server/util/pod_deletion_cost"
 	"github.com/buildbuddy-io/buildbuddy/server/util/shlex"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
@@ -421,6 +422,12 @@ func main() {
 	}
 	if err := taskScheduler.Start(); err != nil {
 		log.Fatalf("Error starting task scheduler: %v", err)
+	}
+	if err := pod_deletion_cost.Start(rootContext, resources.GetK8sPodName(), resources.GetK8sNamespace(), func() int32 {
+		secs := int64(taskScheduler.TotalRunningTaskExecutionDuration() / time.Second)
+		return int32(min(secs, math.MaxInt32))
+	}); err != nil {
+		log.Fatalf("Error starting pod deletion cost updates: %s", err)
 	}
 
 	monitoring.StartMonitoringHandler(env, fmt.Sprintf("%s:%d", *listen, *monitoringPort))
