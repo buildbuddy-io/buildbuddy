@@ -152,6 +152,10 @@
   background-color: var(--color-status-error);
 }
 
+.cache-proxies-page .cache-uncacheable-color-swatch {
+  background-color: var(--color-amber-500);
+}
+
 .cache-proxies-page .cache-read-color-swatch {
   background-color: var(--color-light-blue-500);
 }
