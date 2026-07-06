@@ -353,15 +353,31 @@
   color: var(--color-settings-tab-active-text);
 }
 
-.sso-config-form {
+.sso-config {
   margin-top: 16px;
 }
 
-.sso-config-form .sso-config-input {
+.sso-config-field {
+  margin-top: 12px;
+}
+
+.sso-config-label {
+  display: block;
+  margin-bottom: 4px;
+  font-weight: 600;
+}
+
+.sso-config-input {
   width: 100%;
   max-width: 640px;
 }
 
-.sso-config-form .sso-config-actions {
-  margin-top: 12px;
+.sso-config-input[readonly] {
+  opacity: 0.7;
+}
+
+.sso-config-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
 }

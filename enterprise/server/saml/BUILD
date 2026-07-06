@@ -9,6 +9,7 @@ go_library(
     deps = [
         "//server/endpoint_urls/build_buddy_url",
         "//server/environment",
+        "//server/http/httpclient",
         "//server/interfaces",
         "//server/tables",
         "//server/util/authutil",

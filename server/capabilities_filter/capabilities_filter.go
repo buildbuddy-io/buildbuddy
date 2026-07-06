@@ -206,6 +206,9 @@ var (
 		buildBuddyServicePrefix + "GetUsageAlertingRules",
 		buildBuddyServicePrefix + "CreateUsageAlertingRule",
 		buildBuddyServicePrefix + "DeleteUsageAlertingRule",
+		// Org SSO configuration
+		buildBuddyServicePrefix + "GetSSOConfig",
+		buildBuddyServicePrefix + "SetSSOConfig",
 		// Encryption.
 		buildBuddyServicePrefix + "GetEncryptionConfig",
 		buildBuddyServicePrefix + "SetEncryptionConfig",
@@ -240,8 +243,6 @@ var (
 
 		// Org management
 		buildBuddyServicePrefix + "SetGroupStatus",
-		buildBuddyServicePrefix + "GetSSOConfig",
-		buildBuddyServicePrefix + "SetSSOConfig",
 	}
 )
 

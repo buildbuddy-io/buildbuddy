@@ -430,7 +430,7 @@ func (d *UserDB) UpdateGroupStatus(ctx context.Context, groupID string, status g
 }
 
 func (d *UserDB) UpdateGroupSamlIdpMetadataUrl(ctx context.Context, groupID string, url string) error {
-	if err := claims.AuthorizeServerAdmin(ctx); err != nil {
+	if err := d.authorizeGroupAdminRole(ctx, groupID); err != nil {
 		return err
 	}
 

@@ -27,6 +27,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/remote_exec_api_url"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/eventlog"
+	"github.com/buildbuddy-io/buildbuddy/server/http/httpclient"
 	"github.com/buildbuddy-io/buildbuddy/server/http/interceptors"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -105,6 +106,12 @@ const (
 var (
 	WriteEventLogTimeout = 1 * time.Hour
 )
+
+// samlMetadataHTTPClient fetches the customer-provided SAML IdP metadata URL
+// during validation.
+// It is a package-level var so that tests can substitute a client that trusts
+// a local test server.
+var samlMetadataHTTPClient = httpclient.New(nil /*=allowedPrivateIPNets*/, "saml_metadata")
 
 func (s *BuildBuddyServer) apiKeyValueReadbackEnabled() bool {
 	if s.env.GetAuthDB() == nil {
@@ -700,17 +707,25 @@ func (s *BuildBuddyServer) SetGroupStatus(ctx context.Context, req *grpb.SetGrou
 	return &grpb.SetGroupStatusResponse{}, nil
 }
 
+func (s *BuildBuddyServer) authorizeSSOConfigAccess(ctx context.Context, groupID string) error {
+	if groupID == "" {
+		return status.InvalidArgumentError("Missing organization identifier")
+	}
+	u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
+		return err
+	}
+	return authutil.AuthorizeOrgAdmin(u, groupID)
+}
+
 func (s *BuildBuddyServer) GetSSOConfig(ctx context.Context, req *grpb.GetSSOConfigRequest) (*grpb.GetSSOConfigResponse, error) {
-	if err := claims.AuthorizeServerAdmin(ctx); err != nil {
+	groupID := req.GetRequestContext().GetGroupId()
+	if err := s.authorizeSSOConfigAccess(ctx, groupID); err != nil {
 		return nil, err
 	}
 	userDB := s.env.GetUserDB()
 	if userDB == nil {
 		return nil, status.UnimplementedError("Not Implemented")
-	}
-	groupID := req.GetRequestContext().GetGroupId()
-	if groupID == "" {
-		return nil, status.InvalidArgumentError("Missing organization identifier")
 	}
 	group, err := userDB.GetGroupByID(ctx, groupID)
 	if err != nil {
@@ -724,20 +739,17 @@ func (s *BuildBuddyServer) GetSSOConfig(ctx context.Context, req *grpb.GetSSOCon
 }
 
 func (s *BuildBuddyServer) SetSSOConfig(ctx context.Context, req *grpb.SetSSOConfigRequest) (*grpb.SetSSOConfigResponse, error) {
-	if err := claims.AuthorizeServerAdmin(ctx); err != nil {
+	groupID := req.GetRequestContext().GetGroupId()
+	if err := s.authorizeSSOConfigAccess(ctx, groupID); err != nil {
 		return nil, err
 	}
 	userDB := s.env.GetUserDB()
 	if userDB == nil {
 		return nil, status.UnimplementedError("Not Implemented")
 	}
-	groupID := req.GetRequestContext().GetGroupId()
-	if groupID == "" {
-		return nil, status.InvalidArgumentError("Missing organization identifier")
-	}
 	metadataURL := strings.TrimSpace(req.GetConfig().GetSamlIdpMetadataUrl())
 	if metadataURL != "" {
-		if err := validateSamlIdpMetadataURL(ctx, metadataURL); err != nil {
+		if err := ValidateSamlIdpMetadataURL(ctx, samlMetadataHTTPClient, metadataURL); err != nil {
 			return nil, err
 		}
 	}
@@ -750,17 +762,17 @@ func (s *BuildBuddyServer) SetSSOConfig(ctx context.Context, req *grpb.SetSSOCon
 	return &grpb.SetSSOConfigResponse{}, nil
 }
 
-// validateSamlIdpMetadataURL verifies that the given URL points to a valid
+// ValidateSamlIdpMetadataURL verifies that the given URL points to a valid
 // SAML 2.0 IdP metadata document. It performs a syntactic check on the URL
 // and then fetches the document and confirms the XML root element is
 // EntityDescriptor or EntitiesDescriptor in the SAML metadata namespace.
-func validateSamlIdpMetadataURL(ctx context.Context, rawURL string) error {
+func ValidateSamlIdpMetadataURL(ctx context.Context, client *http.Client, rawURL string) error {
 	u, err := url.Parse(rawURL)
 	if err != nil {
 		return status.InvalidArgumentErrorf("invalid metadata URL: %s", err)
 	}
-	if u.Scheme != "http" && u.Scheme != "https" {
-		return status.InvalidArgumentError("metadata URL must use http or https")
+	if u.Scheme != "https" {
+		return status.InvalidArgumentError("metadata URL must use https")
 	}
 	if u.Host == "" {
 		return status.InvalidArgumentError("metadata URL must include a host")
@@ -771,7 +783,7 @@ func validateSamlIdpMetadataURL(ctx context.Context, rawURL string) error {
 	if err != nil {
 		return status.InvalidArgumentErrorf("invalid metadata URL: %s", err)
 	}
-	resp, err := http.DefaultClient.Do(httpReq)
+	resp, err := client.Do(httpReq)
 	if err != nil {
 		return status.InvalidArgumentErrorf("failed to fetch metadata URL: %s", err)
 	}
