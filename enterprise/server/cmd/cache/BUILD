@@ -35,6 +35,7 @@ go_library(
         "//server/ssl",
         "//server/util/authutil",
         "//server/util/bazel_request",
+        "//server/util/channelz_metrics",
         "//server/util/grpc_client",
         "//server/util/grpc_server",
         "//server/util/healthcheck",
