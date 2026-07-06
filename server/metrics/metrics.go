@@ -2920,6 +2920,18 @@ var (
 		ZoneLabel,
 	})
 
+	RaftReads = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "raft",
+		Name:      "reads",
+		Help:      "The total number of read requests served for each range.",
+	}, []string{
+		RaftRangeIDLabel,
+		RaftNodeHostIDLabel,
+		PartitionID,
+		ZoneLabel,
+	})
+
 	RaftSplits = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "raft",
