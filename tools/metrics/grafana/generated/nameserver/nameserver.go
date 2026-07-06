@@ -103,7 +103,7 @@ func durationHeatmapPanel() *heatmap.PanelBuilder {
 	return dash.Heatmap("Handler Duration", dash.UnitMicroseconds).
 		Description("Distribution of query handler durations.").
 		GridPos(grid(8, 12, 12, 15)).
-		WithTarget(dash.PromHeatmapQuery(`sum by (le) (rate(`+dur+`_bucket{`+filter+`}[`+window+`]))`).Interval(window).RefId("A"))
+		WithTarget(dash.PromHeatmapQuery(`sum by (le) (rate(` + dur + `_bucket{` + filter + `}[` + window + `]))`).Interval(window).RefId("A"))
 }
 
 func regionVariable() *dashboard.QueryVariableBuilder {
