@@ -291,7 +291,7 @@ message CgroupSettings {
   optional int32 numa_node = 19;
 }
 
-// Next ID: 9
+// Next ID: 18
 message SchedulingMetadata {
   // DEPRECATED. This field has two different meanings:
   // 1. The execution server sets this to the task size "estimate" which only
@@ -372,6 +372,12 @@ message SchedulingMetadata {
 
   // cgroup2 settings. Will be set only for Linux executions.
   CgroupSettings cgroup_settings = 12;
+
+  // The time at which the task was first enqueued on the app. This value is
+  // preserved when a task is re-enqueued. Executors use it to break priority
+  // ties, so that a task retried on another executor doesn't lose its place
+  // in line.
+  google.protobuf.Timestamp queued_timestamp = 17;
 }
 
 message RoutingConfig {
