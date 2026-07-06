@@ -8,7 +8,6 @@ import (
 	"io"
 	"maps"
 	"os"
-	"regexp"
 	"runtime"
 	"runtime/pprof"
 	"slices"
@@ -17,12 +16,14 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/explain/compactgraph"
+	"github.com/buildbuddy-io/buildbuddy/cli/explain/timing_profile"
 	"github.com/buildbuddy-io/buildbuddy/cli/flaghistory"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/util/download"
 	"github.com/buildbuddy-io/buildbuddy/proto/spawn"
 	"github.com/buildbuddy-io/buildbuddy/proto/spawn_diff"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
+	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
@@ -100,7 +101,7 @@ var (
 
 func HandleExplain(args []string) (int, error) {
 	if len(args) > 0 && args[0] == "profile" {
-		return handleProfile(args[1:])
+		return timing_profile.HandleProfile(args[1:])
 	}
 	explainCmd.Var(profilePaths, "profile", "Path that a CPU profile should be written to.")
 	if err := arg.ParseFlagSet(explainCmd, args); err != nil {
@@ -262,16 +263,14 @@ func isNondeterministic(d *spawn_diff.SpawnDiff) bool {
 	return false
 }
 
-var uuidPattern = regexp.MustCompile("^(?:.*/invocation/)?([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$")
-
 func openLog(pathOrId string) (io.ReadCloser, error) {
 	f, err := os.Open(pathOrId)
 	if err == nil {
 		return f, nil
-	} else if !os.IsNotExist(err) || !uuidPattern.MatchString(pathOrId) {
+	} else if !os.IsNotExist(err) || !uuid.Pattern.MatchString(pathOrId) {
 		return nil, err
 	}
-	matches := uuidPattern.FindStringSubmatch(pathOrId)
+	matches := uuid.Pattern.FindStringSubmatch(pathOrId)
 	invocationId := matches[1]
 
 	ctx := context.Background()

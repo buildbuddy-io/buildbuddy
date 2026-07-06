@@ -4,17 +4,14 @@ package(default_visibility = ["//cli:__subpackages__"])
 
 go_library(
     name = "explain",
-    srcs = [
-        "explain.go",
-        "timing_profile.go",
-    ],
+    srcs = ["explain.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/explain",
     deps = [
         "//cli/arg",
         "//cli/explain/compactgraph",
+        "//cli/explain/timing_profile",
         "//cli/flaghistory",
         "//cli/log",
-        "//cli/login",
         "//cli/util/download",
         "//proto:build_event_stream_go_proto",
         "//proto:buildbuddy_service_go_proto",
@@ -22,6 +19,7 @@ go_library(
         "//proto:spawn_diff_go_proto",
         "//proto:spawn_go_proto",
         "//server/util/grpc_client",
+        "//server/util/uuid",
         "@com_github_google_go_cmp//cmp",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_protobuf//encoding/protojson",
