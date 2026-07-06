@@ -6,7 +6,7 @@
 - This bazel project supports remote execution and remote caching.
   After making large changes, you can efficiently test the entire repo using
   `bazel test //... --config=remote` which runs tests using BuildBuddy's
-  remote caching and remote execution. This command is *roughly* equivalent
+  remote caching and remote execution. This command is _roughly_ equivalent
   to what we run on CI (except in CI the race detector is enabled).
 - Tests that have `tags = ["docker"]` in the bazel test rule MUST be run
   with `--config=remote` since they each run on their own remote VM with an
@@ -48,28 +48,34 @@
 - Do NOT alias other imports unless there is a conflict.
 - When wrapping errors, use a terse style, avoiding "failed" / "error".
   Example:
+
 ```go
 if err := doThing(); err != nil {
         return fmt.Errorf("do thing: %w", err)
 }
 ```
+
 - Do NOT redeclare the loop variable like `for _, x := range foo { x := x; ... }`
   This is NOT NEEDED as of Go 1.22, which changed the scoping rules for the loop
   variable so that each loop iteration gets its own scope.
 - Prefer using the new loop syntax where applicable:
+
 ```go
 // Do thing ten times
 for i := range 10 {
   doThing(i)
 }
 ```
+
 or
+
 ```go
 // Do thing ten times
 for range 10 {
   doThing()
 }
 ```
+
 - Keep flag definitions (e.g. flag.Bool) on one line. Inline flag default values instead of using consts.
 - When working protos (e.g. gRPC requests/responses), avoid nil checks when possible.
   Note that the protobuf codegen for Go allows things like `someProto.GetSomeField()` to not panic, even if `someProto == nil`.
