@@ -4,10 +4,19 @@
         <title>BuildBuddy Blog</title>
         <link>https://www.buildbuddy.io/changelog</link>
         <description>BuildBuddy Blog</description>
-        <lastBuildDate>Thu, 28 May 2026 10:00:00 GMT</lastBuildDate>
+        <lastBuildDate>Wed, 01 Jul 2026 10:00:00 GMT</lastBuildDate>
         <docs>https://validator.w3.org/feed/docs/rss2.html</docs>
         <generator>https://github.com/jpmonette/feed</generator>
         <language>en</language>
+        <item>
+            <title><![CDATA[bb detect nondeterminism]]></title>
+            <link>https://www.buildbuddy.io/changelog/detect-nondeterminism</link>
+            <guid>https://www.buildbuddy.io/changelog/detect-nondeterminism</guid>
+            <pubDate>Wed, 01 Jul 2026 10:00:00 GMT</pubDate>
+            <description><![CDATA[You can now use the bb CLI to detect non-deterministic builds using the bb detect nondeterminism command.]]></description>
+            <category>bazel</category>
+            <category>debugging</category>
+        </item>
         <item>
             <title><![CDATA[Schedule Workflows with cron expressions]]></title>
             <link>https://www.buildbuddy.io/changelog/scheduled-workflows</link>
