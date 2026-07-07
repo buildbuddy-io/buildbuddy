@@ -172,6 +172,12 @@ const METRIC_OPTIONS: MetricOption[] = [
     }),
   },
   {
+    name: "Action cache hits",
+    metric: stat_filter.Metric.create({
+      invocation: stat_filter.InvocationMetricType.ACTION_CACHE_HITS_INVOCATION_METRIC,
+    }),
+  },
+  {
     name: "Cached CPU time",
     metric: stat_filter.Metric.create({
       invocation: stat_filter.InvocationMetricType.TIME_SAVED_USEC_INVOCATION_METRIC,
