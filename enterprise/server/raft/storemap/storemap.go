@@ -32,6 +32,12 @@ var (
 	LoadBasedRebalance = flag.Bool("cache.raft.enable_load_based_rebalance", false, "If true, rebalance leases on read QPS and replicas on propose QPS when there is enough load, instead of on counts")
 )
 
+// QPSEWMATimeConstant exposes the smoothing time constant so the driver can
+// size its pending-move adjustments to outlive gossip lag.
+func QPSEWMATimeConstant() time.Duration {
+	return *qpsEWMATimeConstant
+}
+
 type storeStatus int
 
 const (
