@@ -1344,7 +1344,8 @@ func TestRebalanceLeases(t *testing.T) {
 				log:  log.NamedSubLogger("test"),
 				impl: rq,
 			}
-			actual := rq.findRebalanceLeaseOp(ctx, tc.rd, localReplicaID)
+			localRepl := &testReplica{rangeID: tc.rd.GetRangeId(), replicaID: localReplicaID}
+			actual := rq.findRebalanceLeaseOp(ctx, tc.rd, localRepl).op
 			if tc.expected != nil {
 				require.NotNil(t, actual)
 				require.Equal(t, tc.expected.from.nhid, actual.from.nhid)

@@ -60,6 +60,12 @@ var (
 	minMetaRangeReplicas       = flag.Int("cache.raft.min_meta_range_replicas", 5, "The minimum number of replicas the meta range should have")
 	missingLeaseCountThreshold = flag.Int("cache.raft.missing_lease_count_threshold", 5, "When the number of ranges without leases is greater than this number, don't rebalance leases")
 	newReplicaGracePeriod      = flag.Duration("cache.raft.new_replica_grace_period", 5*time.Minute, "The amount of time we allow for a new replica to catch up to the leader's before we start to consider it to be behind.")
+
+	rebalanceQPSBandRatio  = flag.Float64("cache.raft.rebalance_qps_band_ratio", 0.10, "A store is over/underfull when its QPS deviates from the mean by more than this fraction of the mean")
+	rebalanceQPSFloor        = flag.Float64("cache.raft.rebalance_qps_floor", 100, "Minimum absolute band width in QPS; also the mean QPS below which load-based rebalancing is inactive for a dimension")
+	minLeaseLoadFraction     = flag.Float64("cache.raft.min_lease_load_fraction", 0.005, "Don't move a lease whose read QPS is a smaller fraction of its store's read QPS than this")
+	minReplicaLoadFraction   = flag.Float64("cache.raft.min_replica_load_fraction", 0.02, "Don't move a replica whose propose QPS is a smaller fraction of its store's propose QPS than this")
+	rangeRebalanceCooldown   = flag.Duration("cache.raft.range_rebalance_cooldown", 5*time.Minute, "Don't rebalance a range within this duration of its last rebalance op")
 )
 
 const (
@@ -465,6 +471,63 @@ func (rq *Queue) getReplica(rangeID uint64) (IReplica, error) {
 const driverEnabledFlag = "cache.raft.enable_driver"
 const splitEnabledFlag = "cache.raft.enable_split"
 
+// Experiment-flag names for load-based rebalancing. Decision-time parameters
+// are read through the experiment flag provider on every evaluation (with the
+// command-line flag as the default) so they can be tuned live during a load
+// test without a redeploy.
+const (
+	loadBasedRebalanceEnabledFlag = "cache.raft.enable_load_based_rebalance"
+	qpsBandRatioFlag              = "cache.raft.rebalance_qps_band_ratio"
+	qpsFloorFlag                  = "cache.raft.rebalance_qps_floor"
+	minLeaseLoadFractionFlag      = "cache.raft.min_lease_load_fraction"
+	minReplicaLoadFractionFlag    = "cache.raft.min_replica_load_fraction"
+	rangeRebalanceCooldownSecFlag = "cache.raft.range_rebalance_cooldown_seconds"
+)
+
+// loadParams holds the decision-time tunables for load-based rebalancing.
+type loadParams struct {
+	bandRatio              float64
+	qpsFloor               float64
+	minLeaseLoadFraction   float64
+	minReplicaLoadFraction float64
+	cooldown               time.Duration
+}
+
+func (rq *Queue) loadParams(ctx context.Context) loadParams {
+	p := loadParams{
+		bandRatio:              *rebalanceQPSBandRatio,
+		qpsFloor:               *rebalanceQPSFloor,
+		minLeaseLoadFraction:   *minLeaseLoadFraction,
+		minReplicaLoadFraction: *minReplicaLoadFraction,
+		cooldown:               *rangeRebalanceCooldown,
+	}
+	if rq.efp == nil {
+		return p
+	}
+	p.bandRatio = rq.efp.Float64(ctx, qpsBandRatioFlag, p.bandRatio)
+	p.qpsFloor = rq.efp.Float64(ctx, qpsFloorFlag, p.qpsFloor)
+	p.minLeaseLoadFraction = rq.efp.Float64(ctx, minLeaseLoadFractionFlag, p.minLeaseLoadFraction)
+	p.minReplicaLoadFraction = rq.efp.Float64(ctx, minReplicaLoadFractionFlag, p.minReplicaLoadFraction)
+	p.cooldown = time.Duration(rq.efp.Int64(ctx, rangeRebalanceCooldownSecFlag, int64(p.cooldown.Seconds()))) * time.Second
+	return p
+}
+
+// isLoadBasedRebalanceEnabled checks if load-based rebalancing is enabled.
+// The command-line flag (declared in storemap, shared with the store's
+// periodic usage gossip and the storemap's QPS smoothing) must be on; the
+// experiment flag then acts as a live kill-switch. The experiment flag can't
+// enable the feature by itself because the supporting signal plumbing is
+// only active with the command-line flag on.
+func (rq *Queue) isLoadBasedRebalanceEnabled(ctx context.Context) bool {
+	if !*storemap.LoadBasedRebalance {
+		return false
+	}
+	if rq.efp == nil {
+		return true
+	}
+	return rq.efp.Boolean(ctx, loadBasedRebalanceEnabledFlag, true)
+}
+
 // isDriverEnabled checks if the driver is enabled via the experiment flag.
 // By default, the driver is enabled (returns true).
 func (rq *Queue) isDriverEnabled(ctx context.Context) bool {
@@ -622,6 +685,16 @@ func (rq *Queue) computeActionForRangeTask(ctx context.Context, task *rangeTask)
 	// Do not try to rebalance replica or leases when there is a store that's
 	// unavailable because it can make the system more unstable.
 	if isClusterHealthy {
+		if rq.isLoadBasedRebalanceEnabled(ctx) {
+			// In load-based mode, try lease transfers before replica moves:
+			// a leadership transfer is nearly free while a replica move
+			// costs a snapshot, and shedding read load often removes the
+			// need to move data at all.
+			if rq.findRebalanceLeaseOp(ctx, rd, repl).op != nil {
+				action = DriverRebalanceLease
+				return action, action.Priority()
+			}
+		}
 		// For DriverConsiderRebalance check if there are rebalance opportunities.
 		storesWithStats := rq.storeMap.GetStoresWithStats()
 		op := rq.findRebalanceReplicaOp(rd, storesWithStats, repl.ReplicaID())
@@ -632,9 +705,11 @@ func (rq *Queue) computeActionForRangeTask(ctx context.Context, task *rangeTask)
 		}
 	}
 
-	if rq.findRebalanceLeaseOp(ctx, rd, repl.ReplicaID()) != nil {
-		action = DriverRebalanceLease
-		return action, action.Priority()
+	if !rq.isLoadBasedRebalanceEnabled(ctx) {
+		if rq.findRebalanceLeaseOp(ctx, rd, repl).op != nil {
+			action = DriverRebalanceLease
+			return action, action.Priority()
+		}
 	}
 
 	action = DriverNoop
@@ -1097,7 +1172,7 @@ func (rq *Queue) rebalanceReplica(rd *rfpb.RangeDescriptor, localRepl IReplica) 
 }
 
 func (rq *Queue) rebalanceLease(ctx context.Context, rd *rfpb.RangeDescriptor, localRepl IReplica) *change {
-	op := rq.findRebalanceLeaseOp(ctx, rd, localRepl.ReplicaID())
+	op := rq.findRebalanceLeaseOp(ctx, rd, localRepl).op
 	if op == nil {
 		return nil
 	}
@@ -1115,11 +1190,22 @@ func (rq *Queue) rebalanceLease(ctx context.Context, rd *rfpb.RangeDescriptor, l
 	}
 }
 
-func (rq *Queue) findRebalanceLeaseOp(ctx context.Context, rd *rfpb.RangeDescriptor, localReplicaID uint64) *rebalanceOp {
+// leaseRebalanceResult is the outcome of looking for a lease-rebalance op.
+type leaseRebalanceResult struct {
+	op *rebalanceOp
+	// blocked is true when the local store should shed read load for this
+	// range, but no store holding one of the range's replicas is a viable
+	// lease target. The replica controller uses this to move a follower to a
+	// read-underfull store, creating a lease target for a later pass.
+	blocked bool
+}
+
+func (rq *Queue) findRebalanceLeaseOp(ctx context.Context, rd *rfpb.RangeDescriptor, localRepl IReplica) leaseRebalanceResult {
 	globalMean, shouldRebalance := rq.storeMap.CheckLeaseRebalancePrecondition()
 	if !shouldRebalance {
-		return nil
+		return leaseRebalanceResult{}
 	}
+	localReplicaID := localRepl.ReplicaID()
 	var existing *candidate
 	nhids := make([]string, 0, len(rd.GetReplicas()))
 	existingNHID := ""
@@ -1145,15 +1231,10 @@ func (rq *Queue) findRebalanceLeaseOp(ctx context.Context, rd *rfpb.RangeDescrip
 
 	if existing == nil {
 		rq.log.Warningf("failed to find existing store for c%dn%d", rd.GetRangeId(), localReplicaID)
-		return nil
+		return leaseRebalanceResult{}
 	}
 
-	existing.leaseCount = existing.usage.LeaseCount
-	existing.leaseCountMeanLevel = leaseCountMeanLevel(globalMean, existing.usage)
-	choice := &rebalanceChoice{
-		existing:   existing,
-		candidates: make([]*candidate, 0, len(rd.GetReplicas())-1),
-	}
+	candidates := make([]*candidate, 0, len(rd.GetReplicas())-1)
 	for _, repl := range rd.GetReplicas() {
 		if repl.GetReplicaId() == localReplicaID {
 			continue
@@ -1168,26 +1249,145 @@ func (rq *Queue) findRebalanceLeaseOp(ctx context.Context, rd *rfpb.RangeDescrip
 			// Do not try to rebalance to replicas that cannot be connected to.
 			continue
 		}
-		choice.candidates = append(choice.candidates, &candidate{
-			nhid:                repl.GetNhid(),
-			usage:               store.usage,
-			leaseCount:          store.usage.LeaseCount,
-			leaseCountMeanLevel: leaseCountMeanLevel(globalMean, store.usage),
+		candidates = append(candidates, &candidate{
+			nhid:  repl.GetNhid(),
+			usage: store.usage,
 		})
 	}
+
+	loadBased := rq.isLoadBasedRebalanceEnabled(ctx)
+	var p loadParams
+	var allStoresStats *storemap.StoresWithStats
+	if loadBased {
+		p = rq.loadParams(ctx)
+		allStoresStats = rq.storeMap.GetStoresWithStats()
+		if qpsSignalPresent(p, allStoresStats.ReadQPS.Mean) {
+			res := rq.findRebalanceLeaseOpQPS(rd, localRepl, existing, candidates, allStoresStats, p)
+			if res.op != nil || res.blocked {
+				return res
+			}
+			// No load-based lease op for this range; fall through to the
+			// count-based check (with hot-target vetoes below) so lease
+			// counts still converge for ranges the load controller leaves
+			// alone (e.g. the many ranges under the worth-it floor).
+		}
+	}
+
+	// Count mode: balance lease counts across stores.
+	existing.leaseCount = existing.usage.LeaseCount
+	existing.leaseCountMeanLevel = leaseCountMeanLevel(globalMean, existing.usage)
+	for _, c := range candidates {
+		c.leaseCount = c.usage.LeaseCount
+		c.leaseCountMeanLevel = leaseCountMeanLevel(globalMean, c.usage)
+	}
+	choice := &rebalanceChoice{
+		existing:   existing,
+		candidates: candidates,
+	}
 	if !canConvergeByRebalanceLease(choice, globalMean) {
-		return nil
+		return leaseRebalanceResult{}
 	}
 
 	best := slices.MaxFunc(choice.candidates, compareByScoreAndID)
 
 	if compareByScore(best, existing) < 0 {
-		return nil
+		return leaseRebalanceResult{}
 	}
-	return &rebalanceOp{
+	if loadBased {
+		// Count-based lease moves must not undo load balance: don't move a
+		// lease onto a store that's hot on either QPS dimension.
+		if qpsSignalPresent(p, allStoresStats.ReadQPS.Mean) &&
+			float64(best.usage.GetReadQps()) > aboveMeanQPSThreshold(p, allStoresStats.ReadQPS.Mean) {
+			return leaseRebalanceResult{}
+		}
+		if qpsSignalPresent(p, allStoresStats.RaftProposeQPS.Mean) &&
+			float64(best.usage.GetRaftProposeQps()) > aboveMeanQPSThreshold(p, allStoresStats.RaftProposeQPS.Mean) {
+			return leaseRebalanceResult{}
+		}
+	}
+	return leaseRebalanceResult{op: &rebalanceOp{
 		from: existing,
 		to:   best,
+	}}
+}
+
+// findRebalanceLeaseOpQPS looks for a lease transfer that improves the
+// balance of read QPS across stores. A lease transfer moves the range's read
+// load (reads are served by the leaseholder) but not its apply cost, so read
+// QPS is the only dimension it balances; the write dimension appears solely
+// as a veto on targets.
+func (rq *Queue) findRebalanceLeaseOpQPS(rd *rfpb.RangeDescriptor, localRepl IReplica, existing *candidate, candidates []*candidate, allStores *storemap.StoresWithStats, p loadParams) leaseRebalanceResult {
+	ru, err := localRepl.Usage()
+	if err != nil {
+		rq.log.Errorf("failed to get usage of replica c%dn%d: %s", rd.GetRangeId(), localRepl.ReplicaID(), err)
+		return leaseRebalanceResult{}
 	}
+	rangeReadQPS := ru.GetReadQps()
+	readQPSMean := allStores.ReadQPS.Mean
+	proposeQPSMean := allStores.RaftProposeQPS.Mean
+	existing.populateQPS(p, readQPSMean, proposeQPSMean)
+	for _, c := range candidates {
+		c.populateQPS(p, readQPSMean, proposeQPSMean)
+	}
+
+	// This range's lease carries too small a fraction of the store's read
+	// load to meaningfully help; don't churn it.
+	if float64(rangeReadQPS) < p.minLeaseLoadFraction*float64(existing.readQPS) {
+		return leaseRebalanceResult{}
+	}
+
+	// Converge gate, same two-sided shape as the count path: an overfull
+	// source may shed to any below-mean candidate; a source that's above the
+	// mean but still in band may only shed to an underfull candidate.
+	srcOverfull := float64(existing.readQPS) > aboveMeanQPSThreshold(p, readQPSMean)
+	if float64(existing.readQPS) <= readQPSMean {
+		return leaseRebalanceResult{}
+	}
+
+	viable := make([]*candidate, 0, len(candidates))
+	for _, c := range candidates {
+		// The converge condition is checked per candidate (not "does any
+		// candidate qualify") so that a candidate the vetoes below remove
+		// can't open the gate for a move between two in-band stores.
+		if srcOverfull {
+			if float64(c.readQPS) >= readQPSMean {
+				continue
+			}
+		} else if float64(c.readQPS) >= belowMeanQPSThreshold(p, readQPSMean) {
+			continue
+		}
+		// Improvement check: the source/target gap must exceed the load
+		// being moved. This guarantees the reverse transfer can't qualify
+		// on the next pass (that would need the new gap, 2*rangeReadQPS -
+		// gap, to exceed rangeReadQPS — impossible when gap > rangeReadQPS),
+		// so the lease can't ping-pong.
+		if float64(existing.readQPS-c.readQPS) <= float64(rangeReadQPS) {
+			continue
+		}
+		// Don't stack read load on a store that's overfull on the write
+		// dimension or short on disk. The write veto only applies when the
+		// write dimension carries a real signal; below the floor its
+		// threshold is just the floor above a near-zero mean, so noise
+		// would spuriously veto good read targets.
+		if qpsSignalPresent(p, proposeQPSMean) && float64(c.proposeQPS) > aboveMeanQPSThreshold(p, proposeQPSMean) {
+			continue
+		}
+		if isDiskFullForRebalance(c.usage) {
+			continue
+		}
+		viable = append(viable, c)
+	}
+	if len(viable) == 0 {
+		// An overfull store that can't shed this range's reads to any
+		// replica store signals the replica controller to create a landing
+		// spot. In-band stores don't get to force replica moves.
+		return leaseRebalanceResult{blocked: srcOverfull}
+	}
+	best := slices.MaxFunc(viable, compareForLeaseRebalance)
+	return leaseRebalanceResult{op: &rebalanceOp{
+		from: existing,
+		to:   best,
+	}}
 }
 func (rq *Queue) findRebalanceReplicaOp(rd *rfpb.RangeDescriptor, storesWithStats *storemap.StoresWithStats, localReplicaID uint64) *rebalanceOp {
 	if len(storesWithStats.Usages) == 0 {
@@ -1600,6 +1800,20 @@ func belowMeanLeaseCountThreshold(mean float64) float64 {
 	return mean - math.Max(mean*leaseCountMeanRatioThreshold, minLeaseCountThreshold)
 }
 
+func aboveMeanQPSThreshold(p loadParams, mean float64) float64 {
+	return mean + math.Max(mean*p.bandRatio, p.qpsFloor)
+}
+
+func belowMeanQPSThreshold(p loadParams, mean float64) float64 {
+	return mean - math.Max(mean*p.bandRatio, p.qpsFloor)
+}
+
+// qpsSignalPresent reports whether a QPS dimension carries enough load to
+// balance on. Below the floor, count-based rebalancing applies instead.
+func qpsSignalPresent(p loadParams, mean float64) bool {
+	return mean >= p.qpsFloor
+}
+
 type meanLevel int
 
 const (
@@ -1616,8 +1830,21 @@ type candidate struct {
 	replicaCount          int64
 	leaseCount            int64
 	leaseCountMeanLevel   meanLevel
+	// Smoothed QPS of the store and its position relative to the cluster
+	// mean, per dimension. Only populated on load-based rebalance paths.
+	readQPS             int64
+	readQPSMeanLevel    meanLevel
+	proposeQPS          int64
+	proposeQPSMeanLevel meanLevel
 	// Tie-breaker in compareByScore. Zero when no rangeID is available.
 	rendezvousScore uint64
+}
+
+func (c *candidate) populateQPS(p loadParams, readQPSMean, proposeQPSMean float64) {
+	c.readQPS = c.usage.GetReadQps()
+	c.readQPSMeanLevel = qpsMeanLevel(p, readQPSMean, c.readQPS)
+	c.proposeQPS = c.usage.GetRaftProposeQps()
+	c.proposeQPSMeanLevel = qpsMeanLevel(p, proposeQPSMean, c.proposeQPS)
 }
 
 // rendezvousScore is a deterministic tie-breaker hash over (rangeID, nhid).
@@ -1708,6 +1935,12 @@ func compareByScoreAndID(a *candidate, b *candidate) int {
 // Use with slices.MinFunc to pick the worst replica (for removing or
 // rebalancing).
 func compareByZoneAndScore(replicasByZone map[string]int) func(a, b *candidate) int {
+	return compareByZoneThen(replicasByZone, compareByScoreAndID)
+}
+
+// compareByZoneThen returns a comparator that prefers candidates in
+// less-represented zones and breaks ties with the given comparator.
+func compareByZoneThen(replicasByZone map[string]int, then func(a, b *candidate) int) func(a, b *candidate) int {
 	return func(a, b *candidate) int {
 		za := replicasByZone[a.usage.GetNode().GetZone()]
 		zb := replicasByZone[b.usage.GetNode().GetZone()]
@@ -1715,7 +1948,7 @@ func compareByZoneAndScore(replicasByZone map[string]int) func(a, b *candidate) 
 			// Fewer replicas in a's zone → a is a better target.
 			return cmp.Compare(zb, za)
 		}
-		return compareByScoreAndID(a, b)
+		return then(a, b)
 	}
 }
 
@@ -1741,4 +1974,59 @@ func leaseCountMeanLevel(mean float64, su *rfpb.StoreUsage) meanLevel {
 		return aboveMean
 	}
 	return aroundMean
+}
+
+func qpsMeanLevel(p loadParams, mean float64, qps int64) meanLevel {
+	if float64(qps) < belowMeanQPSThreshold(p, mean) {
+		return belowMean
+	} else if float64(qps) >= aboveMeanQPSThreshold(p, mean) {
+		return aboveMean
+	}
+	return aroundMean
+}
+
+// compareByQPSDimension compares two candidates on one QPS dimension with
+// the same shape as the count comparisons in compareByScore: mean level
+// first (±[10, 12]), then the relative QPS difference ((-10, 10)). Returns 0
+// when the candidates are equivalent on this dimension.
+func compareByQPSDimension(aLevel, bLevel meanLevel, aQPS, bQPS int64) int {
+	if aLevel != bLevel {
+		score := int(10 + math.Abs(float64(aLevel-bLevel)))
+		if aLevel > bLevel {
+			return score
+		}
+		return -score
+	}
+	diff := math.Abs(float64(aQPS - bQPS))
+	if aQPS < bQPS {
+		return int(math.Ceil(diff / float64(bQPS) * 10))
+	} else if aQPS > bQPS {
+		return -int(math.Ceil(diff / float64(aQPS) * 10))
+	}
+	return 0
+}
+
+// compareForLeaseRebalance ranks candidates as lease-transfer targets in
+// load-based mode: read QPS first, then the count-based score as tie-break.
+func compareForLeaseRebalance(a *candidate, b *candidate) int {
+	if res := compareByQPSDimension(a.readQPSMeanLevel, b.readQPSMeanLevel, a.readQPS, b.readQPS); res != 0 {
+		return res
+	}
+	return compareByScoreAndID(a, b)
+}
+
+// compareForReplicaRebalance ranks candidates as replica-move targets in
+// load-based mode: disk fullness dominates (as in compareByScore), then
+// propose QPS, then the count-based score as tie-break.
+func compareForReplicaRebalance(a *candidate, b *candidate) int {
+	if a.fullDisk != b.fullDisk {
+		if a.fullDisk {
+			return -20
+		}
+		return 20
+	}
+	if res := compareByQPSDimension(a.proposeQPSMeanLevel, b.proposeQPSMeanLevel, a.proposeQPS, b.proposeQPS); res != 0 {
+		return res
+	}
+	return compareByScoreAndID(a, b)
 }
