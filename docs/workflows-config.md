@@ -88,7 +88,7 @@ steps:
 
 ## Concurrent Workflow runs
 
-Starting June 1, 2026, BuildBuddy will automatically cancel in-progress
+BuildBuddy automatically cancels in-progress
 Workflow runs when a newer run is triggered for the same action on a
 non-default branch. This helps avoid wasting resources on outdated runs
 when, for example, several commits are pushed in quick succession to a
@@ -104,6 +104,21 @@ action, set `allow_concurrent_runs: true` in the action's configuration:
 actions:
   - name: "Test all targets"
     allow_concurrent_runs: true # <-- disables auto-cancellation of concurrent runs
+    ...
+```
+
+To keep auto-cancellation on for most branches but exclude a few (in addition
+to the default branch, which is always excluded), list branch patterns in
+`allow_concurrent_runs_on_branches`. Patterns are matched using the rules
+described in [Ref pattern matching](#ref-pattern-matching):
+
+```yaml title="buildbuddy.yaml"
+actions:
+  - name: "Test all targets"
+    allow_concurrent_runs: false
+    allow_concurrent_runs_on_branches: # <-- these branches are never auto-cancelled
+      - "release-*"
+      - "staging"
     ...
 ```
 
@@ -592,6 +607,12 @@ A named group of Bazel commands that run when triggered.
   multiple runs of the same action on the same branch will be allowed to run concurrently.
   By default or if set to `false`, concurrent runs will be automatically cancelled.
   See [Concurrent Workflow runs](#concurrent-workflow-runs).
+- **`allow_concurrent_runs_on_branches`** (list of `string`): Branch name patterns
+  to exclude from auto-cancellation of concurrent runs, in addition to the repo's
+  default branch (which is always excluded). Has no effect when
+  `allow_concurrent_runs` is `true`. Patterns are matched using the rules described
+  in [Ref pattern matching](#ref-pattern-matching). See
+  [Concurrent Workflow runs](#concurrent-workflow-runs).
 
 ### `Triggers`
 

@@ -59,6 +59,13 @@ type Action struct {
 	// By default, if you have multiple workflow runs on the same branch, we'll cancel the old ones.
 	// If AllowConcurrentRuns is set to true, we'll allow multiple runs to continue in parallel.
 	AllowConcurrentRuns *bool `yaml:"allow_concurrent_runs"`
+	// AllowConcurrentRunsOnBranches is a list of branch name patterns that
+	// should be allowed to run concurrently, even when AllowConcurrentRuns=false.
+	// This is in addition to the repo's default branch, which is always excluded.
+	// Patterns use the same restricted-glob syntax as trigger `branches` (a
+	// single `*` wildcard, with an optional leading `!` for negation). This has
+	// no effect when AllowConcurrentRuns is true.
+	AllowConcurrentRunsOnBranches []string `yaml:"allow_concurrent_runs_on_branches"`
 
 	// DEPRECATED: Used `Steps` instead
 	DeprecatedBazelCommands []string `yaml:"bazel_commands"`
@@ -73,6 +80,13 @@ func (a *Action) GetTriggers() *Triggers {
 		return &Triggers{}
 	}
 	return a.Triggers
+}
+
+// AllowsConcurrentRunsOnBranch returns whether in-progress runs of this action
+// on the given branch should be excluded from auto-cancellation, based on the
+// AllowConcurrentRunsOnBranches patterns.
+func (a *Action) AllowsConcurrentRunsOnBranch(branch string) bool {
+	return matchesAnyPattern(a.AllowConcurrentRunsOnBranches, branch)
 }
 
 func (a *Action) GetGitFetchFilters() []string {

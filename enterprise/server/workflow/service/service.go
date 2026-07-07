@@ -1586,6 +1586,11 @@ func (ws *workflowService) cancelInProgressWorkflowsOnSameBranch(ctx context.Con
 		return nil
 	}
 
+	// Don't cancel workflows on branches explicitly excluded from cancellation.
+	if action.AllowsConcurrentRunsOnBranch(wd.PushedBranch) {
+		return nil
+	}
+
 	// TODO: It seems unlikely that there'd be many in-progress workflows on the same branch,
 	// but for correctness we could use page_token to make sure we don't miss any.
 	// By default, this query returns up to 15 invocations.

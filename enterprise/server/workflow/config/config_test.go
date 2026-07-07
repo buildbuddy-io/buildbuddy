@@ -285,6 +285,32 @@ func TestMatchesAnyTrigger_BothBranchAndTagTriggers(t *testing.T) {
 	assert.False(t, config.MatchesAnyTrigger(action, "push", "", "main", ""))
 }
 
+func TestAllowsConcurrentRunsOnBranch(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		patterns []string
+		branch   string
+		want     bool
+	}{
+		{name: "no patterns", patterns: nil, branch: "feature", want: false},
+		{name: "empty patterns", patterns: []string{}, branch: "feature", want: false},
+		{name: "exact match", patterns: []string{"staging"}, branch: "staging", want: true},
+		{name: "exact non-match", patterns: []string{"staging"}, branch: "feature", want: false},
+		{name: "wildcard match", patterns: []string{"release-*"}, branch: "release-20240101", want: true},
+		{name: "wildcard non-match", patterns: []string{"release-*"}, branch: "releasefoo", want: false},
+		{name: "multiple patterns matches second", patterns: []string{"staging", "release-*"}, branch: "release-1", want: true},
+		{name: "multiple patterns no match", patterns: []string{"staging", "release-*"}, branch: "feature", want: false},
+		{name: "negation last match wins", patterns: []string{"release-*", "!release-exception"}, branch: "release-exception", want: false},
+		{name: "negation does not affect other branches", patterns: []string{"release-*", "!release-exception"}, branch: "release-1", want: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			action := &config.Action{AllowConcurrentRunsOnBranches: tc.patterns}
+			assert.Equal(t, tc.want, action.AllowsConcurrentRunsOnBranch(tc.branch),
+				"AllowsConcurrentRunsOnBranch(%q) with patterns %v", tc.branch, tc.patterns)
+		})
+	}
+}
+
 func TestGetGitFetchFilters(t *testing.T) {
 	for _, test := range []struct {
 		Name    string
