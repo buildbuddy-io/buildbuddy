@@ -422,6 +422,14 @@ func main() {
 	if err := taskScheduler.Start(); err != nil {
 		log.Fatalf("Error starting task scheduler: %v", err)
 	}
+	prometheus.MustRegister(prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+		Namespace: "buildbuddy",
+		Subsystem: "remote_execution",
+		Name:      "running_task_progress_seconds",
+		Help:      "Total time, in seconds, that the tasks currently running on this executor have spent executing so far. This approximates the execution progress that would be lost if the executor were shut down, since killed tasks are re-enqueued and restart from scratch.",
+	}, func() float64 {
+		return taskScheduler.TotalRunningTaskExecutionDuration().Seconds()
+	}))
 
 	monitoring.StartMonitoringHandler(env, fmt.Sprintf("%s:%d", *listen, *monitoringPort))
 
