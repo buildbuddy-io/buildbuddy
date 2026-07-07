@@ -1581,13 +1581,7 @@ func (ws *workflowService) cancelInProgressWorkflowsOnSameBranch(ctx context.Con
 		return nil
 	}
 
-	// Don't cancel workflows on the default branch.
-	if wd.PushedBranch == wd.TargetRepoDefaultBranch || wd.TargetRepoDefaultBranch == "" {
-		return nil
-	}
-
-	// Don't cancel workflows on branches explicitly excluded from cancellation.
-	if action.AllowsConcurrentRunsOnBranch(wd.PushedBranch) {
+	if action.AllowsConcurrentRunsOnBranch(wd.PushedBranch, wd.TargetRepoDefaultBranch) {
 		return nil
 	}
 
@@ -1713,17 +1707,8 @@ func (ws *workflowService) executeWorkflowAction(ctx context.Context, key *table
 			continue // retry
 		}
 
-		cancelDuplicates := false
-		if efp := ws.env.GetExperimentFlagProvider(); efp != nil {
-			cancelDuplicates = efp.Boolean(ctx, "cancel_duplicate_workflows_default", false)
-		}
-		if action.AllowConcurrentRuns != nil {
-			cancelDuplicates = !*action.AllowConcurrentRuns
-		}
-		if cancelDuplicates {
-			if err := ws.cancelInProgressWorkflowsOnSameBranch(ctx, action, wf, wd, invocationID); err != nil {
-				log.CtxWarningf(ctx, "Failed to cancel in-progress workflow invocations on branch %q: %s", wd.PushedBranch, err)
-			}
+		if err := ws.cancelInProgressWorkflowsOnSameBranch(ctx, action, wf, wd, invocationID); err != nil {
+			log.CtxWarningf(ctx, "Failed to cancel in-progress workflow invocations on branch %q: %s", wd.PushedBranch, err)
 		}
 
 		return executionID, nil

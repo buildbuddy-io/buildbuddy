@@ -287,26 +287,32 @@ func TestMatchesAnyTrigger_BothBranchAndTagTriggers(t *testing.T) {
 
 func TestAllowsConcurrentRunsOnBranch(t *testing.T) {
 	for _, tc := range []struct {
-		name     string
-		patterns []string
-		branch   string
-		want     bool
+		name          string
+		patterns      []string
+		branch        string
+		defaultBranch string
+		want          bool
 	}{
-		{name: "no patterns", patterns: nil, branch: "feature", want: false},
-		{name: "empty patterns", patterns: []string{}, branch: "feature", want: false},
-		{name: "exact match", patterns: []string{"staging"}, branch: "staging", want: true},
-		{name: "exact non-match", patterns: []string{"staging"}, branch: "feature", want: false},
-		{name: "wildcard match", patterns: []string{"release-*"}, branch: "release-20240101", want: true},
-		{name: "wildcard non-match", patterns: []string{"release-*"}, branch: "releasefoo", want: false},
-		{name: "multiple patterns matches second", patterns: []string{"staging", "release-*"}, branch: "release-1", want: true},
-		{name: "multiple patterns no match", patterns: []string{"staging", "release-*"}, branch: "feature", want: false},
-		{name: "negation last match wins", patterns: []string{"release-*", "!release-exception"}, branch: "release-exception", want: false},
-		{name: "negation does not affect other branches", patterns: []string{"release-*", "!release-exception"}, branch: "release-1", want: true},
+		// When unset, allows concurrent runs on the default branch.
+		{name: "unset allows default branch", patterns: nil, branch: "main", defaultBranch: "main", want: true},
+		{name: "unset does not allow other branches", patterns: nil, branch: "feature", defaultBranch: "main", want: false},
+		{name: "unset with unknown default branch allows everything", patterns: nil, branch: "feature", defaultBranch: "", want: true},
+		{name: "empty list blocks default branch", patterns: []string{}, branch: "main", defaultBranch: "main", want: false},
+		{name: "empty list blocks other branches", patterns: []string{}, branch: "feature", defaultBranch: "main", want: false},
+		{name: "explicit list omitting default branch", patterns: []string{"staging"}, branch: "main", defaultBranch: "main", want: false},
+		{name: "exact match", patterns: []string{"staging"}, branch: "staging", defaultBranch: "main", want: true},
+		{name: "exact non-match", patterns: []string{"staging"}, branch: "feature", defaultBranch: "main", want: false},
+		{name: "wildcard match", patterns: []string{"release-*"}, branch: "release-20240101", defaultBranch: "main", want: true},
+		{name: "wildcard non-match", patterns: []string{"release-*"}, branch: "releasefoo", defaultBranch: "main", want: false},
+		{name: "multiple patterns matches second", patterns: []string{"staging", "release-*"}, branch: "release-1", defaultBranch: "main", want: true},
+		{name: "multiple patterns no match", patterns: []string{"staging", "release-*"}, branch: "feature", defaultBranch: "main", want: false},
+		{name: "negation last match wins", patterns: []string{"release-*", "!release-exception"}, branch: "release-exception", defaultBranch: "main", want: false},
+		{name: "negation does not affect other branches", patterns: []string{"release-*", "!release-exception"}, branch: "release-1", defaultBranch: "main", want: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			action := &config.Action{AllowConcurrentRunsOnBranches: tc.patterns}
-			assert.Equal(t, tc.want, action.AllowsConcurrentRunsOnBranch(tc.branch),
-				"AllowsConcurrentRunsOnBranch(%q) with patterns %v", tc.branch, tc.patterns)
+			assert.Equal(t, tc.want, action.AllowsConcurrentRunsOnBranch(tc.branch, tc.defaultBranch),
+				"AllowsConcurrentRunsOnBranch(%q, %q) with patterns %v", tc.branch, tc.defaultBranch, tc.patterns)
 		})
 	}
 }
