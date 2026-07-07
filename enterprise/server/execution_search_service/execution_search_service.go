@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"math"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -324,8 +326,54 @@ func (s *ExecutionSearchService) GetExecutionTimeline(ctx context.Context, req *
 			Os:         tl[0].OS,
 			Arch:       tl[0].Arch,
 			Shard:      shard,
+			Summary:    summarizeTimeline(executions),
 			Execution:  executions,
 		})
 	}
 	return rsp, nil
+}
+
+// percentile returns the value at the given percentile (0-100) using the
+// nearest-rank method over a slice that has already been sorted ascending.
+// It returns 0 for an empty slice.
+func percentile(sorted []int64, p float64) int64 {
+	if len(sorted) == 0 {
+		return 0
+	}
+	rank := int(math.Ceil(p/100*float64(len(sorted)))) - 1
+	if rank < 0 {
+		rank = 0
+	}
+	if rank >= len(sorted) {
+		rank = len(sorted) - 1
+	}
+	return sorted[rank]
+}
+
+// summarizeTimeline computes aggregate totals and percentiles across all
+// executions in a single timeline.
+func summarizeTimeline(executions []*expb.ExecutionTimelineEntry) *expb.ExecutionTimelineSummary {
+	durations := make([]int64, len(executions))
+	cpuNanos := make([]int64, len(executions))
+	peakMemory := make([]int64, len(executions))
+	summary := &expb.ExecutionTimelineSummary{}
+	for i, ex := range executions {
+		durations[i] = ex.GetDurationUsec()
+		cpuNanos[i] = ex.GetCpuNanos()
+		peakMemory[i] = ex.GetPeakMemoryBytes()
+		summary.DurationUsecTotal += ex.GetDurationUsec()
+		summary.CpuNanosTotal += ex.GetCpuNanos()
+	}
+	sort.Slice(durations, func(i, j int) bool { return durations[i] < durations[j] })
+	sort.Slice(cpuNanos, func(i, j int) bool { return cpuNanos[i] < cpuNanos[j] })
+	sort.Slice(peakMemory, func(i, j int) bool { return peakMemory[i] < peakMemory[j] })
+
+	summary.DurationUsecP50 = percentile(durations, 50)
+	summary.DurationUsecP90 = percentile(durations, 90)
+	summary.CpuNanosP50 = percentile(cpuNanos, 50)
+	summary.CpuNanosP90 = percentile(cpuNanos, 90)
+	summary.PeakMemoryP50 = percentile(peakMemory, 50)
+	summary.PeakMemoryP90 = percentile(peakMemory, 90)
+
+	return summary
 }

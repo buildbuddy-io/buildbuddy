@@ -412,12 +412,25 @@ message ExecutionTimelineEntry {
   // big.
 }
 
+message ExecutionTimelineSummary {
+  int64 duration_usec_total = 1;
+  int64 duration_usec_p50 = 2;
+  int64 duration_usec_p90 = 3;
+  int64 cpu_nanos_total = 4;
+  int64 cpu_nanos_p50 = 5;
+  int64 cpu_nanos_p90 = 6;
+  int64 peak_memory_p50 = 7;
+  int64 peak_memory_p90 = 8;
+}
+
 message ExecutionTimeline {
   string mnemonic = 1;
   string output_path = 2;
   string os = 3;
   string arch = 4;
   int64 shard = 5;
+
+  ExecutionTimelineSummary summary = 6;
   repeated ExecutionTimelineEntry execution = 7;
 }
 
