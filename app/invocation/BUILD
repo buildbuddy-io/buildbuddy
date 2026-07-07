@@ -149,6 +149,7 @@ ts_library(
         "//app/format",
         "//app/icons:file_icon",
         "//app/invocation:action_compare_button",
+        "//app/invocation:compact_exec_log_action_edges",
         "//app/invocation:execution_status",
         "//app/invocation:invocation_action_tree_node",
         "//app/invocation:invocation_model",
@@ -172,6 +173,25 @@ ts_library(
         "//proto:stored_invocation_ts_proto",
         "//proto:timestamp_ts_proto",
         "//proto:workflow_ts_proto",
+    ],
+)
+
+ts_library(
+    name = "compact_exec_log_action_edges",
+    srcs = ["compact_exec_log_action_edges.ts"],
+    deps = [
+        "//:node_modules/tslib",
+        "//proto:spawn_ts_proto",
+    ],
+)
+
+ts_jasmine_node_test(
+    name = "compact_exec_log_action_edges_test",
+    srcs = ["compact_exec_log_action_edges_test.ts"],
+    deps = [
+        ":compact_exec_log_action_edges",
+        "//:node_modules/tslib",
+        "//proto:spawn_ts_proto",
     ],
 )
 
