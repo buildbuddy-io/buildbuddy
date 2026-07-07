@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/filestore"
@@ -95,9 +96,11 @@ type Replica struct {
 	// readCount / proposeCount are the per-range read / propose counters
 	// (metrics.RaftReads / metrics.RaftProposals), resolved once per range
 	// descriptor in setRange so the hot request paths avoid building label
-	// maps on every op. nil until the first setRange.
-	readCount    prometheus.Counter
-	proposeCount prometheus.Counter
+	// maps on every op. atomic so the Lookup / Update goroutines can load
+	// them lock-free while setRange swaps them in. nil until the first
+	// setRange.
+	readCount    atomic.Pointer[prometheus.Counter]
+	proposeCount atomic.Pointer[prometheus.Counter]
 
 	// txid that locked the mapped range.
 	// We want to lock the mapped range when we are in the process of splitting.
@@ -270,8 +273,10 @@ func (sm *Replica) setRange(val []byte) error {
 	// Resolve the counter handles once here so the hot request paths
 	// (handleRead / singleUpdate) avoid building label maps on every op.
 	labels := keys.RangeMetricLabels(rangeDescriptor, sm.NHID, sm.store.Zone())
-	sm.readCount = metrics.RaftReads.With(labels)
-	sm.proposeCount = metrics.RaftProposals.With(labels)
+	readCount := metrics.RaftReads.With(labels)
+	proposeCount := metrics.RaftProposals.With(labels)
+	sm.readCount.Store(&readCount)
+	sm.proposeCount.Store(&proposeCount)
 	sm.store.UpdateRange(sm.rangeDescriptor, sm)
 	sm.rangeMu.Unlock()
 
@@ -1352,14 +1357,10 @@ func (sm *Replica) handlePropose(wb pebble.Batch, req *rfpb.RequestUnion) *rfpb.
 
 func (sm *Replica) handleRead(db ReplicaReader, req *rfpb.RequestUnion) *rfpb.ResponseUnion {
 	sm.readQPS.Inc()
-	// readCount is reassigned by setRange on the Update goroutine, while
-	// this runs on the concurrent Lookup goroutine, so read it under the
-	// lock. RLock is far cheaper than building the label map inline.
-	sm.rangeMu.RLock()
-	readCount := sm.readCount
-	sm.rangeMu.RUnlock()
-	if readCount != nil { // nil until the first setRange.
-		readCount.Inc()
+	// readCount is swapped by setRange on the Update goroutine; load it
+	// lock-free here on the concurrent Lookup goroutine.
+	if c := sm.readCount.Load(); c != nil { // nil until the first setRange.
+		(*c).Inc()
 	}
 	rsp := &rfpb.ResponseUnion{}
 
@@ -1568,8 +1569,8 @@ func (sm *Replica) singleUpdate(db pebble.IPebbleDB, entry dbsm.Entry) (dbsm.Ent
 	sm.rangeMu.RUnlock()
 
 	// Increment QPS counters.
-	if sm.proposeCount != nil { // nil until the first setRange.
-		sm.proposeCount.Inc()
+	if c := sm.proposeCount.Load(); c != nil { // nil until the first setRange.
+		(*c).Inc()
 	}
 	sm.raftProposeQPS.Inc()
 
