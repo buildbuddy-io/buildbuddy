@@ -1115,6 +1115,14 @@ type TaskSizer interface {
 
 	// Update records a measured task size.
 	Update(ctx context.Context, cmd *repb.Command, props *platform.Properties, md *repb.ExecutedActionMetadata) error
+
+	// UpdateForOOM increases the recorded memory estimate for a task that was
+	// killed by the executor OOM killer after using more memory than its
+	// estimate, so that it is scheduled with at least observedMemoryBytes of
+	// memory the next time it runs (and possibly more, for headroom).
+	// scheduledSize is the size the task was scheduled with, and
+	// observedMemoryBytes is the memory usage observed by the OOM killer.
+	UpdateForOOM(ctx context.Context, cmd *repb.Command, props *platform.Properties, scheduledSize *scpb.TaskSize, observedMemoryBytes int64) error
 }
 
 // ScheduledTask represents an execution task along with its scheduling metadata
