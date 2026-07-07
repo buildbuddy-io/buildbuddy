@@ -447,6 +447,34 @@ type Queue struct {
 	minMetaRangeReplicas int
 
 	efp interfaces.ExperimentFlagProvider
+
+	// leaseBlockedHint caches, per range, the blocked result of the lease
+	// evaluation that computeActionForRangeTask just ran, so that the
+	// execution path (rebalanceReplica) doesn't have to repeat the whole
+	// evaluation (store stats + a connection check per replica) to learn it.
+	// It is a hint: process() always recomputes the action (and thus the
+	// hint) immediately before executing it.
+	leaseBlockedMu   sync.Mutex
+	leaseBlockedHint map[uint64]bool
+}
+
+func (rq *Queue) setLeaseBlockedHint(rangeID uint64, blocked bool) {
+	rq.leaseBlockedMu.Lock()
+	defer rq.leaseBlockedMu.Unlock()
+	if rq.leaseBlockedHint == nil {
+		rq.leaseBlockedHint = make(map[uint64]bool)
+	}
+	if blocked {
+		rq.leaseBlockedHint[rangeID] = true
+	} else {
+		delete(rq.leaseBlockedHint, rangeID)
+	}
+}
+
+func (rq *Queue) leaseBlocked(rangeID uint64) bool {
+	rq.leaseBlockedMu.Lock()
+	defer rq.leaseBlockedMu.Unlock()
+	return rq.leaseBlockedHint[rangeID]
 }
 
 func NewQueue(store IStore, sender *sender.Sender, gossipManager interfaces.GossipService, nhlog log.Logger, apiClient IClient, clock clockwork.Clock, efp interfaces.ExperimentFlagProvider) *Queue {
@@ -685,19 +713,23 @@ func (rq *Queue) computeActionForRangeTask(ctx context.Context, task *rangeTask)
 	// Do not try to rebalance replica or leases when there is a store that's
 	// unavailable because it can make the system more unstable.
 	if isClusterHealthy {
+		leaseBlocked := false
 		if rq.isLoadBasedRebalanceEnabled(ctx) {
 			// In load-based mode, try lease transfers before replica moves:
 			// a leadership transfer is nearly free while a replica move
 			// costs a snapshot, and shedding read load often removes the
 			// need to move data at all.
-			if rq.findRebalanceLeaseOp(ctx, rd, repl).op != nil {
+			res := rq.findRebalanceLeaseOp(ctx, rd, repl)
+			rq.setLeaseBlockedHint(rd.GetRangeId(), res.blocked)
+			if res.op != nil {
 				action = DriverRebalanceLease
 				return action, action.Priority()
 			}
+			leaseBlocked = res.blocked
 		}
 		// For DriverConsiderRebalance check if there are rebalance opportunities.
 		storesWithStats := rq.storeMap.GetStoresWithStats()
-		op := rq.findRebalanceReplicaOp(rd, storesWithStats, repl.ReplicaID())
+		op := rq.findRebalanceReplicaOp(ctx, rd, storesWithStats, repl, leaseBlocked)
 		if op != nil {
 			log.Debugf("find rebalancing opportunities: from (nhid=%q, replicaCount=%d, isReady=%t) to (nhid=%q, replicaCount=%d, isReady=%t)", op.from.nhid, op.from.replicaCount, op.from.usage.GetIsReady(), op.to.nhid, op.to.replicaCount, op.to.usage.GetIsReady())
 			action = DriverRebalanceReplica
@@ -1101,6 +1133,9 @@ type rebalanceChoice struct {
 type rebalanceOp struct {
 	from *candidate
 	to   *candidate
+	// leaseUnblock marks a replica move whose purpose is to create a lease
+	// landing spot for a read-hot range (see findLeaseUnblockReplicaOp).
+	leaseUnblock bool
 }
 
 func (rOp *rebalanceOp) String() string {
@@ -1145,9 +1180,12 @@ func findReplicaWithNHID(rd *rfpb.RangeDescriptor, nhid string) (uint64, error) 
 	return 0, status.InternalErrorf("cannot find replica with NHID: %s", nhid)
 }
 
-func (rq *Queue) rebalanceReplica(rd *rfpb.RangeDescriptor, localRepl IReplica) *change {
+func (rq *Queue) rebalanceReplica(ctx context.Context, rd *rfpb.RangeDescriptor, localRepl IReplica) *change {
 	storesWithStats := rq.storeMap.GetStoresWithStats()
-	op := rq.findRebalanceReplicaOp(rd, storesWithStats, localRepl.ReplicaID())
+	// The blocked hint was cached by the lease evaluation that
+	// computeActionForRangeTask just ran; don't repeat that evaluation here.
+	leaseBlocked := rq.isLoadBasedRebalanceEnabled(ctx) && rq.leaseBlocked(rd.GetRangeId())
+	op := rq.findRebalanceReplicaOp(ctx, rd, storesWithStats, localRepl, leaseBlocked)
 	if op == nil {
 		return nil
 	}
@@ -1389,10 +1427,11 @@ func (rq *Queue) findRebalanceLeaseOpQPS(rd *rfpb.RangeDescriptor, localRepl IRe
 		to:   best,
 	}}
 }
-func (rq *Queue) findRebalanceReplicaOp(rd *rfpb.RangeDescriptor, storesWithStats *storemap.StoresWithStats, localReplicaID uint64) *rebalanceOp {
+func (rq *Queue) findRebalanceReplicaOp(ctx context.Context, rd *rfpb.RangeDescriptor, storesWithStats *storemap.StoresWithStats, localRepl IReplica, leaseBlocked bool) *rebalanceOp {
 	if len(storesWithStats.Usages) == 0 {
 		return nil
 	}
+	localReplicaID := localRepl.ReplicaID()
 	targetsByID := make(map[string]*candidate, len(storesWithStats.Usages))
 	var sources []*candidate
 	rangeID := rd.GetRangeId()
@@ -1410,6 +1449,7 @@ func (rq *Queue) findRebalanceReplicaOp(rd *rfpb.RangeDescriptor, storesWithStat
 	}
 
 	replicasByZone := make(map[string]int)
+	var localStore *candidate
 	for _, repl := range rd.GetReplicas() {
 		store, ok := targetsByID[repl.GetNhid()]
 		if !ok {
@@ -1423,6 +1463,8 @@ func (rq *Queue) findRebalanceReplicaOp(rd *rfpb.RangeDescriptor, storesWithStat
 			// can only support this after we have the ability to transfer the
 			// leadership away.
 			sources = append(sources, store)
+		} else {
+			localStore = store
 		}
 	}
 	// Remove replicas that are in the middle of removal from candidates.
@@ -1440,6 +1482,40 @@ func (rq *Queue) findRebalanceReplicaOp(rd *rfpb.RangeDescriptor, storesWithStat
 	if len(sources) == 0 || len(targets) == 0 {
 		return nil
 	}
+
+	loadBased := rq.isLoadBasedRebalanceEnabled(ctx)
+	var p loadParams
+	readSignal, proposeSignal := false, false
+	if loadBased {
+		p = rq.loadParams(ctx)
+		readSignal = qpsSignalPresent(p, storesWithStats.ReadQPS.Mean)
+		proposeSignal = qpsSignalPresent(p, storesWithStats.RaftProposeQPS.Mean)
+		if readSignal || proposeSignal {
+			if localStore != nil {
+				localStore.populateQPS(p, storesWithStats.ReadQPS.Mean, storesWithStats.RaftProposeQPS.Mean)
+			}
+			for _, c := range sources {
+				c.populateQPS(p, storesWithStats.ReadQPS.Mean, storesWithStats.RaftProposeQPS.Mean)
+			}
+			for _, c := range targets {
+				c.populateQPS(p, storesWithStats.ReadQPS.Mean, storesWithStats.RaftProposeQPS.Mean)
+			}
+			if leaseBlocked && readSignal {
+				if op := rq.findLeaseUnblockReplicaOp(rd, localRepl, localStore, storesWithStats, sources, targets, replicasByZone, p); op != nil {
+					return op
+				}
+			}
+			if proposeSignal {
+				if op := rq.findRebalanceReplicaOpQPS(rd, localRepl, storesWithStats, sources, targets, replicasByZone, p); op != nil {
+					return op
+				}
+			}
+			// No qualifying load-based move; fall through to the count-based
+			// check so replica counts (≈ bytes ≈ eviction pressure) still
+			// converge for ranges the load controllers leave alone.
+		}
+	}
+
 	sortFunc := compareByZoneAndScore(replicasByZone)
 	// MinFunc picks the worst target (best source to evict); MaxFunc picks the
 	// best target.
@@ -1460,10 +1536,167 @@ func (rq *Queue) findRebalanceReplicaOp(rd *rfpb.RangeDescriptor, storesWithStat
 			}
 		}
 	}
+	if loadBased {
+		// Count-based moves must not undo load balance: don't move onto a
+		// store that's hot on either QPS dimension.
+		if readSignal && float64(bestTarget.readQPS) > aboveMeanQPSThreshold(p, storesWithStats.ReadQPS.Mean) {
+			return nil
+		}
+		if proposeSignal && float64(bestTarget.proposeQPS) > aboveMeanQPSThreshold(p, storesWithStats.RaftProposeQPS.Mean) {
+			return nil
+		}
+	}
 	return &rebalanceOp{
 		from: bestSource,
 		to:   bestTarget,
 	}
+}
+
+// zonePairOK reports whether moving a replica of this range from src's zone
+// to tgt's zone preserves zone spread: the target zone must not end up with
+// more replicas of the range than the source zone started with.
+func zonePairOK(replicasByZone map[string]int, src, tgt *candidate) bool {
+	sZone := src.usage.GetNode().GetZone()
+	tZone := tgt.usage.GetNode().GetZone()
+	if sZone == tZone {
+		return true
+	}
+	return replicasByZone[tZone]+1 <= replicasByZone[sZone]
+}
+
+// bytesHigh reports whether the store's disk usage is above the byte-mean
+// band. This keeps bytes level across stores long before the disk-full
+// cliffs: eviction is local to each store, so the fullest store would start
+// evicting first and silently shorten the cache lifetime for everyone.
+func bytesHigh(p loadParams, c *candidate, bytesMean float64) bool {
+	return float64(c.usage.GetTotalBytesUsed()) > bytesMean*(1+p.bandRatio)
+}
+
+// findRebalanceReplicaOpQPS looks for a follower move that improves the
+// balance of propose (apply) QPS across stores. Moving a follower moves the
+// range's apply cost but no read cost, so propose QPS is the only dimension
+// it balances; reads and bytes appear as vetoes on targets.
+func (rq *Queue) findRebalanceReplicaOpQPS(rd *rfpb.RangeDescriptor, localRepl IReplica, storesWithStats *storemap.StoresWithStats, sources, targets []*candidate, replicasByZone map[string]int, p loadParams) *rebalanceOp {
+	ru, err := localRepl.Usage()
+	if err != nil {
+		rq.log.Errorf("failed to get usage of replica c%dn%d: %s", rd.GetRangeId(), localRepl.ReplicaID(), err)
+		return nil
+	}
+	// Every replica of a range applies the same entries, so the local
+	// replica's propose QPS ≈ the apply cost carried by each follower.
+	rangeProposeQPS := ru.GetRaftProposeQps()
+	proposeMean := storesWithStats.RaftProposeQPS.Mean
+	readMean := storesWithStats.ReadQPS.Mean
+	bytesMean := storesWithStats.TotalBytesUsed.Mean
+
+	sortFunc := compareByZoneThen(replicasByZone, compareForReplicaRebalance)
+	srcs := slices.Clone(sources)
+	slices.SortFunc(srcs, sortFunc) // worst (best to evict) first
+	tgts := slices.Clone(targets)
+	slices.SortFunc(tgts, sortFunc)
+	slices.Reverse(tgts) // best target first
+
+	for _, src := range srcs {
+		// Worth-it floor: the range's apply load must be a meaningful
+		// fraction of the source store's propose load.
+		if float64(rangeProposeQPS) < p.minReplicaLoadFraction*float64(src.proposeQPS) {
+			continue
+		}
+		srcSheds := src.fullDisk || float64(src.proposeQPS) > aboveMeanQPSThreshold(p, proposeMean)
+		for _, tgt := range tgts {
+			if !zonePairOK(replicasByZone, src, tgt) {
+				continue
+			}
+			// Converge gate: the source is shedding or the target is
+			// underfull.
+			if !srcSheds && !(float64(tgt.proposeQPS) < belowMeanQPSThreshold(p, proposeMean)) {
+				continue
+			}
+			// Improvement check: the gap must exceed the load being moved,
+			// or the reverse move looks attractive on the next pass.
+			if float64(src.proposeQPS-tgt.proposeQPS) <= float64(rangeProposeQPS) {
+				continue
+			}
+			// Don't stack apply load on a read-hot or byte-heavy store. The
+			// read veto only applies when the read dimension carries a real
+			// signal; below the floor it would veto on noise.
+			if qpsSignalPresent(p, readMean) && float64(tgt.readQPS) > aboveMeanQPSThreshold(p, readMean) {
+				continue
+			}
+			if bytesHigh(p, tgt, bytesMean) {
+				continue
+			}
+			return &rebalanceOp{from: src, to: tgt}
+		}
+	}
+	return nil
+}
+
+// findLeaseUnblockReplicaOp moves a follower of a read-hot range to a
+// read-underfull store so that a later pass can transfer the lease there. A
+// lease can only move to a store that already holds a replica; when all of a
+// range's replicas sit on read-hot stores the lease controller is blocked,
+// and this creates the landing spot. The improvement check uses the range's
+// READ QPS with the local (leaseholder) store as the source: that is the
+// load that will follow the lease, even though the replica being moved is a
+// follower on another store.
+func (rq *Queue) findLeaseUnblockReplicaOp(rd *rfpb.RangeDescriptor, localRepl IReplica, localStore *candidate, storesWithStats *storemap.StoresWithStats, sources, targets []*candidate, replicasByZone map[string]int, p loadParams) *rebalanceOp {
+	if localStore == nil {
+		return nil
+	}
+	ru, err := localRepl.Usage()
+	if err != nil {
+		rq.log.Errorf("failed to get usage of replica c%dn%d: %s", rd.GetRangeId(), localRepl.ReplicaID(), err)
+		return nil
+	}
+	rangeReadQPS := ru.GetReadQps()
+	readMean := storesWithStats.ReadQPS.Mean
+	proposeMean := storesWithStats.RaftProposeQPS.Mean
+	bytesMean := storesWithStats.TotalBytesUsed.Mean
+
+	if float64(rangeReadQPS) < p.minLeaseLoadFraction*float64(localStore.readQPS) {
+		return nil
+	}
+	if float64(localStore.readQPS) <= readMean {
+		return nil
+	}
+
+	srcs := slices.Clone(sources)
+	slices.SortFunc(srcs, compareByZoneThen(replicasByZone, compareForReplicaRebalance)) // worst first
+	tgts := slices.Clone(targets)
+	slices.SortFunc(tgts, compareByZoneThen(replicasByZone, compareForLeaseRebalance))
+	slices.Reverse(tgts) // most read headroom first
+
+	for _, src := range srcs {
+		for _, tgt := range tgts {
+			if !zonePairOK(replicasByZone, src, tgt) {
+				continue
+			}
+			// Improvement check on the read dimension: once the lease
+			// follows, the local store sheds rangeReadQPS to tgt.
+			if float64(localStore.readQPS-tgt.readQPS) <= float64(rangeReadQPS) {
+				continue
+			}
+			// The follow-up lease transfer only moves the lease to a store
+			// below the read mean (findRebalanceLeaseOpQPS's srcOverfull
+			// gate, which is the gate that set leaseBlocked here). Don't
+			// create a landing spot that won't qualify for it.
+			if float64(tgt.readQPS) >= readMean {
+				continue
+			}
+			// The follower's apply cost moves with it; don't stack it on a
+			// write-hot or byte-heavy store. The write veto only applies when
+			// the write dimension carries a real signal.
+			if qpsSignalPresent(p, proposeMean) && float64(tgt.proposeQPS) > aboveMeanQPSThreshold(p, proposeMean) {
+				continue
+			}
+			if bytesHigh(p, tgt, bytesMean) {
+				continue
+			}
+			return &rebalanceOp{from: src, to: tgt, leaseUnblock: true}
+		}
+	}
+	return nil
 }
 
 func (rq *Queue) findRemovableReplicas(rd *rfpb.RangeDescriptor, replicaStateMap map[uint64]constants.ReplicaState, brandNewReplicaID *uint64) []*rfpb.ReplicaDescriptor {
@@ -1697,7 +1930,7 @@ func (rq *Queue) processRangeTask(ctx context.Context, task *driverTask, action 
 	case DriverRemoveDeadReplica:
 		change = rq.removeDeadReplica(rd)
 	case DriverRebalanceReplica:
-		change = rq.rebalanceReplica(rd, repl)
+		change = rq.rebalanceReplica(ctx, rd, repl)
 	case DriverRebalanceLease:
 		change = rq.rebalanceLease(ctx, rd, repl)
 	case DriverInitializePartition:
@@ -1728,6 +1961,13 @@ func (rq *Queue) processRangeTask(ctx context.Context, task *driverTask, action 
 	}
 
 	if action == DriverNoop || action == DriverRebalanceReplica || action == DriverRebalanceLease {
+		if action == DriverRebalanceReplica && err == nil && rq.isLoadBasedRebalanceEnabled(ctx) {
+			// A load-based replica move may have created a lease landing
+			// spot for a read-hot range; requeue so the follow-up lease
+			// transfer happens on the next evaluation instead of waiting
+			// for the next periodic scan.
+			return RequeueCheckOtherActions
+		}
 		return RequeueNoop
 	}
 

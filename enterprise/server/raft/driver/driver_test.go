@@ -880,6 +880,7 @@ func TestFindReplicaForRemoval(t *testing.T) {
 }
 
 func TestRebalanceReplica(t *testing.T) {
+	ctx := context.Background()
 	localReplicaID := uint64(1)
 	tests := []struct {
 		desc   string
@@ -1213,7 +1214,8 @@ func TestRebalanceReplica(t *testing.T) {
 				impl: rq,
 			}
 			storesWithStats := storemap.CreateStoresWithStats(tc.usages)
-			actual := rq.findRebalanceReplicaOp(tc.rd, storesWithStats, localReplicaID)
+			localRepl := &testReplica{rangeID: tc.rd.GetRangeId(), replicaID: localReplicaID}
+			actual := rq.findRebalanceReplicaOp(ctx, tc.rd, storesWithStats, localRepl, false)
 			if tc.expected != nil {
 				require.NotNilf(t, actual, "wanted %+v", tc.expected)
 				require.Equal(t, tc.expected.from.nhid, actual.from.nhid)
