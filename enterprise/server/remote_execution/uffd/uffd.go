@@ -107,6 +107,28 @@ type setupMessage struct {
 	Uffd     uintptr
 }
 
+type faultResolver interface {
+	// copy performs a UFFDIO_COPY ioctl. On return, c.Copy holds the number of
+	// bytes copied, or a non-zero errno if no bytes were copied.
+	copy(uffd uintptr, c *uffdioCopy) syscall.Errno
+	// zeropage performs a UFFDIO_ZEROPAGE ioctl. On return, z.Zeropage holds the
+	// number of bytes zeroed, or a non-zero errno if no bytes were zeroed.
+	zeropage(uffd uintptr, z *uffdIoZeropage) syscall.Errno
+}
+
+// uffdFaultResolver issues ioctls against a real userfaultfd object.
+type uffdFaultResolver struct{}
+
+func (uffdFaultResolver) copy(uffd uintptr, c *uffdioCopy) syscall.Errno {
+	_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, uffd, UFFDIO_COPY, uintptr(unsafe.Pointer(c)))
+	return errno
+}
+
+func (uffdFaultResolver) zeropage(uffd uintptr, z *uffdIoZeropage) syscall.Errno {
+	_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, uffd, UFFDIO_ZEROPAGE, uintptr(unsafe.Pointer(z)))
+	return errno
+}
+
 // When loading a firecracker memory snapshot, this userfaultfd handler can be used to handle page faults for the VM.
 // This handler uses a copy_on_write.COWStore to manage the snapshot - allowing it to be served remotely, compressed, etc.
 type Handler struct {
@@ -123,11 +145,15 @@ type Handler struct {
 	// Addresses of pages that were removed by the balloon.
 	// If these pages page fault again, they should be handled with UFFDIO_ZEROPAGE.
 	removedAddresses map[int64]struct{}
+
+	// faultResolver performs the userfaultfd ioctls.
+	faultResolver faultResolver
 }
 
 func NewHandler() (*Handler, error) {
 	return &Handler{
 		removedAddresses: make(map[int64]struct{}),
+		faultResolver:    uffdFaultResolver{},
 	}, nil
 }
 
@@ -257,8 +283,6 @@ func (h *Handler) handle(ctx context.Context, memoryStore *copy_on_write.COWStor
 		{Fd: int32(uffd), Events: C.POLLIN},
 		{Fd: int32(h.earlyTerminationReader.Fd()), Events: C.POLLIN},
 	}
-	pageSize := os.Getpagesize()
-
 	deferredPageFaultEvents := make([]*Pagefault, 0)
 	for {
 		// Poll UFFD for messages
@@ -282,7 +306,6 @@ func (h *Handler) handle(ctx context.Context, memoryStore *copy_on_write.COWStor
 		for _, pf := range deferredPageFaultEvents {
 			uffdEvents = append(uffdEvents, &uffdEvent{pagefault: pf})
 		}
-		deferredPageFaultEvents = make([]*Pagefault, 0)
 
 		// Read all available UFFD notifications.
 		//
@@ -303,74 +326,88 @@ func (h *Handler) handle(ctx context.Context, memoryStore *copy_on_write.COWStor
 			uffdEvents = append(uffdEvents, event)
 		}
 
-		// First, handle all remove events.
-		//
-		// Page faults and remove events are not guaranteed to be ordered, because
-		// page faults are triggered within the guest on the vCPU thread, while
-		// remove events are triggered by Firecracker on the host. This can
-		// create a race condition (for example if deflate_on_oom is set, the guest
-		// may try to reclaim a page immediately after the balloon has removed it).
-		//
-		// If there is a race, we should always zero the page. If the balloon
-		// removed the page first, the subsequent page fault should be zeroed.
-		// Even if the page fault occurs first, the balloon immediately removes it,
-		// so the page should still be zeroed.
-		//
-		// To guarantee that any remove events are handled before page faults on
-		// the same address, handle all remove events first.
-		pageFaults := make([]*Pagefault, 0)
-		for _, e := range uffdEvents {
-			if e.remove != nil {
-				if valid := validateRemoveEvent(e.remove, pageSize); !valid {
-					return status.InternalErrorf("unexpected remove event %v", e.remove)
-				}
-
-				affectedChunks := make(map[int64]struct{})
-				for i := int64(e.remove.Start); i < int64(e.remove.End); i += int64(os.Getpagesize()) {
-					h.removedAddresses[i] = struct{}{}
-
-					// Track affected chunks
-					storeOffset, err := storeOffsetForGuestAddr(uintptr(i), mappings)
-					if err != nil {
-						return err
-					}
-					chunkStartOffset := memoryStore.ChunkStartOffset(storeOffset)
-					affectedChunks[chunkStartOffset] = struct{}{}
-				}
-
-				// Mark affected chunks as partially mapped
-				for chunkStartOffset := range affectedChunks {
-					memoryStore.MarkPartiallyMapped(chunkStartOffset)
-				}
-			} else if e.pagefault != nil {
-				pageFaults = append(pageFaults, e.pagefault)
-			}
-		}
-
-		// Handle page faults.
-		deferPageFaults := false
-		for _, pf := range pageFaults {
-			if deferPageFaults {
-				deferredPageFaultEvents = append(deferredPageFaultEvents, pf)
-			} else {
-				// The memory location the VM tried to access that triggered the page fault.
-				guestFaultingAddr := pf.Address
-
-				if err := h.handlePageFault(uffd, memoryStore, mappings, uintptr(guestFaultingAddr)); err != nil {
-					// If a new remove event has arrived in the queue before we finish
-					// handling all the page faults, the remaining page faults will
-					// all fail with EAGAIN. Defer these page faults so we can
-					// handle them after the notification queue is empty again.
-					if errors.Is(err, unix.EAGAIN) {
-						deferPageFaults = true
-						deferredPageFaultEvents = append(deferredPageFaultEvents, pf)
-					} else {
-						return err
-					}
-				}
-			}
+		deferredPageFaultEvents, err = h.processEvents(uffd, memoryStore, mappings, uffdEvents)
+		if err != nil {
+			return err
 		}
 	}
+}
+
+// processEvents handles all remove events before handling any page faults,
+// regardless of the order in which the events were received. If a page fault
+// returns EAGAIN, it and all remaining page faults are returned for retry.
+func (h *Handler) processEvents(
+	uffd uintptr,
+	memoryStore *copy_on_write.COWStore,
+	mappings []GuestRegionUFFDMapping,
+	events []*uffdEvent,
+) ([]*Pagefault, error) {
+	pageFaults := make([]*Pagefault, 0)
+
+	// First, handle all remove events.
+	//
+	// Page faults and remove events are not guaranteed to be ordered, because
+	// page faults are triggered within the guest on the vCPU thread, while
+	// remove events are triggered by Firecracker on the host. This can
+	// create a race condition (for example if deflate_on_oom is set, the guest
+	// may try to reclaim a page immediately after the balloon has removed it).
+	//
+	// If there is a race, we should always zero the page. If the balloon
+	// removed the page first, the subsequent page fault should be zeroed.
+	// Even if the page fault occurs first, the balloon immediately removes it,
+	// so the page should still be zeroed.
+	//
+	// To guarantee that any remove events are handled before page faults on
+	// the same address, handle all remove events first.
+	for _, event := range events {
+		if event.remove != nil {
+			if err := h.handleRemoveEvent(memoryStore, mappings, event.remove); err != nil {
+				return nil, err
+			}
+		} else if event.pagefault != nil {
+			pageFaults = append(pageFaults, event.pagefault)
+		}
+	}
+
+	for i, pageFault := range pageFaults {
+		if err := h.handlePageFault(uffd, memoryStore, mappings, uintptr(pageFault.Address)); err != nil {
+			// If a new remove event has arrived in the queue before we finish
+			// handling all the page faults, the remaining page faults will
+			// all fail with EAGAIN. Defer these page faults so we can
+			// handle them after the notification queue is empty again.
+			if errors.Is(err, unix.EAGAIN) {
+				return pageFaults[i:], nil
+			}
+			return nil, err
+		}
+	}
+	return nil, nil
+}
+
+func (h *Handler) handleRemoveEvent(memoryStore *copy_on_write.COWStore, mappings []GuestRegionUFFDMapping, remove *Remove) error {
+	pageSize := os.Getpagesize()
+	if valid := validateRemoveEvent(remove, pageSize); !valid {
+		return status.InternalErrorf("unexpected remove event %v", remove)
+	}
+
+	affectedChunks := make(map[int64]struct{})
+	for i := int64(remove.Start); i < int64(remove.End); i += int64(pageSize) {
+		h.removedAddresses[i] = struct{}{}
+
+		// Track affected chunks
+		storeOffset, err := storeOffsetForGuestAddr(uintptr(i), mappings)
+		if err != nil {
+			return err
+		}
+		chunkStartOffset := memoryStore.ChunkStartOffset(storeOffset)
+		affectedChunks[chunkStartOffset] = struct{}{}
+	}
+
+	// Mark affected chunks as partially mapped
+	for chunkStartOffset := range affectedChunks {
+		memoryStore.MarkPartiallyMapped(chunkStartOffset)
+	}
+	return nil
 }
 
 // EmitSummaryMetrics will export cumulative metrics for the given stage, and
@@ -431,7 +468,7 @@ func (h *Handler) copyZeroes(uffd uintptr, faultingAddress uintptr) error {
 				Len:   uint64(sizeToZero),
 			},
 		}
-		_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, uffd, UFFDIO_ZEROPAGE, uintptr(unsafe.Pointer(&zeroIO)))
+		errno := h.faultResolver.zeropage(uffd, &zeroIO)
 		if errno != 0 {
 			return wrapErrno(errno, fmt.Sprintf("UFFDIO_ZEROPAGE failed with errno(%d)", errno))
 		}
@@ -525,7 +562,7 @@ func (h *Handler) resolvePageFault(uffd uintptr, faultingRegion uint64, src uint
 		Src: src,
 		Len: size,
 	}
-	_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, uffd, UFFDIO_COPY, uintptr(unsafe.Pointer(&copyData)))
+	errno := h.faultResolver.copy(uffd, &copyData)
 	if errno != 0 {
 		// If error is due to the page already being mapped, ignore.
 		if errno == unix.EEXIST {
