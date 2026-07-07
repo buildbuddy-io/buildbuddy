@@ -62,10 +62,10 @@ var (
 	newReplicaGracePeriod      = flag.Duration("cache.raft.new_replica_grace_period", 5*time.Minute, "The amount of time we allow for a new replica to catch up to the leader's before we start to consider it to be behind.")
 
 	rebalanceQPSBandRatio  = flag.Float64("cache.raft.rebalance_qps_band_ratio", 0.10, "A store is over/underfull when its QPS deviates from the mean by more than this fraction of the mean")
-	rebalanceQPSFloor        = flag.Float64("cache.raft.rebalance_qps_floor", 100, "Minimum absolute band width in QPS; also the mean QPS below which load-based rebalancing is inactive for a dimension")
-	minLeaseLoadFraction     = flag.Float64("cache.raft.min_lease_load_fraction", 0.005, "Don't move a lease whose read QPS is a smaller fraction of its store's read QPS than this")
-	minReplicaLoadFraction   = flag.Float64("cache.raft.min_replica_load_fraction", 0.02, "Don't move a replica whose propose QPS is a smaller fraction of its store's propose QPS than this")
-	rangeRebalanceCooldown   = flag.Duration("cache.raft.range_rebalance_cooldown", 5*time.Minute, "Don't rebalance a range within this duration of its last rebalance op")
+	rebalanceQPSFloor      = flag.Float64("cache.raft.rebalance_qps_floor", 100, "Minimum absolute band width in QPS; also the mean QPS below which load-based rebalancing is inactive for a dimension")
+	minLeaseLoadFraction   = flag.Float64("cache.raft.min_lease_load_fraction", 0.005, "Don't move a lease whose read QPS is a smaller fraction of its store's read QPS than this")
+	minReplicaLoadFraction = flag.Float64("cache.raft.min_replica_load_fraction", 0.02, "Don't move a replica whose propose QPS is a smaller fraction of its store's propose QPS than this")
+	rangeRebalanceCooldown = flag.Duration("cache.raft.range_rebalance_cooldown", 5*time.Minute, "Don't rebalance a range within this duration of its last rebalance op")
 )
 
 const (
@@ -1324,7 +1324,12 @@ func (rq *Queue) rebalanceReplica(ctx context.Context, rd *rfpb.RangeDescriptor,
 	if op == nil {
 		return nil
 	}
-	rq.log.Debugf("found rebalance replica op for range %d: %s -> %s", rd.GetRangeId(), op.from.nhid, op.to.nhid)
+	if rq.isLoadBasedRebalanceEnabled(ctx) {
+		rq.log.Infof("rebalance replica op for range %d: %s -> %s (propose qps %d -> %d, read qps %d -> %d, lease blocked=%t)",
+			rd.GetRangeId(), op.from.nhid, op.to.nhid, op.from.proposeQPS, op.to.proposeQPS, op.from.readQPS, op.to.readQPS, leaseBlocked)
+	} else {
+		rq.log.Debugf("found rebalance replica op for range %d: %s -> %s", rd.GetRangeId(), op.from.nhid, op.to.nhid)
+	}
 
 	replicaID, err := findReplicaWithNHID(rd, op.from.usage.GetNode().GetNhid())
 	if err != nil {
@@ -1366,7 +1371,12 @@ func (rq *Queue) rebalanceLease(ctx context.Context, rd *rfpb.RangeDescriptor, l
 	if op == nil {
 		return nil
 	}
-	rq.log.Debugf("found rebalance lease op for range %d: %s -> %s", rd.GetRangeId(), op.from.nhid, op.to.nhid)
+	if rq.isLoadBasedRebalanceEnabled(ctx) {
+		rq.log.Infof("rebalance lease op for range %d: %s -> %s (read qps %d -> %d)",
+			rd.GetRangeId(), op.from.nhid, op.to.nhid, op.from.readQPS, op.to.readQPS)
+	} else {
+		rq.log.Debugf("found rebalance lease op for range %d: %s -> %s", rd.GetRangeId(), op.from.nhid, op.to.nhid)
+	}
 	replicaID, err := findReplicaWithNHID(rd, op.to.usage.GetNode().GetNhid())
 	if err != nil {
 		rq.log.Errorf("failed to rebalance lease: %s", err)

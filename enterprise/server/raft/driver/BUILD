@@ -41,6 +41,7 @@ go_test(
         "//proto:raft_service_go_proto",
         "//server/util/log",
         "//server/util/proto",
+        "//server/util/testing/flags",
         "@com_github_jonboulle_clockwork//:clockwork",
         "@com_github_stretchr_testify//require",
     ],
