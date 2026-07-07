@@ -340,6 +340,9 @@ export default class TargetDataComponent extends React.Component<Props, State> {
                 {FILTER_DIMENSIONS.map((dimension) => (
                   <th key={dimension.key}>{dimension.label}</th>
                 ))}
+                <th>Duration (p50)</th>
+                <th>CPU (p50)</th>
+                <th>Memory (p50)</th>
               </tr>
             </thead>
             <tbody>
@@ -356,6 +359,9 @@ export default class TargetDataComponent extends React.Component<Props, State> {
                       </td>
                     );
                   })}
+                  <td>{format.durationUsec(timeline.summary?.durationUsecP50 ?? 0)}</td>
+                  <td>{format.durationMillis(+(timeline.summary?.cpuNanosP50 ?? 0) / 1e6)}</td>
+                  <td>{format.bytes(timeline.summary?.peakMemoryP50 ?? 0)}</td>
                 </tr>
               ))}
             </tbody>
