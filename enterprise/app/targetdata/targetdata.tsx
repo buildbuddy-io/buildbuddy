@@ -1,14 +1,42 @@
 import moment from "moment";
 import React from "react";
 import { User } from "../../../app/auth/user";
+import { OutlinedButton } from "../../../app/components/button/button";
+import Select, { Option } from "../../../app/components/select/select";
 import errorService from "../../../app/errors/error_service";
 import * as format from "../../../app/format/format";
 import rpcService, { CancelablePromise } from "../../../app/service/rpc_service";
+import { computeDiffs } from "../../../app/util/diff";
 import { execution_stats } from "../../../proto/execution_stats_ts_proto";
 import { getProtoFilterParams } from "../filter/filter_util";
 import TrendsChartComponent, { ChartColor, ChartDataSeries } from "../trends/trends_chart";
 
 const MICROSECONDS_PER_SECOND = 1e6;
+
+// Sentinel value used by the filter dropdowns to indicate that no filtering
+// should be applied for that dimension.
+const ALL_VALUES = "all";
+
+// The dimensions of an `ExecutionTimeline` that the user can filter on. Each
+// dimension gets its own dropdown, populated from the values present in the
+// current response.
+const FILTER_DIMENSIONS: Array<{
+  key: string;
+  label: string;
+  getValue: (timeline: execution_stats.ExecutionTimeline) => string;
+  // Optional display formatting for an option's value in the dropdown.
+  formatValue?: (value: string) => string;
+}> = [
+  { key: "mnemonic", label: "Mnemonic", getValue: (t) => t.mnemonic },
+  { key: "os", label: "OS", getValue: (t) => t.os },
+  { key: "arch", label: "Arch", getValue: (t) => t.arch },
+  {
+    key: "shard",
+    label: "Shard",
+    getValue: (t) => String(t.shard),
+    formatValue: (value) => (value === "0" ? "(no shard)" : value),
+  },
+];
 
 const COLORS = [
   ChartColor.BLUE,
@@ -19,6 +47,72 @@ const COLORS = [
   ChartColor.BASICALLY_BLACK,
 ];
 
+/**
+ * Formats an output path for display.
+ *
+ * By default (no `comparePath`), the full path is returned unchanged. When a
+ * `comparePath` is supplied, the path is abbreviated relative to it by diffing
+ * the two: parts unique to `outputPath` are kept, shared directory segments
+ * collapse to "...", and the file name is always shown in full. For example,
+ * abbreviating "output/path/b.o" against "output/path/a.o" yields ".../b.o".
+ */
+function formatOutputPath(outputPath: string, comparePath?: string): string {
+  if (!comparePath) {
+    return outputPath;
+  }
+
+  const diffs = computeDiffs(comparePath, outputPath);
+
+  // The file name lives in the final "equal" span, which we always render in
+  // full; every earlier "equal" span collapses to "...".
+  let lastEqualIndex = -1;
+  for (let i = 0; i < diffs.length; i++) {
+    if (diffs[i].type === 0) {
+      lastEqualIndex = i;
+    }
+  }
+  // Nothing is shared between the paths, so there's nothing to abbreviate.
+  if (lastEqualIndex === -1) {
+    return outputPath;
+  }
+
+  const tokens: string[] = [];
+  for (let i = 0; i < diffs.length; i++) {
+    const diff = diffs[i];
+    if (diff.type === 1) {
+      // "Added": unique to this path, so keep it.
+      tokens.push(diff.text);
+    } else if (diff.type === -1) {
+      // "Removed": present only in the comparison path, so drop it.
+      continue;
+    } else if (i === lastEqualIndex) {
+      // Final "equal": elide up to the last "/", then keep the full file name
+      // (including the leading "/" so ".../b.o" reads naturally).
+      const slash = diff.text.lastIndexOf("/");
+      if (slash === -1) {
+        tokens.push(diff.text);
+      } else {
+        tokens.push("...");
+        tokens.push(diff.text.slice(slash));
+      }
+    } else {
+      // Earlier "equal": collapse to "...".
+      tokens.push("...");
+    }
+  }
+
+  // Dedupe adjacent "..." tokens, which can appear when a "removed" span sat
+  // between two "equal" spans.
+  const result: string[] = [];
+  for (const token of tokens) {
+    if (token === "..." && result[result.length - 1] === "...") {
+      continue;
+    }
+    result.push(token);
+  }
+  return result.join("");
+}
+
 interface Props {
   user: User;
   search: URLSearchParams;
@@ -27,11 +121,15 @@ interface Props {
 interface State {
   loading: boolean;
   timeline?: execution_stats.GetExecutionTimelineResponse;
+  // Selected value for each filter dimension, keyed by dimension key. A missing
+  // entry or `ALL_VALUES` means the dimension is not being filtered.
+  filters: Record<string, string>;
 }
 
 export default class TargetDataComponent extends React.Component<Props, State> {
   state: State = {
     loading: false,
+    filters: {},
   };
 
   private currentTarget?: string;
@@ -70,7 +168,7 @@ export default class TargetDataComponent extends React.Component<Props, State> {
     this.pendingTimelineRequest?.cancel();
 
     if (!target) {
-      this.setState({ loading: false, timeline: undefined });
+      this.setState({ loading: false, timeline: undefined, filters: {} });
       return;
     }
 
@@ -98,7 +196,7 @@ export default class TargetDataComponent extends React.Component<Props, State> {
       query,
     });
 
-    this.setState({ loading: true, timeline: undefined });
+    this.setState({ loading: true, timeline: undefined, filters: {} });
     this.pendingTimelineRequest = rpcService.service
       .getExecutionTimeline(request)
       .then((response) => {
@@ -109,13 +207,170 @@ export default class TargetDataComponent extends React.Component<Props, State> {
       .finally(() => this.setState({ loading: false }));
   }
 
-  private renderTimelineCharts(rsp: execution_stats.GetExecutionTimelineResponse): React.ReactNode {
+  private handleFilterChange(key: string, value: string): void {
+    const filters = { ...this.state.filters, [key]: value };
+    // Changing one selection can constrain the others (e.g. picking a mnemonic
+    // with no shards). Drop any remaining selections that are no longer
+    // available given the new constraints so we never show a value that filters
+    // everything out.
+    const rsp = this.state.timeline;
+    if (rsp) {
+      for (const dimension of FILTER_DIMENSIONS) {
+        const selected = filters[dimension.key];
+        if (
+          selected &&
+          selected !== ALL_VALUES &&
+          !this.getAvailableValues(rsp, dimension, filters).includes(selected)
+        ) {
+          filters[dimension.key] = ALL_VALUES;
+        }
+      }
+    }
+    this.setState({ filters });
+  }
+
+  private resetFilters(): void {
+    this.setState({ filters: {} });
+  }
+
+  // Sets every dropdown to the values of the clicked action, narrowing the
+  // charts and table down to (approximately) that single action.
+  private handleRowClick(timeline: execution_stats.ExecutionTimeline): void {
+    const filters: Record<string, string> = {};
+    for (const dimension of FILTER_DIMENSIONS) {
+      filters[dimension.key] = dimension.getValue(timeline);
+    }
+    this.setState({ filters });
+  }
+
+  private hasActiveFilters(): boolean {
+    return FILTER_DIMENSIONS.some((dimension) => {
+      const selected = this.state.filters[dimension.key];
+      return selected && selected !== ALL_VALUES;
+    });
+  }
+
+  // True when every dimension has an explicit (non-"all") selection, meaning
+  // we've narrowed down to (approximately) a single action.
+  private allFiltersSelected(): boolean {
+    return FILTER_DIMENSIONS.every((dimension) => {
+      const selected = this.state.filters[dimension.key];
+      return Boolean(selected) && selected !== ALL_VALUES;
+    });
+  }
+
+  // Returns the distinct values available for `dimension`, constrained to the
+  // timelines that match every OTHER active filter selection. This narrows each
+  // dropdown's options based on what the user has already picked elsewhere.
+  private getAvailableValues(
+    rsp: execution_stats.GetExecutionTimelineResponse,
+    dimension: (typeof FILTER_DIMENSIONS)[number],
+    filters: Record<string, string>
+  ): string[] {
+    const matching = rsp.timelines.filter((timeline) =>
+      FILTER_DIMENSIONS.every((other) => {
+        if (other.key === dimension.key) return true;
+        const selected = filters[other.key];
+        return !selected || selected === ALL_VALUES || other.getValue(timeline) === selected;
+      })
+    );
+    return Array.from(new Set(matching.map((t) => dimension.getValue(t)))).sort();
+  }
+
+  // Returns the timelines that match every active (non-"all") filter selection.
+  private getFilteredTimelines(rsp: execution_stats.GetExecutionTimelineResponse): execution_stats.ExecutionTimeline[] {
+    return rsp.timelines.filter((timeline) =>
+      FILTER_DIMENSIONS.every((dimension) => {
+        const selected = this.state.filters[dimension.key];
+        return !selected || selected === ALL_VALUES || dimension.getValue(timeline) === selected;
+      })
+    );
+  }
+
+  private renderFilters(rsp: execution_stats.GetExecutionTimelineResponse): React.ReactNode {
+    return (
+      <div className="target-data-filters">
+        {FILTER_DIMENSIONS.map((dimension) => {
+          // Only show values that are still reachable given the other
+          // selections, sorted for stable, readable ordering.
+          const values = this.getAvailableValues(rsp, dimension, this.state.filters);
+          const selected = this.state.filters[dimension.key] ?? ALL_VALUES;
+          return (
+            <div className="target-data-filter" key={dimension.key}>
+              <span className="target-data-filter-label">{dimension.label}</span>
+              <Select value={selected} onChange={(e) => this.handleFilterChange(dimension.key, e.target.value)}>
+                <Option value={ALL_VALUES}>All</Option>
+                {values.map((value) => (
+                  <Option key={value} value={value}>
+                    {(dimension.formatValue ? dimension.formatValue(value) : value) || "(empty)"}
+                  </Option>
+                ))}
+              </Select>
+            </div>
+          );
+        })}
+        <OutlinedButton onClick={() => this.resetFilters()} disabled={!this.hasActiveFilters()}>
+          Reset
+        </OutlinedButton>
+      </div>
+    );
+  }
+
+  private renderMatchingActionsCard(rsp: execution_stats.GetExecutionTimelineResponse): React.ReactNode {
+    const timelines = this.getFilteredTimelines(rsp);
+    // Once every dropdown is set, abbreviate output paths so the distinguishing
+    // parts stand out. Each row is diffed against another matching action: rows
+    // compare against the first row, and the first row compares against the
+    // second so it too gets abbreviated.
+    const abbreviate = this.allFiltersSelected();
+    const comparePathFor = (i: number): string | undefined => {
+      if (!abbreviate) return undefined;
+      return (i === 0 ? timelines[1] : timelines[0])?.outputPath;
+    };
+    return (
+      <div className="card target-data-actions-card">
+        <div className="target-data-card-title">Matching remote actions</div>
+        {this.renderFilters(rsp)}
+        <div className="target-data-table-wrapper">
+          <table className="target-data-table">
+            <thead>
+              <tr>
+                <th className="output-path-column">Output path</th>
+                {FILTER_DIMENSIONS.map((dimension) => (
+                  <th key={dimension.key}>{dimension.label}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {timelines.map((timeline, i) => (
+                <tr key={i} className="target-data-table-row" onClick={() => this.handleRowClick(timeline)}>
+                  <td className="output-path-column" title={timeline.outputPath}>
+                    {formatOutputPath(timeline.outputPath, comparePathFor(i)) || "(empty)"}
+                  </td>
+                  {FILTER_DIMENSIONS.map((dimension) => {
+                    const value = dimension.getValue(timeline);
+                    return (
+                      <td key={dimension.key}>
+                        {(dimension.formatValue ? dimension.formatValue(value) : value) || "(empty)"}
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    );
+  }
+
+  private renderTimelineCharts(timelines: execution_stats.ExecutionTimeline[]): React.ReactNode {
     const startTimes: number[] = [];
     const durationSeries: ChartDataSeries[] = [];
     const cpuSeries: ChartDataSeries[] = [];
     const memorySeries: ChartDataSeries[] = [];
     let i = 0;
-    for (const timeline of rsp.timelines) {
+    for (const timeline of timelines) {
       // X-axis values are the execution start times (in microseconds), and each
       // maps to its duration so the line series can extract it.
       startTimes.push(...timeline.execution.map((e) => +(e.startTimeUsec ?? 0)));
@@ -212,7 +467,8 @@ export default class TargetDataComponent extends React.Component<Props, State> {
           <div className="target-data-header">
             <div className="target-data-title">{this.getPageTitle()}</div>
           </div>
-          {this.state.timeline && this.renderTimelineCharts(this.state.timeline)}
+          {this.state.timeline && this.renderMatchingActionsCard(this.state.timeline)}
+          {this.state.timeline && this.renderTimelineCharts(this.getFilteredTimelines(this.state.timeline))}
         </div>
       </div>
     );

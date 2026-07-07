@@ -14,3 +14,75 @@
   font-weight: 700;
   word-break: break-all;
 }
+
+.target-data .target-data-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.target-data .target-data-filter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.target-data .target-data-filter-label {
+  font-weight: 600;
+}
+
+.target-data .target-data-actions-card {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.target-data .target-data-card-title {
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.target-data .target-data-filters {
+  margin-bottom: 0;
+}
+
+.target-data .target-data-table-wrapper {
+  overflow-x: auto;
+}
+
+.target-data .target-data-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.target-data .target-data-table th,
+.target-data .target-data-table td {
+  text-align: left;
+  padding: 8px 12px;
+  border-bottom: 1px solid #eee;
+  white-space: nowrap;
+}
+
+.target-data .target-data-table th {
+  font-weight: 600;
+  color: #666;
+}
+
+.target-data .target-data-table .output-path-column {
+  width: 100%;
+  max-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.target-data .target-data-table-row {
+  cursor: pointer;
+}
+
+.target-data .target-data-table-row:hover {
+  background-color: #f7f7f7;
+}
