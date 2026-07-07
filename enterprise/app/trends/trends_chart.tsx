@@ -5,7 +5,6 @@ import {
   CartesianGrid,
   Cell,
   ComposedChart,
-  Legend,
   Line,
   ReferenceArea,
   ResponsiveContainer,
