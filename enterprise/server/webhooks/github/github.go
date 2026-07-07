@@ -152,12 +152,13 @@ func ParseWebhookData(event interface{}) (*interfaces.WebhookData, error) {
 	case *gh.PullRequestEvent:
 		// Run workflows when the PR is opened, pushed to, or reopened, to match
 		// the behavior of GitHub actions. Also run workflows when the base
-		// branch changes, to accommodate stacked changes, and when a PR is
-		// marked ready for review. The action is recorded on the WebhookData so
-		// triggers can filter by type (e.g. only "ready_for_review").
+		// branch changes, to accommodate stacked changes, when a PR is marked
+		// ready for review, and when auto-merge is enabled. The action is
+		// recorded on the WebhookData so triggers can filter by type (e.g. only
+		// "ready_for_review" or "auto_merge_enabled").
 		action := event.GetAction()
 		baseBranchChanged := action == "edited" && event.GetChanges().GetBase() != nil
-		if !(baseBranchChanged || action == "opened" || action == "synchronize" || action == "reopened" || action == "ready_for_review") {
+		if !(baseBranchChanged || action == "opened" || action == "synchronize" || action == "reopened" || action == "ready_for_review" || action == "auto_merge_enabled") {
 			return nil, nil
 		}
 		wd, err := parsePullRequestOrReview(event)
@@ -181,6 +182,7 @@ func ParseWebhookData(event interface{}) (*interfaces.WebhookData, error) {
 		}
 		wd.PullRequestApprover = event.GetReview().GetUser().GetLogin()
 		wd.PullRequestNumber = int64(event.GetPullRequest().GetNumber())
+		wd.PullRequestAction = "approved"
 		return wd, nil
 
 	default:

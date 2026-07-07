@@ -251,6 +251,46 @@ func TestMatchesAnyTrigger_PullRequestTypes(t *testing.T) {
 	assert.False(t, config.MatchesAnyTrigger(scoped, "pull_request", "feature", "", "ready_for_review"))
 }
 
+func TestMatchesAnyTrigger_PullRequestApproved(t *testing.T) {
+	// By default (no types specified), the pull request trigger fires on "approved" actions.
+	defaultPR := &config.Action{
+		Triggers: &config.Triggers{
+			PullRequest: &config.PullRequestTrigger{Branches: []string{"*"}},
+		},
+	}
+	assert.True(t, config.MatchesAnyTrigger(defaultPR, "pull_request", "main", "", "approved"))
+
+	// A trigger can opt in to running only on approval via `types: [ approved ]`.
+	approvedOnly := &config.Action{
+		Triggers: &config.Triggers{
+			PullRequest: &config.PullRequestTrigger{Branches: []string{"*"}, Types: []string{"approved"}},
+		},
+	}
+	assert.True(t, config.MatchesAnyTrigger(approvedOnly, "pull_request", "main", "", "approved"))
+	assert.False(t, config.MatchesAnyTrigger(approvedOnly, "pull_request", "main", "", "opened"))
+	assert.False(t, config.MatchesAnyTrigger(approvedOnly, "pull_request", "main", "", "synchronize"))
+}
+
+func TestMatchesAnyTrigger_PullRequestAutoMergeEnabled(t *testing.T) {
+	// By default (no types specified), the pull request trigger should not fire on "auto_merge_enabled" actions.
+	defaultPR := &config.Action{
+		Triggers: &config.Triggers{
+			PullRequest: &config.PullRequestTrigger{Branches: []string{"*"}},
+		},
+	}
+	assert.False(t, config.MatchesAnyTrigger(defaultPR, "pull_request", "main", "", "auto_merge_enabled"))
+
+	// If explicitly requested, the trigger should fire.
+	autoMergeOnly := &config.Action{
+		Triggers: &config.Triggers{
+			PullRequest: &config.PullRequestTrigger{Branches: []string{"*"}, Types: []string{"auto_merge_enabled"}},
+		},
+	}
+	assert.True(t, config.MatchesAnyTrigger(autoMergeOnly, "pull_request", "main", "", "auto_merge_enabled"))
+	assert.False(t, config.MatchesAnyTrigger(autoMergeOnly, "pull_request", "main", "", "opened"))
+	assert.False(t, config.MatchesAnyTrigger(autoMergeOnly, "pull_request", "main", "", "approved"))
+}
+
 func TestMatchesAnyTrigger_TagNegationPatterns(t *testing.T) {
 	action := &config.Action{
 		Triggers: &config.Triggers{
