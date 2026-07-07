@@ -51,10 +51,12 @@
 
 .target-data .target-data-table-wrapper {
   overflow-x: auto;
+  width: 100%;
 }
 
 .target-data .target-data-table {
   width: 100%;
+  position: relative;
   border-collapse: collapse;
 }
 
@@ -71,11 +73,21 @@
   color: #666;
 }
 
+/* Non-path columns shrink to fit their content... */
+.target-data .target-data-table th:not(.output-path-column),
+.target-data .target-data-table td:not(.output-path-column) {
+  width: 1%;
+  white-space: nowrap;
+}
+
+/* ...so the output path column absorbs all the remaining width, ellipsizing
+   when it overflows. */
 .target-data .target-data-table .output-path-column {
-  width: 100%;
-  max-width: 0;
+  max-width: 1px;
   overflow: hidden;
   text-overflow: ellipsis;
+  direction: rtl;
+  text-align: left;
   white-space: nowrap;
 }
 

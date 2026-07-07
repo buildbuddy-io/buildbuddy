@@ -34,7 +34,7 @@ const FILTER_DIMENSIONS: Array<{
     key: "shard",
     label: "Shard",
     getValue: (t) => String(t.shard),
-    formatValue: (value) => (value === "0" ? "(no shard)" : value),
+    formatValue: (value) => (value === "0" ? "--" : value),
   },
 ];
 
@@ -56,10 +56,12 @@ const COLORS = [
  * collapse to "...", and the file name is always shown in full. For example,
  * abbreviating "output/path/b.o" against "output/path/a.o" yields ".../b.o".
  */
-function formatOutputPath(outputPath: string, comparePath?: string): string {
+function formatOutputPath(outputPath: string, comparePath?: string): JSX.Element[] {
   if (!comparePath) {
-    return outputPath;
+    return [<>{outputPath}</>];
   }
+
+  const shortPath = comparePath.length < 60;
 
   const diffs = computeDiffs(comparePath, outputPath);
 
@@ -73,44 +75,43 @@ function formatOutputPath(outputPath: string, comparePath?: string): string {
   }
   // Nothing is shared between the paths, so there's nothing to abbreviate.
   if (lastEqualIndex === -1) {
-    return outputPath;
+    return [<>outputPath</>];
   }
 
-  const tokens: string[] = [];
+  const result: JSX.Element[] = [<>&lrm;</>];
+  let lastAddedDiff = "";
   for (let i = 0; i < diffs.length; i++) {
     const diff = diffs[i];
     if (diff.type === 1) {
       // "Added": unique to this path, so keep it.
-      tokens.push(diff.text);
+      lastAddedDiff = diff.text;
+      result.push(<strong>{diff.text}</strong>);
     } else if (diff.type === -1) {
       // "Removed": present only in the comparison path, so drop it.
       continue;
-    } else if (i === lastEqualIndex) {
+    } else if (i === diffs.length - 1) {
       // Final "equal": elide up to the last "/", then keep the full file name
       // (including the leading "/" so ".../b.o" reads naturally).
       const slash = diff.text.lastIndexOf("/");
-      if (slash === -1) {
-        tokens.push(diff.text);
+      if (shortPath || slash === -1) {
+        result.push(<>{diff.text}</>);
       } else {
-        tokens.push("...");
-        tokens.push(diff.text.slice(slash));
+        if (lastAddedDiff != "...") {
+          result.push(<>...</>);
+        }
+        result.push(<>{diff.text.slice(slash)}</>);
       }
     } else {
       // Earlier "equal": collapse to "...".
-      tokens.push("...");
+      if (shortPath) {
+        result.push(<>{diff.text}</>);
+      } else if (lastAddedDiff != "...") {
+        lastAddedDiff = "...";
+        result.push(<>...</>);
+      }
     }
   }
-
-  // Dedupe adjacent "..." tokens, which can appear when a "removed" span sat
-  // between two "equal" spans.
-  const result: string[] = [];
-  for (const token of tokens) {
-    if (token === "..." && result[result.length - 1] === "...") {
-      continue;
-    }
-    result.push(token);
-  }
-  return result.join("");
+  return result;
 }
 
 interface Props {
