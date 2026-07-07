@@ -409,6 +409,67 @@ func TestLocalEnqueueTimestamp(t *testing.T) {
 	require.Equal(t, startTime, task.ScheduledTask.GetWorkerQueuedTimestamp().AsTime())
 }
 
+func TestTotalRunningTaskExecutionDuration(t *testing.T) {
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+	startTime := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	clock := clockwork.NewFakeClockAt(startTime)
+	env.SetClock(clock)
+	env.SetRemoteExecutionClient(&FakeExecutionClient{})
+	executor := NewFakeExecutor()
+	runnerPool := &FakeRunnerPool{}
+	leaser := NewFakeTaskLeaser()
+
+	scheduler, err := NewPriorityTaskScheduler(env, executor, runnerPool, leaser, &Options{})
+	require.NoError(t, err)
+	scheduler.Start()
+	t.Cleanup(func() {
+		err := scheduler.Stop()
+		require.NoError(t, err)
+		assert.NoError(t, scheduler.Shutdown(ctx))
+	})
+
+	// With no tasks running, the total execution duration should be zero.
+	require.Equal(t, time.Duration(0), scheduler.TotalRunningTaskExecutionDuration())
+
+	// Start a task. It just started executing, so the total should still be
+	// zero.
+	task1ID := fakeTaskID("task1")
+	_, err = scheduler.EnqueueTaskReservation(ctx, &scpb.EnqueueTaskReservationRequest{TaskId: task1ID})
+	require.NoError(t, err)
+	execution1 := <-executor.StartedExecutions
+	require.Equal(t, time.Duration(0), scheduler.TotalRunningTaskExecutionDuration())
+
+	// After 10 seconds, the running task has 10 seconds of execution
+	// progress.
+	clock.Advance(10 * time.Second)
+	require.Equal(t, 10*time.Second, scheduler.TotalRunningTaskExecutionDuration())
+
+	// Start a second task, then let 20 more seconds pass. The first task has
+	// now been executing for 30 seconds and the second for 20 seconds, so
+	// the total should be 50 seconds.
+	task2ID := fakeTaskID("task2")
+	_, err = scheduler.EnqueueTaskReservation(ctx, &scpb.EnqueueTaskReservationRequest{TaskId: task2ID})
+	require.NoError(t, err)
+	execution2 := <-executor.StartedExecutions
+	clock.Advance(20 * time.Second)
+	require.Equal(t, 50*time.Second, scheduler.TotalRunningTaskExecutionDuration())
+
+	// Complete the first task. Only the second task's 20 seconds of
+	// execution progress should remain. Task completion is asynchronous, so
+	// poll for the expected value.
+	execution1.Complete()
+	require.Eventually(t, func() bool {
+		return scheduler.TotalRunningTaskExecutionDuration() == 20*time.Second
+	}, 5*time.Second, 10*time.Millisecond)
+
+	// Complete the second task; the total should drop back to zero.
+	execution2.Complete()
+	require.Eventually(t, func() bool {
+		return scheduler.TotalRunningTaskExecutionDuration() == 0
+	}, 5*time.Second, 10*time.Millisecond)
+}
+
 func TestRemoveTaskFromQueue(t *testing.T) {
 	ctx := t.Context()
 	// Try a few runs where we enqueue several tasks, cancel a few tasks, then
