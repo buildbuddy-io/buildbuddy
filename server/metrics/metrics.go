@@ -1074,6 +1074,15 @@ var (
 		ManifestPrefixLabel,
 	})
 
+	ChunkedManifestMaterializedChunksCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "chunked_manifest_materialized_chunks_count",
+		Help:      "Number of SpliceBlob chunks that existed only as chunked manifests and were materialized into whole CAS objects, labeled by outcome.",
+	}, []string{
+		StatusLabel,
+	})
+
 	GetTreeDirectoryLookupCount = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_execution",

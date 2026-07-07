@@ -1255,7 +1255,24 @@ func (s *ContentAddressableStorageServer) spliceBlob(ctx context.Context, req *r
 	}
 
 	if err := manifest.Store(ctx, s.cache); err != nil {
-		return nil, err
+		// Some referenced chunks may exist only as chunked manifests (e.g.
+		// written before a chunk size increase). FindMissingBlobs reports such
+		// blobs as present, so the client skipped uploading them and can never
+		// satisfy this request on its own. Materialize them into whole CAS
+		// objects and retry once.
+		//
+		// TODO(tfrench): Remove after the chunk size increase has fully rolled
+		// out and ChunkedManifestMaterializedChunksCount has stayed at zero,
+		// i.e. no manifest-only blobs at or below the max chunk size remain.
+		if !status.IsInvalidArgumentError(err) {
+			return nil, err
+		}
+		if merr := manifest.MaterializeMissingChunks(ctx, s.cache); merr != nil {
+			return nil, merr
+		}
+		if err := manifest.Store(ctx, s.cache); err != nil {
+			return nil, err
+		}
 	}
 
 	return &repb.SpliceBlobResponse{

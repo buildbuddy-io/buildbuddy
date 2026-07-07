@@ -1147,6 +1147,122 @@ func TestFindMissingBlobsWithChunkedBlob(t *testing.T) {
 	require.ElementsMatch(t, digestStrings(blobDigest, regularDigest), digestStrings(rsp.MissingBlobDigests...))
 }
 
+// setupChunkingTest returns a CAS client and cache with chunking enabled, plus
+// a "manifest-only" blob: a blob whose sub-chunks are whole CAS objects but
+// which itself exists only as a chunked manifest (as written before a chunk
+// size increase).
+func setupChunkingTest(t *testing.T) (context.Context, repb.ContentAddressableStorageClient, interfaces.Cache, *chunking.Manifest, []byte) {
+	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
+		"cache.chunking_enabled": {
+			State:          memprovider.Enabled,
+			DefaultVariant: "true",
+			Variants: map[string]any{
+				"true":  true,
+				"false": false,
+			},
+		},
+	})
+	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
+
+	fp, err := experiments.NewFlagProvider(t.Name())
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+	te.SetExperimentFlagProvider(fp)
+
+	ctx, err = prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+	require.NoError(t, err)
+
+	clientConn := runCASServer(ctx, t, te)
+	casClient := repb.NewContentAddressableStorageClient(clientConn)
+	cache := te.GetCache()
+
+	sub1RN, sub1 := testdigest.RandomCASResourceBuf(t, 512*1024)
+	sub2RN, sub2 := testdigest.RandomCASResourceBuf(t, 512*1024)
+	require.NoError(t, cache.Set(ctx, sub1RN, sub1))
+	require.NoError(t, cache.Set(ctx, sub2RN, sub2))
+
+	manifestOnlyBytes := append(append([]byte{}, sub1...), sub2...)
+	manifestOnlyDigest, err := digest.Compute(bytes.NewReader(manifestOnlyBytes), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+	manifestOnly := &chunking.Manifest{
+		BlobDigest:     manifestOnlyDigest,
+		ChunkDigests:   []*repb.Digest{sub1RN.GetDigest(), sub2RN.GetDigest()},
+		InstanceName:   "",
+		DigestFunction: repb.DigestFunction_SHA256,
+	}
+	require.NoError(t, manifestOnly.Store(ctx, cache))
+
+	manifestOnlyRN := digest.NewCASResourceName(manifestOnlyDigest, "", repb.DigestFunction_SHA256).ToProto()
+	missing, err := cache.FindMissing(ctx, []*rspb.ResourceName{manifestOnlyRN})
+	require.NoError(t, err)
+	require.Len(t, missing, 1, "manifest-only blob must not exist as a whole CAS object")
+
+	return ctx, casClient, cache, manifestOnly, manifestOnlyBytes
+}
+
+func TestSpliceBlobMaterializesManifestOnlyChunks(t *testing.T) {
+	ctx, casClient, cache, manifestOnly, manifestOnlyBytes := setupChunkingTest(t)
+
+	tailRN, tail := testdigest.RandomCASResourceBuf(t, 256*1024)
+	require.NoError(t, cache.Set(ctx, tailRN, tail))
+
+	parentBytes := append(append([]byte{}, manifestOnlyBytes...), tail...)
+	parentDigest, err := digest.Compute(bytes.NewReader(parentBytes), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+
+	// The client skipped uploading the manifest-only chunk because
+	// FindMissingBlobs reported it as present.
+	_, err = casClient.SpliceBlob(ctx, &repb.SpliceBlobRequest{
+		BlobDigest:     parentDigest,
+		ChunkDigests:   []*repb.Digest{manifestOnly.BlobDigest, tailRN.GetDigest()},
+		DigestFunction: repb.DigestFunction_SHA256,
+	})
+	require.NoError(t, err)
+
+	// The manifest-only chunk was materialized into a whole CAS object, so the
+	// stored parent manifest does not reference a nested manifest.
+	manifestOnlyRN := digest.NewCASResourceName(manifestOnly.BlobDigest, "", repb.DigestFunction_SHA256).ToProto()
+	data, err := cache.Get(ctx, manifestOnlyRN)
+	require.NoError(t, err)
+	require.Equal(t, manifestOnlyBytes, data)
+
+	parentManifest, err := chunking.LoadManifest(ctx, cache, parentDigest, "", repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+	missing, err := cache.FindMissing(ctx, parentManifest.ChunkResourceNames())
+	require.NoError(t, err)
+	require.Empty(t, missing)
+}
+
+func TestSpliceBlobFailsWhenManifestOnlyChunkIsUnrecoverable(t *testing.T) {
+	ctx, casClient, cache, manifestOnly, manifestOnlyBytes := setupChunkingTest(t)
+
+	// Losing a sub-chunk makes the manifest-only blob unreconstructable.
+	sub2RN := digest.NewCASResourceName(manifestOnly.ChunkDigests[1], "", repb.DigestFunction_SHA256).ToProto()
+	require.NoError(t, cache.Delete(ctx, sub2RN))
+
+	tailRN, tail := testdigest.RandomCASResourceBuf(t, 256*1024)
+	require.NoError(t, cache.Set(ctx, tailRN, tail))
+
+	parentBytes := append(append([]byte{}, manifestOnlyBytes...), tail...)
+	parentDigest, err := digest.Compute(bytes.NewReader(parentBytes), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+
+	_, err = casClient.SpliceBlob(ctx, &repb.SpliceBlobRequest{
+		BlobDigest:     parentDigest,
+		ChunkDigests:   []*repb.Digest{manifestOnly.BlobDigest, tailRN.GetDigest()},
+		DigestFunction: repb.DigestFunction_SHA256,
+	})
+	require.Error(t, err)
+	require.Equal(t, gcodes.InvalidArgument, gstatus.Code(err), "expected InvalidArgument, got: %v", err)
+
+	manifestOnlyRN := digest.NewCASResourceName(manifestOnly.BlobDigest, "", repb.DigestFunction_SHA256).ToProto()
+	missing, err := cache.FindMissing(ctx, []*rspb.ResourceName{manifestOnlyRN})
+	require.NoError(t, err)
+	require.Len(t, missing, 1, "unrecoverable chunk must not be materialized")
+}
+
 func TestFindMissingBlobsUsesReadFallbackThreshold(t *testing.T) {
 	flags.Set(t, "cache.avg_chunk_size_bytes", 1024*1024)
 	flags.Set(t, "cache.min_chunked_read_fallback_size_bytes", 2*1024*1024)

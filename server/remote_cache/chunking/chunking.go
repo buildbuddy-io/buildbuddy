@@ -339,6 +339,71 @@ func (cm *Manifest) Store(ctx context.Context, cache interfaces.Cache) error {
 	return cm.store(ctx, cache)
 }
 
+// MaterializeMissingChunks converts referenced chunks that exist only as
+// chunked manifests into whole CAS objects. FindMissingBlobs reports
+// manifest-backed blobs as present, so clients (e.g. Bazel) skip uploading
+// such chunks and Store would otherwise fail without any way for the client
+// to recover. Materializing (rather than storing a manifest that references
+// another manifest) keeps stored manifests one level deep. Chunks that cannot
+// be materialized are left missing for Store to report.
+func (cm *Manifest) MaterializeMissingChunks(ctx context.Context, cache interfaces.Cache) error {
+	missing, err := cache.FindMissing(ctx, cm.ChunkResourceNames())
+	if err != nil {
+		return err
+	}
+	g, gCtx := errgroup.WithContext(ctx)
+	g.SetLimit(4)
+	for _, d := range missing {
+		if d.GetSizeBytes() <= 0 || d.GetSizeBytes() > MaxSupportedChunkSizeBytes() {
+			continue
+		}
+		g.Go(func() error {
+			chunkManifest, err := LoadManifest(gCtx, cache, d, cm.InstanceName, cm.DigestFunction)
+			if status.IsNotFoundError(err) {
+				// Genuinely missing; Store will report it.
+				return nil
+			}
+			if err == nil {
+				err = chunkManifest.materialize(gCtx, cache)
+			}
+			if err != nil {
+				metrics.ChunkedManifestMaterializedChunksCount.WithLabelValues("error").Inc()
+				log.CtxInfof(gCtx, "Failed to materialize manifest-only chunk %s/%d for blob %s: %v", d.GetHash(), d.GetSizeBytes(), cm.BlobDigest.GetHash(), err)
+				return nil
+			}
+			metrics.ChunkedManifestMaterializedChunksCount.WithLabelValues("materialized").Inc()
+			return nil
+		})
+	}
+	return g.Wait()
+}
+
+// materialize reconstructs the manifest's blob from its chunks, verifies the
+// combined digest, and writes it to the CAS as a whole object.
+func (cm *Manifest) materialize(ctx context.Context, cache interfaces.Cache) error {
+	buf := make([]byte, 0, cm.BlobDigest.GetSizeBytes())
+	for _, chunkDigest := range cm.ChunkDigests {
+		chunkRN := digest.NewCASResourceName(chunkDigest, cm.InstanceName, cm.DigestFunction)
+		data, err := cache.Get(ctx, chunkRN.ToProto())
+		if err != nil {
+			return err
+		}
+		buf = append(buf, data...)
+		if int64(len(buf)) > cm.BlobDigest.GetSizeBytes() {
+			return status.InvalidArgumentErrorf("manifest chunks exceed expected blob size %d", cm.BlobDigest.GetSizeBytes())
+		}
+	}
+	computed, err := digest.Compute(bytes.NewReader(buf), cm.DigestFunction)
+	if err != nil {
+		return err
+	}
+	if computed.GetHash() != cm.BlobDigest.GetHash() || int64(len(buf)) != cm.BlobDigest.GetSizeBytes() {
+		return status.DataLossErrorf("materialized blob digest mismatch: got %s/%d, want %s/%d", computed.GetHash(), len(buf), cm.BlobDigest.GetHash(), cm.BlobDigest.GetSizeBytes())
+	}
+	rn := digest.NewCASResourceName(cm.BlobDigest, cm.InstanceName, cm.DigestFunction)
+	return cache.Set(ctx, rn.ToProto(), buf)
+}
+
 // StoreWithoutVerification saves the chunked manifest to the cache without
 // checking that all chunks exist or that their combined hash matches the blob
 // digest.
