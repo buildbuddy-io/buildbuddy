@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/filestore"
@@ -91,6 +92,15 @@ type Replica struct {
 
 	readQPS        *qps.Counter
 	raftProposeQPS *qps.Counter
+
+	// readCount / proposeCount are the per-range read / propose counters
+	// (metrics.RaftReads / metrics.RaftProposals), resolved once per range
+	// descriptor in setRange so the hot request paths avoid building label
+	// maps on every op. atomic so the Lookup / Update goroutines can load
+	// them lock-free while setRange swaps them in. nil until the first
+	// setRange.
+	readCount    atomic.Pointer[prometheus.Counter]
+	proposeCount atomic.Pointer[prometheus.Counter]
 
 	// txid that locked the mapped range.
 	// We want to lock the mapped range when we are in the process of splitting.
@@ -260,6 +270,13 @@ func (sm *Replica) setRange(val []byte) error {
 		Start: rangeDescriptor.GetStart(),
 		End:   rangeDescriptor.GetEnd(),
 	}
+	// Resolve the counter handles once here so the hot request paths
+	// (handleRead / singleUpdate) avoid building label maps on every op.
+	labels := keys.RangeMetricLabels(rangeDescriptor, sm.NHID, sm.store.Zone())
+	readCount := metrics.RaftReads.With(labels)
+	proposeCount := metrics.RaftProposals.With(labels)
+	sm.readCount.Store(&readCount)
+	sm.proposeCount.Store(&proposeCount)
 	sm.store.UpdateRange(sm.rangeDescriptor, sm)
 	sm.rangeMu.Unlock()
 
@@ -1340,6 +1357,11 @@ func (sm *Replica) handlePropose(wb pebble.Batch, req *rfpb.RequestUnion) *rfpb.
 
 func (sm *Replica) handleRead(db ReplicaReader, req *rfpb.RequestUnion) *rfpb.ResponseUnion {
 	sm.readQPS.Inc()
+	// readCount is swapped by setRange on the Update goroutine; load it
+	// lock-free here on the concurrent Lookup goroutine.
+	if c := sm.readCount.Load(); c != nil { // nil until the first setRange.
+		(*c).Inc()
+	}
 	rsp := &rfpb.ResponseUnion{}
 
 	switch value := req.Value.(type) {
@@ -1547,7 +1569,9 @@ func (sm *Replica) singleUpdate(db pebble.IPebbleDB, entry dbsm.Entry) (dbsm.Ent
 	sm.rangeMu.RUnlock()
 
 	// Increment QPS counters.
-	metrics.RaftProposals.With(keys.RangeMetricLabels(rd, sm.NHID, sm.store.Zone())).Inc()
+	if c := sm.proposeCount.Load(); c != nil { // nil until the first setRange.
+		(*c).Inc()
+	}
 	sm.raftProposeQPS.Inc()
 
 	batchRsp := &rfpb.BatchCmdResponse{}
@@ -2114,7 +2138,10 @@ func (sm *Replica) Close() error {
 		sm.store.RemoveRange(rangeDescriptor, sm)
 	}
 	if rangeDescriptor != nil {
-		metrics.RaftBytes.Delete(keys.RangeMetricLabels(rangeDescriptor, sm.NHID, sm.store.Zone()))
+		labels := keys.RangeMetricLabels(rangeDescriptor, sm.NHID, sm.store.Zone())
+		metrics.RaftBytes.Delete(labels)
+		metrics.RaftReads.Delete(labels)
+		metrics.RaftProposals.Delete(labels)
 	}
 
 	sm.readQPS.Stop()
