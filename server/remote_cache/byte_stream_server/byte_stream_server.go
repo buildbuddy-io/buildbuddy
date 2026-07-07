@@ -96,7 +96,7 @@ func NewByteStreamServer(env environment.Env) (*ByteStreamServer, error) {
 	return &ByteStreamServer{
 		env:        env,
 		cache:      cache,
-		bufferPool: bytebufferpool.VariableSize(max(*remote_cache_config.ReadBufSizeBytes, compressBufSize, int(compression.ZstdCompressBound(chunking.MaxSupportedChunkSizeBytes())))),
+		bufferPool: bytebufferpool.VariableSize(max(*remote_cache_config.ReadBufSizeBytes, compressBufSize, int(chunking.MaxCompressedChunkReadSizeBytes()))),
 		warner:     bazel_deprecation.NewWarner(env),
 	}, nil
 }
@@ -433,13 +433,56 @@ func (r *chunkedBlobReader) readChunk(rn *rspb.ResourceName, offset int64, buf [
 	}
 	defer rc.Close()
 
+	if rn.GetCompressor() == repb.Compressor_ZSTD {
+		// ZstdCompressBound is not a hard bound for stored zstd streams.
+		// Unproductive multi-frame streams can exceed it.
+		buf = buf[:cap(buf)]
+	}
 	n, err := ioutil.ReadTryFillBuffer(rc, buf)
 	if err != nil {
 		return chunkReadResult{data: buf, err: err}
 	}
+	if rn.GetCompressor() == repb.Compressor_ZSTD {
+		return r.finishCompressedChunkRead(rc, buf, n)
+	}
 	readSize := rn.GetDigest().GetSizeBytes() - offset
-	if rn.GetCompressor() != repb.Compressor_ZSTD && int64(n) != readSize {
+	if int64(n) != readSize {
 		return chunkReadResult{data: buf, err: io.ErrUnexpectedEOF}
+	}
+	return chunkReadResult{data: buf[:n]}
+}
+
+func (r *chunkedBlobReader) finishCompressedChunkRead(rc io.Reader, buf []byte, n int) chunkReadResult {
+	// For zstd chunks, the digest size is decompressed. A full buffer means
+	// there may be more compressed bytes, so keep growing until EOF.
+	maxReadSize := chunking.MaxCompressedChunkReadSizeBytes()
+	for n == len(buf) {
+		if int64(len(buf)) >= maxReadSize {
+			// If one more byte exists, the chunk exceeded our cap. We return an
+			// error and discard the buffered data, so the extra byte is not needed.
+			var extra [1]byte
+			_, err := io.ReadFull(rc, extra[:])
+			if err == io.EOF {
+				return chunkReadResult{data: buf[:n]}
+			}
+			if err != nil {
+				return chunkReadResult{data: buf, err: err}
+			}
+			return chunkReadResult{data: buf, err: status.InternalErrorf("compressed chunk exceeded max read size %d", maxReadSize)}
+		}
+		// Grow by doubling. Keep the bytes already read.
+		newBuf := r.bufferPool.Get(min(2*int64(len(buf)), maxReadSize))
+		copy(newBuf, buf[:n])
+		r.bufferPool.Put(buf)
+		buf = newBuf
+		m, err := ioutil.ReadTryFillBuffer(rc, buf[n:])
+		n += m
+		if err == io.EOF {
+			return chunkReadResult{data: buf[:n]}
+		}
+		if err != nil {
+			return chunkReadResult{data: buf, err: err}
+		}
 	}
 	return chunkReadResult{data: buf[:n]}
 }
