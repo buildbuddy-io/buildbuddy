@@ -206,4 +206,22 @@ func TestCtxWithClientIP(t *testing.T) {
 		require.Equal(t, []string{clientIP}, md.Get(clientip.HeaderName))
 		require.Empty(t, md.Get(authutil.ClientIdentityHeaderName))
 	})
+
+	t.Run("caller-supplied identity is preserved rather than overwritten", func(t *testing.T) {
+		cis := &fakeIdentityService{header: identity}
+		// A caller that already carries a signed identity (e.g. a workflow) must
+		// keep it so the backend still authorizes on it (e.g. IP-rule bypass);
+		// the proxy must not clobber it with its own grpc-proxy identity.
+		const callerIdentity = "workflow-identity"
+		ctx := metadata.NewIncomingContext(ctxWithResolvedClientIP(clientIP), metadata.Pairs(authutil.ClientIdentityHeaderName, callerIdentity))
+		ctx, err := ctxWithClientIP(ctx, cis)
+		require.NoError(t, err)
+
+		md, ok := metadata.FromOutgoingContext(ctx)
+		require.True(t, ok)
+		require.Equal(t, []string{clientIP}, md.Get(clientip.HeaderName))
+		require.Equal(t, []string{callerIdentity}, md.Get(authutil.ClientIdentityHeaderName))
+		// The proxy did not mint a grpc-proxy identity for this request.
+		require.Empty(t, cis.lastClient)
+	})
 }
