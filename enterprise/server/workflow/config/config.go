@@ -59,6 +59,13 @@ type Action struct {
 	// By default, if you have multiple workflow runs on the same branch, we'll cancel the old ones.
 	// If AllowConcurrentRuns is set to true, we'll allow multiple runs to continue in parallel.
 	AllowConcurrentRuns *bool `yaml:"allow_concurrent_runs"`
+	// AllowConcurrentRunsOnBranches is a list of branch name patterns that
+	// should be allowed to run concurrently, even when AllowConcurrentRuns=false.
+	// When unset, it defaults to the repo's default branch.
+	// Patterns use the same restricted-glob syntax as trigger `branches` (a
+	// single `*` wildcard, with an optional leading `!` for negation). This has
+	// no effect when AllowConcurrentRuns is true.
+	AllowConcurrentRunsOnBranches []string `yaml:"allow_concurrent_runs_on_branches"`
 
 	// DEPRECATED: Used `Steps` instead
 	DeprecatedBazelCommands []string `yaml:"bazel_commands"`
@@ -73,6 +80,36 @@ func (a *Action) GetTriggers() *Triggers {
 		return &Triggers{}
 	}
 	return a.Triggers
+}
+
+// AllowsConcurrentRunsOnBranch returns whether concurrent Workflows on the given
+// branch should be allowed, instead of being automatically cancelled.
+func (a *Action) AllowsConcurrentRunsOnBranch(branch, defaultBranch string) bool {
+	// By default, we don't allow concurrent runs.
+	// Allow on all branches if explicitly enabled.
+	if a.AllowConcurrentRuns != nil && *a.AllowConcurrentRuns {
+		return true
+	}
+
+	// By default, if no branches are explicitly allow-listed, we allow concurrent runs on the default branch only.
+	allowedBranches := a.AllowConcurrentRunsOnBranches
+	if allowedBranches == nil {
+		// Don't cancel workflows on the default branch.
+		if branch == defaultBranch {
+			return true
+		}
+
+		// If we don't know the default branch, err on the side of not cancelling.
+		if defaultBranch == "" {
+			return true
+		}
+
+		// On all other branches, don't allow concurrent runs.
+		return false
+	}
+
+	// If there are explicitly allow-listed branches, check if the given branch is in the list.
+	return matchesAnyPattern(allowedBranches, branch)
 }
 
 func (a *Action) GetGitFetchFilters() []string {

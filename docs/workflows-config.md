@@ -88,14 +88,15 @@ steps:
 
 ## Concurrent Workflow runs
 
-Starting June 1, 2026, BuildBuddy will automatically cancel in-progress
-Workflow runs when a newer run is triggered for the same action on a
-non-default branch. This helps avoid wasting resources on outdated runs
+BuildBuddy automatically cancels in-progress
+Workflow runs when a newer run is triggered for the same action on the same branch.
+This helps avoid wasting resources on outdated runs
 when, for example, several commits are pushed in quick succession to a
 pull request branch.
 
-This behavior only applies to non-default branches. Runs on your repo's
-default branch are not affected.
+By default, cancellation only applies to non-default branches; runs on your
+repo's default branch are not affected. This can be customized per-action via
+`allow_concurrent_runs_on_branches` (see below).
 
 If you'd like to disable this behavior and allow concurrent runs for an
 action, set `allow_concurrent_runs: true` in the action's configuration:
@@ -104,6 +105,36 @@ action, set `allow_concurrent_runs: true` in the action's configuration:
 actions:
   - name: "Test all targets"
     allow_concurrent_runs: true # <-- disables auto-cancellation of concurrent runs
+    ...
+```
+
+To control which branches are allowed to run concurrently, you can set
+`allow_concurrent_runs_on_branches`. Patterns are matched using the rules described in
+[Ref pattern matching](#ref-pattern-matching).
+
+When unset, this defaults to your repo's default branch.
+
+Note that if you set `allow_concurrent_runs_on_branches`, you must explicitly
+include the default branch in the list.
+
+```yaml title="buildbuddy.yaml"
+actions:
+  - name: "Test all targets"
+    allow_concurrent_runs: false
+    allow_concurrent_runs_on_branches: # <-- these branches are never auto-cancelled
+      - "main"
+      - "release-*"
+      - "staging"
+    ...
+```
+
+To disallow concurrent runs on all branches including the default branch, set `allow_concurrent_runs_on_branches` to an empty list.
+
+```yaml title="buildbuddy.yaml"
+actions:
+  - name: "Test all targets"
+    allow_concurrent_runs: false
+    allow_concurrent_runs_on_branches: [] # <-- all branches are blocked from running concurrently
     ...
 ```
 
@@ -592,6 +623,12 @@ A named group of Bazel commands that run when triggered.
   multiple runs of the same action on the same branch will be allowed to run concurrently.
   By default or if set to `false`, concurrent runs will be automatically cancelled.
   See [Concurrent Workflow runs](#concurrent-workflow-runs).
+- **`allow_concurrent_runs_on_branches`** (list of `string`): Branches that are allowed
+  to run concurrently, even when `allow_concurrent_runs` is `false`.
+  When unset, defaults to the repo's default branch. Has no effect when
+  `allow_concurrent_runs` is `true`. Patterns are matched using the rules
+  described in [Ref pattern matching](#ref-pattern-matching). See
+  [Concurrent Workflow runs](#concurrent-workflow-runs).
 
 ### `Triggers`
 
