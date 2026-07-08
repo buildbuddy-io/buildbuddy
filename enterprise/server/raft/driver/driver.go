@@ -1603,11 +1603,8 @@ func (rq *Queue) findRebalanceLeaseOpQPS(rd *rfpb.RangeDescriptor, localRepl IRe
 			continue
 		}
 		// Don't stack read load on a store that's overfull on the write
-		// dimension or short on disk. The write veto only applies when the
-		// write dimension carries a real signal; below the floor its
-		// threshold is just the floor above a near-zero mean, so noise
-		// would spuriously veto good read targets.
-		if qpsSignalPresent(p, proposeQPSMean) && float64(c.proposeQPS) > aboveMeanQPSThreshold(p, proposeQPSMean) {
+		// dimension or short on disk.
+		if qpsDimensionHot(p, proposeQPSMean, float64(c.proposeQPS)) {
 			continue
 		}
 		if isDiskFullForRebalance(c.usage) {
@@ -1860,10 +1857,8 @@ func (rq *Queue) findRebalanceReplicaOpQPS(rd *rfpb.RangeDescriptor, localRepl I
 			if float64(src.proposeQPS-tgt.proposeQPS) <= float64(rangeProposeQPS) {
 				continue
 			}
-			// Don't stack apply load on a read-hot or byte-heavy store. The
-			// read veto only applies when the read dimension carries a real
-			// signal; below the floor it would veto on noise.
-			if qpsSignalPresent(p, readMean) && float64(tgt.readQPS) > aboveMeanQPSThreshold(p, readMean) {
+			// Don't stack apply load on a read-hot or byte-heavy store.
+			if qpsDimensionHot(p, readMean, float64(tgt.readQPS)) {
 				continue
 			}
 			if bytesHigh(p, tgt, bytesMean) {
@@ -1928,9 +1923,8 @@ func (rq *Queue) findLeaseUnblockReplicaOp(rd *rfpb.RangeDescriptor, localRepl I
 				continue
 			}
 			// The follower's apply cost moves with it; don't stack it on a
-			// write-hot or byte-heavy store. The write veto only applies when
-			// the write dimension carries a real signal.
-			if qpsSignalPresent(p, proposeMean) && float64(tgt.proposeQPS) > aboveMeanQPSThreshold(p, proposeMean) {
+			// write-hot or byte-heavy store.
+			if qpsDimensionHot(p, proposeMean, float64(tgt.proposeQPS)) {
 				continue
 			}
 			if bytesHigh(p, tgt, bytesMean) {
@@ -2304,6 +2298,16 @@ func belowMeanQPSThreshold(p loadParams, mean float64) float64 {
 // balance on. Below the floor, count-based rebalancing applies instead.
 func qpsSignalPresent(p loadParams, mean float64) bool {
 	return mean >= p.qpsFloor
+}
+
+// qpsDimensionHot reports whether a store carrying `qps` on a QPS dimension
+// with cluster mean `mean` is above that dimension's band — but only when the
+// dimension carries a real load signal (below the floor the band is just
+// noise). It is the cross-dimension veto shared by the load-based lease and
+// replica moves: don't stack a move onto a store already hot on the *other*
+// dimension.
+func qpsDimensionHot(p loadParams, mean, qps float64) bool {
+	return qpsSignalPresent(p, mean) && qps > aboveMeanQPSThreshold(p, mean)
 }
 
 type meanLevel int
