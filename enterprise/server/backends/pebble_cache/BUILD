@@ -44,6 +44,7 @@ go_library(
         "@org_golang_x_text//language",
         "@org_golang_x_text//message",
         "@org_golang_x_time//rate",
+        "@org_golang_google_protobuf//encoding/protowire",
     ],
 )
 
@@ -83,5 +84,16 @@ go_test(
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
         "@org_golang_x_sync//errgroup",
+    ],
+)
+
+go_test(
+    name = "findmissing_metadata_test",
+    srcs = ["findmissing_metadata_test.go"],
+    embed = [":pebble_cache"],
+    deps = [
+        "//proto:storage_go_proto",
+        "//server/util/proto",
+        "@com_github_stretchr_testify//require",
     ],
 )
