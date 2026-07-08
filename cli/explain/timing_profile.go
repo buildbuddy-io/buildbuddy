@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"io"
+	"strconv"
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
@@ -91,12 +92,70 @@ func openTimingProfile(ctx context.Context, invocationID string) (io.ReadCloser,
 }
 
 func findTimingProfileLog(inv *inpb.Invocation) *bespb.File {
+	// Starting in Bazel 8, the profile uploaded to the BEP may have a generated
+	// name rather than the path specified by --profile. Match the prefix in this
+	// case, consistent with the timing profile UI.
+	majorVersion, ok := bazelMajorVersion(inv)
+	if ok && majorVersion >= 8 {
+		for _, event := range inv.GetEvent() {
+			for _, logFile := range event.GetBuildEvent().GetBuildToolLogs().GetLog() {
+				if logFile.GetUri() != "" && strings.HasPrefix(logFile.GetName(), "command.profile.") {
+					return logFile
+				}
+			}
+		}
+		return nil
+	}
+
+	profileName := timingProfileName(inv)
 	for _, event := range inv.GetEvent() {
 		for _, logFile := range event.GetBuildEvent().GetBuildToolLogs().GetLog() {
-			if logFile.GetUri() != "" && strings.HasPrefix(logFile.GetName(), "command.profile.") {
+			if logFile.GetUri() != "" && logFile.GetName() == profileName {
 				return logFile
 			}
 		}
 	}
 	return nil
+}
+
+func timingProfileName(inv *inpb.Invocation) string {
+	profilePath := "command.profile.gz"
+	for _, commandLine := range inv.GetStructuredCommandLine() {
+		if commandLine.GetCommandLineLabel() != "canonical" {
+			continue
+		}
+		for _, section := range commandLine.GetSections() {
+			if section.GetSectionLabel() != "command options" {
+				continue
+			}
+			for _, option := range section.GetOptionList().GetOption() {
+				if option.GetOptionName() == "profile" {
+					profilePath = strings.ReplaceAll(option.GetOptionValue(), `\`, "/")
+				}
+			}
+		}
+	}
+	if i := strings.LastIndex(profilePath, "/"); i >= 0 {
+		return profilePath[i+1:]
+	}
+	return profilePath
+}
+
+func bazelMajorVersion(inv *inpb.Invocation) (int, bool) {
+	for _, event := range inv.GetEvent() {
+		version := event.GetBuildEvent().GetStarted().GetBuildToolVersion()
+		segments := strings.Split(version, ".")
+		if len(segments) < 2 {
+			continue
+		}
+		major, err := strconv.Atoi(segments[0])
+		if err != nil {
+			continue
+		}
+		if _, err := strconv.Atoi(segments[1]); err != nil {
+			continue
+		}
+		return major, true
+	}
+	return 0, false
 }

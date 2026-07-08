@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 package(default_visibility = ["//cli:__subpackages__"])
 
@@ -27,5 +27,16 @@ go_library(
         "@org_golang_google_protobuf//encoding/protojson",
         "@org_golang_google_protobuf//proto",
         "@org_golang_x_sync//errgroup",
+    ],
+)
+
+go_test(
+    name = "timing_profile_test",
+    srcs = ["timing_profile_test.go"],
+    embed = [":explain"],
+    deps = [
+        "//proto:build_event_stream_go_proto",
+        "//proto:command_line_go_proto",
+        "//proto:invocation_go_proto",
     ],
 )
