@@ -821,6 +821,16 @@ func (rq *Queue) computeActionForRangeTask(ctx context.Context, task *rangeTask)
 	}
 
 	loadBased := rq.isLoadBasedRebalanceEnabled(ctx)
+	// Compute the load context once per pass. loadParams and the all-stores
+	// snapshot (a lock + clone of every store's usage) are reused by the lease
+	// and replica evaluations below instead of each recomputing them.
+	var p loadParams
+	var allStoresStats *storemap.StoresWithStats
+	if loadBased {
+		p = rq.loadParams(ctx)
+		allStoresStats = rq.storeMap.GetStoresWithStats()
+	}
+
 	if loadBased {
 		// In load-based mode, try lease transfers before replica moves: a
 		// leadership transfer is nearly free while a replica move costs a
@@ -829,7 +839,7 @@ func (rq *Queue) computeActionForRangeTask(ctx context.Context, task *rangeTask)
 		// a lease transfer is a leadership change among reachable replica
 		// stores and never involves the unavailable store — so it is outside
 		// the health gate below.
-		res := rq.findRebalanceLeaseOp(ctx, rd, repl)
+		res := rq.findRebalanceLeaseOpLoaded(ctx, rd, repl, loadBased, p, allStoresStats)
 		task.leaseBlocked = res.blocked
 		if res.op != nil {
 			action = DriverRebalanceLease
@@ -842,8 +852,11 @@ func (rq *Queue) computeActionForRangeTask(ctx context.Context, task *rangeTask)
 	// already-degraded cluster.
 	if isClusterHealthy {
 		// For DriverConsiderRebalance check if there are rebalance opportunities.
-		storesWithStats := rq.storeMap.GetStoresWithStats()
-		op := rq.findRebalanceReplicaOp(ctx, rd, storesWithStats, repl, task.leaseBlocked)
+		storesWithStats := allStoresStats
+		if storesWithStats == nil {
+			storesWithStats = rq.storeMap.GetStoresWithStats()
+		}
+		op := rq.findRebalanceReplicaOpLoaded(ctx, rd, storesWithStats, repl, task.leaseBlocked, loadBased, p)
 		if op != nil {
 			log.Debugf("find rebalancing opportunities: from (nhid=%q, replicaCount=%d, isReady=%t) to (nhid=%q, replicaCount=%d, isReady=%t)", op.from.nhid, op.from.replicaCount, op.from.usage.GetIsReady(), op.to.nhid, op.to.replicaCount, op.to.usage.GetIsReady())
 			action = DriverRebalanceReplica
@@ -855,7 +868,7 @@ func (rq *Queue) computeActionForRangeTask(ctx context.Context, task *rangeTask)
 		// Count mode balances lease counts regardless of health too (matching
 		// behavior before load-based rebalancing), but ranks it below replica
 		// moves.
-		if rq.findRebalanceLeaseOp(ctx, rd, repl).op != nil {
+		if rq.findRebalanceLeaseOpLoaded(ctx, rd, repl, loadBased, p, allStoresStats).op != nil {
 			action = DriverRebalanceLease
 			return action, action.Priority()
 		}
@@ -1400,7 +1413,21 @@ type leaseRebalanceResult struct {
 	blocked bool
 }
 
+// findRebalanceLeaseOp computes the load context and delegates to
+// findRebalanceLeaseOpLoaded. computeActionForRangeTask calls the Loaded form
+// directly with a context it shares with the replica evaluation.
 func (rq *Queue) findRebalanceLeaseOp(ctx context.Context, rd *rfpb.RangeDescriptor, localRepl IReplica) leaseRebalanceResult {
+	loadBased := rq.isLoadBasedRebalanceEnabled(ctx)
+	var p loadParams
+	var allStoresStats *storemap.StoresWithStats
+	if loadBased {
+		p = rq.loadParams(ctx)
+		allStoresStats = rq.storeMap.GetStoresWithStats()
+	}
+	return rq.findRebalanceLeaseOpLoaded(ctx, rd, localRepl, loadBased, p, allStoresStats)
+}
+
+func (rq *Queue) findRebalanceLeaseOpLoaded(ctx context.Context, rd *rfpb.RangeDescriptor, localRepl IReplica, loadBased bool, p loadParams, allStoresStats *storemap.StoresWithStats) leaseRebalanceResult {
 	globalMean, shouldRebalance := rq.storeMap.CheckLeaseRebalancePrecondition()
 	if !shouldRebalance {
 		return leaseRebalanceResult{}
@@ -1455,12 +1482,7 @@ func (rq *Queue) findRebalanceLeaseOp(ctx context.Context, rd *rfpb.RangeDescrip
 		})
 	}
 
-	loadBased := rq.isLoadBasedRebalanceEnabled(ctx)
-	var p loadParams
-	var allStoresStats *storemap.StoresWithStats
 	if loadBased {
-		p = rq.loadParams(ctx)
-		allStoresStats = rq.storeMap.GetStoresWithStats()
 		if qpsSignalPresent(p, allStoresStats.ReadQPS.Mean) {
 			res := rq.findRebalanceLeaseOpQPS(rd, localRepl, existing, candidates, allStoresStats, p)
 			if res.op != nil || res.blocked {
@@ -1605,7 +1627,20 @@ func (rq *Queue) findRebalanceLeaseOpQPS(rd *rfpb.RangeDescriptor, localRepl IRe
 		to:   best,
 	}}
 }
+
+// findRebalanceReplicaOp computes the load context and delegates to
+// findRebalanceReplicaOpLoaded. computeActionForRangeTask calls the Loaded
+// form directly with a context it shares with the lease evaluation.
 func (rq *Queue) findRebalanceReplicaOp(ctx context.Context, rd *rfpb.RangeDescriptor, storesWithStats *storemap.StoresWithStats, localRepl IReplica, leaseBlocked bool) *rebalanceOp {
+	loadBased := rq.isLoadBasedRebalanceEnabled(ctx)
+	var p loadParams
+	if loadBased {
+		p = rq.loadParams(ctx)
+	}
+	return rq.findRebalanceReplicaOpLoaded(ctx, rd, storesWithStats, localRepl, leaseBlocked, loadBased, p)
+}
+
+func (rq *Queue) findRebalanceReplicaOpLoaded(ctx context.Context, rd *rfpb.RangeDescriptor, storesWithStats *storemap.StoresWithStats, localRepl IReplica, leaseBlocked bool, loadBased bool, p loadParams) *rebalanceOp {
 	if len(storesWithStats.Usages) == 0 {
 		return nil
 	}
@@ -1661,11 +1696,8 @@ func (rq *Queue) findRebalanceReplicaOp(ctx context.Context, rd *rfpb.RangeDescr
 		return nil
 	}
 
-	loadBased := rq.isLoadBasedRebalanceEnabled(ctx)
-	var p loadParams
 	readSignal, proposeSignal := false, false
 	if loadBased {
-		p = rq.loadParams(ctx)
 		readSignal = qpsSignalPresent(p, storesWithStats.ReadQPS.Mean)
 		proposeSignal = qpsSignalPresent(p, storesWithStats.RaftProposeQPS.Mean)
 		if readSignal || proposeSignal {
