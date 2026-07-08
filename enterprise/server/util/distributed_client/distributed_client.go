@@ -1,6 +1,7 @@
 package distributed_client
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -51,8 +52,10 @@ const (
 )
 
 var (
-	enableKubeResolver = flag.Bool("cache.distributed_cache.enable_kube_resolver", false, "Enable Kubernetes resolver for resolving peer pod IPs")
-	peerWriteTimeout   = flag.Duration("cache.distributed_cache.peer_write_timeout", time.Minute, "Maximum time to wait for a single distributed cache peer write send or close operation before treating the peer as stalled.")
+	enableKubeResolver        = flag.Bool("cache.distributed_cache.enable_kube_resolver", false, "Enable Kubernetes resolver for resolving peer pod IPs")
+	peerWriteTimeout          = flag.Duration("cache.distributed_cache.peer_write_timeout", time.Minute, "Maximum time to wait for a single distributed cache peer write send or close operation before treating the peer as stalled.")
+	maxGetMultiBlobSizeBytes  = flag.Int64("cache.distributed_cache.max_getmulti_blob_size_bytes", 1*1024*1024, "Maximum blob size to read via distributed cache GetMulti. Larger blobs are read through the streaming Read RPC. Set <= 0 to disable this limit.")
+	maxGetMultiBatchSizeBytes = flag.Int64("cache.distributed_cache.max_getmulti_batch_size_bytes", 4*1024*1024, "Maximum total blob size to read in a single distributed cache GetMulti request. Additional blobs are read through the streaming Read RPC. Set <= 0 to disable this limit.")
 )
 
 type Proxy struct {
@@ -497,8 +500,16 @@ func (c *Proxy) RemoteGetMulti(ctx context.Context, peer string, resources []*rs
 	req := &dcpb.GetMultiRequest{}
 	hashDigests := make(map[string]*repb.Digest, len(resources))
 	compressedHashes := make(set.Set[string], len(resources))
+	streamedResources := make([]*rspb.ResourceName, 0)
+	var getMultiSizeBytes int64
 	for _, r := range resources {
 		hashDigests[r.GetDigest().GetHash()] = r.GetDigest()
+		sizeBytes := r.GetDigest().GetSizeBytes()
+		if shouldStreamRemoteGetMultiResource(sizeBytes, getMultiSizeBytes) {
+			streamedResources = append(streamedResources, r)
+			continue
+		}
+		getMultiSizeBytes += sizeBytes
 		if c.shouldReadCompressed(r) {
 			r = r.CloneVT()
 			r.Compressor = repb.Compressor_ZSTD
@@ -506,30 +517,66 @@ func (c *Proxy) RemoteGetMulti(ctx context.Context, peer string, resources []*rs
 		}
 		req.Resources = append(req.Resources, r)
 	}
-	client, err := c.getClient(ctx, peer)
-	if err != nil {
-		return nil, err
-	}
-	rsp, err := client.GetMulti(ctx, req)
-	if err != nil {
-		return nil, err
-	}
-	resultMap := make(map[*repb.Digest][]byte, len(rsp.GetKeyValue()))
-	for _, keyValue := range rsp.GetKeyValue() {
-		d, ok := hashDigests[keyValue.GetKey().GetKey()]
-		if !ok {
-			continue
+	resultMap := make(map[*repb.Digest][]byte, len(resources))
+	if len(req.GetResources()) > 0 {
+		client, err := c.getClient(ctx, peer)
+		if err != nil {
+			return nil, err
 		}
-		buf := keyValue.GetValue()
-		if compressedHashes.Contains(d.GetHash()) {
-			buf, err = compression.DecompressZstd(make([]byte, d.GetSizeBytes()), buf)
-			if err != nil {
-				return nil, err
+		rsp, err := client.GetMulti(ctx, req)
+		if err != nil {
+			return nil, err
+		}
+		for _, keyValue := range rsp.GetKeyValue() {
+			d, ok := hashDigests[keyValue.GetKey().GetKey()]
+			if !ok {
+				continue
 			}
+			buf := keyValue.GetValue()
+			if compressedHashes.Contains(d.GetHash()) {
+				buf, err = compression.DecompressZstd(make([]byte, d.GetSizeBytes()), buf)
+				if err != nil {
+					return nil, err
+				}
+			}
+			resultMap[d] = buf
 		}
-		resultMap[d] = buf
+	}
+	for _, r := range streamedResources {
+		buf, err := c.remoteGetMultiStreamedResource(ctx, peer, r)
+		if err != nil {
+			if status.IsNotFoundError(err) {
+				continue
+			}
+			return nil, err
+		}
+		resultMap[r.GetDigest()] = buf
 	}
 	return resultMap, nil
+}
+
+func shouldStreamRemoteGetMultiResource(sizeBytes, batchSizeBytes int64) bool {
+	if *maxGetMultiBlobSizeBytes > 0 && sizeBytes > *maxGetMultiBlobSizeBytes {
+		return true
+	}
+	return *maxGetMultiBatchSizeBytes > 0 && batchSizeBytes > 0 && batchSizeBytes+sizeBytes > *maxGetMultiBatchSizeBytes
+}
+
+func (c *Proxy) remoteGetMultiStreamedResource(ctx context.Context, peer string, r *rspb.ResourceName) ([]byte, error) {
+	rc, err := c.RemoteReader(ctx, peer, r, 0, 0)
+	if err != nil {
+		return nil, err
+	}
+	buf := bytes.NewBuffer(make([]byte, 0, digest.SafeBufferSize(r, *config.ReadBufSizeBytes)))
+	_, copyErr := io.Copy(buf, rc)
+	closeErr := rc.Close()
+	if copyErr != nil {
+		return nil, copyErr
+	}
+	if closeErr != nil {
+		return nil, closeErr
+	}
+	return buf.Bytes(), nil
 }
 
 func (c *Proxy) RemoteReader(ctx context.Context, peer string, r *rspb.ResourceName, offset, limit int64) (io.ReadCloser, error) {

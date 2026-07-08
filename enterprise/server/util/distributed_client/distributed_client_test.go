@@ -872,6 +872,39 @@ func TestGetMulti(t *testing.T) {
 	}
 }
 
+func TestRemoteGetMultiStreamsLargeResources(t *testing.T) {
+	flags.Set(t, "cache.distributed_cache.max_getmulti_blob_size_bytes", int64(50))
+	flags.Set(t, "cache.distributed_cache.max_getmulti_batch_size_bytes", int64(0))
+
+	ctx := context.Background()
+	te := getTestEnv(t, emptyUserMap)
+
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+	require.NoError(t, err)
+
+	peer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	spy := &spyCache{Cache: te.GetCache()}
+	c := distributed_client.New(te, spy, peer)
+	require.NoError(t, c.StartListening())
+	waitUntilServerIsAlive(peer)
+
+	smallRN, smallBuf := testdigest.RandomCASResourceBuf(t, 10)
+	largeRN, largeBuf := testdigest.RandomCASResourceBuf(t, 100)
+	require.NoError(t, te.GetCache().Set(ctx, smallRN, smallBuf))
+	require.NoError(t, te.GetCache().Set(ctx, largeRN, largeBuf))
+
+	gotMap, err := c.RemoteGetMulti(ctx, peer, []*rspb.ResourceName{smallRN, largeRN})
+	require.NoError(t, err)
+	require.Equal(t, smallBuf, gotMap[smallRN.GetDigest()])
+	require.Equal(t, largeBuf, gotMap[largeRN.GetDigest()])
+
+	spy.mu.Lock()
+	defer spy.mu.Unlock()
+	require.Equal(t, repb.Compressor_IDENTITY, spy.getMultiCompressors[smallRN.GetDigest().GetHash()])
+	require.NotContains(t, spy.getMultiCompressors, largeRN.GetDigest().GetHash())
+	require.Len(t, spy.readerCompressors, 1)
+}
+
 func TestEmptyRead(t *testing.T) {
 	ctx := context.Background()
 	te := getTestEnv(t, emptyUserMap)
