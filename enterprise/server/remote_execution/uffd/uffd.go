@@ -630,7 +630,7 @@ func (h *Handler) copyRange(uffd uintptr, destAddr uintptr, hostAddr uintptr, si
 		}
 
 		if errors.Is(err, unix.EEXIST) {
-			// EEXIST is returned if the last page attempted to be copied was already mapped
+			// EEXIST is returned if the first page attempted to be copied was already mapped
 			// (i.e. by an earlier partial copy of this chunk).
 			// No further action needed for that page, so skip it and continue with the next page.
 			destAddr += uintptr(pageSize)
@@ -655,8 +655,8 @@ func (h *Handler) copyRange(uffd uintptr, destAddr uintptr, hostAddr uintptr, si
 // attempts to access unallocated memory, it triggers a page fault and hangs until it has been resolved)
 //
 // Returns the number of bytes copied. This may be less than `size` if the copy
-// stopped early - in that case err is non-nil and the threads whose faulting pages
-// were not copied will remain blocked.
+// stopped early - in that case the threads whose faulting pages were not copied will remain blocked.
+// The caller should retry resolving the remainder of the range.
 func (h *Handler) resolvePageFault(uffd uintptr, faultingRegion uint64, src uint64, size uint64) (int64, error) {
 	start := time.Now()
 	defer func() {
