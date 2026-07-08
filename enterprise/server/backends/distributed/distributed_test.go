@@ -26,6 +26,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/kubediscovery"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/peerset"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
@@ -2143,6 +2144,40 @@ func TestAbandonedReadDoesntWriteToLookaside(t *testing.T) {
 	assert.Equal(t, buf, data)
 
 	assert.Equal(t, 4, len(memoryCache.ops), "Ops were %v", memoryCache.ops)
+}
+
+func TestSetLookasideEntryCopiesData(t *testing.T) {
+	lookaside, err := lru.New[lookasideCacheEntry](&lru.Config[lookasideCacheEntry]{
+		MaxSize: 100,
+		SizeFn: func(v lookasideCacheEntry) int64 {
+			return int64(len(v.data) + 8)
+		},
+		UpdateInPlace: true,
+	})
+	require.NoError(t, err)
+
+	c := &Cache{
+		log:       log.NamedSubLogger("test"),
+		lookaside: lookaside,
+	}
+
+	backing := make([]byte, 32)
+	copy(backing, "abc")
+	c.setLookasideEntry("key", backing[:3])
+	backing[0] = 'z'
+
+	entry, ok := c.lookaside.Get("key")
+	require.True(t, ok)
+	require.Equal(t, "abc", string(entry.data))
+	require.Equal(t, len(entry.data), cap(entry.data))
+	require.Equal(t, int64(len("abc")+8), c.lookaside.Size())
+
+	c.setLookasideEntry("key", []byte("abcdef"))
+	entry, ok = c.lookaside.Get("key")
+	require.True(t, ok)
+	require.Equal(t, "abcdef", string(entry.data))
+	require.Equal(t, len(entry.data), cap(entry.data))
+	require.Equal(t, int64(len("abcdef")+8), c.lookaside.Size())
 }
 
 func TestGetMultiLookaside(t *testing.T) {
