@@ -27,9 +27,13 @@ import (
 */
 import "C"
 
-// UFFD macros - see README for more info
-const UFFDIO_COPY = 0xc028aa03
-const UFFDIO_ZEROPAGE = 0xc020aa04
+const (
+	// UFFD macros - see README for more info
+	UFFDIO_COPY     = 0xc028aa03
+	UFFDIO_ZEROPAGE = 0xc020aa04
+
+	initialDeferredPollTimeoutMs = 1
+)
 
 // uffdMsg is a notification from the userfaultfd object about a change in the
 // virtual memory layout of the faulting process.
@@ -283,15 +287,8 @@ func (h *Handler) handle(ctx context.Context, memoryStore *copy_on_write.COWStor
 		{Fd: int32(uffd), Events: C.POLLIN},
 		{Fd: int32(h.earlyTerminationReader.Fd()), Events: C.POLLIN},
 	}
-	// TODO(Maggie): Evaluate the retry timeout. If deferredPollCount is high,
-	// that indicates the timeout is too short and the handler is wasting effort
-	// retrying page faults before the kernel EAGAIN state has cleared.
-	deferredPollCount := 0
-	defer func() {
-		if deferredPollCount > 0 {
-			log.CtxWarningf(ctx, "UFFD handler deferred page fault retry count: %d", deferredPollCount)
-		}
-	}()
+	deferredPollTimeoutMs := initialDeferredPollTimeoutMs
+	loggedStallWarning := false
 
 	deferredPageFaultEvents := make([]*Pagefault, 0)
 	for {
@@ -320,8 +317,19 @@ func (h *Handler) handle(ctx context.Context, memoryStore *copy_on_write.COWStor
 		// is hit, and the handler can handle the deferred page faults.
 		timeoutMs := -1
 		if len(deferredPageFaultEvents) > 0 {
-			timeoutMs = 10
-			deferredPollCount++
+			timeoutMs = deferredPollTimeoutMs
+			deferredPollTimeoutMs *= 2
+
+			if deferredPollTimeoutMs > 1000 {
+				if !loggedStallWarning {
+					log.CtxWarningf(ctx, "UFFD handler is stalled on persistent EAGAIN and may trip guest-side RCU-stall / soft-lockup warnings.")
+					loggedStallWarning = true
+				}
+			}
+		} else {
+			// If EAGAIN retry succeeded, reset the timeout.
+			deferredPollTimeoutMs = initialDeferredPollTimeoutMs
+			loggedStallWarning = false
 		}
 		_, pollErr := unix.Poll(pollFDs, timeoutMs)
 		if pollErr != nil {
