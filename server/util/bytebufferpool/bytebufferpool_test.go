@@ -43,3 +43,17 @@ func TestReuse(t *testing.T) {
 		assert.GreaterOrEqual(t, len(buf), i, "buffer for length %d did not have sufficient length", i)
 	}
 }
+
+func TestMaxRetainedBufferSize(t *testing.T) {
+	bp := bytebufferpool.VariableSizeWithMaxRetained(1024, 16)
+
+	small := make([]byte, 16)
+	small[0] = 7
+	bp.Put(small)
+	assert.Equal(t, byte(7), bp.Get(16)[0])
+
+	large := make([]byte, 32)
+	large[0] = 9
+	bp.Put(large)
+	assert.Equal(t, byte(0), bp.Get(32)[0])
+}

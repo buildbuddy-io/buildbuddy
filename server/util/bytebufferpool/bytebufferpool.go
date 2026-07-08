@@ -37,14 +37,30 @@ type VariableSizePool struct {
 	// is indexed by the exponent.
 	// index 0 containing a pool of 2^0 capacity slices, index 1 containing 2^1
 	// capacity slices and so forth.
-	pools []*fixedSizePool
+	pools                 []*fixedSizePool
+	maxRetainedBufferSize int
 }
 
 // VariableSize returns a byte buffer pool that can be used when the buffer
 // size is not fixed. It internally maintains pools of different buffer sizes to
 // accommodate requests of different sizes.
 func VariableSize(maxBufferSize int) *VariableSizePool {
-	bp := &VariableSizePool{}
+	return VariableSizeWithMaxRetained(maxBufferSize, maxBufferSize)
+}
+
+// VariableSizeWithMaxRetained returns a byte buffer pool that can serve buffers
+// up to maxBufferSize, but drops buffers larger than maxRetainedBufferSize when
+// they are returned to the pool.
+func VariableSizeWithMaxRetained(maxBufferSize, maxRetainedBufferSize int) *VariableSizePool {
+	if maxBufferSize < 1 {
+		maxBufferSize = 1
+	}
+	if maxRetainedBufferSize <= 0 || maxRetainedBufferSize > maxBufferSize {
+		maxRetainedBufferSize = maxBufferSize
+	}
+	bp := &VariableSizePool{
+		maxRetainedBufferSize: maxRetainedBufferSize,
+	}
 	for size := 1; ; size *= 2 {
 		size := size
 		bp.pools = append(bp.pools, fixedSize(size))
@@ -75,6 +91,9 @@ func (bp *VariableSizePool) Get(length int64) []byte {
 
 // Put returns a byte slice back into the pool.
 func (bp *VariableSizePool) Put(buf []byte) {
+	if cap(buf) > bp.maxRetainedBufferSize {
+		return
+	}
 	// Calculate the largest power of 2 exponent x where 2^x <= cap
 	idx := bits.Len64(uint64(cap(buf))) - 1
 	if idx < 0 {

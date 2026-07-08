@@ -51,8 +51,9 @@ const (
 )
 
 var (
-	enableKubeResolver = flag.Bool("cache.distributed_cache.enable_kube_resolver", false, "Enable Kubernetes resolver for resolving peer pod IPs")
-	peerWriteTimeout   = flag.Duration("cache.distributed_cache.peer_write_timeout", time.Minute, "Maximum time to wait for a single distributed cache peer write send or close operation before treating the peer as stalled.")
+	enableKubeResolver      = flag.Bool("cache.distributed_cache.enable_kube_resolver", false, "Enable Kubernetes resolver for resolving peer pod IPs")
+	peerWriteTimeout        = flag.Duration("cache.distributed_cache.peer_write_timeout", time.Minute, "Maximum time to wait for a single distributed cache peer write send or close operation before treating the peer as stalled.")
+	maxRetainedBufSizeBytes = flag.Int("cache.distributed_cache.max_retained_buf_size_bytes", 256*1024, "Maximum distributed cache proxy buffer size retained in the shared buffer pool. Larger buffers can still be allocated, but are dropped when returned.")
 )
 
 type Proxy struct {
@@ -75,7 +76,7 @@ func New(env environment.Env, c interfaces.Cache, listenAddr string) *Proxy {
 		env:        env,
 		cache:      c,
 		log:        log.NamedSubLogger(fmt.Sprintf("Proxy(%s)", listenAddr)),
-		bufPool:    bytebufferpool.VariableSize(max(*config.ReadBufSizeBytes, writeBufSizeBytes)),
+		bufPool:    bytebufferpool.VariableSizeWithMaxRetained(max(*config.ReadBufSizeBytes, writeBufSizeBytes), *maxRetainedBufSizeBytes),
 		listenAddr: listenAddr,
 		mu:         &sync.Mutex{},
 		// server goes here
