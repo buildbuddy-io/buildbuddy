@@ -1048,9 +1048,10 @@ func TestCompression_NoEarlyEviction(t *testing.T) {
 				(1 / pebble_cache.JanitorCutoffThreshold))) // account for .9 evictor cutoff
 
 	opts := &pebble_cache.Options{
-		RootDirectory:  testfs.MakeTempDir(t),
-		MaxSizeBytes:   maxSizeBytes,
-		MinEvictionAge: &minEvictionAge,
+		RootDirectory:               testfs.MakeTempDir(t),
+		MaxSizeBytes:                maxSizeBytes,
+		MinEvictionAge:              &minEvictionAge,
+		MinBytesAutoZstdCompression: proto.Int64(100),
 	}
 	pc, err := pebble_cache.NewPebbleCache(te, opts)
 	require.NoError(t, err)

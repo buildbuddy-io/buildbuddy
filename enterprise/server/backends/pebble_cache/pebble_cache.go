@@ -121,7 +121,7 @@ var (
 	DefaultDeleteBufferSize            = 20
 	DefaultNumDeleteWorkers            = 16
 	DefaultMinEvictionAge              = 6 * time.Hour
-	DefaultMinBytesAutoZstdCompression = int64(100)
+	DefaultMinBytesAutoZstdCompression = int64(16 * 1024)
 
 	DefaultName         = "pebble_cache"
 	DefaultMaxSizeBytes = cache_config.MaxSizeBytes()

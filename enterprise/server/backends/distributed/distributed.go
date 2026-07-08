@@ -1045,9 +1045,9 @@ func (c *Cache) copyFile(ctx context.Context, rn *rspb.ResourceName, source stri
 	if exists, err := c.remoteContains(ctx, dest, rn); err == nil && exists {
 		return nil
 	}
-	if rn.GetDigest().GetSizeBytes() > 100 && c.SupportsCompressor(repb.Compressor_ZSTD) {
+	if rn.GetDigest().GetSizeBytes() > 16*1024 && c.SupportsCompressor(repb.Compressor_ZSTD) {
 		// If the file is large enough and we support ZSTD, then the source will
-		// have it compressed, and we want to store it compressed. 100 is the
+		// have it compressed, and we want to store it compressed. 16 KiB is the
 		// default value of --cache.pebble.min_bytes_auto_zstd_compression.
 		rn = rn.CloneVT()
 		rn.Compressor = repb.Compressor_ZSTD
