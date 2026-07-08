@@ -484,7 +484,7 @@ func (h *Handler) handlePageFault(uffd uintptr, memoryStore *copy_on_write.COWSt
 
 	// If address had been previously removed, zero it.
 	if _, removed := h.removedAddresses[int64(guestPageAddr)]; removed {
-		return h.copyZeroes(uffd, guestPageAddr)
+		return h.copyZeroes(uffd, guestPageAddr, mapping)
 	}
 
 	// Otherwise copy data from the memory snapshot.
@@ -493,34 +493,55 @@ func (h *Handler) handlePageFault(uffd uintptr, memoryStore *copy_on_write.COWSt
 
 // copyZeroes handles a page fault by copying zeroes into the guest. The guest
 // expects zeroes if the faulting page was previously removed by the balloon.
-func (h *Handler) copyZeroes(uffd uintptr, faultingAddress uintptr) error {
-	// If multiple consecutive pages were removed, zero them all.
+func (h *Handler) copyZeroes(uffd uintptr, faultingAddress uintptr, mapping *GuestRegionUFFDMapping) error {
+	pageSize := uintptr(os.Getpagesize())
+
+	// If multiple consecutive pages were removed, eagerly attempt to zero them all. Don't scan
+	// past the end of the mapping - a single UFFDIO_ZEROPAGE call cannot span
+	// multiple memory regions.
+	mappingEndAddr := mapping.BaseHostVirtAddr + mapping.Size
 	end := faultingAddress
-	for {
-		_, removed := h.removedAddresses[int64(end)]
-		if !removed {
+	for end < mappingEndAddr {
+		if _, removed := h.removedAddresses[int64(end)]; !removed {
 			break
 		}
-
-		end += uintptr(os.Getpagesize())
+		end += pageSize
 	}
 
-	sizeToZero := end - faultingAddress
-	if sizeToZero > 0 {
-		zeroIO := uffdIoZeropage{
-			Range: uffdIoRange{
-				Start: uint64(faultingAddress),
-				Len:   uint64(sizeToZero),
-			},
-		}
-		errno := h.faultResolver.zeropage(uffd, &zeroIO)
-		if errno != 0 {
-			return wrapErrno(errno, fmt.Sprintf("UFFDIO_ZEROPAGE failed with errno(%d)", errno))
-		}
+	zeroIO := uffdIoZeropage{
+		Range: uffdIoRange{
+			Start: uint64(faultingAddress),
+			Len:   uint64(end - faultingAddress),
+		},
+	}
+	errno := h.faultResolver.zeropage(uffd, &zeroIO)
+
+	// The Zeropage field contains the number of bytes actually zeroed. Only
+	// unmark the pages that were actually zeroed.
+	addr := faultingAddress
+	for zeroedBytes := zeroIO.Zeropage; zeroedBytes > 0; zeroedBytes -= int64(pageSize) {
+		delete(h.removedAddresses, int64(addr))
+		addr += pageSize
 	}
 
-	for zeroedPage := faultingAddress; zeroedPage < end; zeroedPage += uintptr(os.Getpagesize()) {
-		delete(h.removedAddresses, int64(zeroedPage))
+	// EEXIST is returned if the last page attempted to be zeroed was already mapped.
+	// Remove it from removedAddresses and no further action is needed.
+	if errno == unix.EEXIST {
+		delete(h.removedAddresses, int64(addr))
+		return nil
+	}
+
+	if errno == unix.EAGAIN && addr > faultingAddress {
+		// We try to eagerly zero more pages than what actually faulted.
+		// If the operation is only partially successful, that's okay as long
+		// as the actually faulting page was handled, and the faulting thread in the guest will resume successfully.
+		return nil
+	}
+	if errno != 0 {
+		return wrapErrno(errno, fmt.Sprintf("UFFDIO_ZEROPAGE failed with errno(%d)", errno))
+	}
+	if addr == faultingAddress {
+		return status.InternalError("UFFDIO_ZEROPAGE succeeded but zeroed 0 bytes")
 	}
 	return nil
 }
@@ -576,8 +597,7 @@ func (h *Handler) copyDataFromMemorySnapshot(uffd uintptr, memoryStore *copy_on_
 		copySize -= invalidBytesAtChunkEnd
 	}
 
-	_, err = h.resolvePageFault(uffd, uint64(destAddr), uint64(hostAddr), uint64(copySize))
-	if err != nil {
+	if err := h.copyRange(uffd, destAddr, hostAddr, copySize); err != nil {
 		return err
 	}
 
@@ -589,13 +609,54 @@ func (h *Handler) copyDataFromMemorySnapshot(uffd uintptr, memoryStore *copy_on_
 	return nil
 }
 
+// copyRange resolves page faults by copying memory from the host into the guest.
+func (h *Handler) copyRange(uffd uintptr, destAddr uintptr, hostAddr uintptr, size int64) error {
+	pageSize := int64(os.Getpagesize())
+	for size > 0 {
+		// A single UFFDIO_COPY may stop partway through the range - for example if it
+		// reaches a page that is already mapped, or if the balloon concurrently removes memory.
+		// The kernel only wakes faulting threads if the data was actually copied,
+		// so we still need to try to resolve the rest of the range.
+		copied, err := h.resolvePageFault(uffd, uint64(destAddr), uint64(hostAddr), uint64(size))
+		destAddr += uintptr(copied)
+		hostAddr += uintptr(copied)
+		size -= copied
+
+		if err == nil {
+			if copied == 0 {
+				return status.InternalError("UFFDIO_COPY succeeded but copied 0 bytes")
+			}
+			continue
+		}
+
+		if errors.Is(err, unix.EEXIST) {
+			// EEXIST is returned if the last page attempted to be copied was already mapped
+			// (i.e. by an earlier partial copy of this chunk).
+			// No further action needed for that page, so skip it and continue with the next page.
+			destAddr += uintptr(pageSize)
+			hostAddr += uintptr(pageSize)
+			size -= pageSize
+			continue
+		}
+
+		if errors.Is(err, unix.EAGAIN) && copied > 0 {
+			// Made partial progress - retry the remainder.
+			continue
+		}
+		return err
+	}
+	return nil
+}
+
 // resolvePageFault executes the resolution of a page fault.
 // It copies `size` bytes of memory from a `Src` address to the faulting region `Dst`.
 //
 // When complete, the UFFDIO_COPY call wakes up the process that triggered the page fault (When a process
 // attempts to access unallocated memory, it triggers a page fault and hangs until it has been resolved)
 //
-// Returns the number of bytes copied
+// Returns the number of bytes copied. This may be less than `size` if the copy
+// stopped early - in that case err is non-nil and the threads whose faulting pages
+// were not copied will remain blocked.
 func (h *Handler) resolvePageFault(uffd uintptr, faultingRegion uint64, src uint64, size uint64) (int64, error) {
 	start := time.Now()
 	defer func() {
@@ -608,14 +669,12 @@ func (h *Handler) resolvePageFault(uffd uintptr, faultingRegion uint64, src uint
 		Len: size,
 	}
 	errno := h.faultResolver.copy(uffd, &copyData)
+	// On failure, Copy contains a negative errno instead of a byte count.
+	copied := max(copyData.Copy, 0)
 	if errno != 0 {
-		// If error is due to the page already being mapped, ignore.
-		if errno == unix.EEXIST {
-			return 0, nil
-		}
-		return 0, wrapErrno(errno, fmt.Sprintf("UFFDIO_COPY failed with errno(%d)", errno))
+		return copied, wrapErrno(errno, fmt.Sprintf("UFFDIO_COPY failed with errno(%d)", errno))
 	}
-	return copyData.Copy, nil
+	return copied, nil
 }
 
 // readEvent reads a notification from UFFD.
