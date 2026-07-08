@@ -116,7 +116,7 @@ func setupService(t *testing.T, enforcer *fakeIPRulesEnforcer, sns *fakeServerNo
 func contextWithClientIdentity(t *testing.T, ctx context.Context, service interfaces.ClientIdentityService, client string) context.Context {
 	t.Helper()
 
-	headerValue, err := service.IdentityHeader(&interfaces.ClientIdentity{
+	headerValue, err := service.NewIdentityHeader(&interfaces.ClientIdentity{
 		Client: client,
 		Origin: "test",
 	}, time.Minute)
