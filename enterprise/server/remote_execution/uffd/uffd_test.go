@@ -223,27 +223,31 @@ func TestCopyRange_SkipsAlreadyMappedPages(t *testing.T) {
 	copyCalls := 0
 	h := newTestHandler(&fakeResolver{
 		onCopy: func(gotUffd uintptr, c *uffdioCopy) syscall.Errno {
-			// Simulate returning EEXIST after the first page was successfully copied.
-			if copyCalls == 0 {
-				c.Copy = int64(pageSize)
+			defer func() { copyCalls++ }()
+			switch copyCalls {
+			case 0:
+				// Simulate the first page being already mapped, which returns
+				// EEXIST with 0 bytes copied.
 				return unix.EEXIST
+			case 1:
+				// On the second copy request, we expect the first page to be
+				// skipped, because it was already mapped.
+				require.Equal(t, destAddress+pageSize, c.Dst)
+				require.Equal(t, hostAddress+pageSize, c.Src)
+				require.Equal(t, 2*pageSize, c.Len)
+				c.Copy = int64(2 * pageSize)
+				return 0
+			default:
+				require.FailNow(t, "unexpected copy call")
+				return 0
 			}
-
-			copyCalls++
-
-			// On the second copy request, we expect the second page to be skipped, because it
-			// was already mapped.
-			require.Equal(t, destAddress+2*pageSize, c.Dst)
-			require.Equal(t, hostAddress+2*pageSize, c.Src)
-			require.Equal(t, pageSize, c.Len)
-			return 0
 		},
 	})
 
 	err := h.copyRange(uffd, uintptr(destAddress), uintptr(hostAddress), int64(3*pageSize))
 
 	require.NoError(t, err)
-	require.Equal(t, 0, copyCalls)
+	require.Equal(t, 2, copyCalls)
 }
 
 func TestZero_Error(t *testing.T) {
