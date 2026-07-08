@@ -58,6 +58,7 @@ func TestRemoveEventsAreHandledBeforePageFaults(t *testing.T) {
 
 			// The two consecutive pages that were removed should be zeroed.
 			require.Equal(t, uint64(2*pageSize), z.Range.Len)
+			z.Zeropage = int64(z.Range.Len)
 			zeroCalls++
 			return 0
 		},
@@ -130,6 +131,7 @@ func TestEAGAIN_DefersRemainingPageFaults(t *testing.T) {
 			if z.Range.Start == pageFaults[1].Address {
 				return unix.EAGAIN
 			}
+			z.Zeropage = int64(z.Range.Len)
 			return 0
 		},
 	})
@@ -148,6 +150,43 @@ func TestEAGAIN_DefersRemainingPageFaults(t *testing.T) {
 	require.Equal(t, pageFaults[1:], deferred)
 }
 
+func TestCopyRangeContinuesAfterPartialEAGAIN(t *testing.T) {
+	pageSize := uint64(os.Getpagesize())
+	uffd := uintptr(10)
+	destAddress := uint64(0x100000)
+	hostAddress := uint64(0x200000)
+
+	copyCalls := 0
+	h := newTestHandler(&fakeResolver{
+		onCopy: func(gotUffd uintptr, c *uffdioCopy) syscall.Errno {
+			require.Equal(t, uffd, gotUffd)
+			copyCalls++
+			switch copyCalls {
+			case 1:
+				require.Equal(t, destAddress, c.Dst)
+				require.Equal(t, hostAddress, c.Src)
+				require.Equal(t, 3*pageSize, c.Len)
+				c.Copy = int64(pageSize)
+				return unix.EAGAIN
+			case 2:
+				require.Equal(t, destAddress+pageSize, c.Dst)
+				require.Equal(t, hostAddress+pageSize, c.Src)
+				require.Equal(t, 2*pageSize, c.Len)
+				c.Copy = int64(2 * pageSize)
+				return 0
+			default:
+				require.FailNow(t, "unexpected copy call")
+				return 0
+			}
+		},
+	})
+
+	err := h.copyRange(uffd, uintptr(destAddress), uintptr(hostAddress), int64(3*pageSize))
+
+	require.NoError(t, err)
+	require.Equal(t, 2, copyCalls)
+}
+
 func TestZero_Error(t *testing.T) {
 	pageSize := uintptr(os.Getpagesize())
 	faultingAddress := uintptr(0x100000)
@@ -159,11 +198,69 @@ func TestZero_Error(t *testing.T) {
 	})
 	h.removedAddresses[int64(faultingAddress)] = struct{}{}
 	h.removedAddresses[int64(faultingAddress+pageSize)] = struct{}{}
+	mapping := &GuestRegionUFFDMapping{
+		BaseHostVirtAddr: faultingAddress,
+		Size:             2 * pageSize,
+	}
 
-	err := h.copyZeroes(0 /*=uffd*/, faultingAddress)
+	err := h.copyZeroes(0 /*=uffd*/, faultingAddress, mapping)
 
 	require.True(t, errors.Is(err, unix.EAGAIN), "error should wrap EAGAIN, got %v", err)
 	// The pages should still be in the map because they were never successfully zeroed.
 	require.Contains(t, h.removedAddresses, int64(faultingAddress))
+	require.Contains(t, h.removedAddresses, int64(faultingAddress+pageSize))
+}
+
+func TestZero_PartialEAGAINAfterFaultResolved(t *testing.T) {
+	pageSize := uintptr(os.Getpagesize())
+	faultingAddress := uintptr(0x100000)
+
+	zeroCalls := 0
+	h := newTestHandler(&fakeResolver{
+		onZeropage: func(uffd uintptr, z *uffdIoZeropage) syscall.Errno {
+			zeroCalls++
+			require.Equal(t, uint64(faultingAddress), z.Range.Start)
+			require.Equal(t, uint64(3*pageSize), z.Range.Len)
+			z.Zeropage = int64(pageSize)
+			return unix.EAGAIN
+		},
+	})
+	for addr := faultingAddress; addr < faultingAddress+3*pageSize; addr += pageSize {
+		h.removedAddresses[int64(addr)] = struct{}{}
+	}
+	mapping := &GuestRegionUFFDMapping{
+		BaseHostVirtAddr: faultingAddress,
+		Size:             3 * pageSize,
+	}
+
+	err := h.copyZeroes(0 /*=uffd*/, faultingAddress, mapping)
+
+	require.NoError(t, err)
+	require.Equal(t, 1, zeroCalls)
+	require.NotContains(t, h.removedAddresses, int64(faultingAddress))
+	require.Contains(t, h.removedAddresses, int64(faultingAddress+pageSize))
+	require.Contains(t, h.removedAddresses, int64(faultingAddress+2*pageSize))
+}
+
+func TestZero_EEXISTAtFaultingAddress(t *testing.T) {
+	pageSize := uintptr(os.Getpagesize())
+	faultingAddress := uintptr(0x100000)
+
+	h := newTestHandler(&fakeResolver{
+		onZeropage: func(uffd uintptr, z *uffdIoZeropage) syscall.Errno {
+			return unix.EEXIST
+		},
+	})
+	h.removedAddresses[int64(faultingAddress)] = struct{}{}
+	h.removedAddresses[int64(faultingAddress+pageSize)] = struct{}{}
+	mapping := &GuestRegionUFFDMapping{
+		BaseHostVirtAddr: faultingAddress,
+		Size:             2 * pageSize,
+	}
+
+	err := h.copyZeroes(0 /*=uffd*/, faultingAddress, mapping)
+
+	require.NoError(t, err)
+	require.NotContains(t, h.removedAddresses, int64(faultingAddress))
 	require.Contains(t, h.removedAddresses, int64(faultingAddress+pageSize))
 }
