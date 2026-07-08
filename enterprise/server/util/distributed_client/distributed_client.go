@@ -70,6 +70,10 @@ type Proxy struct {
 	enableCompressedReads bool
 }
 
+type writerIfNotExistsCache interface {
+	WriterIfNotExists(ctx context.Context, r *rspb.ResourceName) (interfaces.CommittedWriteCloser, error)
+}
+
 func New(env environment.Env, c interfaces.Cache, listenAddr string) *Proxy {
 	proxy := &Proxy{
 		env:        env,
@@ -361,13 +365,20 @@ func (c *Proxy) Write(stream dcpb.DistributedCache_WriteServer) error {
 		}
 		rn := req.GetResource()
 		if writeCloser == nil {
+			var wc interfaces.CommittedWriteCloser
 			if rn.GetCacheType() == rspb.CacheType_CAS && req.GetCheckAlreadyExists() {
-				missing, err := c.cache.FindMissing(ctx, []*rspb.ResourceName{rn})
-				if err == nil && len(missing) == 0 {
-					return status.AlreadyExistsError("CAS digest already exists")
+				if cache, ok := c.cache.(writerIfNotExistsCache); ok {
+					wc, err = cache.WriterIfNotExists(ctx, rn)
+				} else {
+					missing, findMissingErr := c.cache.FindMissing(ctx, []*rspb.ResourceName{rn})
+					if findMissingErr == nil && len(missing) == 0 {
+						return status.AlreadyExistsError("CAS digest already exists")
+					}
 				}
 			}
-			wc, err := c.cache.Writer(ctx, rn)
+			if err == nil && wc == nil {
+				wc, err = c.cache.Writer(ctx, rn)
+			}
 			if err != nil {
 				c.log.Debugf("Write(%q) failed (user prefix: %s), err: %s", ResourceIsolationString(rn), up, err)
 				return err

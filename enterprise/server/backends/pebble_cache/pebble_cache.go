@@ -2053,6 +2053,17 @@ func (p *PebbleCache) Reader(ctx context.Context, r *rspb.ResourceName, uncompre
 }
 
 func (p *PebbleCache) Writer(ctx context.Context, r *rspb.ResourceName) (interfaces.CommittedWriteCloser, error) {
+	return p.writer(ctx, r, false /*=failIfExists*/)
+}
+
+// WriterIfNotExists returns an AlreadyExists error for existing CAS resources
+// without doing a separate preflight Contains/FindMissing lookup. If the
+// resource is missing, it reserves the metadata key until Commit or Close.
+func (p *PebbleCache) WriterIfNotExists(ctx context.Context, r *rspb.ResourceName) (interfaces.CommittedWriteCloser, error) {
+	return p.writer(ctx, r, true /*=failIfExists*/)
+}
+
+func (p *PebbleCache) writer(ctx context.Context, r *rspb.ResourceName, failIfExists bool) (interfaces.CommittedWriteCloser, error) {
 	ctx, spn := tracing.StartSpan(ctx)
 	defer spn.End()
 	if spn.IsRecording() {
@@ -2086,6 +2097,9 @@ func (p *PebbleCache) Writer(ctx context.Context, r *rspb.ResourceName) (interfa
 		return nil, err
 	}
 
+	if failIfExists {
+		return p.newWrappedWriterIfNotExists(ctx, fileRecord, key, shouldCompress)
+	}
 	return p.newWrappedWriter(ctx, fileRecord, key, shouldCompress)
 }
 
@@ -2095,33 +2109,95 @@ func (p *PebbleCache) Writer(ctx context.Context, r *rspb.ResourceName) (interfa
 // (2) encrypt the data if encryption is enabled
 // (3) write the data using input wcm's Write method.
 // On Commit, it will write the metadata for fileRecord.
+type wrappedWriterOptions struct {
+	metadataUnlock             func()
+	skipExistingMetadataLookup bool
+}
+
+func (o wrappedWriterOptions) releaseMetadataLock() {
+	if o.metadataUnlock != nil {
+		o.metadataUnlock()
+	}
+}
+
 func (p *PebbleCache) newWrappedWriter(ctx context.Context, fileRecord *sgpb.FileRecord, key filestore.PebbleKey, shouldCompress bool) (interfaces.CommittedWriteCloser, error) {
+	db, err := p.leaser.DB()
+	if err != nil {
+		return nil, err
+	}
+	return p.newWrappedWriterWithDB(ctx, fileRecord, key, shouldCompress, db, wrappedWriterOptions{})
+}
+
+func (p *PebbleCache) newWrappedWriterIfNotExists(ctx context.Context, fileRecord *sgpb.FileRecord, key filestore.PebbleKey, shouldCompress bool) (interfaces.CommittedWriteCloser, error) {
+	db, err := p.leaser.DB()
+	if err != nil {
+		return nil, err
+	}
+	unlockFn := p.locker.Lock(key.LockID())
+
+	md := sgpb.FileMetadataFromVTPool()
+	defer md.ReturnToVTPool()
+	version, err := p.lookupFileMetadataAndVersion(ctx, db, key, md)
+	if err == nil {
+		gcsMetadata := md.GetStorageMetadata().GetGcsMetadata()
+		if md.GetStoredSizeBytes() > 0 && (gcsMetadata == nil || !gcsutil.ObjectIsPastTTL(p.clock, gcsMetadata, p.gcsTTLDays)) {
+			unlockFn()
+			db.Close()
+			return nil, status.AlreadyExistsError("CAS digest already exists")
+		}
+		oldKeyBytes, err := key.Bytes(version)
+		if err != nil {
+			unlockFn()
+			db.Close()
+			return nil, err
+		}
+		if err := db.Delete(oldKeyBytes, pebble.NoSync); err != nil {
+			unlockFn()
+			db.Close()
+			return nil, err
+		}
+		p.sendSizeUpdate(md.GetFileRecord().GetIsolation().GetPartitionId(), key.CacheType(), deleteSizeOp, md, oldKeyBytes)
+	} else if !status.IsNotFoundError(err) {
+		unlockFn()
+		db.Close()
+		return nil, err
+	}
+
+	return p.newWrappedWriterWithDB(ctx, fileRecord, key, shouldCompress, db, wrappedWriterOptions{
+		metadataUnlock:             unlockFn,
+		skipExistingMetadataLookup: true,
+	})
+}
+
+func (p *PebbleCache) newWrappedWriterWithDB(ctx context.Context, fileRecord *sgpb.FileRecord, key filestore.PebbleKey, shouldCompress bool, db pebble.IPebbleDB, opts wrappedWriterOptions) (interfaces.CommittedWriteCloser, error) {
 	var wcm interfaces.MetadataWriteCloser
 	if fileRecord.GetDigest().GetSizeBytes() < p.maxInlineFileSizeBytes {
 		wcm = p.fileStorer.InlineWriter(ctx, fileRecord.GetDigest().GetSizeBytes())
 	} else if fileRecord.GetDigest().GetSizeBytes() >= p.minGCSFileSizeBytes {
 		bw, err := p.fileStorer.BlobWriter(ctx, fileRecord)
 		if err != nil {
+			opts.releaseMetadataLock()
+			db.Close()
 			return nil, err
 		}
 		wcm = bw
 	} else {
 		fw, err := p.fileStorer.FileWriter(ctx, p.blobDirectory, fileRecord)
 		if err != nil {
+			opts.releaseMetadataLock()
+			db.Close()
 			return nil, err
 		}
 		wcm = fw
 	}
-	// Grab another lease and pass the Close function to the writer
-	// so it will be closed when the writer is.
-	db, err := p.leaser.DB()
-	if err != nil {
-		return nil, err
-	}
 
+	var releaseOnce sync.Once
 	var encryptionMetadata *sgpb.EncryptionMetadata
 	cwc := ioutil.NewCustomCommitWriteCloser(wcm)
-	cwc.SetCloseFn(db.Close)
+	cwc.SetCloseFn(func() error {
+		releaseOnce.Do(opts.releaseMetadataLock)
+		return db.Close()
+	})
 	cwc.SetCommitFn(func(bytesWritten int64) error {
 		now := p.clock.Now().UnixMicro()
 		md := &sgpb.FileMetadata{
@@ -2137,7 +2213,11 @@ func (p *PebbleCache) newWrappedWriter(ctx context.Context, fileRecord *sgpb.Fil
 			return status.UnavailableError("zero-length writes are not allowed")
 		}
 
-		return p.writeMetadata(ctx, db, key, md)
+		err := p.writeMetadata(ctx, db, key, md, opts.skipExistingMetadataLookup)
+		if err == nil {
+			releaseOnce.Do(opts.releaseMetadataLock)
+		}
+		return err
 	})
 
 	wc := interfaces.CommittedWriteCloser(cwc)
@@ -2162,7 +2242,7 @@ func (p *PebbleCache) newWrappedWriter(ctx context.Context, fileRecord *sgpb.Fil
 	return wc, nil
 }
 
-func (p *PebbleCache) writeMetadata(ctx context.Context, db pebble.IPebbleDB, key filestore.PebbleKey, md *sgpb.FileMetadata) error {
+func (p *PebbleCache) writeMetadata(ctx context.Context, db pebble.IPebbleDB, key filestore.PebbleKey, md *sgpb.FileMetadata, skipExistingMetadataLookup bool) error {
 	ctx, spn := tracing.StartSpan(ctx)
 	defer spn.End()
 
@@ -2176,20 +2256,25 @@ func (p *PebbleCache) writeMetadata(ctx context.Context, db pebble.IPebbleDB, ke
 		p.metrics.decompressedBlobSizeWrite.Add(float64(md.GetFileRecord().GetDigest().GetSizeBytes()))
 	}
 
-	unlockFn := p.locker.Lock(key.LockID())
-	defer unlockFn()
+	var unlockFn func()
+	if !skipExistingMetadataLookup {
+		unlockFn = p.locker.Lock(key.LockID())
+		defer unlockFn()
+	}
 
-	oldMD := sgpb.FileMetadataFromVTPool()
-	defer oldMD.ReturnToVTPool()
-	if version, err := p.lookupFileMetadataAndVersion(ctx, db, key, oldMD); err == nil {
-		oldKeyBytes, err := key.Bytes(version)
-		if err != nil {
-			return err
+	if !skipExistingMetadataLookup {
+		oldMD := sgpb.FileMetadataFromVTPool()
+		defer oldMD.ReturnToVTPool()
+		if version, err := p.lookupFileMetadataAndVersion(ctx, db, key, oldMD); err == nil {
+			oldKeyBytes, err := key.Bytes(version)
+			if err != nil {
+				return err
+			}
+			if err := db.Delete(oldKeyBytes, pebble.NoSync); err != nil {
+				return err
+			}
+			p.sendSizeUpdate(oldMD.GetFileRecord().GetIsolation().GetPartitionId(), key.CacheType(), deleteSizeOp, oldMD, oldKeyBytes)
 		}
-		if err := db.Delete(oldKeyBytes, pebble.NoSync); err != nil {
-			return err
-		}
-		p.sendSizeUpdate(oldMD.GetFileRecord().GetIsolation().GetPartitionId(), key.CacheType(), deleteSizeOp, oldMD, oldKeyBytes)
 	}
 
 	keyBytes, err := key.Bytes(p.activeDatabaseVersion())
