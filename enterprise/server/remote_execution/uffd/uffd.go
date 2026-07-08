@@ -283,10 +283,47 @@ func (h *Handler) handle(ctx context.Context, memoryStore *copy_on_write.COWStor
 		{Fd: int32(uffd), Events: C.POLLIN},
 		{Fd: int32(h.earlyTerminationReader.Fd()), Events: C.POLLIN},
 	}
+	// TODO(Maggie): Evaluate the retry timeout. If deferredPollCount is high,
+	// that indicates the timeout is too short and the handler is wasting effort
+	// retrying page faults before the kernel EAGAIN state has cleared.
+	deferredPollCount := 0
+	defer func() {
+		if deferredPollCount > 0 {
+			log.CtxWarningf(ctx, "UFFD handler deferred page fault retry count: %d", deferredPollCount)
+		}
+	}()
+
 	deferredPageFaultEvents := make([]*Pagefault, 0)
 	for {
-		// Poll UFFD for messages
-		_, pollErr := unix.Poll(pollFDs, -1)
+		// Poll UFFD for messages.
+		//
+		// If any page faults were deferred, poll with a timeout instead of
+		// blocking indefinitely to address the following race:
+		//
+		// * There is a page fault. The faulting CPU is blocked until the page fault is resolved
+		// with UFFDIO_COPY or UFFDIO_ZEROPAGE.
+		// * UFFDIO_COPY fails with EAGAIN. This is usually because there is an unread remove event in the event queue
+		// (remove events should always be handled before page faults).
+		// * `processEvents` defers the page fault to be retried later, until after the remove event has been read.
+		// * We read the remove event from the event queue. However the kernel state that causes EAGAIN is
+		// only cleared *after* the remove event has been consumed.
+		// * Simultaneously, we might work through the event queue and drain it. There can be a race where
+		// draining the event queue completes before the kernel state that causes EAGAIN is cleared.
+		// * The original CPU that triggered the page fault is still blocked, waiting for its page fault to be resolved.
+		// Because there might not be any active CPUs to trigger new page faults, we might never receive another UFFD event.
+		// * If polling without a timeout, the poll would block indefinitely if we never receive a new event.
+		// * Even though at this point the EAGAIN kernel state has been cleared and the original page fault could be
+		// successfully resolved, the handler is blocked waiting for a new event to arrive. The original blocked CPU
+		// will hang indefinitely.
+		//
+		// By polling with a timeout if there are deferred page faults, the poll will return once the timeout
+		// is hit, and the handler can handle the deferred page faults.
+		timeoutMs := -1
+		if len(deferredPageFaultEvents) > 0 {
+			timeoutMs = 10
+			deferredPollCount++
+		}
+		_, pollErr := unix.Poll(pollFDs, timeoutMs)
 		if pollErr != nil {
 			if pollErr == unix.EINTR {
 				// Poll call was interrupted by another signal - retry
