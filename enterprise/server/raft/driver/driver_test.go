@@ -1423,6 +1423,8 @@ func (tq *testQueue) getReplica(rangeID uint64) (IReplica, error) {
 	return tq.repls[rangeID], nil
 }
 
+func (tq *testQueue) clearLeaseBlockedHint(rangeID uint64) {}
+
 func TestBaseQueueRetry(t *testing.T) {
 	tr := &testReplica{rangeID: 1, replicaID: 1}
 	ctx := context.Background()
