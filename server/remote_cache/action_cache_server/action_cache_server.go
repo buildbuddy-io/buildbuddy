@@ -78,7 +78,7 @@ func checkFilesExist(ctx context.Context, cache interfaces.Cache, instanceName s
 	}
 	checker := chunking.NewMissingChunkChecker(cache)
 	for _, d := range missing {
-		if d.GetSizeBytes() <= chunking.MinChunkedReadFallbackSizeBytes(ctx, efp) {
+		if d.GetSizeBytes() <= chunking.MinChunkedReadFallbackSizeBytes(ctx, efp) || chunking.ShouldDiscardLegacyChunkedBlob(ctx, efp, d.GetSizeBytes()) {
 			return status.NotFoundErrorf("ActionResult output file %q not found in cache", digest.String(d))
 		}
 		manifest, err := chunking.LoadManifest(ctx, cache, d, instanceName, digestFunction)

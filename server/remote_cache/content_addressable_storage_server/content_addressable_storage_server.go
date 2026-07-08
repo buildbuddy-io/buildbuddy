@@ -134,9 +134,8 @@ func (s *ContentAddressableStorageServer) FindMissingBlobs(ctx context.Context, 
 
 	// The chunked-manifest fallback lookup is skipped when the caller signals
 	// that these digests are individual content-defined chunks, not whole blobs.
-	// Otherwise, use the same fallback threshold as read paths so blobs chunked
-	// with an older, smaller chunk size still count as present after increasing
-	// the current chunk size.
+	// Otherwise, use the read fallback threshold so old chunked blobs still
+	// count as present, except for the override-only chunk-size migration range.
 	if efp := s.env.GetExperimentFlagProvider(); len(missing) > 0 && !cdc.IsChunked(ctx) && chunking.Enabled(ctx, efp) {
 		checker := chunking.NewMissingChunkChecker(s.cache)
 		chunkedReadFallbackSizeBytes := chunking.MinChunkedReadFallbackSizeBytes(ctx, efp)
@@ -158,7 +157,7 @@ func (s *ContentAddressableStorageServer) FindMissingBlobs(ctx context.Context, 
 		eg, egCtx := errgroup.WithContext(ctx)
 		eg.SetLimit(concurrency)
 		for _, d := range missing {
-			if d.GetSizeBytes() <= chunkedReadFallbackSizeBytes {
+			if d.GetSizeBytes() <= chunkedReadFallbackSizeBytes || chunking.ShouldDiscardLegacyChunkedBlob(ctx, efp, d.GetSizeBytes()) {
 				markMissing(d)
 				continue
 			}

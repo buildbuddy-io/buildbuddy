@@ -588,7 +588,8 @@ func (c *findMissingTrackingCache) FindMissing(ctx context.Context, resources []
 
 type booleanFlagProvider struct {
 	interfaces.ExperimentFlagProvider
-	values map[string]bool
+	values    map[string]bool
+	intValues map[string]int64
 }
 
 func (p booleanFlagProvider) Boolean(ctx context.Context, flagName string, defaultValue bool, opts ...any) bool {
@@ -600,7 +601,25 @@ func (p booleanFlagProvider) Boolean(ctx context.Context, flagName string, defau
 }
 
 func (p booleanFlagProvider) Int64(ctx context.Context, flagName string, defaultValue int64, opts ...any) int64 {
+	v, ok := p.intValues[flagName]
+	if ok {
+		return v
+	}
 	return defaultValue
+}
+
+func TestShouldDiscardLegacyChunkedBlob(t *testing.T) {
+	flags.Set(t, "cache.avg_chunk_size_bytes", 512*1024)
+	flags.Set(t, "cache.min_chunked_read_fallback_size_bytes", 2*1024*1024)
+
+	ctx := context.Background()
+	efp := booleanFlagProvider{intValues: map[string]int64{"cache.avg_chunk_size_override": 1024 * 1024}}
+	assert.False(t, chunking.ShouldDiscardLegacyChunkedBlob(ctx, nil, 3*1024*1024))
+	assert.False(t, chunking.ShouldDiscardLegacyChunkedBlob(ctx, booleanFlagProvider{}, 3*1024*1024))
+	assert.False(t, chunking.ShouldDiscardLegacyChunkedBlob(ctx, efp, 2*1024*1024))
+	assert.True(t, chunking.ShouldDiscardLegacyChunkedBlob(ctx, efp, 3*1024*1024))
+	assert.True(t, chunking.ShouldDiscardLegacyChunkedBlob(ctx, efp, 4*1024*1024))
+	assert.False(t, chunking.ShouldDiscardLegacyChunkedBlob(ctx, efp, 4*1024*1024+1))
 }
 
 func TestEnabled_FallsBackToExperimentFlag(t *testing.T) {
