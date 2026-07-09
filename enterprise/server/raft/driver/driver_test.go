@@ -1371,8 +1371,10 @@ type testReplica struct {
 	replicaID uint64
 	usage     *rfpb.ReplicaUsage
 	// usageErr, when set, makes Usage() fail (Usage() opens a Pebble handle in
-	// production, so a transient error is realistic).
-	usageErr error
+	// production, so a transient error is realistic). By default every call
+	// fails; usageFailures > 0 fails only that many leading calls.
+	usageErr      error
+	usageFailures int
 	// usageCalls counts Usage() invocations. Usage() is expensive (a Pebble
 	// handle open + EstimateDiskUsage), so an evaluation must fetch it once.
 	usageCalls int
@@ -1385,7 +1387,7 @@ func (tr *testReplica) RangeDescriptor() *rfpb.RangeDescriptor {
 }
 func (tr *testReplica) Usage() (*rfpb.ReplicaUsage, error) {
 	tr.usageCalls++
-	if tr.usageErr != nil {
+	if tr.usageErr != nil && (tr.usageFailures == 0 || tr.usageCalls <= tr.usageFailures) {
 		return nil, tr.usageErr
 	}
 	return tr.usage, nil
@@ -2555,6 +2557,66 @@ func TestCountReplicaZoneRepairNotDeferredInCooldown(t *testing.T) {
 	require.NotNil(t, op, "a cross-zone repair move must not be deferred by cooldown")
 	require.Equal(t, "nhid-2", op.from.nhid)
 	require.Equal(t, "nhid-4", op.to.nhid)
+}
+
+// TestEvalCtxDoesNotCacheUsageError confirms a transient Usage() failure is not
+// memoized for the whole pass. Caching it would let an early caller (the split
+// check) poison the later load-based lease/replica evaluations.
+func TestEvalCtxDoesNotCacheUsageError(t *testing.T) {
+	rd := &rfpb.RangeDescriptor{RangeId: 1, Replicas: replicas(1, "nhid-1", "nhid-2", "nhid-3")}
+	usages := []*rfpb.StoreUsage{qpsUsage("nhid-1", "", 0, 0), qpsUsage("nhid-2", "", 0, 0), qpsUsage("nhid-3", "", 0, 0)}
+	rq := newQPSTestQueue(t, usages, rd)
+	repl := &testReplica{
+		rangeID: 1, replicaID: 1,
+		usage:         &rfpb.ReplicaUsage{RaftProposeQps: 42},
+		usageErr:      fmt.Errorf("pebble unavailable"),
+		usageFailures: 1, // only the first call fails
+	}
+	ec := rq.newEvalCtx(repl)
+
+	_, err := ec.replicaUsage()
+	require.Error(t, err, "the first call surfaces the transient failure")
+
+	ru, err := ec.replicaUsage()
+	require.NoError(t, err, "a failed Usage() must not be cached for the pass")
+	require.Equal(t, int64(42), ru.GetRaftProposeQps())
+
+	// The success is memoized: no third fetch.
+	_, err = ec.replicaUsage()
+	require.NoError(t, err)
+	require.Equal(t, 2, repl.usageCalls, "success is cached; only the failure is retried")
+}
+
+// TestCountReplicaDefersHotRangeFromAnySource confirms the hot-range cooldown
+// deferral is a property of the range, not of the source under consideration. A
+// much hotter secondary source must not let a hot range escape the deferral.
+func TestCountReplicaDefersHotRangeFromAnySource(t *testing.T) {
+	ctx := context.Background()
+	rd := &rfpb.RangeDescriptor{
+		RangeId:  1,
+		Replicas: replicas(1, "nhid-1", "nhid-2", "nhid-3"),
+	}
+	withReplicas := func(su *rfpb.StoreUsage, count int64) *rfpb.StoreUsage {
+		su.ReplicaCount = count
+		return su
+	}
+	// nhid-2 is the count-worst source (60 replicas, propose 1000) and nhid-3 is
+	// a far hotter source (propose 10000). The range carries 100 propose QPS —
+	// meaningful against the cluster mean (3000 * 0.02 = 60), but only 1% of
+	// nhid-3's load. A per-source deferral would exempt nhid-3 and count-move the
+	// hot range off it during cooldown; the deferral must cover every source.
+	usages := []*rfpb.StoreUsage{
+		withReplicas(qpsUsage("nhid-1", "", 0, 1000), 30),
+		withReplicas(qpsUsage("nhid-2", "", 0, 1000), 60),
+		withReplicas(qpsUsage("nhid-3", "", 0, 10000), 50),
+		withReplicas(qpsUsage("nhid-4", "", 0, 0), 3),
+	}
+	rq := newQPSTestQueue(t, usages, rd)
+	rq.recordRebalance(ctx, &rebalanceRecord{rangeID: 1, fromNHID: "nhid-1", toNHID: "nhid-4"})
+	require.True(t, rq.inCooldown(1))
+	hot := &testReplica{rangeID: 1, replicaID: 1, usage: &rfpb.ReplicaUsage{RaftProposeQps: 100}}
+	op := rq.findRebalanceReplicaOp(ctx, rd, storemap.CreateStoresWithStats(usages), hot, false)
+	require.Nil(t, op, "a hot range in cooldown must not be count-moved off any source")
 }
 
 // TestFindRebalanceOpsFetchUsageOnce confirms each rebalance evaluation fetches

@@ -615,9 +615,7 @@ type evalCtx struct {
 	rq   *Queue
 	repl IReplica
 
-	usageDone bool
-	usage     *rfpb.ReplicaUsage
-	usageErr  error
+	usage *rfpb.ReplicaUsage
 
 	adjDone bool
 	adj     map[string]pendingAdj
@@ -627,12 +625,21 @@ func (rq *Queue) newEvalCtx(repl IReplica) *evalCtx {
 	return &evalCtx{rq: rq, repl: repl}
 }
 
+// replicaUsage returns the local replica's usage, fetching it at most once per
+// evaluation. Only a success is memoized: Usage() failures are transient (it
+// opens a Pebble handle), and caching one would let an early caller — the
+// split-size check — poison the load-based lease and replica evaluations that
+// follow, silently skipping a rebalance for the whole pass.
 func (e *evalCtx) replicaUsage() (*rfpb.ReplicaUsage, error) {
-	if !e.usageDone {
-		e.usage, e.usageErr = e.repl.Usage()
-		e.usageDone = true
+	if e.usage != nil {
+		return e.usage, nil
 	}
-	return e.usage, e.usageErr
+	ru, err := e.repl.Usage()
+	if err != nil {
+		return nil, err
+	}
+	e.usage = ru
+	return ru, nil
 }
 
 func (e *evalCtx) adjustments() map[string]pendingAdj {
@@ -1855,18 +1862,22 @@ func (rq *Queue) findRebalanceReplicaOpLoaded(ctx context.Context, rd *rfpb.Rang
 	if ru, err := ec.replicaUsage(); err == nil {
 		rangeProposeQPS = ru.GetRaftProposeQps()
 	}
+	// Hot-range deferral: a range carrying meaningful apply load that just had a
+	// load-based move is the load controller's to manage, so a count move of it
+	// during its cooldown would undo that (snapshot-costly) work. Whether the
+	// range is "hot" is a property of the range, so this is measured against the
+	// cluster's propose mean and computed once — not per candidate source. (An
+	// earlier per-source form let a range escape the deferral simply because the
+	// source under consideration was very hot, which made its load look
+	// insignificant by comparison.) It is applied per-target below, because
+	// urgent moves (disk-full evacuation, cross-zone repair) are exempt. The
+	// rangeProposeQPS > 0 guard matters: without it an idle range in an idle
+	// cluster hits the 0 >= minFraction*0 edge and gets wrongly deferred.
+	deferHotRange := loadBased && proposeSignal &&
+		rq.inCooldown(rd.GetRangeId()) && rangeProposeQPS > 0 &&
+		float64(rangeProposeQPS) >= p.minReplicaLoadFraction*storesWithStats.RaftProposeQPS.Mean
 	for _, bestSource := range srcs {
 		sourceOverfull := bestSource.usage.ReplicaCount >= overfullThreshold
-		// Hot-range deferral: a range carrying meaningful apply load that just
-		// had a load-based move is the load controller's to manage, so a count
-		// move of it during its cooldown would undo that (snapshot-costly) work.
-		// Applied per-target below, because urgent moves (disk-full evacuation,
-		// cross-zone repair) are exempt. The rangeProposeQPS > 0 guard matters:
-		// without it an idle range on an idle source hits the 0 >= minFraction*0
-		// edge and gets wrongly deferred.
-		deferHotRange := loadBased && proposeSignal && !bestSource.fullDisk &&
-			rq.inCooldown(rd.GetRangeId()) && rangeProposeQPS > 0 &&
-			float64(rangeProposeQPS) >= p.minReplicaLoadFraction*float64(bestSource.proposeQPS)
 		for _, bestTarget := range tgts {
 			sourceZoneCount := replicasByZone[bestSource.usage.GetNode().GetZone()]
 			targetZoneCount := replicasByZone[bestTarget.usage.GetNode().GetZone()]
