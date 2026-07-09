@@ -40,6 +40,20 @@ var zone = []string{
 	"*.aws.buildbuddy.io. 60 IN CNAME elb.amazonaws.example.",
 	"www.buildbuddy.io. 60 IN CNAME external.github.io.",
 	"alias.buildbuddy.io. 60 IN CNAME cache.buildbuddy.io.",
+
+	// A second, independent zone, to exercise multi-zone routing. It has its
+	// own SOA (which must anchor negative answers for names under it) and, with
+	// no covering wildcard, a name it doesn't hold is a true in-zone NXDOMAIN.
+	"buildbuddy.dev. 60 IN SOA ns1.example. host.example. 1 21600 3600 259200 300",
+	"buildbuddy.dev. 60 IN A 5.6.7.8",
+	"cache.buildbuddy.dev. 60 IN A 5.6.7.9",
+
+	// A child zone nested under buildbuddy.io. with its own SOA. Both zones
+	// enclose names at and under sub.buildbuddy.io., so it exercises the
+	// most-specific-wins apex sort: the child's SOA, not the parent's, must
+	// anchor negative answers here.
+	"sub.buildbuddy.io. 60 IN SOA ns1.example. host.example. 1 21600 3600 259200 300",
+	"sub.buildbuddy.io. 60 IN A 7.7.7.7",
 }
 
 func mustRecords(tb testing.TB) []dns.RR {
@@ -288,8 +302,10 @@ func TestASNRoutingOnlyOverridesServedNames(t *testing.T) {
 	assert.Equal(t, dns.RcodeSuccess, m.Rcode)
 	assert.Equal(t, []answer{{"cache.buildbuddy.io.", "A", "10.20.30.40"}}, answers(m.Answer))
 
-	// A name with no zone record stays NXDOMAIN; the override does not invent it.
-	m = queryFromIP(t, h, "nope.example.com.", dns.TypeA, "8.8.8.8")
+	// An in-zone name with no record stays NXDOMAIN; the override does not
+	// invent it. (buildbuddy.dev. has no covering wildcard, so this is a real
+	// in-zone miss rather than a wildcard hit.)
+	m = queryFromIP(t, h, "nope.buildbuddy.dev.", dns.TypeA, "8.8.8.8")
 	assert.Equal(t, dns.RcodeNameError, m.Rcode)
 	assert.Empty(t, m.Answer)
 
@@ -778,12 +794,54 @@ func TestNODATA(t *testing.T) {
 
 func TestNXDOMAIN(t *testing.T) {
 	h := newTestHandler(t)
-	// A name covered by no record and no wildcard: NXDOMAIN, SOA in authority.
-	m := query(t, h, "absent.example.com.", dns.TypeA)
+	// An in-zone name covered by no record and no wildcard: NXDOMAIN, with the
+	// enclosing zone's own SOA in authority for negative caching.
+	m := query(t, h, "absent.buildbuddy.dev.", dns.TypeA)
 	assert.Equal(t, dns.RcodeNameError, m.Rcode)
 	assert.Empty(t, m.Answer)
 	require.Len(t, m.Ns, 1)
 	assert.Equal(t, dns.TypeSOA, m.Ns[0].Header().Rrtype)
+	assert.Equal(t, "buildbuddy.dev.", m.Ns[0].Header().Name)
+}
+
+func TestRefusedOutOfZone(t *testing.T) {
+	h := newTestHandler(t)
+	// A name under none of our zones: we are not authoritative for it, so
+	// REFUSED -- and no SOA, since there is no zone to anchor a negative answer.
+	m := query(t, h, "absent.example.com.", dns.TypeA)
+	assert.Equal(t, dns.RcodeRefused, m.Rcode)
+	assert.False(t, m.Authoritative)
+	assert.Empty(t, m.Answer)
+	assert.Empty(t, m.Ns)
+}
+
+func TestNestedZoneUsesMostSpecificSOA(t *testing.T) {
+	h := newTestHandler(t)
+	// sub.buildbuddy.io. is a child zone nested under buildbuddy.io.; both
+	// enclose this name. The most-specific zone (the child) must anchor the
+	// negative answer, which is exactly what the apex-length sort in NewHandler
+	// guarantees -- without it, whichever SOA sorted first would win. The child
+	// apex has an A but no AAAA, so an AAAA query is NODATA there.
+	m := query(t, h, "sub.buildbuddy.io.", dns.TypeAAAA)
+	assert.Equal(t, dns.RcodeSuccess, m.Rcode)
+	assert.Empty(t, m.Answer)
+	require.Len(t, m.Ns, 1)
+	assert.Equal(t, dns.TypeSOA, m.Ns[0].Header().Rrtype)
+	assert.Equal(t, "sub.buildbuddy.io.", m.Ns[0].Header().Name)
+}
+
+func TestNegativeAnswerUsesEnclosingZoneSOA(t *testing.T) {
+	h := newTestHandler(t)
+	// NODATA in each zone must carry that zone's own SOA, never another zone's.
+	// Both apexes have an A but no AAAA, so an AAAA query is NODATA at the apex.
+	for _, apex := range []string{"buildbuddy.io.", "buildbuddy.dev."} {
+		m := query(t, h, apex, dns.TypeAAAA)
+		assert.Equal(t, dns.RcodeSuccess, m.Rcode, apex)
+		assert.Empty(t, m.Answer, apex)
+		require.Len(t, m.Ns, 1, apex)
+		assert.Equal(t, dns.TypeSOA, m.Ns[0].Header().Rrtype, apex)
+		assert.Equal(t, apex, m.Ns[0].Header().Name)
+	}
 }
 
 func TestMultipleRecords(t *testing.T) {

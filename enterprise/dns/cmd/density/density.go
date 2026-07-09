@@ -32,8 +32,8 @@ var (
 	serverType     = flag.String("server_type", "dns-server", "The server type to match on health checks")
 	monitoringAddr = flag.String("monitoring.listen", ":9090", "Address to listen for monitoring traffic on")
 
-	dnsPort  = flag.Int("dns.port", 53, "The port to listen for DNS traffic on")
-	zoneFile = flag.String("dns.zone_file", "", "Path to a zone file containing the DNS records to serve")
+	dnsPort   = flag.Int("dns.port", 53, "The port to listen for DNS traffic on")
+	zoneFiles = flag.Slice[string]("dns.zone_file", []string{}, "Path to a zone file to serve. Repeat the flag to serve records from multiple zones (each file's SOA anchors negative answers for names under its apex).")
 
 	// Self-hosted ACME DNS-01: when dns.acme.gcs.bucket is set, density accepts
 	// RFC2136 UPDATEs for _acme-challenge TXT records (authenticated by the TSIG
@@ -118,13 +118,35 @@ func main() {
 	env.GetHealthChecker().WaitForGracefulShutdown()
 }
 
-func startDNSServer(env *real_environment.RealEnv) error {
-	if *zoneFile == "" {
-		return status.FailedPreconditionError("a --dns.zone_file must be configured")
+// hasSOA reports whether rrs contains an SOA record, which a valid zone file
+// must define at its apex.
+func hasSOA(rrs []dns.RR) bool {
+	for _, rr := range rrs {
+		if rr.Header().Rrtype == dns.TypeSOA {
+			return true
+		}
 	}
-	records, err := server.ParseZoneFile(*zoneFile)
-	if err != nil {
-		return status.WrapErrorf(err, "parse zone file %q", *zoneFile)
+	return false
+}
+
+func startDNSServer(env *real_environment.RealEnv) error {
+	if len(*zoneFiles) == 0 {
+		return status.FailedPreconditionError("at least one --dns.zone_file must be configured")
+	}
+	var records []dns.RR
+	for _, zoneFile := range *zoneFiles {
+		rrs, err := server.ParseZoneFile(zoneFile)
+		if err != nil {
+			return status.WrapErrorf(err, "parse zone file %q", zoneFile)
+		}
+		// Every zone file must define an SOA at its apex. Without one, the zone
+		// contributes no apex, so its names route to no zone and are answered
+		// REFUSED even though their records loaded -- a silent, confusing
+		// failure. Refuse to start instead.
+		if !hasSOA(rrs) {
+			return status.FailedPreconditionErrorf("zone file %q has no SOA record; every zone file must define an SOA at its apex", zoneFile)
+		}
+		records = append(records, rrs...)
 	}
 
 	// Self-hosted ACME (RFC2136 UPDATE + blobstore-backed challenge store) is

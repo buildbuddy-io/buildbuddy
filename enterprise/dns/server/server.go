@@ -6,6 +6,7 @@ import (
 	"net/netip"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -50,15 +51,13 @@ const (
 type handler struct {
 	records map[string][]dns.RR
 
-	// soa is the zone's SOA record. We attach it to "no such answer" responses
-	// (the name doesn't exist, or has no record of the requested type); it
-	// tells the asking resolver how long it may remember that negative result
-	// instead of re-asking us every time. Nil if the zone file has no SOA.
-	soa dns.RR
-
-	// apex is the canonical zone apex (the SOA owner), used to recognize in-zone
-	// names. Empty if the zone file has no SOA.
-	apex string
+	// zones are the authoritative zones we serve (one per SOA record), sorted
+	// most-specific first so the first apex that encloses a queried name is the
+	// closest one. Each carries the SOA we attach to negative answers for names
+	// under it, and its apex lets us recognize which names we're authoritative
+	// for. Empty when no zone file supplied an SOA, in which case zone
+	// membership is not enforced (see zoneFor).
+	zones []zone
 
 	// acme, when non-nil, makes this server self-host ACME DNS-01 validation:
 	// it accepts RFC2136 UPDATEs for in-zone _acme-challenge.* TXT records and
@@ -66,6 +65,27 @@ type handler struct {
 	acme *Challenges
 
 	env environment.Env
+}
+
+// zone is a single authoritative zone: its apex (the canonical SOA owner) and
+// the SOA record itself. The SOA is attached to negative answers for names in
+// the zone so resolvers can negatively cache them under the right authority.
+type zone struct {
+	apex string
+	soa  dns.RR
+}
+
+// zoneFor returns the zone most specifically enclosing name (the longest apex
+// that is a suffix of name), or nil if name falls under none of our zones. It
+// also returns nil when we serve no zones at all (no SOA was loaded); callers
+// treat that as "membership not enforced" and fall back to plain record lookup.
+func (h *handler) zoneFor(name string) *zone {
+	for i := range h.zones {
+		if dns.IsSubDomain(h.zones[i].apex, name) {
+			return &h.zones[i]
+		}
+	}
+	return nil
 }
 
 func (h *handler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
@@ -116,6 +136,22 @@ func (h *handler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 	qName := dns.CanonicalName(r.Question[0].Name)
 	qType := r.Question[0].Qtype
 
+	// Route the name to its enclosing zone once, up front: it selects the SOA
+	// for any negative answer below, and decides authority. If we serve zones
+	// but this name is under none of them, we are not authoritative for it, so
+	// answer REFUSED rather than an NXDOMAIN we have no zone SOA to anchor. When
+	// no zones are configured, zoneFor is nil for everything and this gate is
+	// skipped -- resolution proceeds over the records as an SOA-less set.
+	z := h.zoneFor(qName)
+	if len(h.zones) > 0 && z == nil {
+		m.Rcode = dns.RcodeRefused
+		m.Authoritative = false
+		if err := w.WriteMsg(m); err != nil {
+			log.Warningf("Failed to write REFUSED DNS response for %q: %s", qName, err)
+		}
+		return
+	}
+
 	// Self-hosted ACME: answer in-zone _acme-challenge.* names from the
 	// blobstore-backed store (records are set/removed via RFC2136 UPDATE). A name
 	// with a current value is answered; one without is authoritative NODATA.
@@ -131,8 +167,8 @@ func (h *handler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 				return
 			}
 		}
-		if h.soa != nil {
-			m.Ns = append(m.Ns, h.soa)
+		if z != nil && z.soa != nil {
+			m.Ns = append(m.Ns, z.soa)
 		}
 		if err := w.WriteMsg(m); err != nil {
 			log.Warningf("Failed to write ACME challenge NODATA for %q: %s", qName, err)
@@ -158,10 +194,10 @@ func (h *handler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 	}
 
 	// On a negative answer (NXDOMAIN, or NODATA: name exists but has no record
-	// of the requested type), include the zone SOA in the authority section so
-	// resolvers can negatively cache it.
-	if negative && h.soa != nil {
-		m.Ns = append(m.Ns, h.soa)
+	// of the requested type), include the enclosing zone's SOA in the authority
+	// section so resolvers can negatively cache it.
+	if negative && z != nil && z.soa != nil {
+		m.Ns = append(m.Ns, z.soa)
 	}
 
 	if err := w.WriteMsg(m); err != nil {
@@ -332,11 +368,12 @@ func (h *handler) lookup(name string) ([]dns.RR, bool) {
 }
 
 // isACMEChallengeName reports whether name is an in-zone ACME DNS-01 validation
-// name (leftmost label _acme-challenge, under the apex). name is canonicalized
-// (lowercase, fqdn) by ServeDNS and acmeChallengePrefix is lowercase, so the
-// prefix check identifies the leftmost label without allocating.
+// name (leftmost label _acme-challenge, under one of our zone apexes). name is
+// canonicalized (lowercase, fqdn) by ServeDNS and acmeChallengePrefix is
+// lowercase, so the prefix check identifies the leftmost label without
+// allocating.
 func (h *handler) isACMEChallengeName(name string) bool {
-	return h.apex != "" && strings.HasPrefix(name, acmeChallengePrefix) && dns.IsSubDomain(h.apex, name)
+	return strings.HasPrefix(name, acmeChallengePrefix) && h.zoneFor(name) != nil
 }
 
 // txtRecords builds a TXT RRset owned by name from the given string values.
@@ -541,22 +578,26 @@ func addrFromNetAddr(a net.Addr) netip.Addr {
 // _acme-challenge TXT records and answers queries for them from it.
 func NewHandler(env environment.Env, resources []dns.RR, acme *Challenges) dns.Handler {
 	records := make(map[string][]dns.RR, len(resources))
-	var soa dns.RR
+	var zones []zone
 	for _, rr := range resources {
 		name := dns.CanonicalName(rr.Header().Name)
 		records[name] = append(records[name], rr)
-		if rr.Header().Rrtype == dns.TypeSOA && soa == nil {
-			soa = rr
+		// Each zone file contributes one SOA at its apex; several files (several
+		// zones) contribute several. Later routing picks the closest enclosing
+		// one per query.
+		if rr.Header().Rrtype == dns.TypeSOA {
+			zones = append(zones, zone{apex: name, soa: rr})
 		}
 	}
-	apex := ""
-	if soa != nil {
-		apex = dns.CanonicalName(soa.Header().Name)
-	}
+	// Sort most-specific first (descending apex label count) so zoneFor's first
+	// suffix match is the closest enclosing zone -- e.g. a query under a child
+	// zone sub.example.com. is anchored on its SOA, not the parent example.com.
+	sort.SliceStable(zones, func(i, j int) bool {
+		return dns.CountLabel(zones[i].apex) > dns.CountLabel(zones[j].apex)
+	})
 	return &handler{
 		records: records,
-		soa:     soa,
-		apex:    apex,
+		zones:   zones,
 		acme:    acme,
 		env:     env,
 	}
