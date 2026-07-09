@@ -1373,6 +1373,9 @@ type testReplica struct {
 	// usageErr, when set, makes Usage() fail (Usage() opens a Pebble handle in
 	// production, so a transient error is realistic).
 	usageErr error
+	// usageCalls counts Usage() invocations. Usage() is expensive (a Pebble
+	// handle open + EstimateDiskUsage), so an evaluation must fetch it once.
+	usageCalls int
 }
 
 func (tr *testReplica) RangeID() uint64   { return tr.rangeID }
@@ -1381,6 +1384,7 @@ func (tr *testReplica) RangeDescriptor() *rfpb.RangeDescriptor {
 	return &rfpb.RangeDescriptor{RangeId: tr.rangeID}
 }
 func (tr *testReplica) Usage() (*rfpb.ReplicaUsage, error) {
+	tr.usageCalls++
 	if tr.usageErr != nil {
 		return nil, tr.usageErr
 	}
@@ -2551,6 +2555,53 @@ func TestCountReplicaZoneRepairNotDeferredInCooldown(t *testing.T) {
 	require.NotNil(t, op, "a cross-zone repair move must not be deferred by cooldown")
 	require.Equal(t, "nhid-2", op.from.nhid)
 	require.Equal(t, "nhid-4", op.to.nhid)
+}
+
+// TestFindRebalanceOpsFetchUsageOnce confirms each rebalance evaluation fetches
+// the local replica's usage at most once. Usage() opens a Pebble handle and runs
+// EstimateDiskUsage on every call, and several code paths in one evaluation need
+// it (the load path, then the count fallback).
+func TestFindRebalanceOpsFetchUsageOnce(t *testing.T) {
+	ctx := context.Background()
+	rd := &rfpb.RangeDescriptor{
+		RangeId:  1,
+		Replicas: replicas(1, "nhid-1", "nhid-2", "nhid-3"),
+	}
+	withReplicas := func(su *rfpb.StoreUsage, count int64) *rfpb.StoreUsage {
+		su.ReplicaCount = count
+		return su
+	}
+	withLeases := func(su *rfpb.StoreUsage, leases int64) *rfpb.StoreUsage {
+		su.LeaseCount = leases
+		return su
+	}
+
+	// Replica lever: propose signal is present so the load path runs (and finds
+	// nothing), then the count fallback runs. Both need the range's usage.
+	replicaUsages := []*rfpb.StoreUsage{
+		withReplicas(qpsUsage("nhid-1", "", 0, 1000), 30),
+		withReplicas(qpsUsage("nhid-2", "", 0, 100), 60),
+		withReplicas(qpsUsage("nhid-3", "", 0, 100), 30),
+		withReplicas(qpsUsage("nhid-4", "", 0, 200), 3),
+		withReplicas(qpsUsage("nhid-5", "", 0, 0), 4),
+	}
+	rq := newQPSTestQueue(t, replicaUsages, rd)
+	repl := &testReplica{rangeID: 1, replicaID: 1, usage: &rfpb.ReplicaUsage{RaftProposeQps: 200}}
+	rq.findRebalanceReplicaOp(ctx, rd, storemap.CreateStoresWithStats(replicaUsages), repl, false)
+	require.Equal(t, 1, repl.usageCalls, "findRebalanceReplicaOp must fetch Usage() once")
+
+	// Lease lever: read signal is present so the QPS lease path runs (and finds
+	// nothing), then the count lease fallback runs. Both need the usage.
+	leaseUsages := []*rfpb.StoreUsage{
+		withLeases(qpsUsage("nhid-1", "", 250, 0), 60),
+		withLeases(qpsUsage("nhid-2", "", 300, 0), 5),
+		withLeases(qpsUsage("nhid-3", "", 250, 0), 10),
+		withLeases(qpsUsage("nhid-4", "", 250, 0), 45),
+	}
+	rq = newQPSTestQueue(t, leaseUsages, rd)
+	leaseRepl := &testReplica{rangeID: 1, replicaID: 1, usage: &rfpb.ReplicaUsage{ReadQps: 100}}
+	rq.findRebalanceLeaseOp(ctx, rd, leaseRepl)
+	require.Equal(t, 1, leaseRepl.usageCalls, "findRebalanceLeaseOp must fetch Usage() once")
 }
 
 // TestRebalanceReplicaRecordsCooldownOnUsageError confirms an applied replica
