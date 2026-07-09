@@ -300,7 +300,7 @@ func (h *Handler) handle(ctx context.Context, memoryStore *copy_on_write.COWStor
 		// * There is a page fault. The faulting CPU is blocked until the page fault is resolved
 		// with UFFDIO_COPY or UFFDIO_ZEROPAGE.
 		// * UFFDIO_COPY fails with EAGAIN. This is usually because there is an unread remove event in the event queue
-		// (remove events should always be handled before page faults).
+		// (remove events should always be handled before page faults: https://github.com/firecracker-microvm/firecracker/issues/4990#issuecomment-2624922715).
 		// * `processEvents` defers the page fault to be retried later, until after the remove event has been read.
 		// * We read the remove event from the event queue. However the kernel state that causes EAGAIN is
 		// only cleared *after* the remove event has been consumed.
