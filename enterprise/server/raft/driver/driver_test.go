@@ -1162,11 +1162,11 @@ func TestRebalanceReplica(t *testing.T) {
 		},
 		{
 			// 3 zones with balanced distribution (1-1-1). No zone
-			// rebalance is triggered. Normal rebalancing still applies:
-			// source is picked from {nhid-2, nhid-3} (both above mean,
-			// tied) and target from {nhid-4, nhid-5} (both below mean,
-			// tied); the rendezvous tie-breaker resolves to nhid-3 and
-			// nhid-4 respectively.
+			// rebalance is triggered. A normal count move must preserve
+			// zone diversity: the only diversity-preserving move is
+			// nhid-2 (zone-b) -> nhid-5 (zone-b), a same-zone move.
+			// nhid-3 (zone-c) has no zone-c target, so every move off it
+			// would drop zone-c to 0 and is skipped by zonePairOK.
 			desc: "3-zones-balanced-normal-rebalance",
 			rd: &rfpb.RangeDescriptor{
 				RangeId:  2,
@@ -1180,8 +1180,8 @@ func TestRebalanceReplica(t *testing.T) {
 				usage("nhid-5", "zone-b", 100, 100, 900),
 			},
 			expected: &rebalanceOp{
-				from: &candidate{nhid: "nhid-3"},
-				to:   &candidate{nhid: "nhid-4"},
+				from: &candidate{nhid: "nhid-2"},
+				to:   &candidate{nhid: "nhid-5"},
 			},
 		},
 		{
@@ -2457,4 +2457,92 @@ func TestCountLeaseGatedByCooldown(t *testing.T) {
 	require.True(t, rq.inCooldown(1))
 	res = rq.findRebalanceLeaseOp(ctx, rd, localRepl)
 	require.Nil(t, res.op, "a range in cooldown must not take a count lease move (read blip)")
+}
+
+// TestCountReplicaPreservesZoneDiversity confirms the count fallback won't move
+// a replica into a zone that already holds as many of the range's replicas as
+// the source's zone (which would drop a fault domain); it picks the same-zone
+// count-underfull target instead.
+func TestCountReplicaPreservesZoneDiversity(t *testing.T) {
+	ctx := context.Background()
+	rd := &rfpb.RangeDescriptor{
+		RangeId:  1,
+		Replicas: replicas(1, "nhid-1", "nhid-2", "nhid-3"),
+	}
+	withReplicas := func(su *rfpb.StoreUsage, count int64) *rfpb.StoreUsage {
+		su.ReplicaCount = count
+		return su
+	}
+	// Replicas: nhid-1 (zone-A, local), nhid-2 (zone-B), nhid-3 (zone-C,
+	// count-overfull -> bestSource). Targets: nhid-4 (zone-B, most count-
+	// underfull) and nhid-5 (zone-C, count-underfull). Moving nhid-3 (C) to
+	// nhid-4 (B) would drop zone C to 0 and give B two -> zonePairOK must skip
+	// it; the same-zone nhid-5 (C->C) preserves diversity and is chosen.
+	usages := []*rfpb.StoreUsage{
+		withReplicas(qpsUsage("nhid-1", "zone-A", 0, 0), 30),
+		withReplicas(qpsUsage("nhid-2", "zone-B", 0, 0), 30),
+		withReplicas(qpsUsage("nhid-3", "zone-C", 0, 0), 60),
+		withReplicas(qpsUsage("nhid-4", "zone-B", 0, 0), 3),
+		withReplicas(qpsUsage("nhid-5", "zone-C", 0, 0), 4),
+	}
+	rq := newQPSTestQueue(t, usages, rd)
+	localRepl := &testReplica{rangeID: 1, replicaID: 1, usage: &rfpb.ReplicaUsage{}}
+	op := rq.findRebalanceReplicaOp(ctx, rd, storemap.CreateStoresWithStats(usages), localRepl, false)
+	require.NotNil(t, op)
+	require.Equal(t, "nhid-3", op.from.nhid)
+	require.Equal(t, "nhid-5", op.to.nhid, "must not move into zone-B (would drop zone-C); use same-zone nhid-5")
+}
+
+// TestCountReplicaZoneRepairBypassesQPSVeto confirms a cross-zone repair move
+// is not blocked by the count QPS veto: even a QPS-hot target is used when the
+// move improves fault-domain spread (master moved unconditionally).
+func TestCountReplicaZoneRepairBypassesQPSVeto(t *testing.T) {
+	ctx := context.Background()
+	rd := &rfpb.RangeDescriptor{
+		RangeId:  1,
+		Replicas: replicas(1, "nhid-1", "nhid-2", "nhid-3"),
+	}
+	// zone-1 holds two replicas (nhid-1 local, nhid-2), zone-2 one (nhid-3).
+	// The only target that improves spread is nhid-4 in zone-3, and it is
+	// read-hot. The move must still happen (zone repair is urgent).
+	usages := []*rfpb.StoreUsage{
+		qpsUsage("nhid-1", "zone-1", 200, 0),
+		qpsUsage("nhid-2", "zone-1", 200, 0),
+		qpsUsage("nhid-3", "zone-2", 200, 0),
+		qpsUsage("nhid-4", "zone-3", 5000, 0),
+	}
+	rq := newQPSTestQueue(t, usages, rd)
+	localRepl := &testReplica{rangeID: 1, replicaID: 1, usage: &rfpb.ReplicaUsage{}}
+	op := rq.findRebalanceReplicaOp(ctx, rd, storemap.CreateStoresWithStats(usages), localRepl, false)
+	require.NotNil(t, op, "a cross-zone repair move must not be blocked by the QPS veto")
+	require.Equal(t, "nhid-2", op.from.nhid)
+	require.Equal(t, "nhid-4", op.to.nhid)
+}
+
+// TestCountReplicaZoneRepairNotDeferredInCooldown confirms a cross-zone repair
+// move happens even for a hot range in cooldown (urgent moves bypass the
+// hot-range deferral).
+func TestCountReplicaZoneRepairNotDeferredInCooldown(t *testing.T) {
+	ctx := context.Background()
+	rd := &rfpb.RangeDescriptor{
+		RangeId:  1,
+		Replicas: replicas(1, "nhid-1", "nhid-2", "nhid-3"),
+	}
+	// zone-1 over-represented (nhid-1 local, nhid-2); zone-3 target nhid-4
+	// improves spread. The range is hot and in cooldown, but zone repair is
+	// urgent so it must still move.
+	usages := []*rfpb.StoreUsage{
+		qpsUsage("nhid-1", "zone-1", 0, 1000),
+		qpsUsage("nhid-2", "zone-1", 0, 1000),
+		qpsUsage("nhid-3", "zone-2", 0, 1000),
+		qpsUsage("nhid-4", "zone-3", 0, 0),
+	}
+	rq := newQPSTestQueue(t, usages, rd)
+	rq.recordRebalance(ctx, &rebalanceRecord{rangeID: 1, fromNHID: "nhid-1", toNHID: "nhid-3"})
+	require.True(t, rq.inCooldown(1))
+	hot := &testReplica{rangeID: 1, replicaID: 1, usage: &rfpb.ReplicaUsage{RaftProposeQps: 300}}
+	op := rq.findRebalanceReplicaOp(ctx, rd, storemap.CreateStoresWithStats(usages), hot, false)
+	require.NotNil(t, op, "a cross-zone repair move must not be deferred by cooldown")
+	require.Equal(t, "nhid-2", op.from.nhid)
+	require.Equal(t, "nhid-4", op.to.nhid)
 }

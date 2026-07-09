@@ -1811,17 +1811,17 @@ func (rq *Queue) findRebalanceReplicaOpLoaded(ctx context.Context, rd *rfpb.Rang
 	}
 
 	sortFunc := compareByZoneAndScore(replicasByZone)
-	// MinFunc picks the worst source (best to evict).
-	bestSource := slices.MinFunc(sources, sortFunc)
-	// Consider targets best-first. The QPS vetoes below may skip the
-	// count-best target; fall through to the next-best rather than abandoning
-	// the move, so a single hot store can't stall count convergence.
+	// Consider sources worst-first and targets best-first, and take the first
+	// (source, target) pair that passes every gate. Iterating sources — not
+	// just the single worst one — lets the count path still find a move when
+	// the worst source can't relocate without reducing zone diversity.
+	srcs := slices.Clone(sources)
+	slices.SortFunc(srcs, sortFunc) // worst (best to evict) first
 	tgts := slices.Clone(targets)
 	slices.SortFunc(tgts, sortFunc)
 	slices.Reverse(tgts) // best target first
 	overfullThreshold := int64(math.Ceil(aboveMeanReplicaCountThreshold(storesWithStats.ReplicaCount.Mean)))
 	underfullThreshold := int64(math.Floor(belowMeanReplicaCountThreshold(storesWithStats.ReplicaCount.Mean)))
-	sourceOverfull := bestSource.usage.ReplicaCount >= overfullThreshold
 	// The apply load this range would carry onto a target — every replica
 	// applies the same entries, so the local replica's propose QPS ≈ the load
 	// each follower bears. Used for the post-move QPS-neutral check below and
@@ -1831,50 +1831,71 @@ func (rq *Queue) findRebalanceReplicaOpLoaded(ctx context.Context, rd *rfpb.Rang
 	if ru, err := localRepl.Usage(); err == nil {
 		rangeProposeQPS = ru.GetRaftProposeQps()
 	}
-	// Hot-range deferral: a range carrying meaningful apply load that just had a
-	// load-based move is the load controller's to manage. A count move of it
-	// during its cooldown would undo that (snapshot-costly) work, so leave it
-	// alone; cold ranges may still be count-moved during cooldown, and a
-	// disk-full source is never deferred (evacuation wins). The rangeProposeQPS
-	// > 0 guard matters: without it an idle range on an idle source hits the
-	// 0 >= minFraction*0 edge and gets wrongly deferred.
-	if loadBased && proposeSignal && !bestSource.fullDisk &&
-		rq.inCooldown(rd.GetRangeId()) && rangeProposeQPS > 0 &&
-		float64(rangeProposeQPS) >= p.minReplicaLoadFraction*float64(bestSource.proposeQPS) {
-		return nil
-	}
-	for _, bestTarget := range tgts {
-		sourceZoneCount := replicasByZone[bestSource.usage.GetNode().GetZone()]
-		targetZoneCount := replicasByZone[bestTarget.usage.GetNode().GetZone()]
-		// If the difference between zone counts is 1 or less, a move can't
-		// help zone balance.
-		moveAcrossZones := sourceZoneCount-targetZoneCount >= 2
-		// Worth-it gate: move only if the source is disk-full, the move
-		// improves zone balance, the source is count-overfull, or this target
-		// is count-underfull.
-		if !bestSource.fullDisk && !moveAcrossZones && !sourceOverfull &&
-			bestTarget.usage.ReplicaCount >= underfullThreshold {
-			continue
-		}
-		// Count-based moves must not undo load balance: skip a target that's
-		// hot on either QPS dimension and try the next-best. The propose check
-		// is post-move — it counts the apply load this move would *add*
-		// (tgt.proposeQPS + rangeProposeQPS), so count never re-heats a store
-		// the load controller just cooled. The read check stays pre-move: a
-		// replica move adds no read load; it just avoids stacking apply load
-		// onto an already read-hot store's CPU. A disk-full source is exempt —
-		// evacuating it outranks load balance.
-		if loadBased && !bestSource.fullDisk {
-			if readSignal && float64(bestTarget.readQPS) > aboveMeanQPSThreshold(p, storesWithStats.ReadQPS.Mean) {
+	for _, bestSource := range srcs {
+		sourceOverfull := bestSource.usage.ReplicaCount >= overfullThreshold
+		// Hot-range deferral: a range carrying meaningful apply load that just
+		// had a load-based move is the load controller's to manage, so a count
+		// move of it during its cooldown would undo that (snapshot-costly) work.
+		// Applied per-target below, because urgent moves (disk-full evacuation,
+		// cross-zone repair) are exempt. The rangeProposeQPS > 0 guard matters:
+		// without it an idle range on an idle source hits the 0 >= minFraction*0
+		// edge and gets wrongly deferred.
+		deferHotRange := loadBased && proposeSignal && !bestSource.fullDisk &&
+			rq.inCooldown(rd.GetRangeId()) && rangeProposeQPS > 0 &&
+			float64(rangeProposeQPS) >= p.minReplicaLoadFraction*float64(bestSource.proposeQPS)
+		for _, bestTarget := range tgts {
+			sourceZoneCount := replicasByZone[bestSource.usage.GetNode().GetZone()]
+			targetZoneCount := replicasByZone[bestTarget.usage.GetNode().GetZone()]
+			// If the difference between zone counts is 1 or less, a move can't
+			// help zone balance.
+			moveAcrossZones := sourceZoneCount-targetZoneCount >= 2
+			// A disk-full evacuation or a cross-zone repair is urgent: it must
+			// proceed regardless of the QPS-neutral guards below, matching the
+			// pre-load-based behavior. A range must not stay under-diversified
+			// across fault domains just because a target is QPS-hot or in
+			// cooldown.
+			urgent := bestSource.fullDisk || moveAcrossZones
+			// Never reduce fault-domain diversity: don't move a replica into a
+			// zone that already holds as many of this range's replicas as the
+			// source's zone (the QPS paths enforce this via zonePairOK; the
+			// count path must too). A disk-full source is exempt — evacuation
+			// outranks diversity, and targets are tried zone-best-first so it
+			// still prefers a good one.
+			if !bestSource.fullDisk && !zonePairOK(replicasByZone, bestSource, bestTarget) {
 				continue
 			}
-			if proposeSignal && float64(bestTarget.proposeQPS)+float64(rangeProposeQPS) > aboveMeanQPSThreshold(p, storesWithStats.RaftProposeQPS.Mean) {
+			// Worth-it gate: move only if the source is disk-full, the move
+			// improves zone balance, the source is count-overfull, or this
+			// target is count-underfull.
+			if !bestSource.fullDisk && !moveAcrossZones && !sourceOverfull &&
+				bestTarget.usage.ReplicaCount >= underfullThreshold {
 				continue
 			}
-		}
-		return &rebalanceOp{
-			from: bestSource,
-			to:   bestTarget,
+			// Hot-range cooldown deferral, skipped for urgent moves so zone
+			// repair and disk evacuation still happen during a range's cooldown.
+			if deferHotRange && !urgent {
+				continue
+			}
+			// Count-based moves must not undo load balance: skip a target that's
+			// hot on either QPS dimension and try the next-best. The propose
+			// check is post-move — it counts the apply load this move would
+			// *add* (tgt.proposeQPS + rangeProposeQPS), so count never re-heats
+			// a store the load controller just cooled. The read check stays
+			// pre-move: a replica move adds no read load; it just avoids
+			// stacking apply load onto an already read-hot store's CPU. Urgent
+			// moves are exempt.
+			if loadBased && !urgent {
+				if readSignal && float64(bestTarget.readQPS) > aboveMeanQPSThreshold(p, storesWithStats.ReadQPS.Mean) {
+					continue
+				}
+				if proposeSignal && float64(bestTarget.proposeQPS)+float64(rangeProposeQPS) > aboveMeanQPSThreshold(p, storesWithStats.RaftProposeQPS.Mean) {
+					continue
+				}
+			}
+			return &rebalanceOp{
+				from: bestSource,
+				to:   bestTarget,
+			}
 		}
 	}
 	return nil
