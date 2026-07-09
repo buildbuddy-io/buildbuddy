@@ -564,17 +564,21 @@ func NewHandler(env environment.Env, resources []dns.RR, acme *Challenges) dns.H
 
 // ParseZoneFile reads the resource records from a zone file.
 //
-// origin is the domain that relative owner names (including "@" and records
-// under a "$ORIGIN"-less file) are qualified against. If origin is empty, owner
-// names must be fully qualified or an error is returned.
-func ParseZoneFile(fileName, origin string) ([]dns.RR, error) {
+// Owner names must be fully qualified (or qualified by a "$ORIGIN" directive in
+// the file itself); a relative name with no origin to qualify it against is a
+// parse error. This matches the zone files we serve, which are exported from
+// Cloud DNS with fully-qualified names.
+func ParseZoneFile(fileName string) ([]dns.RR, error) {
 	file, err := os.Open(fileName)
 	if err != nil {
 		return nil, err
 	}
 	defer file.Close()
 
-	parser := dns.NewZoneParser(file, origin, filepath.Base(fileName))
+	// The empty origin means relative names can only be qualified by an in-file
+	// "$ORIGIN" directive; otherwise they error rather than being silently
+	// mis-qualified.
+	parser := dns.NewZoneParser(file, "", filepath.Base(fileName))
 	records := make([]dns.RR, 0)
 	for rr, ok := parser.Next(); ok; rr, ok = parser.Next() {
 		records = append(records, rr)
