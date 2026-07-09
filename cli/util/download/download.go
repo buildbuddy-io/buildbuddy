@@ -22,6 +22,18 @@ import (
 
 type InvocationFileSelector func(inv *inpb.Invocation) *bespb.File
 
+type Downloader interface {
+	GetBytestreamFile(ctx context.Context, uri string, w io.Writer) error
+}
+
+type byteStreamDownloader struct {
+	bsClient bspb.ByteStreamClient
+}
+
+func NewByteStreamDownloader(bsClient bspb.ByteStreamClient) Downloader {
+	return &byteStreamDownloader{bsClient: bsClient}
+}
+
 // GetInvocationFile downloads the specified file from the given
 // invocation and writes it to w. Pass an io.PipeWriter to stream the contents
 // to a reader without buffering the entire file in memory.
@@ -70,16 +82,37 @@ func getInvocationResource(ctx context.Context, bbClient bbspb.BuildBuddyService
 	if file == nil {
 		return nil, fmt.Errorf("no %s found for invocation %s", description, invocationID)
 	}
-	if !strings.HasPrefix(file.GetUri(), "bytestream://") {
-		return nil, fmt.Errorf("unsupported %s URI for %q: %s", description, file.GetName(), file.GetUri())
-	}
-	bytestreamURL, err := url.Parse(file.GetUri())
+	resource, err := parseBytestreamURI(file.GetUri())
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse %s URI: %v", description, err)
-	}
-	resource, err := digest.ParseDownloadResourceName(bytestreamURL.Path)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse %s resource: %v", description, err)
+		return nil, fmt.Errorf("invalid %s URI for %q: %w", description, file.GetName(), err)
 	}
 	return resource, nil
+}
+
+func (d *byteStreamDownloader) GetBytestreamFile(ctx context.Context, uri string, w io.Writer) error {
+	return GetBytestreamFile(ctx, d.bsClient, uri, w)
+}
+
+// GetBytestreamFile downloads the contents of a bytestream:// URI.
+func GetBytestreamFile(ctx context.Context, bsClient bspb.ByteStreamClient, uri string, w io.Writer) error {
+	resource, err := parseBytestreamURI(uri)
+	if err != nil {
+		return err
+	}
+	if err := cachetools.GetBlob(ctx, bsClient, resource, w); err != nil {
+		return fmt.Errorf("failed to download %s: %w", resource.DownloadString(), err)
+	}
+	return nil
+}
+
+// parseBytestreamURI parses a bytestream:// URI into a CAS resource name.
+func parseBytestreamURI(uri string) (*digest.CASResourceName, error) {
+	if !strings.HasPrefix(uri, "bytestream://") {
+		return nil, fmt.Errorf("unsupported bytestream URI: %s", uri)
+	}
+	u, err := url.Parse(uri)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse bytestream URI: %w", err)
+	}
+	return digest.ParseDownloadResourceName(u.Path)
 }

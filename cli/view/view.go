@@ -5,11 +5,13 @@ import (
 	"flag"
 	"fmt"
 	"net/url"
+	"os"
 	"regexp"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/login"
+	"github.com/buildbuddy-io/buildbuddy/cli/util/download"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"google.golang.org/grpc/metadata"
@@ -18,26 +20,34 @@ import (
 	elpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
+	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
 var (
 	flags = flag.NewFlagSet("view", flag.ContinueOnError)
 	Flags = flags
 
-	apiTarget = flags.String("target", "remote.buildbuddy.io", "BuildBuddy gRPC target")
-	lines     = flags.Int("lines", 100_000, "Minimum number of lines to fetch")
+	apiTarget  = flags.String("target", "remote.buildbuddy.io", "BuildBuddy gRPC target")
+	lines      = flags.Int("lines", 100_000, "Minimum number of lines to fetch")
+	testFilter = flags.String("test_filter", "", "If set, print only the output of matching failed test cases instead of the full build logs. Must be a target label plus test name, e.g. //path/to:pkg_test.TestName (the test name is matched as a regular expression).")
 
 	pathPattern = regexp.MustCompile(`/invocation/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})`)
 	uuidPattern = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
 
 	usage = `
-bb ` + flags.Name() + ` <invocation-id-or-url> [--lines=100000] [--target=remote.buildbuddy.io]
+bb ` + flags.Name() + ` <invocation-id-or-url> [--lines=100000] [--test_filter=//target:name.TestName] [--target=remote.buildbuddy.io]
 
 Views build logs from BuildBuddy using the GetEventLogChunk API.
+
+With --test_filter, instead of the full build logs, prints only the output of
+matching failed test cases. The value must be a target label plus test name,
+e.g. //path/to:pkg_test.TestName. The test name is matched as a regular
+expression.
 
 Examples:
   bb view 12345678-1234-1234-1234-123456789012
   bb view https://app.buildbuddy.io/invocation/12345678-1234-1234-1234-123456789012
+  bb view 12345678-1234-1234-1234-123456789012 --test_filter=//server/foo:foo_test.TestName
 `
 )
 
@@ -91,6 +101,12 @@ func HandleView(args []string) (exitCode int, err error) {
 	ctx := context.Background()
 	if apiKey != "" {
 		ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", apiKey)
+	}
+
+	// When --test_filter is set, print only the matching failed test cases.
+	if *testFilter != "" {
+		bsClient := bspb.NewByteStreamClient(conn)
+		return ViewFilteredTestOutput(ctx, bbClient, download.NewByteStreamDownloader(bsClient), os.Stdout, invocationID, *testFilter)
 	}
 
 	// If the invocation has run logs, only print the run logs and not the build logs.
