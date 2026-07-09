@@ -16,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/rpc/interceptors"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
+	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_forward"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rpcutil"
@@ -94,6 +95,9 @@ func (b *GRPCServer) GetServer() *grpc.Server {
 }
 
 func New(env environment.Env, port int, ssl bool, config GRPCServerConfig) (*GRPCServer, error) {
+	if err := clientip.Init(); err != nil {
+		return nil, err
+	}
 	b := &GRPCServer{env: env}
 	if ssl && !env.GetSSLService().IsEnabled() {
 		return nil, status.InvalidArgumentError("GRPCS requires SSL Service")
