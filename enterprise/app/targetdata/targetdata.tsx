@@ -125,12 +125,31 @@ interface State {
   // Selected value for each filter dimension, keyed by dimension key. A missing
   // entry or `ALL_VALUES` means the dimension is not being filtered.
   filters: Record<string, string>;
+  // The table column currently used for sorting, and whether it's ascending.
+  sortColumn: string;
+  sortAscending: boolean;
+  // Once the user clicks "Show all", we show every matching action for the rest
+  // of their time in this view, even as the filter set changes.
+  showAllRows: boolean;
 }
+
+// The number of actions shown in the table before the user clicks "Show all".
+const INITIAL_ROW_LIMIT = 5;
+
+// Identifies the output path column for sorting; the filter dimensions use
+// their own keys and the p50 columns use the keys below.
+const OUTPUT_PATH_COLUMN = "output_path";
+const DURATION_P50_COLUMN = "duration_p50";
+const CPU_P50_COLUMN = "cpu_p50";
+const MEMORY_P50_COLUMN = "memory_p50";
 
 export default class TargetDataComponent extends React.Component<Props, State> {
   state: State = {
     loading: false,
     filters: {},
+    sortColumn: OUTPUT_PATH_COLUMN,
+    sortAscending: true,
+    showAllRows: false,
   };
 
   private currentTarget?: string;
@@ -210,6 +229,11 @@ export default class TargetDataComponent extends React.Component<Props, State> {
 
   private handleFilterChange(key: string, value: string): void {
     const filters = { ...this.state.filters, [key]: value };
+    // Shard numbers are only meaningful within a single mnemonic, so changing
+    // the mnemonic resets the shard selection back to "All".
+    if (key === "mnemonic") {
+      filters["shard"] = ALL_VALUES;
+    }
     // Changing one selection can constrain the others (e.g. picking a mnemonic
     // with no shards). Drop any remaining selections that are no longer
     // available given the new constraints so we never show a value that filters
@@ -288,6 +312,66 @@ export default class TargetDataComponent extends React.Component<Props, State> {
     );
   }
 
+  // Handles a click on a sortable column header. Clicking a new column sorts it
+  // descending; clicking the active column toggles between descending and
+  // ascending.
+  private handleSort(column: string): void {
+    if (this.state.sortColumn === column) {
+      this.setState({ sortAscending: !this.state.sortAscending });
+    } else {
+      this.setState({ sortColumn: column, sortAscending: false });
+    }
+  }
+
+  // Returns the value used to sort a timeline by the given column. Numeric
+  // columns return numbers so they sort numerically; the rest return strings.
+  private getSortValue(timeline: execution_stats.ExecutionTimeline, column: string): number | string {
+    switch (column) {
+      case OUTPUT_PATH_COLUMN:
+        return timeline.outputPath;
+      case DURATION_P50_COLUMN:
+        return +(timeline.summary?.durationUsecP50 ?? 0);
+      case CPU_P50_COLUMN:
+        return +(timeline.summary?.cpuNanosP50 ?? 0);
+      case MEMORY_P50_COLUMN:
+        return +(timeline.summary?.peakMemoryP50 ?? 0);
+      case "shard":
+        return +(timeline.shard ?? 0);
+      default: {
+        const dimension = FILTER_DIMENSIONS.find((d) => d.key === column);
+        return dimension ? dimension.getValue(timeline) : "";
+      }
+    }
+  }
+
+  // Returns a copy of `timelines` sorted by the active sort column and
+  // direction.
+  private getSortedTimelines(timelines: execution_stats.ExecutionTimeline[]): execution_stats.ExecutionTimeline[] {
+    const { sortColumn, sortAscending } = this.state;
+    return [...timelines].sort((a, b) => {
+      const av = this.getSortValue(a, sortColumn);
+      const bv = this.getSortValue(b, sortColumn);
+      let cmp: number;
+      if (typeof av === "number" && typeof bv === "number") {
+        cmp = av - bv;
+      } else {
+        cmp = String(av).localeCompare(String(bv));
+      }
+      return sortAscending ? cmp : -cmp;
+    });
+  }
+
+  private renderSortHeader(column: string, label: string, className?: string): JSX.Element {
+    const active = this.state.sortColumn === column;
+    const arrow = active ? (this.state.sortAscending ? " ▲" : " ▼") : "";
+    return (
+      <th key={column} className={className} onClick={() => this.handleSort(column)}>
+        {label}
+        {arrow}
+      </th>
+    );
+  }
+
   private renderFilters(rsp: execution_stats.GetExecutionTimelineResponse): React.ReactNode {
     return (
       <div className="target-data-filters">
@@ -318,7 +402,10 @@ export default class TargetDataComponent extends React.Component<Props, State> {
   }
 
   private renderMatchingActionsCard(rsp: execution_stats.GetExecutionTimelineResponse): React.ReactNode {
-    const timelines = this.getFilteredTimelines(rsp);
+    const allTimelines = this.getSortedTimelines(this.getFilteredTimelines(rsp));
+    // Cap the table to the first few rows until the user opts into the full
+    // list. The charts are unaffected and always plot every matching action.
+    const timelines = this.state.showAllRows ? allTimelines : allTimelines.slice(0, INITIAL_ROW_LIMIT);
     // Once every dropdown is set, abbreviate output paths so the distinguishing
     // parts stand out. Each row is diffed against another matching action: rows
     // compare against the first row, and the first row compares against the
@@ -336,13 +423,11 @@ export default class TargetDataComponent extends React.Component<Props, State> {
           <table className="target-data-table">
             <thead>
               <tr>
-                <th className="output-path-column">Output path</th>
-                {FILTER_DIMENSIONS.map((dimension) => (
-                  <th key={dimension.key}>{dimension.label}</th>
-                ))}
-                <th>Duration (p50)</th>
-                <th>CPU (p50)</th>
-                <th>Memory (p50)</th>
+                {this.renderSortHeader(OUTPUT_PATH_COLUMN, "Output path", "output-path-column")}
+                {FILTER_DIMENSIONS.map((dimension) => this.renderSortHeader(dimension.key, dimension.label))}
+                {this.renderSortHeader(DURATION_P50_COLUMN, "Duration (p50)")}
+                {this.renderSortHeader(CPU_P50_COLUMN, "CPU (p50)")}
+                {this.renderSortHeader(MEMORY_P50_COLUMN, "Memory (p50)")}
               </tr>
             </thead>
             <tbody>
@@ -367,6 +452,13 @@ export default class TargetDataComponent extends React.Component<Props, State> {
             </tbody>
           </table>
         </div>
+        {allTimelines.length > INITIAL_ROW_LIMIT && (
+          <OutlinedButton
+            className="target-data-show-all"
+            onClick={() => this.setState({ showAllRows: !this.state.showAllRows })}>
+            {this.state.showAllRows ? "Hide" : `Show all (${allTimelines.length})`}
+          </OutlinedButton>
+        )}
       </div>
     );
   }

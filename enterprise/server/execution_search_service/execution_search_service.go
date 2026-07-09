@@ -33,7 +33,7 @@ const (
 )
 
 var (
-	runMatcher   = regexp.MustCompile(`_run_\d+_of_\d+`)
+	runMatcher   = regexp.MustCompile(`[_/]run_\d+_of_\d+`)
 	shardMatcher = regexp.MustCompile(`/shard_(\d+)_of_\d+/`)
 )
 
