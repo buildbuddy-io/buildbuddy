@@ -1548,6 +1548,17 @@ func (rq *Queue) findRebalanceLeaseOpLoaded(ctx context.Context, rd *rfpb.RangeD
 		}
 	}
 
+	// A lease transfer isn't free: reads are served only by the leaseholder, so
+	// every transfer costs a read blip (retries during the leadership handoff)
+	// plus a cache-warmup tail. There is no urgent reason to move a lease, so —
+	// unlike count replica moves, which stay reachable for disk-full/zone —
+	// the count lease path fully respects the cooldown. With the load lease
+	// path also bailing on cooldown, a range in cooldown takes no lease move at
+	// all, so it can't take a second read blip right after a load-driven one.
+	if loadBased && rq.inCooldown(rd.GetRangeId()) {
+		return leaseRebalanceResult{}
+	}
+
 	// Count mode: balance lease counts across stores.
 	existing.leaseCount = existing.usage.LeaseCount
 	existing.leaseCountMeanLevel = leaseCountMeanLevel(globalMean, existing.usage)
@@ -1561,6 +1572,14 @@ func (rq *Queue) findRebalanceLeaseOpLoaded(ctx context.Context, rd *rfpb.RangeD
 	}
 	if !canConvergeByRebalanceLease(choice, globalMean) {
 		return leaseRebalanceResult{}
+	}
+
+	// The read load this range would carry onto a target: a lease transfer
+	// moves the range's reads to the new leaseholder. On a Usage error it
+	// stays 0, so the post-move check degrades to the old pre-move behavior.
+	var rangeReadQPS int64
+	if ru, err := localRepl.Usage(); err == nil {
+		rangeReadQPS = ru.GetReadQps()
 	}
 
 	// Consider candidates best-first. In load-based mode the QPS veto may skip
@@ -1580,10 +1599,14 @@ func (rq *Queue) findRebalanceLeaseOpLoaded(ctx context.Context, rd *rfpb.RangeD
 			// Count-based lease moves must not undo load balance: skip a
 			// store that's hot on either QPS dimension and try the next-best.
 			// Use effective (ledger-adjusted) QPS so a store with a large
-			// pending inbound move isn't treated as cold and piled onto.
+			// pending inbound move isn't treated as cold and piled onto. The
+			// read check is post-move (best.readQPS + the reads this lease
+			// carries); the propose/write-hot check stays pre-move (a lease
+			// move adds no apply load — it just avoids piling reads onto an
+			// already write-hot store's CPU).
 			rq.populateCandidateQPS(best, p, allStoresStats.ReadQPS.Mean, allStoresStats.RaftProposeQPS.Mean)
 			if qpsSignalPresent(p, allStoresStats.ReadQPS.Mean) &&
-				float64(best.readQPS) > aboveMeanQPSThreshold(p, allStoresStats.ReadQPS.Mean) {
+				float64(best.readQPS)+float64(rangeReadQPS) > aboveMeanQPSThreshold(p, allStoresStats.ReadQPS.Mean) {
 				continue
 			}
 			if qpsSignalPresent(p, allStoresStats.RaftProposeQPS.Mean) &&
@@ -1799,6 +1822,27 @@ func (rq *Queue) findRebalanceReplicaOpLoaded(ctx context.Context, rd *rfpb.Rang
 	overfullThreshold := int64(math.Ceil(aboveMeanReplicaCountThreshold(storesWithStats.ReplicaCount.Mean)))
 	underfullThreshold := int64(math.Floor(belowMeanReplicaCountThreshold(storesWithStats.ReplicaCount.Mean)))
 	sourceOverfull := bestSource.usage.ReplicaCount >= overfullThreshold
+	// The apply load this range would carry onto a target — every replica
+	// applies the same entries, so the local replica's propose QPS ≈ the load
+	// each follower bears. Used for the post-move QPS-neutral check below and
+	// the hot-range cooldown deferral. On a Usage error it stays 0, so the
+	// post-move check degrades to the old pre-move behavior (safe).
+	var rangeProposeQPS int64
+	if ru, err := localRepl.Usage(); err == nil {
+		rangeProposeQPS = ru.GetRaftProposeQps()
+	}
+	// Hot-range deferral: a range carrying meaningful apply load that just had a
+	// load-based move is the load controller's to manage. A count move of it
+	// during its cooldown would undo that (snapshot-costly) work, so leave it
+	// alone; cold ranges may still be count-moved during cooldown, and a
+	// disk-full source is never deferred (evacuation wins). The rangeProposeQPS
+	// > 0 guard matters: without it an idle range on an idle source hits the
+	// 0 >= minFraction*0 edge and gets wrongly deferred.
+	if loadBased && proposeSignal && !bestSource.fullDisk &&
+		rq.inCooldown(rd.GetRangeId()) && rangeProposeQPS > 0 &&
+		float64(rangeProposeQPS) >= p.minReplicaLoadFraction*float64(bestSource.proposeQPS) {
+		return nil
+	}
 	for _, bestTarget := range tgts {
 		sourceZoneCount := replicasByZone[bestSource.usage.GetNode().GetZone()]
 		targetZoneCount := replicasByZone[bestTarget.usage.GetNode().GetZone()]
@@ -1813,14 +1857,18 @@ func (rq *Queue) findRebalanceReplicaOpLoaded(ctx context.Context, rd *rfpb.Rang
 			continue
 		}
 		// Count-based moves must not undo load balance: skip a target that's
-		// hot on either QPS dimension and try the next-best. A disk-full
-		// source is exempt — evacuating it outranks load balance, since a
-		// full store evicts live entries / risks disk exhaustion.
+		// hot on either QPS dimension and try the next-best. The propose check
+		// is post-move — it counts the apply load this move would *add*
+		// (tgt.proposeQPS + rangeProposeQPS), so count never re-heats a store
+		// the load controller just cooled. The read check stays pre-move: a
+		// replica move adds no read load; it just avoids stacking apply load
+		// onto an already read-hot store's CPU. A disk-full source is exempt —
+		// evacuating it outranks load balance.
 		if loadBased && !bestSource.fullDisk {
 			if readSignal && float64(bestTarget.readQPS) > aboveMeanQPSThreshold(p, storesWithStats.ReadQPS.Mean) {
 				continue
 			}
-			if proposeSignal && float64(bestTarget.proposeQPS) > aboveMeanQPSThreshold(p, storesWithStats.RaftProposeQPS.Mean) {
+			if proposeSignal && float64(bestTarget.proposeQPS)+float64(rangeProposeQPS) > aboveMeanQPSThreshold(p, storesWithStats.RaftProposeQPS.Mean) {
 				continue
 			}
 		}

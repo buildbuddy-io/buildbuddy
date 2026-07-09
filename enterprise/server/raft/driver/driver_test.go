@@ -2284,3 +2284,177 @@ func TestLeaseCountFallbackTriesCoolerCandidate(t *testing.T) {
 	require.Equal(t, "nhid-1", res.op.from.nhid)
 	require.Equal(t, "nhid-3", res.op.to.nhid)
 }
+
+// TestCountReplicaVetoIsPostMove confirms the count replica veto is post-move:
+// a target that is below the propose band now but would cross it after taking
+// on this range's apply load is skipped in favor of a cooler target, so count
+// never re-heats a store (Option B).
+func TestCountReplicaVetoIsPostMove(t *testing.T) {
+	ctx := context.Background()
+	rd := &rfpb.RangeDescriptor{
+		RangeId:  1,
+		Replicas: replicas(1, "nhid-1", "nhid-2", "nhid-3"),
+	}
+	withReplicas := func(su *rfpb.StoreUsage, count int64) *rfpb.StoreUsage {
+		su.ReplicaCount = count
+		return su
+	}
+	// No source is propose-overfull (the load replica path finds nothing — the
+	// followers nhid-2/3 sit below the propose mean), so the count fallback
+	// runs. nhid-2 is replica-count-overfull. The count-best target nhid-4
+	// (fewest replicas) is below the propose band now (200 < 380) but would
+	// cross it after this range's 200 apply QPS (400 > 380); nhid-5 stays cold.
+	// The move must go to nhid-5, not nhid-4.
+	usages := []*rfpb.StoreUsage{
+		withReplicas(qpsUsage("nhid-1", "", 0, 1000), 30),
+		withReplicas(qpsUsage("nhid-2", "", 0, 100), 60),
+		withReplicas(qpsUsage("nhid-3", "", 0, 100), 30),
+		withReplicas(qpsUsage("nhid-4", "", 0, 200), 3),
+		withReplicas(qpsUsage("nhid-5", "", 0, 0), 4),
+	}
+	rq := newQPSTestQueue(t, usages, rd)
+	localRepl := &testReplica{rangeID: 1, replicaID: 1, usage: &rfpb.ReplicaUsage{RaftProposeQps: 200}}
+	op := rq.findRebalanceReplicaOp(ctx, rd, storemap.CreateStoresWithStats(usages), localRepl, false)
+	require.NotNil(t, op, "a QPS-neutral target exists, so the move must not be dropped")
+	require.Equal(t, "nhid-2", op.from.nhid)
+	require.Equal(t, "nhid-5", op.to.nhid, "post-move check must skip the would-be-hot nhid-4")
+}
+
+// TestCountReplicaDefersHotRangeInCooldown confirms the count replica path
+// leaves a hot range alone during its load cooldown (so count can't undo a
+// load move), while still relocating a cold range (Option B).
+func TestCountReplicaDefersHotRangeInCooldown(t *testing.T) {
+	ctx := context.Background()
+	rd := &rfpb.RangeDescriptor{
+		RangeId:  1,
+		Replicas: replicas(1, "nhid-1", "nhid-2", "nhid-3"),
+	}
+	withReplicas := func(su *rfpb.StoreUsage, count int64) *rfpb.StoreUsage {
+		su.ReplicaCount = count
+		return su
+	}
+	// nhid-2 is replica-count-overfull; nhid-4 is a cold, count-underfull
+	// target — absent the deferral the count fallback would move nhid-2's
+	// replica to nhid-4 even in cooldown.
+	newUsages := func() []*rfpb.StoreUsage {
+		return []*rfpb.StoreUsage{
+			withReplicas(qpsUsage("nhid-1", "", 0, 1000), 30),
+			withReplicas(qpsUsage("nhid-2", "", 0, 1000), 60),
+			withReplicas(qpsUsage("nhid-3", "", 0, 1000), 30),
+			withReplicas(qpsUsage("nhid-4", "", 0, 0), 3),
+			withReplicas(qpsUsage("nhid-5", "", 0, 0), 4),
+		}
+	}
+
+	// Hot range in cooldown → deferred, no move.
+	usages := newUsages()
+	rq := newQPSTestQueue(t, usages, rd)
+	rq.recordRebalance(ctx, &rebalanceRecord{rangeID: 1, fromNHID: "nhid-1", toNHID: "nhid-3"})
+	require.True(t, rq.inCooldown(1))
+	hot := &testReplica{rangeID: 1, replicaID: 1, usage: &rfpb.ReplicaUsage{RaftProposeQps: 300}}
+	op := rq.findRebalanceReplicaOp(ctx, rd, storemap.CreateStoresWithStats(usages), hot, false)
+	require.Nil(t, op, "a hot range must not be count-moved during its cooldown")
+
+	// Cold range in cooldown → not deferred, count move still happens.
+	usages = newUsages()
+	rq = newQPSTestQueue(t, usages, rd)
+	rq.recordRebalance(ctx, &rebalanceRecord{rangeID: 1, fromNHID: "nhid-1", toNHID: "nhid-3"})
+	require.True(t, rq.inCooldown(1))
+	cold := &testReplica{rangeID: 1, replicaID: 1, usage: &rfpb.ReplicaUsage{RaftProposeQps: 10}}
+	op = rq.findRebalanceReplicaOp(ctx, rd, storemap.CreateStoresWithStats(usages), cold, false)
+	require.NotNil(t, op, "a cold range may still be count-moved during cooldown")
+	require.Equal(t, "nhid-2", op.from.nhid)
+	require.Equal(t, "nhid-4", op.to.nhid)
+
+	// Idle range (zero apply load) in cooldown, with a propose signal from
+	// another store and a zero-propose source. `0 >= minFraction*0` is 0>=0,
+	// which must NOT defer — an idle range is not "meaningful" and still moves.
+	idleUsages := []*rfpb.StoreUsage{
+		withReplicas(qpsUsage("nhid-1", "", 0, 1000), 30),
+		withReplicas(qpsUsage("nhid-2", "", 0, 0), 60),
+		withReplicas(qpsUsage("nhid-3", "", 0, 0), 30),
+		withReplicas(qpsUsage("nhid-4", "", 0, 0), 3),
+		withReplicas(qpsUsage("nhid-5", "", 0, 0), 4),
+	}
+	rq = newQPSTestQueue(t, idleUsages, rd)
+	rq.recordRebalance(ctx, &rebalanceRecord{rangeID: 1, fromNHID: "nhid-1", toNHID: "nhid-3"})
+	require.True(t, rq.inCooldown(1))
+	idle := &testReplica{rangeID: 1, replicaID: 1, usage: &rfpb.ReplicaUsage{RaftProposeQps: 0}}
+	op = rq.findRebalanceReplicaOp(ctx, rd, storemap.CreateStoresWithStats(idleUsages), idle, false)
+	require.NotNil(t, op, "an idle (zero-QPS) range must not be deferred by the 0>=0 edge")
+	require.Equal(t, "nhid-2", op.from.nhid)
+	require.Equal(t, "nhid-4", op.to.nhid)
+}
+
+// TestCountLeaseVetoIsPostMove confirms the count lease veto is post-move: a
+// candidate below the read band now but over it after taking the lease's reads
+// is skipped for a cooler candidate (Option B).
+func TestCountLeaseVetoIsPostMove(t *testing.T) {
+	ctx := context.Background()
+	rd := &rfpb.RangeDescriptor{
+		RangeId:  1,
+		Replicas: replicas(1, "nhid-1", "nhid-2", "nhid-3"),
+	}
+	withLeases := func(su *rfpb.StoreUsage, leases int64) *rfpb.StoreUsage {
+		su.LeaseCount = leases
+		return su
+	}
+	// Reads are near-balanced so the QPS lease path is quiet (leaseholder
+	// nhid-1 at 250 is not above the read mean 262.5) and the count fallback
+	// runs. Lease counts are skewed: nhid-2 (5) is the count-best candidate but
+	// its read 300 + this lease's 100 reads = 400 crosses the read band (362.5);
+	// nhid-3 (250+100=350) stays under. The lease must go to nhid-3, not nhid-2.
+	usages := []*rfpb.StoreUsage{
+		withLeases(qpsUsage("nhid-1", "", 250, 0), 60),
+		withLeases(qpsUsage("nhid-2", "", 300, 0), 5),
+		withLeases(qpsUsage("nhid-3", "", 250, 0), 10),
+		withLeases(qpsUsage("nhid-4", "", 250, 0), 45),
+	}
+	rq := newQPSTestQueue(t, usages, rd)
+	localRepl := &testReplica{rangeID: 1, replicaID: 1, usage: &rfpb.ReplicaUsage{ReadQps: 100}}
+	res := rq.findRebalanceLeaseOp(ctx, rd, localRepl)
+	require.NotNil(t, res.op, "a QPS-neutral candidate exists, so the move must not be dropped")
+	require.Equal(t, "nhid-1", res.op.from.nhid)
+	require.Equal(t, "nhid-3", res.op.to.nhid, "post-move check must skip the would-be-hot nhid-2")
+}
+
+// TestCountLeaseGatedByCooldown confirms the count lease path fully respects
+// the cooldown (a lease move costs a read blip; there's no urgent reason to
+// move a lease), unlike the count replica path which only defers hot ranges.
+func TestCountLeaseGatedByCooldown(t *testing.T) {
+	ctx := context.Background()
+	rd := &rfpb.RangeDescriptor{
+		RangeId:  1,
+		Replicas: replicas(1, "nhid-1", "nhid-2", "nhid-3"),
+	}
+	withLeases := func(su *rfpb.StoreUsage, leases int64) *rfpb.StoreUsage {
+		su.LeaseCount = leases
+		return su
+	}
+	// Reads balanced (QPS lease path quiet), lease counts skewed toward nhid-2.
+	newUsages := func() []*rfpb.StoreUsage {
+		return []*rfpb.StoreUsage{
+			withLeases(qpsUsage("nhid-1", "", 250, 0), 60),
+			withLeases(qpsUsage("nhid-2", "", 250, 0), 5),
+			withLeases(qpsUsage("nhid-3", "", 250, 0), 10),
+			withLeases(qpsUsage("nhid-4", "", 250, 0), 45),
+		}
+	}
+	localRepl := &testReplica{rangeID: 1, replicaID: 1, usage: &rfpb.ReplicaUsage{ReadQps: 10}}
+
+	// Not in cooldown → count lease move happens.
+	usages := newUsages()
+	rq := newQPSTestQueue(t, usages, rd)
+	res := rq.findRebalanceLeaseOp(ctx, rd, localRepl)
+	require.NotNil(t, res.op)
+	require.Equal(t, "nhid-1", res.op.from.nhid)
+	require.Equal(t, "nhid-2", res.op.to.nhid)
+
+	// In cooldown → the count lease path is gated: no move.
+	usages = newUsages()
+	rq = newQPSTestQueue(t, usages, rd)
+	rq.recordRebalance(ctx, &rebalanceRecord{rangeID: 1, fromNHID: "nhid-3", toNHID: "nhid-4"})
+	require.True(t, rq.inCooldown(1))
+	res = rq.findRebalanceLeaseOp(ctx, rd, localRepl)
+	require.Nil(t, res.op, "a range in cooldown must not take a count lease move (read blip)")
+}
