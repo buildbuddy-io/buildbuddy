@@ -71,6 +71,12 @@
 .target-data .target-data-table th {
   font-weight: 600;
   color: #666;
+  cursor: pointer;
+  user-select: none;
+}
+
+.target-data .target-data-table th:hover {
+  color: #333;
 }
 
 /* Non-path columns shrink to fit their content... */
