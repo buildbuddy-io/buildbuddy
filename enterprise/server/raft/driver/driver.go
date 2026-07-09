@@ -2505,14 +2505,25 @@ func (c *candidate) String() string {
 //   - a negative number if a is a worse fit than b.
 //
 // The result reflects how much better or worse candidate a is.
+// compareByFullDisk ranks a disk-full candidate strictly below a non-full one,
+// dominating every other signal. It reports ok=false when the two candidates
+// agree on disk fullness, in which case the caller falls through to its own
+// ordering. Note compareForLeaseRebalance deliberately does NOT use this: for a
+// lease target disk fullness is only a weak tie-break (via compareByScoreAndID),
+// because a lease transfer moves no data.
+func compareByFullDisk(a *candidate, b *candidate) (int, bool) {
+	if a.fullDisk == b.fullDisk {
+		return 0, false
+	}
+	if a.fullDisk {
+		return -20, true
+	}
+	return 20, true
+}
+
 func compareByScore(a *candidate, b *candidate) int {
-	if a.fullDisk != b.fullDisk {
-		if a.fullDisk {
-			return -20
-		}
-		if b.fullDisk {
-			return 20
-		}
+	if res, ok := compareByFullDisk(a, b); ok {
+		return res
 	}
 
 	// [10, 12] or [-12, -10]
@@ -2653,11 +2664,8 @@ func compareForLeaseRebalance(a *candidate, b *candidate) int {
 // load-based mode: disk fullness dominates (as in compareByScore), then
 // propose QPS, then the count-based score as tie-break.
 func compareForReplicaRebalance(a *candidate, b *candidate) int {
-	if a.fullDisk != b.fullDisk {
-		if a.fullDisk {
-			return -20
-		}
-		return 20
+	if res, ok := compareByFullDisk(a, b); ok {
+		return res
 	}
 	if res := compareByQPSDimension(a.proposeQPSMeanLevel, b.proposeQPSMeanLevel, a.proposeQPS, b.proposeQPS); res != 0 {
 		return res
