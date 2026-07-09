@@ -118,6 +118,17 @@ func main() {
 	env.GetHealthChecker().WaitForGracefulShutdown()
 }
 
+// hasSOA reports whether rrs contains an SOA record, which a valid zone file
+// must define at its apex.
+func hasSOA(rrs []dns.RR) bool {
+	for _, rr := range rrs {
+		if rr.Header().Rrtype == dns.TypeSOA {
+			return true
+		}
+	}
+	return false
+}
+
 func startDNSServer(env *real_environment.RealEnv) error {
 	if len(*zoneFiles) == 0 {
 		return status.FailedPreconditionError("at least one --dns.zone_file must be configured")
@@ -127,6 +138,13 @@ func startDNSServer(env *real_environment.RealEnv) error {
 		rrs, err := server.ParseZoneFile(zoneFile)
 		if err != nil {
 			return status.WrapErrorf(err, "parse zone file %q", zoneFile)
+		}
+		// Every zone file must define an SOA at its apex. Without one, the zone
+		// contributes no apex, so its names route to no zone and are answered
+		// REFUSED even though their records loaded -- a silent, confusing
+		// failure. Refuse to start instead.
+		if !hasSOA(rrs) {
+			return status.FailedPreconditionErrorf("zone file %q has no SOA record; every zone file must define an SOA at its apex", zoneFile)
 		}
 		records = append(records, rrs...)
 	}

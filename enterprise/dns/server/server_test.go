@@ -47,6 +47,13 @@ var zone = []string{
 	"buildbuddy.dev. 60 IN SOA ns1.example. host.example. 1 21600 3600 259200 300",
 	"buildbuddy.dev. 60 IN A 5.6.7.8",
 	"cache.buildbuddy.dev. 60 IN A 5.6.7.9",
+
+	// A child zone nested under buildbuddy.io. with its own SOA. Both zones
+	// enclose names at and under sub.buildbuddy.io., so it exercises the
+	// most-specific-wins apex sort: the child's SOA, not the parent's, must
+	// anchor negative answers here.
+	"sub.buildbuddy.io. 60 IN SOA ns1.example. host.example. 1 21600 3600 259200 300",
+	"sub.buildbuddy.io. 60 IN A 7.7.7.7",
 }
 
 func mustRecords(tb testing.TB) []dns.RR {
@@ -806,6 +813,21 @@ func TestRefusedOutOfZone(t *testing.T) {
 	assert.False(t, m.Authoritative)
 	assert.Empty(t, m.Answer)
 	assert.Empty(t, m.Ns)
+}
+
+func TestNestedZoneUsesMostSpecificSOA(t *testing.T) {
+	h := newTestHandler(t)
+	// sub.buildbuddy.io. is a child zone nested under buildbuddy.io.; both
+	// enclose this name. The most-specific zone (the child) must anchor the
+	// negative answer, which is exactly what the apex-length sort in NewHandler
+	// guarantees -- without it, whichever SOA sorted first would win. The child
+	// apex has an A but no AAAA, so an AAAA query is NODATA there.
+	m := query(t, h, "sub.buildbuddy.io.", dns.TypeAAAA)
+	assert.Equal(t, dns.RcodeSuccess, m.Rcode)
+	assert.Empty(t, m.Answer)
+	require.Len(t, m.Ns, 1)
+	assert.Equal(t, dns.TypeSOA, m.Ns[0].Header().Rrtype)
+	assert.Equal(t, "sub.buildbuddy.io.", m.Ns[0].Header().Name)
 }
 
 func TestNegativeAnswerUsesEnclosingZoneSOA(t *testing.T) {
