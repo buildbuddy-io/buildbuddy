@@ -2348,12 +2348,12 @@ func BenchmarkGetMulti(b *testing.B) {
 	}
 }
 
-func benchmarkFindMissing(b *testing.B, pc *pebble_cache.PebbleCache, ctx context.Context, digestSizeBytes int64, insert bool) {
+func benchmarkFindMissing(b *testing.B, pc *pebble_cache.PebbleCache, ctx context.Context, digestSizeBytes int64, present bool) {
 	digestKeys := make([]*rspb.ResourceName, 0, 100)
 	for i := 0; i < 100; i++ {
 		r, buf := testdigest.RandomCASResourceBuf(b, digestSizeBytes)
 		digestKeys = append(digestKeys, r)
-		if insert {
+		if present {
 			if err := pc.Set(ctx, r, buf); err != nil {
 				b.Fatalf("Error setting %q in cache: %s", r.GetDigest().GetHash(), err.Error())
 			}
@@ -2381,7 +2381,7 @@ func benchmarkFindMissing(b *testing.B, pc *pebble_cache.PebbleCache, ctx contex
 			b.Fatal(err)
 		}
 		b.StopTimer()
-		if insert {
+		if present {
 			if len(missing) != 0 {
 				b.Fatalf("Missing: %+v, but all digests should be present", missing)
 			}
@@ -2401,25 +2401,38 @@ func BenchmarkFindMissing(b *testing.B) {
 	te.SetAuthenticator(testauth.NewTestAuthenticator(b, emptyUserMap))
 	ctx := getAnonContext(b, te)
 
-	maxSizeBytes := int64(100_000_000)
-	rootDir := testfs.MakeTempDir(b)
-	pc, err := pebble_cache.NewPebbleCache(te, &pebble_cache.Options{RootDirectory: rootDir, MaxSizeBytes: maxSizeBytes})
-	if err != nil {
-		b.Fatal(err)
-	}
-	pc.Start()
-	defer pc.Stop()
+	// Make sure there's no eviction to avoid muddying up the benchmark.
+	maxSizeBytes := int64(1_000_000_000_000)
 
-	sizes := []int64{1024, 1024 * 1024, 10 * 1024 * 1024}
-	for _, insert := range []bool{false, true} {
-		for _, size := range sizes {
-			name := fmt.Sprintf("size=%s/insert=%v", units.BytesSize(float64(size)), insert)
+	for _, storage := range []struct {
+		name            string
+		digestSizeBytes int64
+		maxInlineFileSizeBytes int64
+	}{
+		{"512B-inline", 512, 1024},
+		{"32KiB-inline", 32 * 1024, 64 * 1024},
+		{"1KiB-external", 1024, 1024},
+	} {
+		rootDir := testfs.MakeTempDir(b)
+		pc, err := pebble_cache.NewPebbleCache(te, &pebble_cache.Options{
+			RootDirectory:          rootDir,
+			MaxSizeBytes:           maxSizeBytes,
+			MaxInlineFileSizeBytes: storage.maxInlineFileSizeBytes,
+		})
+		if err != nil {
+			b.Fatal(err)
+		}
+		pc.Start()
+		for _, present := range []bool{true, false} {
+			name := fmt.Sprintf("storage=%s/present=%v", storage.name, present)
 			b.Run(name, func(b *testing.B) {
-				benchmarkFindMissing(b, pc, ctx, size, insert)
+				benchmarkFindMissing(b, pc, ctx, storage.digestSizeBytes, present)
 			})
 		}
+		if err := pc.Stop(); err != nil {
+			b.Fatal(err)
+		}
 	}
-
 }
 
 func benchmarkContains1(b *testing.B, pc *pebble_cache.PebbleCache, ctx context.Context, digestSizeBytes int64) {
