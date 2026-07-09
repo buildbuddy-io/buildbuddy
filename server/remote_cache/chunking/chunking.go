@@ -406,7 +406,12 @@ func loadManifestFrom(ctx context.Context, cache interfaces.Cache, blobDigest *r
 		}
 		return nil, sanitizeManifestError(err, acRNProto.GetDigest().GetHash(), blobDigest.GetHash())
 	}
+	return parseManifest(arBytes, blobDigest, instanceName, digestFunction)
+}
 
+// parseManifest decodes manifest bytes (stored as a marshaled ActionResult)
+// into a Manifest for the given blob.
+func parseManifest(arBytes []byte, blobDigest *repb.Digest, instanceName string, digestFunction repb.DigestFunction_Value) (*Manifest, error) {
 	ar := &repb.ActionResult{}
 	if err := proto.Unmarshal(arBytes, ar); err != nil {
 		return nil, status.InternalErrorf("unmarshal chunked manifest from ActionResult: %w", err)
@@ -733,4 +738,153 @@ func (c *MissingChunkChecker) AnyChunkMissing(ctx context.Context, manifest *Man
 	}
 
 	return len(missingDigests) > 0, nil
+}
+
+// maxFindMissingChunkBatchSize bounds how many chunk resource names are sent in
+// a single FindMissing call. Each manifest expands into multiple chunks, so the
+// combined chunk count can be much larger than the number of candidate blobs.
+const maxFindMissingChunkBatchSize = 4096
+
+// findMissingChunkedWaveSize bounds how many candidate manifests are processed
+// at once. Each wave loads its manifests and expands them into chunk resource
+// names in memory, so capping the wave keeps peak memory (and the per-wave
+// GetMulti/FindMissing request sizes) independent of the overall request size.
+const findMissingChunkedWaveSize = 1024
+
+type chunkedCandidate struct {
+	blob *repb.Digest
+	acRN *rspb.ResourceName
+}
+
+type loadedManifest struct {
+	blob     *repb.Digest
+	manifest *Manifest
+}
+
+// FindMissingChunkedBlobs re-checks blobs that a direct CAS lookup reported as
+// missing, returning the subset that are still missing once chunked storage is
+// taken into account. A blob counts as present only if its chunked manifest
+// exists and all of its chunks are present.
+func FindMissingChunkedBlobs(ctx context.Context, cache interfaces.Cache, blobDigests []*repb.Digest, instanceName string, digestFunction repb.DigestFunction_Value, fallbackSizeThreshold int64) ([]*repb.Digest, error) {
+	var missing []*repb.Digest
+
+	// Blobs at or below the fallback threshold were never chunked. Larger blobs
+	// are candidates whose chunked manifest we look up.
+	candidates := make([]chunkedCandidate, 0, len(blobDigests))
+	for _, d := range blobDigests {
+		if d.GetSizeBytes() <= fallbackSizeThreshold {
+			missing = append(missing, d)
+			continue
+		}
+		acRN, err := acResourceName(d, instanceName, digestFunction)
+		if err != nil {
+			// Can't compute the manifest key, so treat the blob as missing.
+			missing = append(missing, d)
+			continue
+		}
+		candidates = append(candidates, chunkedCandidate{blob: d, acRN: acRN})
+	}
+
+	// Process candidates in bounded waves so peak memory stays independent of the
+	// request size.
+	for start := 0; start < len(candidates); start += findMissingChunkedWaveSize {
+		end := min(start+findMissingChunkedWaveSize, len(candidates))
+		waveMissing, err := findMissingChunkedWave(ctx, cache, candidates[start:end], instanceName, digestFunction)
+		if err != nil {
+			return nil, err
+		}
+		missing = append(missing, waveMissing...)
+	}
+	return missing, nil
+}
+
+// findMissingChunkedWave resolves the chunked-manifest fallback for a single
+// wave of candidates and returns those still missing.
+func findMissingChunkedWave(ctx context.Context, cache interfaces.Cache, candidates []chunkedCandidate, instanceName string, digestFunction repb.DigestFunction_Value) ([]*repb.Digest, error) {
+	manifests, missing, err := loadWaveManifests(ctx, cache, candidates, instanceName, digestFunction)
+	if err != nil {
+		return nil, err
+	}
+	if len(manifests) == 0 {
+		return missing, nil
+	}
+
+	// De-duplicate the chunks across this wave's manifests and check their
+	// existence with batched FindMissing calls.
+	chunkRNs := make([]*rspb.ResourceName, 0)
+	seen := make(map[string]struct{})
+	for _, lm := range manifests {
+		for _, rn := range lm.manifest.ChunkResourceNames() {
+			h := rn.GetDigest().GetHash()
+			if _, ok := seen[h]; ok {
+				continue
+			}
+			seen[h] = struct{}{}
+			chunkRNs = append(chunkRNs, rn)
+		}
+	}
+
+	missingChunks := make(map[string]struct{})
+	for start := 0; start < len(chunkRNs); start += maxFindMissingChunkBatchSize {
+		end := min(start+maxFindMissingChunkBatchSize, len(chunkRNs))
+		missingChunkDigests, err := cache.FindMissing(ctx, chunkRNs[start:end])
+		if err != nil {
+			return nil, err
+		}
+		for _, d := range missingChunkDigests {
+			missingChunks[d.GetHash()] = struct{}{}
+		}
+	}
+
+	// A blob is missing if any of its chunks is missing.
+	for _, lm := range manifests {
+		for _, cd := range lm.manifest.ChunkDigests {
+			if _, ok := missingChunks[cd.GetHash()]; ok {
+				missing = append(missing, lm.blob)
+				break
+			}
+		}
+	}
+	return missing, nil
+}
+
+// loadWaveManifests loads and parses the chunked manifests for a wave of
+// candidates with a single GetMulti. It returns the successfully-parsed
+// manifests and the candidates already known to be missing (no manifest stored,
+// or an unreadable one). The raw manifest bytes are scoped to this call, so they
+// are released before the caller expands chunks.
+func loadWaveManifests(ctx context.Context, cache interfaces.Cache, candidates []chunkedCandidate, instanceName string, digestFunction repb.DigestFunction_Value) ([]loadedManifest, []*repb.Digest, error) {
+	acRNs := make([]*rspb.ResourceName, 0, len(candidates))
+	for _, c := range candidates {
+		acRNs = append(acRNs, c.acRN)
+	}
+	manifestData, err := cache.GetMulti(ctx, acRNs)
+	if err != nil {
+		return nil, nil, err
+	}
+	foundManifests := make(map[string][]byte, len(manifestData))
+	for acDigest, data := range manifestData {
+		foundManifests[digest.String(acDigest)] = data
+	}
+
+	var manifests []loadedManifest
+	var missing []*repb.Digest
+	for _, c := range candidates {
+		data, ok := foundManifests[digest.String(c.acRN.GetDigest())]
+		if !ok {
+			// No chunked manifest stored, so the blob is genuinely missing.
+			missing = append(missing, c.blob)
+			continue
+		}
+		manifest, err := parseManifest(data, c.blob, instanceName, digestFunction)
+		if err != nil {
+			// Unreadable manifest; treat the blob as missing so the client
+			// re-uploads it, matching the per-Get fallback behavior.
+			missing = append(missing, c.blob)
+			continue
+		}
+		metrics.ChunkedManifestLoadCount.WithLabelValues(chunkedManifestPrefix).Inc()
+		manifests = append(manifests, loadedManifest{blob: c.blob, manifest: manifest})
+	}
+	return manifests, missing, nil
 }
