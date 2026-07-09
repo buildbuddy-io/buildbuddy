@@ -53,12 +53,13 @@ const (
 	// Temporary directory under the filecache root.
 	tmpDir = "_tmp"
 
-	// lockFile is a file placed in the filecache root dir while the filecache
-	// is running. If this file is found on startup, it means the previous
-	// process exited uncleanly (e.g. power loss or crash), and the filecache
-	// contents may be in a corrupted state. In that case, the filecache root
-	// dir is wiped and rebuilt from scratch.
-	lockFile = "filecache.dirty"
+	// bootIDFileName is a marker file under the filecache root recording the
+	// boot ID of the boot session during which the filecache was running. It
+	// is written on startup and removed on clean shutdown. If it is present
+	// at startup with a boot ID from a previous boot session, the machine
+	// rebooted before the previous process could shut down cleanly (e.g.
+	// power loss), and the cache contents may be corrupted.
+	bootIDFileName = "boot_id"
 
 	// Threshold at which to log when the trash collection is backing up.
 	trashCollectionLogThreshold = 8
@@ -74,7 +75,7 @@ var (
 	includeSubdirPrefix              = flag.Bool("executor.include_subdir_prefix", false, "If true, store files under subdirs named by a short prefix of the file digest. This can help improve throughput on systems with high core counts. The prefix length is controlled by subdir_prefix_length.")
 	subdirPrefixLength               = flag.Int("executor.subdir_prefix_length", 2, "The length of the subdir prefix to use if include_subdir_prefix is true.")
 	enableDiskFallbackOnStartup      = flag.Bool("executor.local_cache_enable_disk_fallback_during_startup_scan", true, "If true, fallback to disk lookups while initial local cache scan is in progress.", flag.Internal)
-	deleteFilecacheOnUncleanShutdown = flag.Bool("executor.delete_filecache_on_unclean_shutdown", false, "If true, write a marker file to the filecache directory while running. If the marker is present at startup, the filecache is wiped to avoid serving potentially corrupted files from a previous unclean shutdown (e.g. power loss).")
+	deleteFilecacheOnUncleanShutdown = flag.Bool("executor.delete_filecache_on_unclean_shutdown", false, "If true, record the current boot ID in a marker file in the filecache directory while running, and remove it on clean shutdown. If the marker is present at startup with a boot ID from a previous boot session, the machine rebooted before the previous process could shut down cleanly (e.g. power loss), so the filecache is wiped to avoid serving potentially corrupted files.")
 
 	// testOnlyDisableInitialDirectoryScan disables startup scanning in tests.
 	// Keep this false in production paths.
@@ -235,49 +236,23 @@ func syncDir(path string) error {
 // in rootDir.
 // If deleteContent is true, the root dir will be deleted and recreated.
 func NewFileCache(rootDir string, maxSizeBytes int64, deleteContent bool) (*fileCache, error) {
+	ctx := context.TODO()
+
 	if maxSizeBytes <= 0 {
 		return nil, errors.New("Must provide a positive size")
 	}
-	if *deleteFilecacheOnUncleanShutdown {
-		// If a lock file exists from a previous run, the filecache did not shut
-		// down cleanly (e.g. power loss). Wipe the cache to avoid serving
-		// potentially corrupted files.
-		if !deleteContent {
-			if _, err := os.Stat(filepath.Join(rootDir, lockFile)); err == nil {
-				log.Warningf("filecache(%q): found lock file from previous unclean shutdown; wiping cache", rootDir)
-				deleteContent = true
-			}
-		}
-	}
+
 	if deleteContent {
-		log.Infof("Cleaning up filecache %q", rootDir)
-		if err := disk.ForceRemove(context.Background(), rootDir); err != nil {
-			return nil, err
+		log.CtxInfof(ctx, "Deleting cache directory %q", rootDir)
+		if err := disk.ForceRemove(ctx, rootDir); err != nil {
+			return nil, fmt.Errorf("force-remove %q: %w", rootDir, err)
 		}
 	}
-	if err := disk.EnsureDirectoryExists(rootDir); err != nil {
-		return nil, err
+
+	if err := checkAndRecoverFromUncleanShutdown(ctx, rootDir); err != nil {
+		return nil, fmt.Errorf("check and recover from unclean shutdown: %w", err)
 	}
-	if *deleteFilecacheOnUncleanShutdown {
-		// Create and sync the lock file so it is guaranteed to be on disk before
-		// any cache files are written. This ensures a subsequent power loss is
-		// detectable on the next boot.
-		lockFilePath := filepath.Join(rootDir, lockFile)
-		f, err := os.OpenFile(lockFilePath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
-		if err != nil {
-			return nil, status.WrapErrorf(err, "failed to create filecache lock file")
-		}
-		if err := f.Sync(); err != nil {
-			f.Close()
-			return nil, status.WrapErrorf(err, "failed to sync filecache lock file")
-		}
-		if err := f.Close(); err != nil {
-			return nil, status.WrapErrorf(err, "failed to close filecache lock file")
-		}
-		if err := syncDir(rootDir); err != nil {
-			return nil, status.WrapErrorf(err, "failed to sync filecache root dir after creating lock file")
-		}
-	}
+
 	l, err := lru.New[*entry](&lru.Config[*entry]{MaxSize: maxSizeBytes, OnEvict: evictFn(rootDir), SizeFn: sizeFn})
 	if err != nil {
 		return nil, err
@@ -299,10 +274,10 @@ func NewFileCache(rootDir string, maxSizeBytes int64, deleteContent bool) (*file
 		trashCh: make(chan struct{}, 1),
 	}
 	if err := os.RemoveAll(c.TempDir()); err != nil {
-		return nil, status.WrapErrorf(err, "failed to clear filecache temp dir")
+		return nil, fmt.Errorf("clear filecache temp dir: %w", err)
 	}
 	if err := os.MkdirAll(c.TempDir(), 0755); err != nil {
-		return nil, status.WrapErrorf(err, "failed to create filecache temp dir")
+		return nil, fmt.Errorf("create filecache temp dir: %w", err)
 	}
 	if !testOnlyDisableInitialDirectoryScan {
 		go c.scanDir()
@@ -311,27 +286,99 @@ func NewFileCache(rootDir string, maxSizeBytes int64, deleteContent bool) (*file
 	return c, nil
 }
 
+// checkAndRecoverFromUncleanShutdown checks whether an unclean shutdown occurred, and
+// if so, wipes the filecache root. It also updates the boot_id file if
+// necessary.
+func checkAndRecoverFromUncleanShutdown(ctx context.Context, rootDir string) error {
+	bootIDPath := filepath.Join(rootDir, bootIDFileName)
+
+	if !*deleteFilecacheOnUncleanShutdown {
+		// Just remove the boot ID file if it exists, so that if we subsequently
+		// re-enable this flag, we don't unnecessarily wipe cache due to a stale
+		// boot ID.
+		if err := os.RemoveAll(bootIDPath); err != nil {
+			return fmt.Errorf("remove stale boot ID file %q: %w", bootIDPath, err)
+		}
+		return nil
+	}
+
+	currentBootID, err := getBootID()
+	if err != nil {
+		return fmt.Errorf("get boot ID: %w", err)
+	} else if currentBootID == "" {
+		return fmt.Errorf("current boot ID is unexpectedly empty")
+	}
+
+	// Check whether the current system boot ID matches the boot ID written by a
+	// previous executor, if it exists. If there is a mismatch, we assume that
+	// corruption may have occurred, and wipe the filecache. If the file does
+	// not exist, we assume that the previous executor shut down cleanly,
+	// removing the boot ID file.
+	recordedBootID, err := os.ReadFile(bootIDPath)
+	if err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("read %q: %w", bootIDPath, err)
+	}
+	if len(recordedBootID) > 0 && currentBootID != string(recordedBootID) {
+		log.Warningf("Local cache at %q was in use when the machine last rebooted (recorded boot ID %q does not match current boot ID %q); wiping cache", rootDir, string(recordedBootID), currentBootID)
+		if err := disk.ForceRemove(ctx, rootDir); err != nil {
+			return fmt.Errorf("force remove %q: %w", rootDir, err)
+		}
+	}
+
+	// Create and sync the boot ID file so it is guaranteed to be on disk
+	// before any cache files are written. This ensures a subsequent power
+	// loss is detectable on the next boot.
+	if err := os.MkdirAll(rootDir, 0755); err != nil {
+		return fmt.Errorf("mkdirall %q: %w", rootDir, err)
+	}
+	f, err := os.OpenFile(bootIDPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+	if err != nil {
+		return fmt.Errorf("open %q: %w", bootIDPath, err)
+	}
+	defer f.Close()
+	if _, err := f.Write([]byte(currentBootID)); err != nil {
+		return fmt.Errorf("write %q: %w", bootIDPath, err)
+	}
+	if err := f.Sync(); err != nil {
+		return fmt.Errorf("sync %q: %w", bootIDPath, err)
+	}
+	if err := syncDir(rootDir); err != nil {
+		return fmt.Errorf("sync boot ID file parent %q: %w", rootDir, err)
+	}
+
+	return nil
+}
+
 // Close stops accepting new requests, waits for background goroutines to exit,
-// then removes the lock file and syncs the directory to record a clean shutdown.
+// then removes the boot ID file and syncs the directory to record a clean
+// shutdown.
 func (c *fileCache) Close() error {
 	c.isClosed.Store(true)
 	close(c.closed)
 	c.wg.Wait()
 	if *deleteFilecacheOnUncleanShutdown {
-		// Flush all dirty pages to disk before removing the lock file. This
+		// Flush all dirty pages to disk before removing the boot ID file. This
 		// ensures that all cache files written during this session are durable
-		// before we signal a clean shutdown. Without this, a power loss after the
-		// lock file is removed but before the OS flushes the page cache could
-		// leave corrupted files on disk with no lock file to detect them.
+		// before we signal a clean shutdown. Without this, a power loss after
+		// the boot ID file is removed but before the OS flushes the page cache
+		// could leave corrupted files on disk with no boot ID file to detect
+		// them.
 		start := time.Now()
 		syncfsErr := syncFilesystem(c.rootDir)
-		log.Infof("filecache(%q): syncFilesystem took %s (err: %v)", c.rootDir, time.Since(start), syncfsErr)
-		lockFilePath := filepath.Join(c.rootDir, lockFile)
-		if err := os.Remove(lockFilePath); err != nil && !errors.Is(err, os.ErrNotExist) {
-			log.Warningf("filecache(%q): failed to remove lock file: %s", c.rootDir, err)
+		log.Infof("Local cache filesystem sync for %q took %s (err: %v)", c.rootDir, time.Since(start), syncfsErr)
+		if syncfsErr != nil {
+			// If the sync failed, we can't guarantee that this session's
+			// writes are durable, so leave the boot ID file in place. If the
+			// machine reboots before the data makes it to disk, the next
+			// startup wipes the cache.
+			return fmt.Errorf("sync local cache filesystem at %q: %w", c.rootDir, syncfsErr)
+		}
+		bootIDPath := filepath.Join(c.rootDir, bootIDFileName)
+		if err := os.Remove(bootIDPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+			log.Warningf("Failed to remove local cache boot ID file: %s", err)
 		}
 		if err := syncDir(c.rootDir); err != nil {
-			log.Warningf("filecache(%q): failed to sync root dir after removing lock file: %s", c.rootDir, err)
+			log.Warningf("Failed to sync local cache root dir after removing boot ID file: %s", err)
 		}
 	}
 	return nil
