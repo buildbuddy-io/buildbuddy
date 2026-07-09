@@ -27,9 +27,13 @@ import (
 */
 import "C"
 
-// UFFD macros - see README for more info
-const UFFDIO_COPY = 0xc028aa03
-const UFFDIO_ZEROPAGE = 0xc020aa04
+const (
+	// UFFD macros - see README for more info
+	UFFDIO_COPY     = 0xc028aa03
+	UFFDIO_ZEROPAGE = 0xc020aa04
+
+	initialDeferredPollTimeoutMs = 1
+)
 
 // uffdMsg is a notification from the userfaultfd object about a change in the
 // virtual memory layout of the faulting process.
@@ -283,10 +287,51 @@ func (h *Handler) handle(ctx context.Context, memoryStore *copy_on_write.COWStor
 		{Fd: int32(uffd), Events: C.POLLIN},
 		{Fd: int32(h.earlyTerminationReader.Fd()), Events: C.POLLIN},
 	}
+	deferredPollTimeoutMs := initialDeferredPollTimeoutMs
+	loggedStallWarning := false
+
 	deferredPageFaultEvents := make([]*Pagefault, 0)
 	for {
-		// Poll UFFD for messages
-		_, pollErr := unix.Poll(pollFDs, -1)
+		// Poll UFFD for messages.
+		//
+		// If any page faults were deferred, poll with a timeout instead of
+		// blocking indefinitely to address the following race:
+		//
+		// * There is a page fault. The faulting CPU is blocked until the page fault is resolved
+		// with UFFDIO_COPY or UFFDIO_ZEROPAGE.
+		// * UFFDIO_COPY fails with EAGAIN. This is usually because there is an unread remove event in the event queue
+		// (remove events should always be handled before page faults: https://github.com/firecracker-microvm/firecracker/issues/4990#issuecomment-2624922715).
+		// * `processEvents` defers the page fault to be retried later, until after the remove event has been read.
+		// * We read the remove event from the event queue. However the kernel state that causes EAGAIN is
+		// only cleared *after* the remove event has been consumed.
+		// * Simultaneously, we might work through the event queue and drain it. There can be a race where
+		// draining the event queue completes before the kernel state that causes EAGAIN is cleared.
+		// * The original CPU that triggered the page fault is still blocked, waiting for its page fault to be resolved.
+		// Because there might not be any active CPUs to trigger new page faults, we might never receive another UFFD event.
+		// * If polling without a timeout, the poll would block indefinitely if we never receive a new event.
+		// * Even though at this point the EAGAIN kernel state has been cleared and the original page fault could be
+		// successfully resolved, the handler is blocked waiting for a new event to arrive. The original blocked CPU
+		// will hang indefinitely.
+		//
+		// By polling with a timeout if there are deferred page faults, the poll will return once the timeout
+		// is hit, and the handler can handle the deferred page faults.
+		timeoutMs := -1
+		if len(deferredPageFaultEvents) > 0 {
+			timeoutMs = deferredPollTimeoutMs
+			deferredPollTimeoutMs *= 2
+
+			if deferredPollTimeoutMs > 1000 {
+				if !loggedStallWarning {
+					log.CtxWarningf(ctx, "UFFD handler is stalled on persistent EAGAIN and may trip guest-side RCU-stall / soft-lockup warnings.")
+					loggedStallWarning = true
+				}
+			}
+		} else {
+			// If EAGAIN retry succeeded, reset the timeout.
+			deferredPollTimeoutMs = initialDeferredPollTimeoutMs
+			loggedStallWarning = false
+		}
+		_, pollErr := unix.Poll(pollFDs, timeoutMs)
 		if pollErr != nil {
 			if pollErr == unix.EINTR {
 				// Poll call was interrupted by another signal - retry
