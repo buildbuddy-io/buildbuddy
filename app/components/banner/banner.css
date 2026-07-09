@@ -28,8 +28,19 @@
   color: var(--color-banner-warning-text);
 }
 
-.banner.banner-warning .icon {
+.banner.banner-warning .icon,
+.banner.banner-warning .lucide {
   stroke: var(--color-banner-warning-icon);
+}
+
+.banner.banner-critical {
+  background: var(--color-banner-critical-bg);
+  color: var(--color-banner-critical-text);
+}
+
+.banner.banner-critical .icon,
+.banner.banner-critical .lucide {
+  stroke: var(--color-banner-critical-icon);
 }
 
 .banner.banner-error {

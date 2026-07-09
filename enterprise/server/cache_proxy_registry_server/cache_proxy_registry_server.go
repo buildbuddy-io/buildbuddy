@@ -19,8 +19,10 @@ import (
 	"io"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
+	"github.com/Masterminds/semver/v3"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
@@ -28,12 +30,14 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/upgrade"
 	"github.com/go-redis/redis/v8"
 	"github.com/jonboulle/clockwork"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	cppb "github.com/buildbuddy-io/buildbuddy/proto/cache_proxy"
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
+	uppb "github.com/buildbuddy-io/buildbuddy/proto/upgrade"
 )
 
 const (
@@ -44,6 +48,10 @@ const (
 	// How often we revalidate credentials for an open registration stream. We
 	// need to regularly revlidate credentials to handle revoked API keys.
 	checkRegistrationCredentialsInterval = 5 * time.Minute
+
+	// How long a computed newest-registered-version value is served from the
+	// in-process cache before the Redis registry is scanned again.
+	newestVersionCacheTTL = 5 * time.Minute
 )
 
 type CacheProxyRegistryServer struct {
@@ -51,6 +59,10 @@ type CacheProxyRegistryServer struct {
 	clock         clockwork.Clock
 	rdb           redis.UniversalClient
 	quit          chan struct{}
+
+	mu                  sync.Mutex
+	newestVersion       *semver.Version
+	newestVersionExpiry time.Time
 }
 
 func Register(env *real_environment.RealEnv) error {
@@ -213,6 +225,57 @@ func (s *CacheProxyRegistryServer) removeProxy(ctx context.Context, groupID, pro
 	return s.rdb.HDel(ctx, redisKeyForCacheProxies(groupID), proxyID).Err()
 }
 
+func (s *CacheProxyRegistryServer) getNewestVersion(ctx context.Context) *semver.Version {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.clock.Now().Before(s.newestVersionExpiry) {
+		return s.newestVersion
+	}
+
+	var newest *semver.Version
+	var cursor uint64
+	for {
+		keys, next, err := s.rdb.Scan(ctx, cursor, redisKeyForCacheProxies("*"), 100).Result()
+		if err != nil {
+			log.CtxWarningf(ctx, "could not scan cache proxy registrations for newest version: %s", err)
+			// Don't cache the (possibly partial) result of a failed scan.
+			return nil
+		}
+		for _, key := range keys {
+			entries, err := s.rdb.HGetAll(ctx, key).Result()
+			if err != nil {
+				log.CtxWarningf(ctx, "could not read cache proxy registrations at %q: %s", key, err)
+				return nil
+			}
+			for _, data := range entries {
+				reg := &cppb.RegisteredCacheProxy{}
+				if err := proto.Unmarshal([]byte(data), reg); err != nil {
+					continue
+				}
+				if s.clock.Since(reg.GetLastPingTime().AsTime()) > maxRegistrationStaleness {
+					continue
+				}
+				// Skip "unknown" and other unparseable versions.
+				v, err := semver.NewVersion(reg.GetRegistration().GetVersion())
+				if err != nil {
+					continue
+				}
+				if newest == nil || v.GreaterThan(newest) {
+					newest = v
+				}
+			}
+		}
+		cursor = next
+		if cursor == 0 {
+			break
+		}
+	}
+
+	s.newestVersion = newest
+	s.newestVersionExpiry = s.clock.Now().Add(newestVersionCacheTTL)
+	return newest
+}
+
 func (s *CacheProxyRegistryServer) GetCacheProxies(ctx context.Context, req *cppb.GetCacheProxiesRequest) (*cppb.GetCacheProxiesResponse, error) {
 	// The group ID comes from the request context (the UI's "selected
 	// group") rather than the authenticated user, because a user can
@@ -271,6 +334,18 @@ func (s *CacheProxyRegistryServer) GetCacheProxies(ctx context.Context, req *cpp
 	})
 
 	return &cppb.GetCacheProxiesResponse{
-		CacheProxy: proxies,
+		CacheProxy:    proxies,
+		UpgradePrompt: s.upgradePrompt(ctx, proxies),
 	}, nil
+}
+
+func (s *CacheProxyRegistryServer) upgradePrompt(ctx context.Context, proxies []*cppb.GetCacheProxiesResponse_CacheProxy) *uppb.Prompt {
+	if len(proxies) == 0 {
+		return nil
+	}
+	versions := make([]string, 0, len(proxies))
+	for _, p := range proxies {
+		versions = append(versions, p.GetNode().GetVersion())
+	}
+	return upgrade.ForVersions(s.getNewestVersion(ctx), versions)
 }

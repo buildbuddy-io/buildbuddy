@@ -155,6 +155,9 @@
   --color-auditlog-entry-bg: var(--color-white);
   --color-auditlog-header-bg: var(--color-gray-50);
   --color-badge-workflow-text: var(--color-white);
+  --color-banner-critical-bg: var(--color-orange-100);
+  --color-banner-critical-icon: var(--color-deep-orange-800);
+  --color-banner-critical-text: var(--color-black);
   --color-banner-error-bg: var(--color-red-100);
   --color-banner-error-text: var(--color-black);
   --color-banner-info-bg: var(--color-light-blue-50);
@@ -162,8 +165,8 @@
   --color-banner-success-bg: var(--color-green-100);
   --color-banner-success-text: var(--color-black);
   --color-banner-impersonation-bg: var(--color-amber-500);
-  --color-banner-warning-bg: var(--color-orange-50);
-  --color-banner-warning-icon: var(--color-amber-900);
+  --color-banner-warning-bg: var(--color-amber-100);
+  --color-banner-warning-icon: var(--color-yellow-800);
   --color-banner-warning-text: var(--color-black);
   --color-bg-card: var(--color-white);
   --color-bg-code: var(--color-gray-200);
@@ -383,6 +386,9 @@
   --color-auditlog-entry-bg: var(--color-bg-card);
   --color-auditlog-header-bg: var(--color-gray-800);
   --color-badge-workflow-text: var(--color-black);
+  --color-banner-critical-bg: var(--color-deep-orange-800);
+  --color-banner-critical-icon: var(--color-white);
+  --color-banner-critical-text: var(--color-white);
   --color-banner-error-bg: var(--color-red-900);
   --color-banner-error-text: var(--color-white);
   --color-banner-info-bg: var(--color-indigo-900);
@@ -390,9 +396,9 @@
   --color-banner-success-bg: var(--color-green-900);
   --color-banner-success-text: var(--color-white);
   --color-banner-impersonation-bg: var(--color-yellow-800);
-  --color-banner-warning-bg: var(--color-brown-800);
-  --color-banner-warning-icon: var(--color-amber-200);
-  --color-banner-warning-text: var(--color-white);
+  --color-banner-warning-bg: var(--color-yellow-800);
+  --color-banner-warning-icon: var(--color-black);
+  --color-banner-warning-text: var(--color-black);
   --color-bg-card: var(--color-gray-900-alt4);
   --color-bg-code: var(--color-gray-900-alt5);
   --color-bg-hover: var(--color-gray-900-alt);

@@ -1,0 +1,17 @@
+.upgrade-prompt-banner {
+  margin: 16px 0;
+}
+
+/* The HIGH-urgency prompt is the banner-warning style with a red icon; this
+   needs to out-specialize banner-warning's own icon-color rule. */
+.banner.banner-warning.upgrade-prompt-banner .lucide.red {
+  stroke: var(--color-red-500);
+}
+
+/* The global anchor style removes underlines, which leaves links looking
+   like plain text; make them visibly clickable. */
+.upgrade-prompt-banner .banner-content a {
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}

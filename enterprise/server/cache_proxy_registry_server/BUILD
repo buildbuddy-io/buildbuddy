@@ -12,6 +12,7 @@ go_library(
     deps = [
         "//proto:cache_proxy_go_proto",
         "//proto:capability_go_proto",
+        "//proto:upgrade_go_proto",
         "//server/environment",
         "//server/interfaces",
         "//server/real_environment",
@@ -19,8 +20,10 @@ go_library(
         "//server/util/perms",
         "//server/util/proto",
         "//server/util/status",
+        "//server/util/upgrade",
         "@com_github_go_redis_redis_v8//:redis",
         "@com_github_jonboulle_clockwork//:clockwork",
+        "@com_github_masterminds_semver_v3//:semver",
         "@org_golang_google_protobuf//types/known/timestamppb",
     ],
 )
@@ -35,6 +38,7 @@ go_test(
         "//proto:cache_proxy_go_proto",
         "//proto:capability_go_proto",
         "//proto:context_go_proto",
+        "//proto:upgrade_go_proto",
         "//server/interfaces",
         "//server/testutil/testauth",
         "//server/testutil/testenv",

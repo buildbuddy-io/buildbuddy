@@ -25,6 +25,7 @@ import (
 	cppb "github.com/buildbuddy-io/buildbuddy/proto/cache_proxy"
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
+	uppb "github.com/buildbuddy-io/buildbuddy/proto/upgrade"
 )
 
 const (
@@ -123,6 +124,95 @@ func TestGetCacheProxies(t *testing.T) {
 	require.Len(t, resp.GetCacheProxy(), 2)
 	assert.Equal(t, "host-a", resp.GetCacheProxy()[0].GetNode().GetHost())
 	assert.Equal(t, "host-b", resp.GetCacheProxy()[1].GetNode().GetHost())
+}
+
+func TestGetCacheProxies_UpgradePrompt(t *testing.T) {
+	user := userWithCapabilities("U1", testGroupID, cappb.Capability_REGISTER_CACHE_PROXY)
+	s, _ := newServer(t, map[string]interfaces.UserInfo{"CP_KEY": user})
+
+	// The newest version is registered under a *different* group; the prompt
+	// compares against the newest version across the whole installation.
+	require.NoError(t, s.insertOrUpdateProxy(context.Background(), "GR-OTHER", &cppb.CacheProxyNode{
+		Host: "host-new", ProxyId: "id-new", Version: "v2.153.0",
+	}, nil))
+	require.NoError(t, s.insertOrUpdateProxy(context.Background(), testGroupID, &cppb.CacheProxyNode{
+		Host: "host-old", ProxyId: "id-old", Version: "v2.140.0",
+	}, nil))
+
+	ctx := claims.AuthContextWithJWT(context.Background(), user.(*claims.Claims), nil)
+	resp, err := s.GetCacheProxies(ctx, &cppb.GetCacheProxiesRequest{
+		RequestContext: &ctxpb.RequestContext{GroupId: testGroupID},
+	})
+	require.NoError(t, err)
+	require.Len(t, resp.GetCacheProxy(), 1)
+	require.NotNil(t, resp.GetUpgradePrompt())
+	assert.Equal(t, "v2.153.0", resp.GetUpgradePrompt().GetNewestAvailableVersion())
+	assert.Equal(t, uppb.Prompt_LOW, resp.GetUpgradePrompt().GetUrgency())
+}
+
+func TestGetCacheProxies_UpgradePrompt_WithinThreshold(t *testing.T) {
+	user := userWithCapabilities("U1", testGroupID, cappb.Capability_REGISTER_CACHE_PROXY)
+	s, _ := newServer(t, map[string]interfaces.UserInfo{"CP_KEY": user})
+
+	require.NoError(t, s.insertOrUpdateProxy(context.Background(), "GR-OTHER", &cppb.CacheProxyNode{
+		Host: "host-new", ProxyId: "id-new", Version: "v2.153.0",
+	}, nil))
+	require.NoError(t, s.insertOrUpdateProxy(context.Background(), testGroupID, &cppb.CacheProxyNode{
+		Host: "host-old", ProxyId: "id-old", Version: "v2.152.0",
+	}, nil))
+
+	ctx := claims.AuthContextWithJWT(context.Background(), user.(*claims.Claims), nil)
+	resp, err := s.GetCacheProxies(ctx, &cppb.GetCacheProxiesRequest{
+		RequestContext: &ctxpb.RequestContext{GroupId: testGroupID},
+	})
+	require.NoError(t, err)
+	assert.Nil(t, resp.GetUpgradePrompt())
+}
+
+func TestGetCacheProxies_UpgradePrompt_SkipsUnparseableVersions(t *testing.T) {
+	user := userWithCapabilities("U1", testGroupID, cappb.Capability_REGISTER_CACHE_PROXY)
+	s, _ := newServer(t, map[string]interfaces.UserInfo{"CP_KEY": user})
+
+	// Dev builds report "unknown"; they should neither count as the newest
+	// version nor trigger the prompt themselves.
+	require.NoError(t, s.insertOrUpdateProxy(context.Background(), "GR-OTHER", &cppb.CacheProxyNode{
+		Host: "host-dev", ProxyId: "id-dev", Version: "unknown",
+	}, nil))
+	require.NoError(t, s.insertOrUpdateProxy(context.Background(), testGroupID, &cppb.CacheProxyNode{
+		Host: "host-old", ProxyId: "id-old", Version: "unknown",
+	}, nil))
+
+	ctx := claims.AuthContextWithJWT(context.Background(), user.(*claims.Claims), nil)
+	resp, err := s.GetCacheProxies(ctx, &cppb.GetCacheProxiesRequest{
+		RequestContext: &ctxpb.RequestContext{GroupId: testGroupID},
+	})
+	require.NoError(t, err)
+	assert.Nil(t, resp.GetUpgradePrompt())
+}
+
+func TestGetCacheProxies_UpgradePrompt_IgnoresStaleRegistrations(t *testing.T) {
+	user := userWithCapabilities("U1", testGroupID, cappb.Capability_REGISTER_CACHE_PROXY)
+	s, _ := newServer(t, map[string]interfaces.UserInfo{"CP_KEY": user})
+
+	// A long-gone proxy with a very new version shouldn't set the bar.
+	stale := &cppb.RegisteredCacheProxy{
+		Registration: &cppb.CacheProxyNode{Host: "host-new", ProxyId: "id-new", Version: "v2.199.0"},
+		GroupId:      "GR-OTHER",
+		LastPingTime: timestamppb.New(time.Now().Add(-2 * maxRegistrationStaleness)),
+	}
+	b, err := proto.Marshal(stale)
+	require.NoError(t, err)
+	require.NoError(t, s.rdb.HSet(context.Background(), redisKeyForCacheProxies("GR-OTHER"), "id-new", b).Err())
+	require.NoError(t, s.insertOrUpdateProxy(context.Background(), testGroupID, &cppb.CacheProxyNode{
+		Host: "host-old", ProxyId: "id-old", Version: "v2.150.0",
+	}, nil))
+
+	ctx := claims.AuthContextWithJWT(context.Background(), user.(*claims.Claims), nil)
+	resp, err := s.GetCacheProxies(ctx, &cppb.GetCacheProxiesRequest{
+		RequestContext: &ctxpb.RequestContext{GroupId: testGroupID},
+	})
+	require.NoError(t, err)
+	assert.Nil(t, resp.GetUpgradePrompt())
 }
 
 func TestGetCacheProxies_Isolation(t *testing.T) {

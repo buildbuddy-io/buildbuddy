@@ -1,4 +1,4 @@
-import { AlertCircle, CheckCircle, Info, X, XCircle } from "lucide-react";
+import { AlertCircle, AlertTriangle, CheckCircle, Info, X, XCircle } from "lucide-react";
 import React from "react";
 import { OutlinedButton } from "../button/button";
 
@@ -6,6 +6,7 @@ const ICONS = {
   info: <Info className="blue" />,
   success: <CheckCircle className="green" />,
   warning: <AlertCircle className="orange" />,
+  critical: <AlertTriangle />,
   error: <XCircle className="red" />,
 } as const;
 

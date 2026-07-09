@@ -16,6 +16,7 @@ ts_library(
         "//app/auth:auth_service",
         "//app/components/breadcrumbs",
         "//app/components/button:link_button",
+        "//app/components/upgrade",
         "//app/router",
         "//app/service:rpc_service",
         "//app/util:errors",
@@ -23,6 +24,7 @@ ts_library(
         "//proto:api_key_ts_proto",
         "//proto:cache_proxy_ts_proto",
         "//proto:capability_ts_proto",
+        "//proto:upgrade_ts_proto",
     ],
 )
 

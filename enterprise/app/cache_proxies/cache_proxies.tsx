@@ -4,12 +4,14 @@ import { Subscription } from "rxjs";
 import { User } from "../../../app/auth/auth_service";
 import Breadcrumbs from "../../../app/components/breadcrumbs/breadcrumbs";
 import LinkButton from "../../../app/components/button/link_button";
+import UpgradePrompt from "../../../app/components/upgrade/upgrade";
 import router from "../../../app/router/router";
 import rpcService from "../../../app/service/rpc_service";
 import { BuildBuddyError } from "../../../app/util/errors";
 import { api_key } from "../../../proto/api_key_ts_proto";
 import { cache_proxy } from "../../../proto/cache_proxy_ts_proto";
 import { capability } from "../../../proto/capability_ts_proto";
+import { upgrade } from "../../../proto/upgrade_ts_proto";
 import CacheProxyCardComponent from "./cache_proxy_card";
 
 enum FetchType {
@@ -127,6 +129,37 @@ class CacheProxiesList extends React.Component<CacheProxiesListProps> {
       </div>
     );
   }
+}
+
+// The server only populates upgradePrompt when at least one of the group's
+// proxies is far enough behind the newest registered version to warrant an
+// upgrade prompt. With multiple regions, show the most urgent prompt,
+// tie-breaking on the newest version.
+function upgradePrompt(regions: RegionalCacheProxyResponse[]): upgrade.IPrompt | null {
+  let best: upgrade.IPrompt | null = null;
+  for (const region of regions) {
+    const prompt = region.response.upgradePrompt;
+    if (!prompt?.newestAvailableVersion) continue;
+    if (
+      !best ||
+      (prompt.urgency ?? 0) > (best.urgency ?? 0) ||
+      ((prompt.urgency ?? 0) === (best.urgency ?? 0) &&
+        compareVersions(prompt.newestAvailableVersion, best.newestAvailableVersion ?? "") > 0)
+    ) {
+      best = prompt;
+    }
+  }
+  return best;
+}
+
+function compareVersions(a: string, b: string): number {
+  const pa = a.replace(/^v/, "").split(".").map(Number);
+  const pb = b.replace(/^v/, "").split(".").map(Number);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const d = (pa[i] || 0) - (pb[i] || 0);
+    if (d) return d;
+  }
+  return 0;
 }
 
 function CacheProxyDetail({ Icon, label, children }: { Icon: LucideIcon; label: string; children: React.ReactNode }) {
@@ -284,6 +317,7 @@ export default class CacheProxiesComponent extends React.Component<Props, State>
   render() {
     const hasProxies = this.state.regions.some((r) => r.response.cacheProxy.some((proxy) => proxy.node));
     const hasKeys = this.state.proxyKeys.length > 0;
+    const prompt = upgradePrompt(this.state.regions);
     // When neither proxies nor cache-proxy API keys exist, skip the tab UI
     // and show a single clean empty-state view (matching the executors page
     // pattern when nothing has been set up).
@@ -336,6 +370,11 @@ export default class CacheProxiesComponent extends React.Component<Props, State>
                 </div>
                 {activeTab === "status" && (
                   <>
+                    <UpgradePrompt
+                      prompt={prompt}
+                      componentName="cache proxies"
+                      docsHref="https://www.buildbuddy.io/docs/enterprise-proxy"
+                    />
                     {!hasProxies && (
                       <div className="empty-state">
                         <h1>No cache proxies are registered.</h1>
