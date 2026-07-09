@@ -832,22 +832,24 @@ func TestParseZoneFileSurfacesErrors(t *testing.T) {
 	// partial record set.
 	path := filepath.Join(t.TempDir(), "bad.zone")
 	require.NoError(t, os.WriteFile(path, []byte("buildbuddy.io. 60 IN A not-an-ip\n"), 0644))
-	_, err := server.ParseZoneFile(path, "")
+	_, err := server.ParseZoneFile(path)
 	assert.Error(t, err)
 }
 
-func TestParseZoneFileRequiresFQDNWithoutOrigin(t *testing.T) {
-	// With an empty origin, a relative owner name can't be qualified and is a
-	// parse error, so a misconfigured zone fails startup rather than serving
+func TestParseZoneFileRequiresFQDN(t *testing.T) {
+	// A relative owner name with no origin to qualify it against is a parse
+	// error, so a misconfigured zone fails startup rather than serving
 	// mis-qualified names.
 	path := filepath.Join(t.TempDir(), "relative.zone")
 	require.NoError(t, os.WriteFile(path, []byte("relative 60 IN A 1.2.3.4\n"), 0644))
 
-	_, err := server.ParseZoneFile(path, "")
+	_, err := server.ParseZoneFile(path)
 	assert.Error(t, err, "relative name with no origin should error")
 
-	// The same file parses when an origin is supplied to qualify against.
-	records, err := server.ParseZoneFile(path, "buildbuddy.io.")
+	// The same file parses when an in-file $ORIGIN qualifies the relative name.
+	path = filepath.Join(t.TempDir(), "origin.zone")
+	require.NoError(t, os.WriteFile(path, []byte("$ORIGIN buildbuddy.io.\nrelative 60 IN A 1.2.3.4\n"), 0644))
+	records, err := server.ParseZoneFile(path)
 	require.NoError(t, err)
 	require.Len(t, records, 1)
 	assert.Equal(t, "relative.buildbuddy.io.", records[0].Header().Name)
