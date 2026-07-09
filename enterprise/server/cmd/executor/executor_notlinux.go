@@ -9,8 +9,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 )
 
-func setupCgroups() (string, error) {
-	return "", nil
+func setupCgroups() (*Cgroups, error) {
+	return new(Cgroups), nil
 }
 
 func setupNetworking(rootContext context.Context) {
