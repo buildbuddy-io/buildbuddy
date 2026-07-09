@@ -118,7 +118,7 @@ func New(env environment.Env) (*ByteStreamServerProxy, error) {
 		efp:                env.GetExperimentFlagProvider(),
 		localCache:         env.GetCache(),
 		remoteCAS:          env.GetContentAddressableStorageClient(),
-		bufPool:            bytebufferpool.VariableSize(int(compression.ZstdCompressBound(chunking.MaxSupportedChunkSizeBytes()))),
+		bufPool:            bytebufferpool.VariableSize(int(chunking.MaxCompressedChunkReadSizeBytes())),
 	}, nil
 }
 
@@ -533,8 +533,12 @@ func drainChunkReadResults(bufPool *bytebufferpool.VariableSizePool, resultChans
 
 func (s *ByteStreamServerProxy) readChunk(ctx context.Context, rn *digest.CASResourceName, offset int64, remoteOnly bool) chunkReadResult {
 	capacity := rn.GetDigest().GetSizeBytes() - offset
+	allowBufferGrowth := false
 	if rn.GetCompressor() == repb.Compressor_ZSTD {
+		// ZstdCompressBound is not a hard bound for stored zstd streams.
+		// Unproductive multi-frame streams can exceed it.
 		capacity = compression.ZstdCompressBound(capacity)
+		allowBufferGrowth = true
 	}
 	if remoteOnly {
 		data, err := s.readRemoteChunk(ctx, rn, offset, capacity)
@@ -545,7 +549,7 @@ func (s *ByteStreamServerProxy) readChunk(ctx context.Context, rn *digest.CASRes
 	}
 
 	buf := s.bufPool.Get(capacity)
-	stream := newChunkBufferStream(ctx, buf)
+	stream := newChunkBufferStream(ctx, buf, s.bufPool, allowBufferGrowth)
 	localErr := s.local.ReadCASResource(ctx, rn, offset, 0, stream)
 	if localErr == nil {
 		data := stream.Bytes()
@@ -555,7 +559,7 @@ func (s *ByteStreamServerProxy) readChunk(ctx context.Context, rn *digest.CASRes
 			return chunkReadResult{data: data}
 		}
 	}
-	s.bufPool.Put(buf)
+	s.bufPool.Put(stream.Bytes())
 	if !status.IsNotFoundError(localErr) {
 		metrics.ByteStreamProxyChunkedReadFailures.With(prometheus.Labels{
 			metrics.ChunkedFailureReasonLabel: "chunk_local_read_error",
@@ -577,17 +581,17 @@ func (s *ByteStreamServerProxy) readRemoteChunk(ctx context.Context, rn *digest.
 	}
 	data, err := retry.Do(ctx, chunkReadRetryOptions(), func(ctx context.Context) ([]byte, error) {
 		buf := s.bufPool.Get(capacity)
-		stream := newChunkBufferStream(ctx, buf)
+		stream := newChunkBufferStream(ctx, buf, s.bufPool, rn.GetCompressor() == repb.Compressor_ZSTD)
 		err := s.readRemoteOnly(ctx, req, stream)
 		if err == nil {
 			data := stream.Bytes()
 			if rn.GetCompressor() != repb.Compressor_ZSTD && int64(len(data)) != rn.GetDigest().GetSizeBytes()-offset {
-				s.bufPool.Put(buf)
+				s.bufPool.Put(data)
 				return nil, io.ErrUnexpectedEOF
 			}
 			return data, nil
 		}
-		s.bufPool.Put(buf)
+		s.bufPool.Put(stream.Bytes())
 		if err == io.ErrShortBuffer ||
 			status.IsNotFoundError(err) ||
 			status.IsPermissionDeniedError(err) ||
@@ -614,20 +618,37 @@ func (s *ByteStreamServerProxy) readRemoteChunk(ctx context.Context, rn *digest.
 }
 
 type chunkBufferStream struct {
-	ctx  context.Context
-	data []byte
+	ctx               context.Context
+	data              []byte
+	bufPool           *bytebufferpool.VariableSizePool
+	allowBufferGrowth bool
 }
 
-func newChunkBufferStream(ctx context.Context, buf []byte) *chunkBufferStream {
+func newChunkBufferStream(ctx context.Context, buf []byte, bufPool *bytebufferpool.VariableSizePool, allowBufferGrowth bool) *chunkBufferStream {
 	return &chunkBufferStream{
-		ctx:  ctx,
-		data: buf[:0],
+		ctx:               ctx,
+		data:              buf[:0],
+		bufPool:           bufPool,
+		allowBufferGrowth: allowBufferGrowth,
 	}
 }
 
 func (s *chunkBufferStream) Send(message *bspb.ReadResponse) error {
-	if len(s.data)+len(message.GetData()) > cap(s.data) {
-		return io.ErrShortBuffer
+	needed := len(s.data) + len(message.GetData())
+	if needed > cap(s.data) {
+		if !s.allowBufferGrowth {
+			return io.ErrShortBuffer
+		}
+		maxCapacity := chunking.MaxCompressedChunkReadSizeBytes()
+		if int64(needed) > maxCapacity {
+			return status.InternalErrorf("compressed chunk exceeded max read size %d", maxCapacity)
+		}
+		// Grow by doubling. Make room for the current message.
+		buf := s.bufPool.Get(min(max(2*int64(cap(s.data)), int64(needed)), maxCapacity))
+		n := len(s.data)
+		copy(buf, s.data)
+		s.bufPool.Put(s.data)
+		s.data = buf[:n]
 	}
 	s.data = append(s.data, message.GetData()...)
 	return nil

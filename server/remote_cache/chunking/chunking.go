@@ -94,6 +94,11 @@ func MaxSupportedChunkSizeBytes() int64 {
 	return 4 * 1024 * 1024
 }
 
+// MaxCompressedChunkReadSizeBytes is the per-chunk compressed read buffer cap.
+func MaxCompressedChunkReadSizeBytes() int64 {
+	return 4 * MaxSupportedChunkSizeBytes()
+}
+
 // MinChunkedReadFallbackSizeBytes can be configured independently from the
 // write threshold so server-side miss fallback paths can still read older
 // chunked blobs that were written with a smaller chunk size, but is clamped to
