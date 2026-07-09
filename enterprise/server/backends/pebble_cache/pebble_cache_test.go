@@ -2405,32 +2405,32 @@ func BenchmarkFindMissing(b *testing.B) {
 	maxSizeBytes := int64(1_000_000_000_000)
 
 	for _, storage := range []struct {
-		name            string
-		digestSizeBytes int64
+		name                   string
+		digestSizeBytes        int64
 		maxInlineFileSizeBytes int64
 	}{
 		{"512B-inline", 512, 1024},
 		{"32KiB-inline", 32 * 1024, 64 * 1024},
 		{"1KiB-external", 1024, 1024},
 	} {
-		rootDir := testfs.MakeTempDir(b)
-		pc, err := pebble_cache.NewPebbleCache(te, &pebble_cache.Options{
-			RootDirectory:          rootDir,
-			MaxSizeBytes:           maxSizeBytes,
-			MaxInlineFileSizeBytes: storage.maxInlineFileSizeBytes,
-		})
-		if err != nil {
-			b.Fatal(err)
-		}
-		pc.Start()
 		for _, present := range []bool{true, false} {
+			rootDir := testfs.MakeTempDir(b)
+			pc, err := pebble_cache.NewPebbleCache(te, &pebble_cache.Options{
+				RootDirectory:          rootDir,
+				MaxSizeBytes:           maxSizeBytes,
+				MaxInlineFileSizeBytes: storage.maxInlineFileSizeBytes,
+			})
+			if err != nil {
+				b.Fatal(err)
+			}
+			pc.Start()
 			name := fmt.Sprintf("storage=%s/present=%v", storage.name, present)
 			b.Run(name, func(b *testing.B) {
 				benchmarkFindMissing(b, pc, ctx, storage.digestSizeBytes, present)
 			})
-		}
-		if err := pc.Stop(); err != nil {
-			b.Fatal(err)
+			if err := pc.Stop(); err != nil {
+				b.Fatal(err)
+			}
 		}
 	}
 }
