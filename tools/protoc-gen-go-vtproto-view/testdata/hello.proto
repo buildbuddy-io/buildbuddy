@@ -1,0 +1,30 @@
+syntax = "proto3";
+
+import "proto/view.proto";
+
+package hello;
+
+option go_package = "github.com/buildbuddy-io/buildbuddy/tools/protoc-gen-go-vtproto-view/testdata/hello";
+
+// A minimal demonstration of wire views. Annotating fields with a view name:
+//
+//   [(view.name) = "hello"]
+//
+// makes the generator emit a GreetingHelloView struct holding just those
+// fields, plus an UnmarshalWire method that decodes them directly from a
+// serialized Greeting and skips everything else. Message fields on the path
+// to an annotated field (sender here) are included implicitly as
+// value-embedded sub-views with a Has* presence bool. See
+// viewtest.proto for a fixture covering the full feature surface.
+
+message Greeting {
+  message Sender {
+    string name = 1 [(view.name) = "hello"];
+    string email = 2;
+  }
+  // Part of the "hello" view implicitly: sender.name is annotated.
+  Sender sender = 1;
+  // Not part of any view; UnmarshalWire skips it without decoding.
+  string message = 2;
+  int64 sent_at_usec = 3 [(view.name) = "hello"];
+}

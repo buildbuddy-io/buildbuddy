@@ -7,6 +7,16 @@ package(default_visibility = ["//visibility:public"])
 # gazelle:ts disable
 
 go_proto_compiler(
+    name = "vtprotobuf_view_compiler",
+    plugin = "//tools/protoc-gen-go-vtproto-view",
+    suffix = "_vtview.pb.go",
+    valid_archive = False,
+    deps = [
+        "@com_github_planetscale_vtprotobuf//protohelpers",
+    ],
+)
+
+go_proto_compiler(
     name = "vtprotobuf_compiler",
     # marshal depends on size. Pool only generates code for messages with the
     # vtprotobuf mempool annotation.
@@ -345,6 +355,7 @@ proto_library(
     deps = [
         ":remote_execution_proto",
         ":resource_proto",
+        ":view_proto",
         "@com_github_planetscale_vtprotobuf//include/github.com/planetscale/vtprotobuf/vtproto:vtproto_proto",
     ],
 )
@@ -445,6 +456,16 @@ proto_library(
         ":context_proto",
         ":user_id_proto",
         "@com_google_protobuf//:timestamp_proto",
+    ],
+)
+
+proto_library(
+    name = "view_proto",
+    srcs = [
+        "view.proto",
+    ],
+    deps = [
+        "@com_google_protobuf//:descriptor_proto",
     ],
 )
 
@@ -1344,11 +1365,19 @@ go_proto_library(
     name = "storage_go_proto",
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/storage",
     proto = ":storage_proto",
+    views = True,
     deps = [
         ":remote_execution_go_proto",
         ":resource_go_proto",
+        ":view_go_proto",
         "@com_github_planetscale_vtprotobuf//include/github.com/planetscale/vtprotobuf/vtproto:vtproto_go_proto",
     ],
+)
+
+go_proto_library(
+    name = "view_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/view",
+    proto = ":view_proto",
 )
 
 go_proto_library(

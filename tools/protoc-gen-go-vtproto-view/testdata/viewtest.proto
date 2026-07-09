@@ -1,0 +1,43 @@
+syntax = "proto3";
+
+import "proto/view.proto";
+
+package viewtest;
+
+option go_package = "github.com/buildbuddy-io/buildbuddy/tools/protoc-gen-go-vtproto-view/testdata/viewtest";
+
+// Fixture exercising the generator: nested messages, implicit inclusion of
+// intermediate message fields, fields in multiple views, presence-only
+// annotated message fields, and one field of each supported scalar kind.
+
+enum Color {
+  COLOR_UNKNOWN = 0;
+  COLOR_RED = 1;
+}
+
+message Inner {
+  string name = 1 [(view.name) = "summary"];
+  int64 size_bytes = 2 [
+    (view.name) = "summary",
+    (view.name) = "sizes"
+  ];
+  bytes payload = 3;
+}
+
+message Middle {
+  // Included in "summary" and "sizes" implicitly via Inner's annotations.
+  Inner inner = 1;
+  bool enabled = 2 [(view.name) = "summary"];
+  // Never annotated; always skipped.
+  repeated int64 values = 3;
+}
+
+message Outer {
+  Middle middle = 1;
+  Color color = 2 [(view.name) = "summary"];
+  uint32 count = 3 [(view.name) = "sizes"];
+  bytes blob = 4 [(view.name) = "summary"];
+  // Presence-only: Inner has no "presence_only" fields, so only
+  // HasDetached is recorded.
+  Inner detached = 5 [(view.name) = "presence_only"];
+}

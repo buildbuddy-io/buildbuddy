@@ -1711,30 +1711,51 @@ func (p *PebbleCache) findMissing(ctx context.Context, db pebble.IPebbleDB, grou
 	unlockFn := p.locker.RLock(key.LockID())
 	defer unlockFn()
 
-	md := sgpb.FileMetadataFromVTPool()
-	defer md.ReturnToVTPool()
-	err = p.lookupFileMetadata(ctx, db, key, md)
-	if err != nil {
+	var md sgpb.FileMetadataFindMissingView
+	if err := p.lookupFindMissingView(db, key, &md); err != nil {
 		return err
 	}
 
 	// If this object is somehow stored as a zero-length file, pretend it
 	// does not exist.
-	if md.GetStoredSizeBytes() == 0 {
+	if md.StoredSizeBytes == 0 {
 		log.Infof("Ignoring zero-length file. Key: %q, md: %+v", key, md)
 		return status.NotFoundError("object not found (zero-length)")
 	}
 	// If this is a GCS object, ensure the custom time is relatively recent
 	// so that we avoid saying something exists when it's been deleted by
 	// a GCS lifecycle rule.
-	if gcsMetadata := md.GetStorageMetadata().GetGcsMetadata(); gcsMetadata != nil {
-		if gcsutil.ObjectIsPastTTL(p.clock, gcsMetadata, p.gcsTTLDays) {
+	if md.StorageMetadata.HasGcsMetadata {
+		if gcsutil.CustomTimeIsPastTTL(p.clock, md.StorageMetadata.GcsMetadata.LastCustomTimeUsec, p.gcsTTLDays) {
 			return status.NotFoundError("backing object may have expired")
 		}
 	}
 
-	p.sendAtimeUpdate(ctx, key, md.GetLastAccessUsec())
+	p.sendAtimeUpdate(ctx, key, md.LastAccessUsec)
 	return nil
+}
+
+// lookupFindMissingView is lookupFileMetadataAndVersion, except that it only
+// decodes the findMissing-relevant FileMetadata fields from the stored value
+// instead of unmarshalling all of it.
+func (p *PebbleCache) lookupFindMissingView(db pebble.IPebbleDB, key filestore.PebbleKey, md *sgpb.FileMetadataFindMissingView) error {
+	var lastErr error
+	for minVersion, version := p.minAndMaxDatabaseVersions(); version >= minVersion; version-- {
+		keyBytes, err := key.Bytes(version)
+		if err != nil {
+			return err
+		}
+		lastErr = pebble.GetFunc(db, keyBytes, func(buf []byte) error {
+			if err := md.UnmarshalWire(buf); err != nil {
+				return status.InternalErrorf("error parsing value for %q: %s", keyBytes, err)
+			}
+			return nil
+		})
+		if lastErr == nil {
+			return nil
+		}
+	}
+	return lastErr
 }
 
 func (p *PebbleCache) Get(ctx context.Context, r *rspb.ResourceName) ([]byte, error) {
