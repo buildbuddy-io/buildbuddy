@@ -282,12 +282,14 @@ type driverTask struct {
 }
 
 type queueImpl interface {
-	processTask(ctx context.Context, task *driverTask, action DriverAction) RequeueType
-	computeAction(ctx context.Context, task *driverTask) (DriverAction, float64)
+	processTask(ctx context.Context, task *driverTask, action DriverAction, leaseBlocked bool) RequeueType
+	// computeAction also reports whether the lease evaluation found the range's
+	// lease blocked. That value is returned (not stashed on the queue) so the
+	// execution path uses exactly the value that chose the action: computeAction
+	// is also called from maybeAddTask purely to rank a task, and that call must
+	// not perturb any state the executing goroutine reads.
+	computeAction(ctx context.Context, task *driverTask) (DriverAction, float64, bool)
 	getReplica(rangeID uint64) (IReplica, error)
-	// clearLeaseBlockedHint drops any cached per-range lease-blocked hint when
-	// a range task finishes, so hints for deleted ranges don't accumulate.
-	clearLeaseBlockedHint(rangeID uint64)
 }
 
 type baseQueue struct {
@@ -384,13 +386,6 @@ func (bq *baseQueue) postProcess(ctx context.Context, task *driverTask, requeueT
 	delete(bq.taskMap, task.key)
 	bq.mu.Unlock()
 
-	if task.key.taskType == RangeTaskType {
-		// The lease-blocked hint only bridges compute→execute within one
-		// process cycle; drop it now so hints for ranges deleted while blocked
-		// don't accumulate. It is re-derived on the range's next evaluation.
-		bq.impl.clearLeaseBlockedHint(task.key.rangeID)
-	}
-
 	if ar.attempts >= maxRetry {
 		if task.key.taskType == RangeTaskType {
 			alert.UnexpectedEvent("driver_action_retries_exceeded", "c%dn%d action: %s retries exceeded", task.key.rangeID, task.rangeTask.repl.ReplicaID(), ar.action)
@@ -413,7 +408,9 @@ func (bq *baseQueue) nextAttemptTime(attemptNumber int) time.Time {
 }
 
 func (bq *baseQueue) process(ctx context.Context, task *driverTask) RequeueType {
-	action, _ := bq.impl.computeAction(ctx, task)
+	// leaseBlocked travels with the action rather than through shared state, so
+	// the execution below sees exactly what this computation decided.
+	action, _, leaseBlocked := bq.impl.computeAction(ctx, task)
 
 	if task.key.taskType == RangeTaskType {
 		rangeID := task.key.rangeID
@@ -439,7 +436,7 @@ func (bq *baseQueue) process(ctx context.Context, task *driverTask) RequeueType 
 		}
 	}
 
-	return bq.impl.processTask(ctx, task, action)
+	return bq.impl.processTask(ctx, task, action, leaseBlocked)
 }
 
 // The Queue is responsible for up-replicate, down-replicate and reblance ranges
@@ -458,17 +455,6 @@ type Queue struct {
 
 	efp interfaces.ExperimentFlagProvider
 
-	// leaseBlockedHint caches, per range, the blocked result of the lease
-	// evaluation computeActionForRangeTask just ran, so the execution path
-	// (rebalanceReplica) doesn't repeat it (store stats + a connection check
-	// per replica). It is a hint: process() recomputes the action — and thus
-	// the hint — immediately before executing it. Guarded by its own mutex
-	// because computeActionForRangeTask runs both under bq.mu (from
-	// maybeAddTask) and without it (from process()) on the same range.
-	// Entries are cleared in postProcess so deleted ranges don't accumulate.
-	leaseBlockedMu   sync.Mutex
-	leaseBlockedHint map[uint64]bool
-
 	// Anti-thrash state for load-based rebalancing.
 	loadMu sync.Mutex
 	// lastRebalanceExpiry records, per range, when the cooldown from its
@@ -480,35 +466,6 @@ type Queue struct {
 	// evaluated within one gossip interval don't all pick the same cold
 	// target.
 	pendingMoves []pendingMoveAdjustment
-}
-
-func (rq *Queue) setLeaseBlockedHint(rangeID uint64, blocked bool) {
-	rq.leaseBlockedMu.Lock()
-	defer rq.leaseBlockedMu.Unlock()
-	if rq.leaseBlockedHint == nil {
-		rq.leaseBlockedHint = make(map[uint64]bool)
-	}
-	if blocked {
-		rq.leaseBlockedHint[rangeID] = true
-	} else {
-		delete(rq.leaseBlockedHint, rangeID)
-	}
-}
-
-func (rq *Queue) leaseBlocked(rangeID uint64) bool {
-	rq.leaseBlockedMu.Lock()
-	defer rq.leaseBlockedMu.Unlock()
-	return rq.leaseBlockedHint[rangeID]
-}
-
-// clearLeaseBlockedHint drops a range's cached hint. Called from postProcess
-// when a range task finishes so entries for ranges that were blocked and then
-// deleted (merge/split/teardown) don't accumulate. The hint is re-derived on
-// the range's next evaluation if it is still blocked.
-func (rq *Queue) clearLeaseBlockedHint(rangeID uint64) {
-	rq.leaseBlockedMu.Lock()
-	defer rq.leaseBlockedMu.Unlock()
-	delete(rq.leaseBlockedHint, rangeID)
 }
 
 // pendingMoveAdjustment is a signed, expiring correction to one store's
@@ -729,21 +686,24 @@ func (rq *Queue) isSplitEnabled(ctx context.Context) bool {
 }
 
 // computeActionForRangeTask computes the drive action needed for range task and its priority.
-func (rq *Queue) computeActionForRangeTask(ctx context.Context, task *rangeTask) (DriverAction, float64) {
+func (rq *Queue) computeActionForRangeTask(ctx context.Context, task *rangeTask) (DriverAction, float64, bool) {
 	// Handle range tasks
 	repl := task.repl
 	rangeID := repl.RangeID()
 	rd := rq.store.GetRange(rangeID)
 	action := DriverNoop
+	// leaseBlocked is reported back to the caller so the execution path can
+	// reuse this pass's lease evaluation without any shared state.
+	leaseBlocked := false
 	if rd == nil || !rq.store.HaveLease(ctx, rd.GetRangeId()) {
-		return action, action.Priority()
+		return action, action.Priority(), leaseBlocked
 	}
 
 	if rd.GetDeleted() {
 		// If the range descriptor is marked as deleted, we don't want to do
 		// any up/down-replicate and reblance actions, except for finish the
 		// cleanup.
-		return action, action.Priority()
+		return action, action.Priority(), leaseBlocked
 	}
 
 	needsRemoveData := false
@@ -758,13 +718,13 @@ func (rq *Queue) computeActionForRangeTask(ctx context.Context, task *rangeTask)
 	}
 
 	if rq.storeMap == nil {
-		return action, action.Priority()
+		return action, action.Priority(), leaseBlocked
 	}
 
 	replicas := rd.GetReplicas()
 	curReplicas := len(replicas)
 	if curReplicas == 0 {
-		return action, action.Priority()
+		return action, action.Priority(), leaseBlocked
 	}
 	minReplicas := rq.minReplicasPerRange
 	if rangeID == constants.MetaRangeID {
@@ -783,10 +743,10 @@ func (rq *Queue) computeActionForRangeTask(ctx context.Context, task *rangeTask)
 			// in-progress replica removal, complete it so this can be a target
 			// for allocation
 			if needsRemoveData {
-				return DriverFinishReplicaRemoval, adjustedPriority
+				return DriverFinishReplicaRemoval, adjustedPriority, leaseBlocked
 			}
 		}
-		return action, adjustedPriority
+		return action, adjustedPriority, leaseBlocked
 	}
 	replicasByStatus := rq.storeMap.DivideByStatus(replicas)
 	numLiveReplicas := len(replicasByStatus.LiveReplicas) + len(replicasByStatus.SuspectReplicas)
@@ -796,11 +756,11 @@ func (rq *Queue) computeActionForRangeTask(ctx context.Context, task *rangeTask)
 		// We don't have enough live nodes to do any cluster membership change;
 		// However, RemoveData doesn't require cluster membership change
 		if needsRemoveData {
-			return DriverFinishReplicaRemoval, action.Priority()
+			return DriverFinishReplicaRemoval, action.Priority(), leaseBlocked
 		}
 		log.Debugf("noop because num live replicas of range %d = %d less than quorum =%d", rd.GetRangeId(), numLiveReplicas, quorum)
 		action = DriverNoop
-		return action, action.Priority()
+		return action, action.Priority(), leaseBlocked
 	}
 
 	if curReplicas <= minReplicas && numDeadReplicas > 0 {
@@ -809,25 +769,25 @@ func (rq *Queue) computeActionForRangeTask(ctx context.Context, task *rangeTask)
 		// in-progress replica removal, complete it so this can be a target
 		// for allocation
 		if needsRemoveData {
-			return DriverFinishReplicaRemoval, action.Priority()
+			return DriverFinishReplicaRemoval, action.Priority(), leaseBlocked
 		}
-		return action, action.Priority()
+		return action, action.Priority(), leaseBlocked
 	}
 
 	if numDeadReplicas > 0 {
 		action = DriverRemoveDeadReplica
-		return action, action.Priority()
+		return action, action.Priority(), leaseBlocked
 	}
 
 	if curReplicas > minReplicas {
 		action = DriverRemoveReplica
 		adjustedPriority := action.Priority() - float64(curReplicas%2)
-		return action, adjustedPriority
+		return action, adjustedPriority, leaseBlocked
 	}
 
 	if needsRemoveData {
 		action = DriverFinishReplicaRemoval
-		return action, action.Priority()
+		return action, action.Priority(), leaseBlocked
 	}
 
 	if rd.GetRangeId() == constants.MetaRangeID {
@@ -839,7 +799,7 @@ func (rq *Queue) computeActionForRangeTask(ctx context.Context, task *rangeTask)
 		// descriptor is not current. Therefore, we should only move meta-range
 		// when it's absolutely necessary.
 		action = DriverNoop
-		return action, action.Priority()
+		return action, action.Priority(), leaseBlocked
 	}
 
 	// Do not split when there is a store that's unavailable and a replica is
@@ -858,7 +818,7 @@ func (rq *Queue) computeActionForRangeTask(ctx context.Context, task *rangeTask)
 				if sizeUsed := usage.GetEstimatedDiskBytesUsed(); float64(sizeUsed) >= threshold {
 					action = DriverSplitRange
 					adjustedPriority := action.Priority() + (float64(sizeUsed)-lowerBound)/float64(sizeUsed)*100.0
-					return action, adjustedPriority
+					return action, adjustedPriority, leaseBlocked
 				}
 			}
 		}
@@ -875,7 +835,6 @@ func (rq *Queue) computeActionForRangeTask(ctx context.Context, task *rangeTask)
 		allStoresStats = rq.storeMap.GetStoresWithStats()
 	}
 
-	leaseBlocked := false
 	if loadBased {
 		// In load-based mode, try lease transfers before replica moves: a
 		// leadership transfer is nearly free while a replica move costs a
@@ -885,13 +844,10 @@ func (rq *Queue) computeActionForRangeTask(ctx context.Context, task *rangeTask)
 		// stores and never involves the unavailable store — so it is outside
 		// the health gate below.
 		res := rq.findRebalanceLeaseOpLoaded(ctx, rd, repl, loadBased, p, allStoresStats)
-		// Cache the hint for the execution path (rebalanceReplica) and keep a
-		// local copy for the compute-phase replica evaluation below.
-		rq.setLeaseBlockedHint(rd.GetRangeId(), res.blocked)
 		leaseBlocked = res.blocked
 		if res.op != nil {
 			action = DriverRebalanceLease
-			return action, action.Priority()
+			return action, action.Priority(), leaseBlocked
 		}
 	}
 
@@ -908,7 +864,7 @@ func (rq *Queue) computeActionForRangeTask(ctx context.Context, task *rangeTask)
 		if op != nil {
 			log.Debugf("find rebalancing opportunities: from (nhid=%q, replicaCount=%d, isReady=%t) to (nhid=%q, replicaCount=%d, isReady=%t)", op.from.nhid, op.from.replicaCount, op.from.usage.GetIsReady(), op.to.nhid, op.to.replicaCount, op.to.usage.GetIsReady())
 			action = DriverRebalanceReplica
-			return action, action.Priority()
+			return action, action.Priority(), leaseBlocked
 		}
 	}
 
@@ -918,12 +874,12 @@ func (rq *Queue) computeActionForRangeTask(ctx context.Context, task *rangeTask)
 		// moves.
 		if rq.findRebalanceLeaseOpLoaded(ctx, rd, repl, loadBased, p, allStoresStats).op != nil {
 			action = DriverRebalanceLease
-			return action, action.Priority()
+			return action, action.Priority(), leaseBlocked
 		}
 	}
 
 	action = DriverNoop
-	return action, action.Priority()
+	return action, action.Priority(), leaseBlocked
 }
 
 // computeActionForPartitionTask computes the action needed for a partition task and its priority.
@@ -936,16 +892,17 @@ func (rq *Queue) computeActionForPartitionTask(ctx context.Context, task *partit
 	return DriverNoop, DriverNoop.Priority()
 }
 
-// computeAction computes the action needed and its priority.
-func (rq *Queue) computeAction(ctx context.Context, task *driverTask) (DriverAction, float64) {
+// computeAction computes the action needed, its priority, and — for range
+// tasks — whether the lease evaluation found the range's lease blocked.
+func (rq *Queue) computeAction(ctx context.Context, task *driverTask) (DriverAction, float64, bool) {
 	switch task.key.taskType {
 	case RangeTaskType:
 		return rq.computeActionForRangeTask(ctx, task.rangeTask)
 	case PartitionTaskType:
-		return rq.computeActionForPartitionTask(ctx, task.partitionTask)
+		action, priority := rq.computeActionForPartitionTask(ctx, task.partitionTask)
+		return action, priority, false
 	}
-	return DriverNoop, DriverNoop.Priority()
-
+	return DriverNoop, DriverNoop.Priority(), false
 }
 
 func (bq *baseQueue) maybeAddTask(ctx context.Context, newTask *driverTask, ar attemptRecord) {
@@ -957,7 +914,9 @@ func (bq *baseQueue) maybeAddTask(ctx context.Context, newTask *driverTask, ar a
 		task = newTask
 	}
 
-	action, priority := bq.impl.computeAction(ctx, task)
+	// This computeAction only ranks the task for the queue; its leaseBlocked
+	// result is discarded. process() recomputes it for the executing goroutine.
+	action, priority, _ := bq.impl.computeAction(ctx, task)
 	if action == DriverNoop {
 		return
 	}
@@ -1366,11 +1325,11 @@ func findReplicaWithNHID(rd *rfpb.RangeDescriptor, nhid string) (uint64, error) 
 	return 0, status.InternalErrorf("cannot find replica with NHID: %s", nhid)
 }
 
-func (rq *Queue) rebalanceReplica(ctx context.Context, rd *rfpb.RangeDescriptor, localRepl IReplica) *change {
+func (rq *Queue) rebalanceReplica(ctx context.Context, rd *rfpb.RangeDescriptor, localRepl IReplica, leaseBlocked bool) *change {
 	storesWithStats := rq.storeMap.GetStoresWithStats()
-	// The blocked hint was cached by the lease evaluation that
-	// computeActionForRangeTask just ran; don't repeat that evaluation here.
-	leaseBlocked := rq.isLoadBasedRebalanceEnabled(ctx) && rq.leaseBlocked(rd.GetRangeId())
+	// leaseBlocked comes from the lease evaluation computeActionForRangeTask
+	// just ran for this very execution; don't repeat that evaluation here.
+	leaseBlocked = leaseBlocked && rq.isLoadBasedRebalanceEnabled(ctx)
 	op := rq.findRebalanceReplicaOp(ctx, rd, storesWithStats, localRepl, leaseBlocked)
 	if op == nil {
 		return nil
@@ -2265,7 +2224,7 @@ func (rq *Queue) applyChange(ctx context.Context, change *change) error {
 	return nil
 }
 
-func (rq *Queue) processRangeTask(ctx context.Context, task *driverTask, action DriverAction) (requeueType RequeueType) {
+func (rq *Queue) processRangeTask(ctx context.Context, task *driverTask, action DriverAction, leaseBlocked bool) (requeueType RequeueType) {
 	var change *change
 	rangeID := task.key.rangeID
 	repl := task.rangeTask.repl
@@ -2295,7 +2254,7 @@ func (rq *Queue) processRangeTask(ctx context.Context, task *driverTask, action 
 	case DriverRemoveDeadReplica:
 		change = rq.removeDeadReplica(rd)
 	case DriverRebalanceReplica:
-		change = rq.rebalanceReplica(ctx, rd, repl)
+		change = rq.rebalanceReplica(ctx, rd, repl, leaseBlocked)
 	case DriverRebalanceLease:
 		change = rq.rebalanceLease(ctx, rd, repl)
 	case DriverInitializePartition:
@@ -2373,10 +2332,10 @@ func (rq *Queue) processPartitionTask(ctx context.Context, task *driverTask, act
 	return RequeueNoop
 }
 
-func (rq *Queue) processTask(ctx context.Context, task *driverTask, action DriverAction) (requeueType RequeueType) {
+func (rq *Queue) processTask(ctx context.Context, task *driverTask, action DriverAction, leaseBlocked bool) (requeueType RequeueType) {
 	switch task.key.taskType {
 	case RangeTaskType:
-		return rq.processRangeTask(ctx, task, action)
+		return rq.processRangeTask(ctx, task, action, leaseBlocked)
 	case PartitionTaskType:
 		return rq.processPartitionTask(ctx, task, action)
 	}

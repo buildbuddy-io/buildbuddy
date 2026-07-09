@@ -1399,7 +1399,7 @@ type testQueue struct {
 	repls        map[uint64]*testReplica
 }
 
-func (tq *testQueue) processTask(ctx context.Context, task *driverTask, action DriverAction) RequeueType {
+func (tq *testQueue) processTask(ctx context.Context, task *driverTask, action DriverAction, leaseBlocked bool) RequeueType {
 	if task.key.taskType != RangeTaskType {
 		return RequeueNoop
 	}
@@ -1413,25 +1413,23 @@ func (tq *testQueue) processTask(ctx context.Context, task *driverTask, action D
 	return i.requeueType
 }
 
-func (tq *testQueue) computeAction(ctx context.Context, task *driverTask) (DriverAction, float64) {
+func (tq *testQueue) computeAction(ctx context.Context, task *driverTask) (DriverAction, float64, bool) {
 	if task.key.taskType != RangeTaskType {
-		return DriverNoop, 0.0
+		return DriverNoop, 0.0, false
 	}
 	rangeID := task.key.rangeID
 	replicaID := task.rangeTask.repl.ReplicaID()
 	key := fmt.Sprintf("%d-%d", rangeID, replicaID)
 	i, ok := tq.instructions[key]
 	if !ok {
-		return DriverNoop, 0.0
+		return DriverNoop, 0.0, false
 	}
-	return i.action, i.priority
+	return i.action, i.priority, false
 }
 
 func (tq *testQueue) getReplica(rangeID uint64) (IReplica, error) {
 	return tq.repls[rangeID], nil
 }
-
-func (tq *testQueue) clearLeaseBlockedHint(rangeID uint64) {}
 
 func TestBaseQueueRetry(t *testing.T) {
 	tr := &testReplica{rangeID: 1, replicaID: 1}
@@ -2580,7 +2578,7 @@ func TestRebalanceReplicaRecordsCooldownOnUsageError(t *testing.T) {
 	}
 	rq := newQPSTestQueue(t, usages, rd)
 	localRepl := &testReplica{rangeID: 1, replicaID: 1, usageErr: fmt.Errorf("pebble unavailable")}
-	c := rq.rebalanceReplica(ctx, rd, localRepl)
+	c := rq.rebalanceReplica(ctx, rd, localRepl, false)
 	require.NotNil(t, c, "the move should still be produced")
 	require.NotNil(t, c.rebalanceRecord, "an applied move must record its cooldown even when Usage() fails")
 	require.Equal(t, uint64(1), c.rebalanceRecord.rangeID)
