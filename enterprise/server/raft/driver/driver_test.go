@@ -1370,6 +1370,9 @@ type testReplica struct {
 	rangeID   uint64
 	replicaID uint64
 	usage     *rfpb.ReplicaUsage
+	// usageErr, when set, makes Usage() fail (Usage() opens a Pebble handle in
+	// production, so a transient error is realistic).
+	usageErr error
 }
 
 func (tr *testReplica) RangeID() uint64   { return tr.rangeID }
@@ -1377,7 +1380,12 @@ func (tr *testReplica) ReplicaID() uint64 { return tr.replicaID }
 func (tr *testReplica) RangeDescriptor() *rfpb.RangeDescriptor {
 	return &rfpb.RangeDescriptor{RangeId: tr.rangeID}
 }
-func (tr *testReplica) Usage() (*rfpb.ReplicaUsage, error) { return tr.usage, nil }
+func (tr *testReplica) Usage() (*rfpb.ReplicaUsage, error) {
+	if tr.usageErr != nil {
+		return nil, tr.usageErr
+	}
+	return tr.usage, nil
+}
 
 type instruction struct {
 	action      DriverAction
@@ -2545,4 +2553,65 @@ func TestCountReplicaZoneRepairNotDeferredInCooldown(t *testing.T) {
 	require.NotNil(t, op, "a cross-zone repair move must not be deferred by cooldown")
 	require.Equal(t, "nhid-2", op.from.nhid)
 	require.Equal(t, "nhid-4", op.to.nhid)
+}
+
+// TestRebalanceReplicaRecordsCooldownOnUsageError confirms an applied replica
+// move still starts the range's cooldown when Usage() fails. Without the
+// record, recordRebalance never runs and the range can be moved again
+// immediately (thrash).
+func TestRebalanceReplicaRecordsCooldownOnUsageError(t *testing.T) {
+	ctx := context.Background()
+	rd := &rfpb.RangeDescriptor{
+		RangeId:  1,
+		Replicas: replicas(1, "nhid-1", "nhid-2", "nhid-3"),
+	}
+	withReplicas := func(su *rfpb.StoreUsage, count int64) *rfpb.StoreUsage {
+		su.ReplicaCount = count
+		return su
+	}
+	// No QPS signal, but replica counts are skewed, so the count fallback finds
+	// a move (nhid-2 -> nhid-4) even though Usage() errors.
+	usages := []*rfpb.StoreUsage{
+		withReplicas(qpsUsage("nhid-1", "", 0, 0), 30),
+		withReplicas(qpsUsage("nhid-2", "", 0, 0), 60),
+		withReplicas(qpsUsage("nhid-3", "", 0, 0), 30),
+		withReplicas(qpsUsage("nhid-4", "", 0, 0), 3),
+		withReplicas(qpsUsage("nhid-5", "", 0, 0), 4),
+	}
+	rq := newQPSTestQueue(t, usages, rd)
+	localRepl := &testReplica{rangeID: 1, replicaID: 1, usageErr: fmt.Errorf("pebble unavailable")}
+	c := rq.rebalanceReplica(ctx, rd, localRepl)
+	require.NotNil(t, c, "the move should still be produced")
+	require.NotNil(t, c.rebalanceRecord, "an applied move must record its cooldown even when Usage() fails")
+	require.Equal(t, uint64(1), c.rebalanceRecord.rangeID)
+	require.False(t, c.rebalanceRecord.skipCooldown)
+	require.Equal(t, int64(0), c.rebalanceRecord.proposeQPS, "ledger QPS is lost on a Usage error, but the cooldown is not")
+}
+
+// TestRebalanceLeaseRecordsCooldownOnUsageError is the lease-lever equivalent.
+func TestRebalanceLeaseRecordsCooldownOnUsageError(t *testing.T) {
+	ctx := context.Background()
+	rd := &rfpb.RangeDescriptor{
+		RangeId:  1,
+		Replicas: replicas(1, "nhid-1", "nhid-2", "nhid-3"),
+	}
+	withLeases := func(su *rfpb.StoreUsage, leases int64) *rfpb.StoreUsage {
+		su.LeaseCount = leases
+		return su
+	}
+	// No read signal, but lease counts are skewed, so the count lease fallback
+	// finds a move even though Usage() errors.
+	usages := []*rfpb.StoreUsage{
+		withLeases(qpsUsage("nhid-1", "", 0, 0), 60),
+		withLeases(qpsUsage("nhid-2", "", 0, 0), 5),
+		withLeases(qpsUsage("nhid-3", "", 0, 0), 10),
+		withLeases(qpsUsage("nhid-4", "", 0, 0), 45),
+	}
+	rq := newQPSTestQueue(t, usages, rd)
+	localRepl := &testReplica{rangeID: 1, replicaID: 1, usageErr: fmt.Errorf("pebble unavailable")}
+	c := rq.rebalanceLease(ctx, rd, localRepl)
+	require.NotNil(t, c, "the lease transfer should still be produced")
+	require.NotNil(t, c.rebalanceRecord, "an applied lease move must record its cooldown even when Usage() fails")
+	require.Equal(t, uint64(1), c.rebalanceRecord.rangeID)
+	require.Equal(t, int64(0), c.rebalanceRecord.readQPS)
 }

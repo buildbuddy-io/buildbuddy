@@ -1403,16 +1403,20 @@ func (rq *Queue) rebalanceReplica(ctx context.Context, rd *rfpb.RangeDescriptor,
 		// Attach a record that processRangeTask applies after the change
 		// succeeds (like CRDB's local store-load updates), so other ranges
 		// evaluated before gossip catches up see the effect of this move.
+		// The record is built even when Usage() fails: it also starts the
+		// range's cooldown, and an applied move must not skip that (a missing
+		// cooldown lets the range be moved again immediately). Only the ledger
+		// QPS is lost in that case, and a zero adjustment is a harmless no-op.
+		c.rebalanceRecord = &rebalanceRecord{
+			rangeID:  rd.GetRangeId(),
+			fromNHID: op.from.nhid,
+			toNHID:   op.to.nhid,
+			// A lease-unblock move exists to enable the follow-up lease
+			// transfer on the next pass; the cooldown must not block it.
+			skipCooldown: op.leaseUnblock,
+		}
 		if ru, usageErr := localRepl.Usage(); usageErr == nil {
-			c.rebalanceRecord = &rebalanceRecord{
-				rangeID:    rd.GetRangeId(),
-				fromNHID:   op.from.nhid,
-				toNHID:     op.to.nhid,
-				proposeQPS: ru.GetRaftProposeQps(),
-				// A lease-unblock move exists to enable the follow-up lease
-				// transfer on the next pass; the cooldown must not block it.
-				skipCooldown: op.leaseUnblock,
-			}
+			c.rebalanceRecord.proposeQPS = ru.GetRaftProposeQps()
 		}
 	}
 	return c
@@ -1443,14 +1447,16 @@ func (rq *Queue) rebalanceLease(ctx context.Context, rd *rfpb.RangeDescriptor, l
 	if rq.isLoadBasedRebalanceEnabled(ctx) {
 		// A lease transfer moves the range's read load; the record is
 		// applied by processRangeTask after the transfer succeeds so
-		// decisions made before gossip catches up account for it.
+		// decisions made before gossip catches up account for it. As in
+		// rebalanceReplica, the record is built even when Usage() fails so the
+		// applied move still starts the range's cooldown.
+		c.rebalanceRecord = &rebalanceRecord{
+			rangeID:  rd.GetRangeId(),
+			fromNHID: op.from.nhid,
+			toNHID:   op.to.nhid,
+		}
 		if ru, usageErr := localRepl.Usage(); usageErr == nil {
-			c.rebalanceRecord = &rebalanceRecord{
-				rangeID:  rd.GetRangeId(),
-				fromNHID: op.from.nhid,
-				toNHID:   op.to.nhid,
-				readQPS:  ru.GetReadQps(),
-			}
+			c.rebalanceRecord.readQPS = ru.GetReadQps()
 		}
 	}
 	return c
