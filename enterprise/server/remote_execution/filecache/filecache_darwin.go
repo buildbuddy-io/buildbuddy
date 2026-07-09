@@ -5,6 +5,5 @@ package filecache
 import "syscall"
 
 func syncFilesystem(path string) error {
-	syscall.Sync()
-	return nil
+	return syscall.Sync()
 }
