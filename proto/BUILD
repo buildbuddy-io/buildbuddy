@@ -160,6 +160,7 @@ proto_library(
     deps = [
         ":acl_proto",
         ":context_proto",
+        ":upgrade_proto",
         "@com_google_protobuf//:timestamp_proto",
     ],
 )
@@ -704,6 +705,11 @@ proto_library(
 )
 
 proto_library(
+    name = "upgrade_proto",
+    srcs = ["upgrade.proto"],
+)
+
+proto_library(
     name = "semver_proto",
     srcs = ["semver.proto"],
 )
@@ -802,6 +808,7 @@ proto_library(
         ":acl_proto",
         ":context_proto",
         ":trace_proto",
+        ":upgrade_proto",
         "@com_google_protobuf//:duration_proto",
         "@com_google_protobuf//:timestamp_proto",
         "@googleapis//google/rpc:status_proto",
@@ -1536,6 +1543,12 @@ go_proto_library(
 )
 
 go_proto_library(
+    name = "upgrade_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/upgrade",
+    proto = ":upgrade_proto",
+)
+
+go_proto_library(
     name = "semver_go_proto",
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/semver",
     proto = ":semver_proto",
@@ -1617,6 +1630,7 @@ go_proto_library(
     deps = [
         ":acl_go_proto",
         ":context_go_proto",
+        ":upgrade_go_proto",
     ],
 )
 
@@ -1734,6 +1748,7 @@ go_proto_library(
         ":acl_go_proto",
         ":context_go_proto",
         ":trace_go_proto",
+        ":upgrade_go_proto",
         "@org_golang_google_genproto_googleapis_rpc//status",
     ],
 )
@@ -2076,6 +2091,7 @@ ts_proto_library(
         ":grpc_status_ts_proto",
         ":timestamp_ts_proto",
         ":trace_ts_proto",
+        ":upgrade_ts_proto",
     ],
 )
 
@@ -2247,6 +2263,11 @@ ts_proto_library(
 )
 
 ts_proto_library(
+    name = "upgrade_ts_proto",
+    proto = ":upgrade_proto",
+)
+
+ts_proto_library(
     name = "usage_ts_proto",
     proto = ":usage_proto",
     deps = [
@@ -2398,6 +2419,7 @@ ts_proto_library(
         ":acl_ts_proto",
         ":context_ts_proto",
         ":timestamp_ts_proto",
+        ":upgrade_ts_proto",
     ],
 )
 
