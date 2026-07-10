@@ -9,11 +9,11 @@ import (
 	io "io"
 )
 
-// InnerSizesView is the "sizes" view of Inner: a
-// projection holding only the fields annotated with [(view.name) = "sizes"],
+// InnerSizesView is the "Sizes" view of Inner: a
+// projection holding only the fields annotated with [(view.name) = "Sizes"],
 // decoded directly from the wire representation without unmarshalling the
 // full message. Message-typed fields are embedded by value along with a
-// Has* presence bool, so parsing allocates nothing beyond string/bytes copies.
+// Has* presence bool, so parsing allocates nothing beyond string copies.
 type InnerSizesView struct {
 	SizeBytes int64
 }
@@ -22,6 +22,9 @@ type InnerSizesView struct {
 // serialized Inner. Any buffer UnmarshalVT accepts is decoded with
 // identical values for the view's fields; all other fields are skipped
 // without being validated or retained.
+//
+// Bytes fields are zero-copy: they alias dAtA rather than copying, so
+// they are only valid as long as dAtA remains live and unmodified.
 func (v *InnerSizesView) UnmarshalWire(dAtA []byte) error {
 	*v = InnerSizesView{}
 	return v.unmarshalWire(dAtA)
@@ -99,11 +102,11 @@ func (v *InnerSizesView) unmarshalWire(dAtA []byte) error {
 	return nil
 }
 
-// InnerSummaryView is the "summary" view of Inner: a
-// projection holding only the fields annotated with [(view.name) = "summary"],
+// InnerSummaryView is the "Summary" view of Inner: a
+// projection holding only the fields annotated with [(view.name) = "Summary"],
 // decoded directly from the wire representation without unmarshalling the
 // full message. Message-typed fields are embedded by value along with a
-// Has* presence bool, so parsing allocates nothing beyond string/bytes copies.
+// Has* presence bool, so parsing allocates nothing beyond string copies.
 type InnerSummaryView struct {
 	Name      string
 	SizeBytes int64
@@ -113,6 +116,9 @@ type InnerSummaryView struct {
 // serialized Inner. Any buffer UnmarshalVT accepts is decoded with
 // identical values for the view's fields; all other fields are skipped
 // without being validated or retained.
+//
+// Bytes fields are zero-copy: they alias dAtA rather than copying, so
+// they are only valid as long as dAtA remains live and unmodified.
 func (v *InnerSummaryView) UnmarshalWire(dAtA []byte) error {
 	*v = InnerSummaryView{}
 	return v.unmarshalWire(dAtA)
@@ -222,11 +228,11 @@ func (v *InnerSummaryView) unmarshalWire(dAtA []byte) error {
 	return nil
 }
 
-// MiddleSizesView is the "sizes" view of Middle: a
-// projection holding only the fields annotated with [(view.name) = "sizes"],
+// MiddleSizesView is the "Sizes" view of Middle: a
+// projection holding only the fields annotated with [(view.name) = "Sizes"],
 // decoded directly from the wire representation without unmarshalling the
 // full message. Message-typed fields are embedded by value along with a
-// Has* presence bool, so parsing allocates nothing beyond string/bytes copies.
+// Has* presence bool, so parsing allocates nothing beyond string copies.
 type MiddleSizesView struct {
 	Inner    InnerSizesView
 	HasInner bool
@@ -236,6 +242,9 @@ type MiddleSizesView struct {
 // serialized Middle. Any buffer UnmarshalVT accepts is decoded with
 // identical values for the view's fields; all other fields are skipped
 // without being validated or retained.
+//
+// Bytes fields are zero-copy: they alias dAtA rather than copying, so
+// they are only valid as long as dAtA remains live and unmodified.
 func (v *MiddleSizesView) UnmarshalWire(dAtA []byte) error {
 	*v = MiddleSizesView{}
 	return v.unmarshalWire(dAtA)
@@ -328,11 +337,11 @@ func (v *MiddleSizesView) unmarshalWire(dAtA []byte) error {
 	return nil
 }
 
-// MiddleSummaryView is the "summary" view of Middle: a
-// projection holding only the fields annotated with [(view.name) = "summary"],
+// MiddleSummaryView is the "Summary" view of Middle: a
+// projection holding only the fields annotated with [(view.name) = "Summary"],
 // decoded directly from the wire representation without unmarshalling the
 // full message. Message-typed fields are embedded by value along with a
-// Has* presence bool, so parsing allocates nothing beyond string/bytes copies.
+// Has* presence bool, so parsing allocates nothing beyond string copies.
 type MiddleSummaryView struct {
 	Inner    InnerSummaryView
 	HasInner bool
@@ -343,6 +352,9 @@ type MiddleSummaryView struct {
 // serialized Middle. Any buffer UnmarshalVT accepts is decoded with
 // identical values for the view's fields; all other fields are skipped
 // without being validated or retained.
+//
+// Bytes fields are zero-copy: they alias dAtA rather than copying, so
+// they are only valid as long as dAtA remains live and unmodified.
 func (v *MiddleSummaryView) UnmarshalWire(dAtA []byte) error {
 	*v = MiddleSummaryView{}
 	return v.unmarshalWire(dAtA)
@@ -456,11 +468,11 @@ func (v *MiddleSummaryView) unmarshalWire(dAtA []byte) error {
 	return nil
 }
 
-// OuterPresenceOnlyView is the "presence_only" view of Outer: a
-// projection holding only the fields annotated with [(view.name) = "presence_only"],
+// OuterPresenceOnlyView is the "PresenceOnly" view of Outer: a
+// projection holding only the fields annotated with [(view.name) = "PresenceOnly"],
 // decoded directly from the wire representation without unmarshalling the
 // full message. Message-typed fields are embedded by value along with a
-// Has* presence bool, so parsing allocates nothing beyond string/bytes copies.
+// Has* presence bool, so parsing allocates nothing beyond string copies.
 type OuterPresenceOnlyView struct {
 	HasDetached bool
 }
@@ -469,6 +481,9 @@ type OuterPresenceOnlyView struct {
 // serialized Outer. Any buffer UnmarshalVT accepts is decoded with
 // identical values for the view's fields; all other fields are skipped
 // without being validated or retained.
+//
+// Bytes fields are zero-copy: they alias dAtA rather than copying, so
+// they are only valid as long as dAtA remains live and unmodified.
 func (v *OuterPresenceOnlyView) UnmarshalWire(dAtA []byte) error {
 	*v = OuterPresenceOnlyView{}
 	return v.unmarshalWire(dAtA)
@@ -558,11 +573,11 @@ func (v *OuterPresenceOnlyView) unmarshalWire(dAtA []byte) error {
 	return nil
 }
 
-// OuterSizesView is the "sizes" view of Outer: a
-// projection holding only the fields annotated with [(view.name) = "sizes"],
+// OuterSizesView is the "Sizes" view of Outer: a
+// projection holding only the fields annotated with [(view.name) = "Sizes"],
 // decoded directly from the wire representation without unmarshalling the
 // full message. Message-typed fields are embedded by value along with a
-// Has* presence bool, so parsing allocates nothing beyond string/bytes copies.
+// Has* presence bool, so parsing allocates nothing beyond string copies.
 type OuterSizesView struct {
 	Middle      MiddleSizesView
 	HasMiddle   bool
@@ -575,6 +590,9 @@ type OuterSizesView struct {
 // serialized Outer. Any buffer UnmarshalVT accepts is decoded with
 // identical values for the view's fields; all other fields are skipped
 // without being validated or retained.
+//
+// Bytes fields are zero-copy: they alias dAtA rather than copying, so
+// they are only valid as long as dAtA remains live and unmodified.
 func (v *OuterSizesView) UnmarshalWire(dAtA []byte) error {
 	*v = OuterSizesView{}
 	return v.unmarshalWire(dAtA)
@@ -722,11 +740,11 @@ func (v *OuterSizesView) unmarshalWire(dAtA []byte) error {
 	return nil
 }
 
-// OuterSummaryView is the "summary" view of Outer: a
-// projection holding only the fields annotated with [(view.name) = "summary"],
+// OuterSummaryView is the "Summary" view of Outer: a
+// projection holding only the fields annotated with [(view.name) = "Summary"],
 // decoded directly from the wire representation without unmarshalling the
 // full message. Message-typed fields are embedded by value along with a
-// Has* presence bool, so parsing allocates nothing beyond string/bytes copies.
+// Has* presence bool, so parsing allocates nothing beyond string copies.
 type OuterSummaryView struct {
 	Middle      MiddleSummaryView
 	HasMiddle   bool
@@ -740,6 +758,9 @@ type OuterSummaryView struct {
 // serialized Outer. Any buffer UnmarshalVT accepts is decoded with
 // identical values for the view's fields; all other fields are skipped
 // without being validated or retained.
+//
+// Bytes fields are zero-copy: they alias dAtA rather than copying, so
+// they are only valid as long as dAtA remains live and unmodified.
 func (v *OuterSummaryView) UnmarshalWire(dAtA []byte) error {
 	*v = OuterSummaryView{}
 	return v.unmarshalWire(dAtA)
@@ -860,10 +881,7 @@ func (v *OuterSummaryView) unmarshalWire(dAtA []byte) error {
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
-			v.Blob = append(v.Blob[:0], dAtA[iNdEx:postIndex]...)
-			if v.Blob == nil {
-				v.Blob = []byte{}
-			}
+			v.Blob = dAtA[iNdEx:postIndex]
 			iNdEx = postIndex
 			continue
 		case 5:

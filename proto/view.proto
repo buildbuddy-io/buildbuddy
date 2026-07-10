@@ -14,5 +14,9 @@ extend google.protobuf.FieldOptions {
   // to any number of views. Message fields on the path to an annotated field
   // are included in the view implicitly; annotating a message field itself
   // records just its presence.
+  //
+  // The name is used verbatim in the generated Go type name
+  // (<Message><Name>View), so it must be an uppercase letter followed by
+  // letters and digits, e.g. "FindMissing".
   repeated string name = 50000;
 }

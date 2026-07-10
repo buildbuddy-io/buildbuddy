@@ -4,7 +4,7 @@
 // UnmarshalWire method that decodes only those fields from a serialized
 // message and skips everything else in O(1) per field record.
 //
-// For each message M whose tree uses view name "some_view" it generates:
+// For each message M whose tree uses view name "SomeView" it generates:
 //
 //	type MSomeViewView struct {
 //	    <ScalarField> <GoType>              // annotated scalar fields
@@ -16,8 +16,9 @@
 // View membership propagates: a message field is part of a view if it is
 // annotated itself (recording presence) or if any field in its subtree is.
 // Sub-views are embedded by value and mirror the message nesting, so parsing
-// a view performs no heap allocations except copies of selected string/bytes
-// fields.
+// a view performs no heap allocations except copies of selected string
+// fields. Bytes fields are zero-copy: they alias the input buffer and are
+// only valid while it remains live and unmodified.
 //
 // The decode logic mirrors protoc-gen-go-vtproto's UnmarshalVT (this plugin
 // builds on vtprotobuf's generator package), so acceptance behavior matches
@@ -208,7 +209,7 @@ func (p *viewGen) viewFields(message *protogen.Message, view string) ([]*protoge
 		tagged := false
 		for _, name := range fieldViews(field) {
 			if !validViewName(name) {
-				return nil, fmt.Errorf("field %s: invalid view name %q", field.Desc.FullName(), name)
+				return nil, fmt.Errorf("field %s: invalid view name %q (must be an uppercase letter followed by letters and digits, e.g. \"FindMissing\")", field.Desc.FullName(), name)
 			}
 			if name == view {
 				tagged = true
@@ -233,19 +234,19 @@ func (p *viewGen) viewFields(message *protogen.Message, view string) ([]*protoge
 	return fields, nil
 }
 
+// validViewName reports whether name can be used verbatim in the exported Go
+// type name of the generated view: an uppercase letter followed by letters
+// and digits.
 func validViewName(name string) bool {
-	if name == "" {
-		return false
-	}
 	for i, r := range name {
 		switch {
-		case r >= 'a' && r <= 'z':
-		case i > 0 && (r == '_' || (r >= '0' && r <= '9')):
+		case r >= 'A' && r <= 'Z':
+		case i > 0 && (r >= 'a' && r <= 'z' || r >= '0' && r <= '9'):
 		default:
 			return false
 		}
 	}
-	return true
+	return name != ""
 }
 
 // checkSupported returns an error if a field included in a view cannot be
@@ -281,22 +282,9 @@ func (p *viewGen) checkSupported(field *protogen.Field) error {
 }
 
 // viewTypeName returns e.g. "FileMetadataFindMissingView" for message
-// FileMetadata and view "find_missing".
+// FileMetadata and view "FindMissing".
 func viewTypeName(message *protogen.Message, view string) string {
-	var camel strings.Builder
-	upper := true
-	for _, r := range view {
-		if r == '_' {
-			upper = true
-			continue
-		}
-		if upper && r >= 'a' && r <= 'z' {
-			r -= 'a' - 'A'
-		}
-		upper = false
-		camel.WriteRune(r)
-	}
-	return message.GoIdent.GoName + camel.String() + "View"
+	return message.GoIdent.GoName + view + "View"
 }
 
 func (p *viewGen) message(message *protogen.Message) error {
@@ -360,7 +348,7 @@ func (p *viewGen) view(message *protogen.Message, view string) error {
 		// projection holding only the fields annotated with [(view.name) = "{{.Name}}"],
 		// decoded directly from the wire representation without unmarshalling the
 		// full message. Message-typed fields are embedded by value along with a
-		// Has* presence bool, so parsing allocates nothing beyond string/bytes copies.
+		// Has* presence bool, so parsing allocates nothing beyond string copies.
 		type {{.View}} struct {
 		{{- range .Decls}}
 			{{.}}
@@ -371,6 +359,9 @@ func (p *viewGen) view(message *protogen.Message, view string) error {
 		// serialized {{.Message}}. Any buffer UnmarshalVT accepts is decoded with
 		// identical values for the view's fields; all other fields are skipped
 		// without being validated or retained.
+		//
+		// Bytes fields are zero-copy: they alias dAtA rather than copying, so
+		// they are only valid as long as dAtA remains live and unmodified.
 		func (v *{{.View}}) UnmarshalWire(dAtA []byte) error {
 			*v = {{.View}}{}
 			return v.unmarshalWire(dAtA)
@@ -505,12 +496,12 @@ func (p *viewGen) fieldBody(view string, field *protogen.Field) (string, error) 
 			iNdEx = postIndex
 		`, D{"DecodeLen": p.lenPrefix(), "Name": name}), nil
 	case protoreflect.BytesKind:
+		// Zero-copy: the field aliases dAtA rather than copying. An empty
+		// record still yields a non-nil subslice, preserving the distinction
+		// from an absent field (nil after reset).
 		return render(`
 			{{.DecodeLen}}
-			v.{{.Name}} = append(v.{{.Name}}[:0], dAtA[iNdEx:postIndex]...)
-			if v.{{.Name}} == nil {
-				v.{{.Name}} = []byte{}
-			}
+			v.{{.Name}} = dAtA[iNdEx:postIndex]
 			iNdEx = postIndex
 		`, D{"DecodeLen": p.lenPrefix(), "Name": name}), nil
 	default:

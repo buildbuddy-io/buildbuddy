@@ -29,7 +29,7 @@ var (
 	gcsLastCustomTimeUsecNum = protowire.Number(gcsFields.ByName("last_custom_time_usec").Number())
 )
 
-// checkViewAgainstFullUnmarshal asserts the generated find_missing view's
+// checkViewAgainstFullUnmarshal asserts the generated FindMissing view's
 // contract: any buffer UnmarshalVT accepts must UnmarshalWire successfully
 // (the generated decode mirrors UnmarshalVT, so there is no leniency
 // divergence) with equal values for the view's fields.
@@ -376,7 +376,7 @@ func BenchmarkFileMetadataLookup(b *testing.B) {
 				md.ReturnToVTPool()
 			}
 		})
-		// What findMissing uses: the generated find_missing wire view.
+		// What findMissing uses: the generated FindMissing wire view.
 		b.Run(tc.name+"/view", func(b *testing.B) {
 			b.ReportAllocs()
 			var v sgpb.FileMetadataFindMissingView
