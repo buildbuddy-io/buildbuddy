@@ -63,9 +63,10 @@ func (m *cgroupMemoryMonitor) Snapshot(_ context.Context) (*MemorySnapshot, erro
 	}
 	// Exclude inactive page cache from usage, since the kernel reclaims it
 	// under memory pressure instead of OOM killing. This matches the "working
-	// set" definition that the kubelet uses for eviction decisions. Note that
-	// memory.current and memory.stat are read separately, so the subtraction
-	// can skew slightly negative under concurrent cache growth.
+	// set" definition that the kubelet uses for eviction decisions. See
+	// https://kubernetes.io/docs/concepts/scheduling-eviction/node-pressure-eviction/#memory-signals
+	// Note that memory.current and memory.stat are read separately, so the
+	// subtraction can skew slightly negative under concurrent cache growth.
 	inactiveFileBytes, err := cgroup.ReadMemoryStatField(m.dir, "inactive_file")
 	if err != nil {
 		return nil, fmt.Errorf("read executor cgroup memory stats: %w", err)
