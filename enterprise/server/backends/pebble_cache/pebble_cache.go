@@ -1711,9 +1711,15 @@ func (p *PebbleCache) findMissing(ctx context.Context, db pebble.IPebbleDB, grou
 	unlockFn := p.locker.RLock(key.LockID())
 	defer unlockFn()
 
-	var md sgpb.FileMetadataFindMissingView
-	if err := p.lookupFindMissingView(db, key, &md); err != nil {
+	buf, closer, err := p.lookupFileMetadataBytes(db, key)
+	if err != nil {
 		return err
+	}
+	defer closer.Close()
+
+	var md sgpb.FileMetadataFindMissingView
+	if err := md.UnmarshalWire(buf); err != nil {
+		return status.InternalErrorf("error parsing value for %q: %s", key, err)
 	}
 
 	// If this object is somehow stored as a zero-length file, pretend it
@@ -1735,27 +1741,33 @@ func (p *PebbleCache) findMissing(ctx context.Context, db pebble.IPebbleDB, grou
 	return nil
 }
 
-// lookupFindMissingView is lookupFileMetadataAndVersion, except that it only
-// decodes the findMissing-relevant FileMetadata fields from the stored value
-// instead of unmarshalling all of it.
-func (p *PebbleCache) lookupFindMissingView(db pebble.IPebbleDB, key filestore.PebbleKey, md *sgpb.FileMetadataFindMissingView) error {
+// lookupFileMetadataBytes is lookupFileMetadataAndVersion, except that it
+// returns the serialized FileMetadata value as stored instead of
+// unmarshalling it. The returned buffer is only valid until the returned
+// closer is closed; on success the caller must close it.
+func (p *PebbleCache) lookupFileMetadataBytes(db pebble.IPebbleDB, key filestore.PebbleKey) ([]byte, io.Closer, error) {
 	var lastErr error
 	for minVersion, version := p.minAndMaxDatabaseVersions(); version >= minVersion; version-- {
 		keyBytes, err := key.Bytes(version)
 		if err != nil {
-			return err
+			return nil, nil, err
 		}
-		lastErr = pebble.GetFunc(db, keyBytes, func(buf []byte) error {
-			if err := md.UnmarshalWire(buf); err != nil {
-				return status.InternalErrorf("error parsing value for %q: %s", keyBytes, err)
+		buf, closer, err := db.Get(keyBytes)
+		if err != nil {
+			if err == pebble.ErrNotFound {
+				err = status.NotFoundErrorf("key %q not found", keyBytes)
 			}
-			return nil
-		})
-		if lastErr == nil {
-			return nil
+			lastErr = err
+			continue
 		}
+		if len(buf) == 0 {
+			closer.Close()
+			lastErr = status.NotFoundErrorf("key %q not found (empty value)", keyBytes)
+			continue
+		}
+		return buf, closer, nil
 	}
-	return lastErr
+	return nil, nil, lastErr
 }
 
 func (p *PebbleCache) Get(ctx context.Context, r *rspb.ResourceName) ([]byte, error) {
