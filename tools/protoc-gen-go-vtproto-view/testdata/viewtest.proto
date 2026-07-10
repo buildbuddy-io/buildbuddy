@@ -17,10 +17,7 @@ enum Color {
 
 message Inner {
   string name = 1 [(view.name) = "Summary"];
-  int64 size_bytes = 2 [
-    (view.name) = "Summary",
-    (view.name) = "Sizes"
-  ];
+  int64 size_bytes = 2 [(view.name) = "Summary", (view.name) = "Sizes"];
   bytes payload = 3;
 }
 
