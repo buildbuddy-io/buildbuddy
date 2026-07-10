@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -55,7 +56,11 @@ func setupCgroups() (*Cgroups, error) {
 	cgroups := new(Cgroups)
 	startingCgroup, err := cgroup.GetCurrent()
 	if err != nil {
-		log.Warningf("Could not determine starting cgroup: %s", err)
+		if errors.Is(err, cgroup.ErrV1NotSupported) {
+			log.Warningf("Note: executor is running under cgroup v1, which has limited support. Some functionality may not work as expected.")
+		} else {
+			log.Warningf("Could not determine starting cgroup: %s", err)
+		}
 		return cgroups, nil
 	}
 	cgroups.StartingCgroup = startingCgroup
