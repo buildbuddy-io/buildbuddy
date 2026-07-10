@@ -51,8 +51,12 @@ const (
 //				...
 //
 // It returns the original executor cgroup and the parent where task cgroups
-// are placed, both relative to the cgroup root.
+// are placed, both relative to the cgroup root. In the above example, these
+// would be "kubepods.slice/pod-abc/container-123" and
+// "kubepods.slice/pod-abc/container-123/buildbuddy.executor.tasks".
 func setupCgroups() (*Cgroups, error) {
+	// Get the cgroup that the executor process was originally started in.
+	// On k8s this will be something like "kubepods.slice/pod-abc/container-123"
 	startingCgroup, err := cgroup.GetCurrent()
 	if err != nil {
 		if errors.Is(err, cgroup.ErrV1NotSupported) {
