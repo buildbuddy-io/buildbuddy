@@ -13,59 +13,111 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/util/download"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
+	cmpb "github.com/buildbuddy-io/buildbuddy/proto/api/v1/common"
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	trpb "github.com/buildbuddy-io/buildbuddy/proto/target"
 )
 
-// ViewFilteredTestOutput prints the output of filtered failed test cases.
+// failingTestStatuses are the target statuses that can carry failed test cases.
+var failingTestStatuses = []cmpb.Status{cmpb.Status_FAILED, cmpb.Status_FLAKY, cmpb.Status_TIMED_OUT}
+
+// ViewFilteredTestOutput writes the output of failed test cases to w.
 //
-// testFilter must be a target label plus test name, e.g.
-// "//path/to:target.TestName".
-func ViewFilteredTestOutput(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, downloader download.Downloader, w io.Writer, invocationID, testFilter string) (int, error) {
-	targetLabel, namePattern, err := parseTestFilter(testFilter)
+// If one or more target labels are given, only those targets are inspected.
+// Within each target, only failed test cases whose
+// name matches testFilter (a regular expression) are printed; an empty
+// testFilter matches every failed case.
+func ViewFilteredTestOutput(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, downloader download.Downloader, w io.Writer, invocationID string, targets []string, testFilter string) (int, error) {
+	re, err := regexp.Compile(testFilter)
 	if err != nil {
-		return 1, err
-	}
-	re, err := regexp.Compile(namePattern)
-	if err != nil {
-		return 1, fmt.Errorf("invalid test name pattern %q: %w", namePattern, err)
+		return 1, fmt.Errorf("invalid --test_filter %q: %w", testFilter, err)
 	}
 
-	events, err := testResultEvents(ctx, bbClient, invocationID, targetLabel)
-	if err != nil {
-		if status.IsNotFoundError(err) {
-			return 1, fmt.Errorf("target %s not found in invocation %s", targetLabel, invocationID)
+	targetsSpecified := len(targets) > 0
+	if !targetsSpecified {
+		log.Warnf("No target specified; searching all failed test targets in the invocation. This is slow — pass one or more target labels to improve performance.")
+		targets, err = failedTestTargets(ctx, bbClient, invocationID)
+		if err != nil {
+			return -1, err
 		}
-		return -1, err
 	}
-	if len(events) == 0 {
-		log.Printf("No test results found for %s in invocation %s.", targetLabel, invocationID)
-		return 0, nil
+
+	matches := 0
+	noResults := 0
+	for _, t := range targets {
+		t = normalizeTarget(t)
+		events, err := testResultEvents(ctx, bbClient, invocationID, t)
+		if err != nil {
+			if targetsSpecified && status.IsNotFoundError(err) {
+				return 1, fmt.Errorf("target %s not found in invocation %s", t, invocationID)
+			}
+			return -1, err
+		}
+		if len(events) == 0 {
+			// The target resolved but produced no test results (e.g. it isn't a
+			// test target, or wasn't tested) — distinct from a test that ran and
+			// passed. Only worth calling out for targets the user named.
+			if targetsSpecified {
+				log.Printf("Target %s has no test results in invocation %s.", t, invocationID)
+				noResults++
+			}
+			continue
+		}
+		matches += printFailedTestCases(ctx, w, downloader, t, events, re)
 	}
-	if printFailedTestCases(ctx, w, downloader, targetLabel, events, re) == 0 {
-		log.Printf("No failed test cases matching %q found in %s.", namePattern, targetLabel)
+	// Summarize when nothing was printed, unless every named target simply had
+	// no test results (already reported per-target above).
+	if matches == 0 && !(targetsSpecified && noResults == len(targets)) {
+		if testFilter != "" {
+			log.Printf("No failed test cases matching %q found.", testFilter)
+		} else {
+			log.Printf("No failed test cases found.")
+		}
 	}
 	return 0, nil
 }
 
-// parseTestFilter splits a --test_filter value of the form
-// "//path/to:target.TestName" into the target label and the test-name pattern.
-func parseTestFilter(filter string) (targetLabel, namePattern string, err error) {
-	colon := strings.IndexByte(filter, ':')
-	if colon < 0 {
-		return "", "", fmt.Errorf("--test_filter %q must be a target label plus test name, e.g. //path/to:target.TestName", filter)
+// normalizeTarget ensures a target label has the leading "//" that the GetTarget
+// API expects.
+func normalizeTarget(target string) string {
+	if strings.HasPrefix(target, "//") || strings.HasPrefix(target, "@") {
+		return target
 	}
-	dot := strings.LastIndexByte(filter, '.')
-	if dot < colon {
-		return "", "", fmt.Errorf("--test_filter %q is missing the '.TestName' portion; expected //path/to:target.TestName", filter)
+	return "//" + target
+}
+
+// failedTestTargets returns every failing test target in the invocation.
+func failedTestTargets(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, invocationID string) ([]string, error) {
+	var targets []string
+	for _, s := range failingTestStatuses {
+		s := s
+		pageToken := ""
+		for {
+			resp, err := bbClient.GetTarget(ctx, &trpb.GetTargetRequest{
+				InvocationId: invocationID,
+				Status:       &s,
+				PageToken:    pageToken,
+			})
+			if err != nil {
+				return nil, err
+			}
+			nextPageToken := ""
+			for _, g := range resp.GetTargetGroups() {
+				for _, t := range g.GetTargets() {
+					targets = append(targets, t.GetMetadata().GetLabel())
+				}
+				if g.GetNextPageToken() != "" {
+					nextPageToken = g.GetNextPageToken()
+				}
+			}
+			if nextPageToken == "" {
+				break
+			}
+			pageToken = nextPageToken
+		}
 	}
-	label := filter[:dot]
-	// Make sure the label has a leading "//" because the GetTarget API expects that.
-	if !strings.HasPrefix(label, "//") && !strings.HasPrefix(label, "@") {
-		label = "//" + label
-	}
-	return label, filter[dot+1:], nil
+	return targets, nil
 }
 
 // testResultEvents fetches the TestResult events (one per run/shard/attempt)
@@ -104,7 +156,7 @@ func printFailedTestCases(ctx context.Context, w io.Writer, downloader download.
 		}
 		var buf bytes.Buffer
 		if err := downloader.GetBytestreamFile(ctx, uri, &buf); err != nil {
-			log.Debugf("Failed to download test.xml for %s: %s", label, err)
+			log.Warnf("Failed to download test.xml for %s: %s", label, err)
 			continue
 		}
 		cases, err := parseTestCases(buf.Bytes())

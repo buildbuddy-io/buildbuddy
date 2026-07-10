@@ -29,25 +29,26 @@ var (
 
 	apiTarget  = flags.String("target", "remote.buildbuddy.io", "BuildBuddy gRPC target")
 	lines      = flags.Int("lines", 100_000, "Minimum number of lines to fetch")
-	testFilter = flags.String("test_filter", "", "If set, print only the output of matching failed test cases instead of the full build logs. Must be a target label plus test name, e.g. //path/to:pkg_test.TestName (the test name is matched as a regular expression).")
+	testFilter = flags.String("test_filter", "", "If set, print only the output of matching failed test cases instead of the full build logs. The value is a test-name pattern (regular expression), matching bazel's --test_filter.")
 
 	pathPattern = regexp.MustCompile(`/invocation/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})`)
 	uuidPattern = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
 
 	usage = `
-bb ` + flags.Name() + ` <invocation-id-or-url> [--lines=100000] [--test_filter=//target:name.TestName] [--target=remote.buildbuddy.io]
+bb ` + flags.Name() + ` <invocation-id-or-url> [target...] [--lines=100000] [--test_filter=TestName] [--target=remote.buildbuddy.io]
 
 Views build logs from BuildBuddy using the GetEventLogChunk API.
 
-With --test_filter, instead of the full build logs, prints only the output of
-matching failed test cases. The value must be a target label plus test name,
-e.g. //path/to:pkg_test.TestName. The test name is matched as a regular
-expression.
+If one or more target labels are given (and/or --test_filter is set), prints the
+output of failed test cases instead of the full build logs. --test_filter is a
+regular expression (matching bazel's --test_filter semantics). With no
+target, every failing test target in the invocation is searched.
 
 Examples:
   bb view 12345678-1234-1234-1234-123456789012
   bb view https://app.buildbuddy.io/invocation/12345678-1234-1234-1234-123456789012
-  bb view 12345678-1234-1234-1234-123456789012 --test_filter=//server/foo:foo_test.TestName
+  bb view 12345678-1234-1234-1234-123456789012 //server/foo:foo_test
+  bb view 12345678-1234-1234-1234-123456789012 //server/foo:foo_test --test_filter=TestName
 `
 )
 
@@ -103,10 +104,12 @@ func HandleView(args []string) (exitCode int, err error) {
 		ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", apiKey)
 	}
 
-	// When --test_filter is set, print only the matching failed test cases.
-	if *testFilter != "" {
+	// When targets and/or --test_filter are given, print only the matching
+	// failed test cases instead of the full build logs.
+	targets := flags.Args()[1:]
+	if len(targets) > 0 || *testFilter != "" {
 		bsClient := bspb.NewByteStreamClient(conn)
-		return ViewFilteredTestOutput(ctx, bbClient, download.NewByteStreamDownloader(bsClient), os.Stdout, invocationID, *testFilter)
+		return ViewFilteredTestOutput(ctx, bbClient, download.NewByteStreamDownloader(bsClient), os.Stdout, invocationID, targets, *testFilter)
 	}
 
 	// If the invocation has run logs, only print the run logs and not the build logs.
