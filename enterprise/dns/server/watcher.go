@@ -2,15 +2,14 @@ package server
 
 import (
 	"context"
-	"crypto/sha256"
 	"iter"
 	"sort"
 	"strings"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore/gcs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	"github.com/miekg/dns"
 )
@@ -25,21 +24,34 @@ const (
 	// zoneFileSuffix is the object-name suffix that marks a bucket object as a
 	// zone file to serve. Objects without it are ignored.
 	zoneFileSuffix = ".zone"
+
+	// gcsOpTimeout bounds each individual GCS request (the object listing, and
+	// each object read) so a slow or hung backend can't wedge a poll -- and, at
+	// startup, can't block the server from coming up. On timeout the poll logs
+	// and keeps the zones it already serves, retrying on the next tick.
+	gcsOpTimeout = 10 * time.Second
 )
 
 // zoneStore is the subset of the GCS blobstore the watcher needs: list object
-// names and read an object's bytes. *gcs.GCSBlobStore satisfies it. It is an
-// interface so the watcher can be exercised with a fake in tests.
+// attributes and read an object's bytes. *gcs.GCSBlobStore satisfies it. It is
+// an interface so the watcher can be exercised with a fake in tests.
 type zoneStore interface {
-	List(ctx context.Context, prefix string) iter.Seq2[string, error]
+	List(ctx context.Context, prefix string) iter.Seq2[gcs.ObjectAttrs, error]
 	ReadBlob(ctx context.Context, name string) ([]byte, error)
 }
 
-// zoneFileState is the last-good parsed state of a single GCS zone-file object:
-// the content hash we loaded it at (to skip re-parsing unchanged objects) and
-// the records it parsed to.
+// zoneFileState is what the watcher remembers about a single GCS zone-file
+// object between polls.
 type zoneFileState struct {
-	hash    [sha256.Size]byte
+	// generation is the GCS generation the watcher last processed for this
+	// object (whether it parsed successfully or was rejected). An object whose
+	// current generation matches this is skipped entirely -- not re-read,
+	// re-parsed, or re-alerted -- since its content cannot have changed.
+	generation int64
+
+	// records is the object's last-good parsed records, still served even if the
+	// current generation was rejected. nil if the object has never parsed
+	// successfully.
 	records []dns.RR
 }
 
@@ -48,18 +60,18 @@ type zoneFileState struct {
 // handler's served records whenever any object changes.
 //
 // Each object is kept at its last-good version: one that fails to parse or
-// lacks an SOA is skipped (and alerted on) without disturbing the other zones.
-// The GCS source is never fatal -- a failed poll, or a bucket that is empty or
-// all-invalid, just logs and keeps watching. GCS and local --dns.zone_file
-// sources are mutually exclusive, so the watcher owns the entire served set.
+// lacks an SOA is skipped (and alerted on once per bad version) without
+// disturbing the other zones. The GCS source is never fatal -- a failed poll, or
+// a bucket that is empty or all-invalid, just logs and keeps watching. GCS and
+// local --dns.zone_file sources are mutually exclusive, so the watcher owns the
+// entire served set.
 type ZoneWatcher struct {
 	handler  *Handler
 	store    zoneStore
 	interval time.Duration
 
-	// files holds the last-good state of each GCS object we've successfully
-	// loaded, keyed by object name. Accessed only from the single poll
-	// goroutine, so it needs no lock.
+	// files holds what we know about each GCS object, keyed by object name.
+	// Accessed only from the single poll goroutine, so it needs no lock.
 	files map[string]*zoneFileState
 }
 
@@ -76,8 +88,10 @@ func NewZoneWatcher(handler *Handler, store zoneStore, interval time.Duration) *
 
 // Start performs a best-effort initial poll (so the server begins serving GCS
 // zones promptly) and then polls on a ticker until ctx is cancelled. It never
-// returns an error: the GCS source is non-fatal by design, so a failed or empty
-// initial poll comes up serving nothing and retries on the next tick.
+// returns an error: the GCS source is non-fatal by design, and each GCS request
+// in the initial poll is bounded by gcsOpTimeout, so a slow or unreachable
+// bucket can't block startup -- the server comes up serving whatever loaded (or
+// nothing) and the ticker retries.
 func (w *ZoneWatcher) Start(ctx context.Context) {
 	w.poll(ctx)
 	if len(w.files) == 0 {
@@ -97,66 +111,85 @@ func (w *ZoneWatcher) Start(ctx context.Context) {
 	}()
 }
 
-// poll lists the zone-file objects, reloads any that changed (keeping the
-// last-good version of any that fail to read/parse), drops any that
-// disappeared, and -- if the set changed -- rebuilds and swaps in the handler's
-// records. It never fails fatally; every error is logged (and single-file parse
-// failures are alerted) and the current zones are preserved.
+// poll lists the zone-file objects, reloads any whose generation changed
+// (keeping the last-good version of any that fail to read/parse), drops any that
+// disappeared, and -- if the served set changed -- rebuilds and swaps in the
+// handler's records. It never fails fatally; every error is logged (and each
+// newly-seen bad version is alerted once) and the current zones are preserved.
 //
 // Changes are staged and only committed to w.files after the listing completes
 // successfully. If listing errors partway through, w.files is left untouched, so
-// a partially-read listing can't record objects as "loaded" without ever
-// pushing them (which a later unchanged poll would then never re-push).
+// a partially-read listing can't record objects as "processed" without ever
+// serving them (which a later unchanged poll would then never revisit).
 func (w *ZoneWatcher) poll(ctx context.Context) {
 	present := make(map[string]bool)
-	updates := make(map[string]*zoneFileState)
+	staged := make(map[string]*zoneFileState)
+	changed := false
+
+	listCtx, cancelList := context.WithTimeout(ctx, gcsOpTimeout)
+	defer cancelList()
 	// An empty prefix lists the whole bucket; suffix filtering below selects the
 	// zone files.
-	for name, err := range w.store.List(ctx, "") {
+	for attrs, err := range w.store.List(listCtx, "") {
 		if err != nil {
 			// Abandon this poll entirely; keep the zones we're already serving.
 			log.Warningf("dns: listing zone files from GCS failed, keeping current zones: %s", err)
 			return
 		}
+		name := attrs.Name
 		if !strings.HasSuffix(name, zoneFileSuffix) {
 			continue
 		}
 		present[name] = true
 
-		data, err := w.store.ReadBlob(ctx, name)
+		// Skip objects whose version we've already processed: an unchanged
+		// generation means unchanged content, so there's nothing to re-read,
+		// re-parse, or re-alert. This is what keeps a stuck-bad file from
+		// alerting every poll, and avoids re-downloading unchanged zones.
+		if cur, ok := w.files[name]; ok && cur.generation == attrs.Generation {
+			continue
+		}
+
+		readCtx, cancelRead := context.WithTimeout(ctx, gcsOpTimeout)
+		data, err := w.store.ReadBlob(readCtx, name)
+		cancelRead()
 		if err != nil {
-			// A transient read failure keeps the last-good version (if any); the
+			// A transient read failure keeps the last-good version (if any) and,
+			// by not recording this generation, retries on the next poll. The
 			// object is still "present" so it isn't dropped below.
 			log.Warningf("dns: reading zone file %q failed, keeping last-good: %s", name, err)
 			continue
 		}
 
-		hash := sha256.Sum256(data)
-		if cur, ok := w.files[name]; ok && cur.hash == hash {
-			continue // unchanged since last-good load
-		}
-
-		records, err := parseAndVerifyZone(data, name)
+		records, err := ParseAndVerifyZone(data, name)
 		if err != nil {
-			// One bad file must not disturb the others: alert so we can fix it,
-			// and keep this object's last-good records (if we had any).
+			// One bad file must not disturb the others: alert (once for this
+			// version, since we record its generation) and keep this object's
+			// last-good records, if any.
 			alert.UnexpectedEvent(zoneFileInvalidAlert, "zone file %q rejected, keeping last-good: %s", name, err)
+			var lastGood []dns.RR
+			if cur, ok := w.files[name]; ok {
+				lastGood = cur.records
+			}
+			staged[name] = &zoneFileState{generation: attrs.Generation, records: lastGood}
 			continue
 		}
-		updates[name] = &zoneFileState{hash: hash, records: records}
-	}
-
-	// Listing completed successfully: commit the staged reloads and drop any
-	// objects that no longer exist in the bucket.
-	changed := false
-	for name, st := range updates {
-		w.files[name] = st
+		staged[name] = &zoneFileState{generation: attrs.Generation, records: records}
 		changed = true
 	}
-	for name := range w.files {
+
+	// Listing completed successfully: commit the staged results and drop any
+	// objects that no longer exist in the bucket. Dropping an object only changes
+	// the served set if it was actually contributing records.
+	for name, st := range staged {
+		w.files[name] = st
+	}
+	for name, st := range w.files {
 		if !present[name] {
+			if len(st.records) > 0 {
+				changed = true
+			}
 			delete(w.files, name)
-			changed = true
 		}
 	}
 
@@ -180,29 +213,4 @@ func (w *ZoneWatcher) assemble() []dns.RR {
 		out = append(out, w.files[name].records...)
 	}
 	return out
-}
-
-// parseAndVerifyZone parses a zone file's bytes and requires it to define an SOA
-// at its apex. A file without an SOA contributes no apex, so its names would
-// route to no zone and be answered REFUSED even though they loaded -- a silent
-// failure -- so it is rejected here.
-func parseAndVerifyZone(data []byte, name string) ([]dns.RR, error) {
-	records, err := ParseZoneBytes(data, name)
-	if err != nil {
-		return nil, err
-	}
-	if !hasSOA(records) {
-		return nil, status.FailedPreconditionErrorf("zone file %q has no SOA record at its apex", name)
-	}
-	return records, nil
-}
-
-// hasSOA reports whether rrs contains an SOA record.
-func hasSOA(rrs []dns.RR) bool {
-	for _, rr := range rrs {
-		if rr.Header().Rrtype == dns.TypeSOA {
-			return true
-		}
-	}
-	return false
 }

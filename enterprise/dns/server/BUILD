@@ -13,6 +13,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//enterprise/server/experiments",
+        "//server/backends/blobstore/gcs",
         "//server/environment",
         "//server/interfaces",
         "//server/metrics",
@@ -38,6 +39,7 @@ go_test(
     embed = [":server"],
     deps = [
         "//enterprise/server/experiments",
+        "//server/backends/blobstore/gcs",
         "//server/interfaces",
         "//server/testutil/testenv",
         "//server/util/maxmind",

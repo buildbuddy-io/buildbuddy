@@ -8,30 +8,47 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore/gcs"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/miekg/dns"
 )
 
+// fakeObject is one object in the fake store: its bytes and its GCS generation.
+type fakeObject struct {
+	data       []byte
+	generation int64
+}
+
 // fakeStore is an in-memory zoneStore for exercising the watcher. Objects and
 // error injection are set directly on the fields between poll() calls (the
 // watcher polls from a single goroutine, and tests drive poll() synchronously,
 // so no locking is needed).
 type fakeStore struct {
-	objects  map[string][]byte
+	objects  map[string]*fakeObject
 	listErr  error
 	readErrs map[string]error
 }
 
 func newFakeStore() *fakeStore {
-	return &fakeStore{objects: map[string][]byte{}, readErrs: map[string]error{}}
+	return &fakeStore{objects: map[string]*fakeObject{}, readErrs: map[string]error{}}
 }
 
-func (s *fakeStore) List(ctx context.Context, prefix string) iter.Seq2[string, error] {
-	return func(yield func(string, error) bool) {
+// put writes (or overwrites) an object, bumping its generation the way GCS does
+// on every write so the watcher notices the change.
+func (s *fakeStore) put(name string, data []byte) {
+	gen := int64(1)
+	if cur, ok := s.objects[name]; ok {
+		gen = cur.generation + 1
+	}
+	s.objects[name] = &fakeObject{data: data, generation: gen}
+}
+
+func (s *fakeStore) List(ctx context.Context, prefix string) iter.Seq2[gcs.ObjectAttrs, error] {
+	return func(yield func(gcs.ObjectAttrs, error) bool) {
 		if s.listErr != nil {
-			yield("", s.listErr)
+			yield(gcs.ObjectAttrs{}, s.listErr)
 			return
 		}
 		names := make([]string, 0, len(s.objects))
@@ -42,7 +59,8 @@ func (s *fakeStore) List(ctx context.Context, prefix string) iter.Seq2[string, e
 		}
 		sort.Strings(names)
 		for _, name := range names {
-			if !yield(name, nil) {
+			obj := s.objects[name]
+			if !yield(gcs.ObjectAttrs{Name: name, Generation: obj.generation}, nil) {
 				return
 			}
 		}
@@ -53,11 +71,11 @@ func (s *fakeStore) ReadBlob(ctx context.Context, name string) ([]byte, error) {
 	if err := s.readErrs[name]; err != nil {
 		return nil, err
 	}
-	data, ok := s.objects[name]
+	obj, ok := s.objects[name]
 	if !ok {
 		return nil, errors.New("object not found")
 	}
-	return data, nil
+	return obj.data, nil
 }
 
 // zoneFileWithA returns the bytes of a minimal valid zone file for apex, whose
@@ -103,10 +121,10 @@ func newWatcher(store zoneStore) (*Handler, *ZoneWatcher) {
 
 func TestZoneWatcher_LoadsValidZones(t *testing.T) {
 	store := newFakeStore()
-	store.objects["a.zone"] = zoneFileWithA("a.example.", "1.1.1.1")
-	store.objects["b.zone"] = zoneFileWithA("b.example.", "2.2.2.2")
+	store.put("a.zone", zoneFileWithA("a.example.", "1.1.1.1"))
+	store.put("b.zone", zoneFileWithA("b.example.", "2.2.2.2"))
 	// A non-".zone" object must be ignored entirely.
-	store.objects["notes.txt"] = []byte("not a zone file")
+	store.put("notes.txt", []byte("not a zone file"))
 
 	h, w := newWatcher(store)
 	w.poll(context.Background())
@@ -118,11 +136,11 @@ func TestZoneWatcher_LoadsValidZones(t *testing.T) {
 
 func TestZoneWatcher_BadFileDoesNotDisturbOthers(t *testing.T) {
 	store := newFakeStore()
-	store.objects["good.zone"] = zoneFileWithA("good.example.", "1.1.1.1")
+	store.put("good.zone", zoneFileWithA("good.example.", "1.1.1.1"))
 	// Missing an SOA: rejected, but must not prevent good.zone from loading.
-	store.objects["nosoa.zone"] = []byte("nosoa.example. 60 IN A 3.3.3.3\n")
+	store.put("nosoa.zone", []byte("nosoa.example. 60 IN A 3.3.3.3\n"))
 	// Unparseable: also rejected independently.
-	store.objects["broken.zone"] = []byte("@@@ not a zone @@@\n")
+	store.put("broken.zone", []byte("@@@ not a zone @@@\n"))
 
 	h, w := newWatcher(store)
 	w.poll(context.Background())
@@ -132,7 +150,7 @@ func TestZoneWatcher_BadFileDoesNotDisturbOthers(t *testing.T) {
 
 func TestZoneWatcher_KeepsLastGoodWhenFileBecomesInvalid(t *testing.T) {
 	store := newFakeStore()
-	store.objects["z.zone"] = zoneFileWithA("z.example.", "1.1.1.1")
+	store.put("z.zone", zoneFileWithA("z.example.", "1.1.1.1"))
 
 	h, w := newWatcher(store)
 	w.poll(context.Background())
@@ -140,7 +158,7 @@ func TestZoneWatcher_KeepsLastGoodWhenFileBecomesInvalid(t *testing.T) {
 
 	// The object is overwritten with an SOA-less (invalid) version: the watcher
 	// must keep serving the last-good records rather than dropping the zone.
-	store.objects["z.zone"] = []byte("z.example. 60 IN A 9.9.9.9\n")
+	store.put("z.zone", []byte("z.example. 60 IN A 9.9.9.9\n"))
 	w.poll(context.Background())
 
 	assert.Equal(t, []string{"z.example."}, servedApexes(h))
@@ -149,37 +167,92 @@ func TestZoneWatcher_KeepsLastGoodWhenFileBecomesInvalid(t *testing.T) {
 
 func TestZoneWatcher_KeepsLastGoodOnReadError(t *testing.T) {
 	store := newFakeStore()
-	store.objects["z.zone"] = zoneFileWithA("z.example.", "1.1.1.1")
+	store.put("z.zone", zoneFileWithA("z.example.", "1.1.1.1"))
 
 	h, w := newWatcher(store)
 	w.poll(context.Background())
 	require.Equal(t, "1.1.1.1", servedA(h, "z.example."))
 
-	// The object still exists in the listing but reads fail: keep last-good.
+	// A new version exists (so the generation changed and the watcher will try to
+	// read it), but reads fail: keep last-good.
+	store.put("z.zone", zoneFileWithA("z.example.", "9.9.9.9"))
 	store.readErrs["z.zone"] = errors.New("transient read failure")
 	w.poll(context.Background())
 
 	assert.Equal(t, "1.1.1.1", servedA(h, "z.example."))
+
+	// Once reads recover, the new version is picked up (the failed read didn't
+	// record the generation, so it isn't skipped as "already processed").
+	delete(store.readErrs, "z.zone")
+	w.poll(context.Background())
+	assert.Equal(t, "9.9.9.9", servedA(h, "z.example."))
 }
 
 func TestZoneWatcher_PicksUpChanges(t *testing.T) {
 	store := newFakeStore()
-	store.objects["z.zone"] = zoneFileWithA("z.example.", "1.1.1.1")
+	store.put("z.zone", zoneFileWithA("z.example.", "1.1.1.1"))
 
 	h, w := newWatcher(store)
 	w.poll(context.Background())
 	require.Equal(t, "1.1.1.1", servedA(h, "z.example."))
 
-	store.objects["z.zone"] = zoneFileWithA("z.example.", "5.5.5.5")
+	store.put("z.zone", zoneFileWithA("z.example.", "5.5.5.5"))
 	w.poll(context.Background())
 
 	assert.Equal(t, "5.5.5.5", servedA(h, "z.example."))
 }
 
+// countingStore wraps fakeStore to count ReadBlob calls, so we can assert the
+// watcher doesn't re-download objects whose generation is unchanged.
+type countingStore struct {
+	*fakeStore
+	reads map[string]int
+}
+
+func (s *countingStore) ReadBlob(ctx context.Context, name string) ([]byte, error) {
+	s.reads[name]++
+	return s.fakeStore.ReadBlob(ctx, name)
+}
+
+func TestZoneWatcher_SkipsUnchangedObjects(t *testing.T) {
+	base := newFakeStore()
+	base.put("z.zone", zoneFileWithA("z.example.", "1.1.1.1"))
+	store := &countingStore{fakeStore: base, reads: map[string]int{}}
+
+	h, w := newWatcher(store)
+	w.poll(context.Background())
+	require.Equal(t, "1.1.1.1", servedA(h, "z.example."))
+	require.Equal(t, 1, store.reads["z.zone"])
+
+	// Nothing changed: the generation is unchanged, so no re-read should happen.
+	w.poll(context.Background())
+	w.poll(context.Background())
+	assert.Equal(t, 1, store.reads["z.zone"], "unchanged object must not be re-downloaded")
+}
+
+// TestZoneWatcher_DoesNotReprocessUnchangedBadObject asserts the no-repeated-
+// alert behavior indirectly: an unchanged bad object is not re-read (and thus
+// not re-parsed or re-alerted) on subsequent polls.
+func TestZoneWatcher_DoesNotReprocessUnchangedBadObject(t *testing.T) {
+	base := newFakeStore()
+	base.put("bad.zone", []byte("bad.example. 60 IN A 3.3.3.3\n")) // no SOA
+	store := &countingStore{fakeStore: base, reads: map[string]int{}}
+
+	_, w := newWatcher(store)
+	w.poll(context.Background())
+	require.Equal(t, 1, store.reads["bad.zone"])
+
+	// The bad object is unchanged, so later polls skip it: no re-read, and hence
+	// no repeated alert every interval.
+	w.poll(context.Background())
+	w.poll(context.Background())
+	assert.Equal(t, 1, store.reads["bad.zone"], "unchanged bad object must not be re-read or re-alerted")
+}
+
 func TestZoneWatcher_DropsRemovedObject(t *testing.T) {
 	store := newFakeStore()
-	store.objects["a.zone"] = zoneFileWithA("a.example.", "1.1.1.1")
-	store.objects["b.zone"] = zoneFileWithA("b.example.", "2.2.2.2")
+	store.put("a.zone", zoneFileWithA("a.example.", "1.1.1.1"))
+	store.put("b.zone", zoneFileWithA("b.example.", "2.2.2.2"))
 
 	h, w := newWatcher(store)
 	w.poll(context.Background())
@@ -193,7 +266,7 @@ func TestZoneWatcher_DropsRemovedObject(t *testing.T) {
 
 func TestZoneWatcher_ListErrorKeepsCurrentZones(t *testing.T) {
 	store := newFakeStore()
-	store.objects["a.zone"] = zoneFileWithA("a.example.", "1.1.1.1")
+	store.put("a.zone", zoneFileWithA("a.example.", "1.1.1.1"))
 
 	h, w := newWatcher(store)
 	w.poll(context.Background())

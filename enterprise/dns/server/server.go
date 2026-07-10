@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"net"
 	"net/netip"
@@ -17,6 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/maxmind"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	"github.com/miekg/dns"
 	"github.com/prometheus/client_golang/prometheus"
@@ -665,8 +667,9 @@ func ParseZoneFile(fileName string) ([]dns.RR, error) {
 func ParseZoneBytes(data []byte, name string) ([]dns.RR, error) {
 	// The empty origin means relative names can only be qualified by an in-file
 	// "$ORIGIN" directive; otherwise they error rather than being silently
-	// mis-qualified.
-	parser := dns.NewZoneParser(strings.NewReader(string(data)), "", name)
+	// mis-qualified. bytes.NewReader reads over data in place (no string copy),
+	// which matters on the watcher's reload path.
+	parser := dns.NewZoneParser(bytes.NewReader(data), "", name)
 	records := make([]dns.RR, 0)
 	for rr, ok := parser.Next(); ok; rr, ok = parser.Next() {
 		records = append(records, rr)
@@ -675,4 +678,39 @@ func ParseZoneBytes(data []byte, name string) ([]dns.RR, error) {
 		return nil, err
 	}
 	return records, nil
+}
+
+// ParseAndVerifyZone parses a zone file's bytes and requires it to define an SOA
+// at its apex. A file without an SOA contributes no apex, so its names would
+// route to no zone and be answered REFUSED even though they loaded -- a silent
+// failure -- so it is rejected here. name labels errors (file or object name).
+func ParseAndVerifyZone(data []byte, name string) ([]dns.RR, error) {
+	records, err := ParseZoneBytes(data, name)
+	if err != nil {
+		return nil, err
+	}
+	if !hasSOA(records) {
+		return nil, status.FailedPreconditionErrorf("zone file %q has no SOA record at its apex", name)
+	}
+	return records, nil
+}
+
+// ParseAndVerifyZoneFile reads a zone file and requires it to define an SOA at
+// its apex (see ParseAndVerifyZone).
+func ParseAndVerifyZoneFile(fileName string) ([]dns.RR, error) {
+	data, err := os.ReadFile(fileName)
+	if err != nil {
+		return nil, err
+	}
+	return ParseAndVerifyZone(data, filepath.Base(fileName))
+}
+
+// hasSOA reports whether rrs contains an SOA record.
+func hasSOA(rrs []dns.RR) bool {
+	for _, rr := range rrs {
+		if rr.Header().Rrtype == dns.TypeSOA {
+			return true
+		}
+	}
+	return false
 }

@@ -152,28 +152,44 @@ func (g *GCSBlobStore) ReadBlob(ctx context.Context, blobName string) ([]byte, e
 	}
 }
 
-// List returns an iterator over the names of all objects in the bucket whose
-// name begins with prefix. It is not part of the Blobstore interface (only GCS
-// supports it) and is used to discover the set of zone-file objects under a
-// path. Each iteration yields a full object name (including prefix), suitable
-// for ReadBlob, or a non-nil error; the caller should stop on the first error.
-// Objects are fetched lazily from GCS as the range advances, so a caller that
-// breaks early never pages in the rest of the (potentially large) listing.
-func (g *GCSBlobStore) List(ctx context.Context, prefix string) iter.Seq2[string, error] {
-	return func(yield func(string, error) bool) {
+// ObjectAttrs is the subset of a listed object's metadata that List yields: its
+// full name (including any prefix, suitable for ReadBlob) and its GCS generation
+// number. The generation changes on every write, so it serves as a cheap change
+// token -- a caller can skip re-reading an object whose generation it has
+// already processed, without downloading the object to compare its contents.
+type ObjectAttrs struct {
+	Name       string
+	Generation int64
+}
+
+// List returns an iterator over the attributes of all objects in the bucket
+// whose name begins with prefix. It is not part of the Blobstore interface (only
+// GCS supports it) and is used to discover the set of zone-file objects under a
+// path. Each iteration yields an object's attributes or a non-nil error; the
+// caller should stop on the first error. Objects are fetched lazily from GCS as
+// the range advances, so a caller that breaks early never pages in the rest of
+// the (potentially large) listing.
+func (g *GCSBlobStore) List(ctx context.Context, prefix string) iter.Seq2[ObjectAttrs, error] {
+	return func(yield func(ObjectAttrs, error) bool) {
 		ctx, spn := tracing.StartSpan(ctx)
 		defer spn.End()
-		it := g.bucketHandle.Objects(ctx, &storage.Query{Prefix: prefix})
+		q := &storage.Query{Prefix: prefix}
+		// Only page in the fields we use, trimming the listing payload.
+		if err := q.SetAttrSelection([]string{"Name", "Generation"}); err != nil {
+			yield(ObjectAttrs{}, err)
+			return
+		}
+		it := g.bucketHandle.Objects(ctx, q)
 		for {
 			attrs, err := it.Next()
 			if errors.Is(err, iterator.Done) {
 				return
 			}
 			if err != nil {
-				yield("", err)
+				yield(ObjectAttrs{}, err)
 				return
 			}
-			if !yield(attrs.Name, nil) {
+			if !yield(ObjectAttrs{Name: attrs.Name, Generation: attrs.Generation}, nil) {
 				return
 			}
 		}
