@@ -2354,25 +2354,26 @@ func TestTimeout(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		ctx := context.Background()
-		u, lis := testhttp.NewServer(t)
-		flags.Set(t, "app.build_buddy_url", *u)
-		flags.Set(t, "remote_execution.enable_remote_exec", true)
-		te := newTestEnv(t)
-		ctx, _, gid := authenticate(t, ctx, te)
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := t.Context()
+			u, lis := testhttp.NewServer(t)
+			flags.Set(t, "app.build_buddy_url", *u)
+			flags.Set(t, "remote_execution.enable_remote_exec", true)
+			te := newTestEnv(t)
+			ctx, _, gid := authenticate(t, ctx, te)
 
-		execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
-		te.SetRemoteExecutionClient(execClient)
-		go http.Serve(lis, te.GetWorkflowService())
-		provider := setupFakeGitProvider(t, te)
-		repoURL := makeTempRepo(t)
-		runBBServer(ctx, t, te)
-		repo := createWorkflow(t, te, repoURL, gid, false)
+			execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
+			te.SetRemoteExecutionClient(execClient)
+			go http.Serve(lis, te.GetWorkflowService())
+			provider := setupFakeGitProvider(t, te)
+			repoURL := makeTempRepo(t)
+			runBBServer(ctx, t, te)
+			repo := createWorkflow(t, te, repoURL, gid, false)
 
-		updateGroupStatus(t, te, gid, tc.groupStatus)
-		enableCIRunnerDefaultTimeoutExperiment(t, te, grpb.Group_FREE_TIER_GROUP_STATUS, "1h")
+			updateGroupStatus(t, te, gid, tc.groupStatus)
+			enableCIRunnerDefaultTimeoutExperiment(t, te, grpb.Group_FREE_TIER_GROUP_STATUS, "1h")
 
-		config := `
+			config := `
 actions:
   - name: "Test"
     triggers: { push: { branches: [ "*" ] } }
@@ -2380,17 +2381,18 @@ actions:
     timeout: "2h"
 `
 
-		pushToDefaultBranch(t, te, repo, provider, config)
+			pushToDefaultBranch(t, te, repo, provider, config)
 
-		execReq := execClient.NextExecuteRequest()
-		exec := getExecution(t, ctx, te, execReq.Payload)
-		expectedTimeout := tc.expectedTimeout.String()
-		require.Contains(t, exec.Command.GetArguments(), "--timeout="+expectedTimeout, tc.name)
-		if tc.expectedTimeoutReason != "" {
-			require.Contains(t, exec.Command.GetArguments(), "--timeout_reason="+tc.expectedTimeoutReason, tc.name)
-		} else {
-			require.NotContains(t, exec.Command.GetArguments(), "--timeout_reason="+ci_runner_util.FreeTierTimeoutReason, tc.name)
-		}
-		require.Equal(t, tc.expectedTimeout+workflow.TimeoutGracePeriod, exec.Action.GetTimeout().AsDuration(), tc.name)
+			execReq := execClient.NextExecuteRequest()
+			exec := getExecution(t, ctx, te, execReq.Payload)
+			expectedTimeout := tc.expectedTimeout.String()
+			require.Contains(t, exec.Command.GetArguments(), "--timeout="+expectedTimeout)
+			if tc.expectedTimeoutReason != "" {
+				require.Contains(t, exec.Command.GetArguments(), "--timeout_reason="+tc.expectedTimeoutReason)
+			} else {
+				require.NotContains(t, exec.Command.GetArguments(), "--timeout_reason="+ci_runner_util.FreeTierTimeoutReason)
+			}
+			require.Equal(t, tc.expectedTimeout+workflow.TimeoutGracePeriod, exec.Action.GetTimeout().AsDuration())
+		})
 	}
 }
