@@ -10,7 +10,7 @@ import (
 )
 
 func setupCgroups() (*Cgroups, error) {
-	return new(Cgroups), nil
+	return &Cgroups{}, nil
 }
 
 func setupNetworking(rootContext context.Context) {

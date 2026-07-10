@@ -53,7 +53,7 @@ const (
 // It returns the original executor cgroup and the parent where task cgroups
 // are placed, both relative to the cgroup root.
 func setupCgroups() (*Cgroups, error) {
-	cgroups := new(Cgroups)
+	cgroups := &Cgroups{}
 	startingCgroup, err := cgroup.GetCurrent()
 	if err != nil {
 		if errors.Is(err, cgroup.ErrV1NotSupported) {
