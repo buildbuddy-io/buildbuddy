@@ -4136,6 +4136,15 @@ var (
 		CompressionType,
 	})
 
+	FindMissingBlobsCacheLookups = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "proxy",
+		Name:      "find_missing_blobs_cache_lookups",
+		Help:      "The number of digests looked up in the Cache Proxy's local FindMissingBlobs cache by cache hit/miss status.",
+	}, []string{
+		CacheHitMissStatus,
+	})
+
 	RemoteAtimeUpdates = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "proxy",
