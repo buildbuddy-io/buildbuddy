@@ -54,13 +54,23 @@ type cgroupMemoryMonitor struct {
 }
 
 func (m *cgroupMemoryMonitor) Snapshot(_ context.Context) (*MemorySnapshot, error) {
-	usedBytes, err := cgroup.ReadMemoryCurrent(m.dir)
+	currentBytes, err := cgroup.ReadMemoryCurrent(m.dir)
 	if err != nil {
 		return nil, fmt.Errorf("read executor cgroup memory: %w", err)
 	}
-	if usedBytes < 0 {
-		return nil, fmt.Errorf("cgroup memory.current is negative (%d)", usedBytes)
+	if currentBytes < 0 {
+		return nil, fmt.Errorf("cgroup memory.current is negative (%d)", currentBytes)
 	}
+	// Exclude inactive page cache from usage, since the kernel reclaims it
+	// under memory pressure instead of OOM killing. This matches the "working
+	// set" definition that the kubelet uses for eviction decisions. Note that
+	// memory.current and memory.stat are read separately, so the subtraction
+	// can skew slightly negative under concurrent cache growth.
+	inactiveFileBytes, err := cgroup.ReadMemoryStatField(m.dir, "inactive_file")
+	if err != nil {
+		return nil, fmt.Errorf("read executor cgroup memory stats: %w", err)
+	}
+	usedBytes := max(int64(0), currentBytes-inactiveFileBytes)
 	return &MemorySnapshot{
 		UsedBytes:      usedBytes,
 		LimitBytes:     m.limitBytes,
