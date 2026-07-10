@@ -254,7 +254,7 @@ func validViewName(name string) bool {
 // annotation must be honored or fail the build.
 func (p *viewGen) checkSupported(field *protogen.Field) error {
 	if field.Desc.IsWeak() || field.Oneof != nil || field.Desc.IsList() || field.Desc.IsMap() {
-		return fmt.Errorf("view field %s: repeated, map, oneof, and optional fields are not supported", field.Desc.FullName())
+		return fmt.Errorf("view field %s: repeated, map, oneof, and weak fields are not supported", field.Desc.FullName())
 	}
 	switch field.Desc.Kind() {
 	case protoreflect.BoolKind, protoreflect.EnumKind,

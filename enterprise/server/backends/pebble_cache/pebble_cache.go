@@ -1767,6 +1767,10 @@ func (p *PebbleCache) lookupFileMetadataBytes(db pebble.IPebbleDB, key filestore
 		}
 		return buf, closer, nil
 	}
+	// Should never happen.
+	if lastErr == nil {
+		return nil, nil, status.NotFoundErrorf("key %q not found (no version available)", key.String())
+	}
 	return nil, nil, lastErr
 }
 

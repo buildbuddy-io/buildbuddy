@@ -48,35 +48,15 @@ go_library(
 )
 
 go_test(
-    name = "find_missing_view_test",
-    srcs = ["find_missing_view_test.go"],
-    embed = [":pebble_cache"],
-    deps = [
-        "//enterprise/server/util/pebble",
-        "//proto:remote_execution_go_proto",
-        "//proto:resource_go_proto",
-        "//proto:storage_go_proto",
-        "@com_github_cockroachdb_pebble//:pebble",
-        "@com_github_cockroachdb_pebble//vfs",
-        "@com_github_stretchr_testify//require",
-        "@org_golang_google_protobuf//encoding/protowire",
-    ],
-)
-
-go_test(
     name = "pebble_cache_test",
     size = "medium",
-    srcs = [
-        "find_missing_view_test.go",
-        "pebble_cache_test.go",
-    ],
-    embed = [":pebble_cache"],
+    srcs = ["pebble_cache_test.go"],
     deps = [
+        ":pebble_cache",
         "//enterprise/server/backends/kms",
         "//enterprise/server/crypter_service",
         "//enterprise/server/filestore",
         "//enterprise/server/raft/keys",
-        "//enterprise/server/util/pebble",
         "//proto:remote_execution_go_proto",
         "//proto:resource_go_proto",
         "//proto:storage_go_proto",
@@ -102,7 +82,6 @@ go_test(
         "@com_github_jonboulle_clockwork//:clockwork",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
-        "@org_golang_google_protobuf//encoding/protowire",
         "@org_golang_x_sync//errgroup",
     ],
 )
