@@ -94,6 +94,7 @@ var (
 )
 
 // Cgroups contains the executor's cgroup paths discovered during setup.
+// On platforms other than linux, all fields are empty.
 type Cgroups struct {
 	// StartingCgroup is the cgroup that contained the executor before setup,
 	// relative to the cgroupfs root. It is empty if the cgroup could not be
