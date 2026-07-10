@@ -54,27 +54,35 @@ type cgroupMemoryMonitor struct {
 }
 
 func (m *cgroupMemoryMonitor) Snapshot(_ context.Context) (*MemorySnapshot, error) {
-	currentBytes, err := cgroup.ReadMemoryCurrent(m.dir)
+	usedBytes, err := getCgroupWorkingSetMemoryBytes(m.dir)
 	if err != nil {
 		return nil, fmt.Errorf("read executor cgroup memory: %w", err)
 	}
-	if currentBytes < 0 {
-		return nil, fmt.Errorf("cgroup memory.current is negative (%d)", currentBytes)
-	}
-	// Exclude inactive page cache from usage, since the kernel reclaims it
-	// under memory pressure instead of OOM killing. This matches the "working
-	// set" definition that the kubelet uses for eviction decisions. See
-	// https://kubernetes.io/docs/concepts/scheduling-eviction/node-pressure-eviction/#memory-signals
-	// Note that memory.current and memory.stat are read separately, so the
-	// subtraction can skew slightly negative under concurrent cache growth.
-	inactiveFileBytes, err := cgroup.ReadMemoryStatField(m.dir, "inactive_file")
-	if err != nil {
-		return nil, fmt.Errorf("read executor cgroup memory stats: %w", err)
-	}
-	usedBytes := max(int64(0), currentBytes-inactiveFileBytes)
 	return &MemorySnapshot{
 		UsedBytes:      usedBytes,
 		LimitBytes:     m.limitBytes,
 		AvailableBytes: max(int64(0), m.limitBytes-usedBytes),
 	}, nil
+}
+
+// getCgroupWorkingSetMemoryBytes returns the memory usage of the cgroup at the
+// given cgroupfs directory, excluding inactive page cache, which the kernel
+// reclaims under memory pressure instead of OOM killing. This matches the
+// "working set" definition that the kubelet uses for eviction decisions. See
+// https://kubernetes.io/docs/concepts/scheduling-eviction/node-pressure-eviction/#memory-signals
+func getCgroupWorkingSetMemoryBytes(dir string) (int64, error) {
+	currentBytes, err := cgroup.ReadMemoryCurrent(dir)
+	if err != nil {
+		return 0, err
+	}
+	if currentBytes < 0 {
+		return 0, fmt.Errorf("cgroup memory.current is negative (%d)", currentBytes)
+	}
+	inactiveFileBytes, err := cgroup.ReadMemoryStatField(dir, "inactive_file")
+	if err != nil {
+		return 0, fmt.Errorf("read memory stats: %w", err)
+	}
+	// memory.current and memory.stat are read separately, so the subtraction
+	// can skew slightly negative under concurrent cache growth.
+	return max(int64(0), currentBytes-inactiveFileBytes), nil
 }
