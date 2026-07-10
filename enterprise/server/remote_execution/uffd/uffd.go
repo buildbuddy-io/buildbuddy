@@ -519,12 +519,12 @@ func (h *Handler) copyZeroes(uffd uintptr, faultingAddress uintptr, mapping *Gue
 	// The Zeropage field contains the number of bytes actually zeroed. Only
 	// unmark the pages that were actually zeroed.
 	addr := faultingAddress
-	for zeroedBytes := zeroIO.Zeropage; zeroedBytes > 0; zeroedBytes -= int64(pageSize) {
+	for ; addr < faultingAddress+uintptr(zeroIO.Zeropage); addr += pageSize {
 		delete(h.removedAddresses, int64(addr))
-		addr += pageSize
 	}
 
 	// EEXIST is returned if the last page attempted to be zeroed was already mapped.
+	// This should not happen with the current single-threaded UFFD handler, but this check is defensive.
 	// Remove it from removedAddresses and no further action is needed.
 	if errno == unix.EEXIST {
 		delete(h.removedAddresses, int64(addr))
@@ -538,7 +538,7 @@ func (h *Handler) copyZeroes(uffd uintptr, faultingAddress uintptr, mapping *Gue
 		return nil
 	}
 	if errno != 0 {
-		return wrapErrno(errno, fmt.Sprintf("UFFDIO_ZEROPAGE failed with errno(%d)", errno))
+		return wrapErrno(errno, "UFFDIO_ZEROPAGE failed")
 	}
 	if addr == faultingAddress {
 		return status.InternalError("UFFDIO_ZEROPAGE succeeded but zeroed 0 bytes")
@@ -672,7 +672,7 @@ func (h *Handler) resolvePageFault(uffd uintptr, faultingRegion uint64, src uint
 	// On failure, Copy contains a negative errno instead of a byte count.
 	copied := max(copyData.Copy, 0)
 	if errno != 0 {
-		return copied, wrapErrno(errno, fmt.Sprintf("UFFDIO_COPY failed with errno(%d)", errno))
+		return copied, wrapErrno(errno, "UFFDIO_COPY failed")
 	}
 	return copied, nil
 }
@@ -774,5 +774,5 @@ func guestMemoryAddrToMapping(addr uintptr, mappings []GuestRegionUFFDMapping) (
 // status.WrapError only extracts the original error's message as a string, but
 // does not preserve its type.
 func wrapErrno(err syscall.Errno, msg string) error {
-	return fmt.Errorf("%s: %w", msg, err)
+	return fmt.Errorf("%s: %w (%d)", msg, err, err)
 }
