@@ -11,7 +11,9 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/replica"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/storemap"
+	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
@@ -83,15 +85,50 @@ func replicaKey(rd *rfpb.ReplicaDescriptor) string {
 
 type testClient struct {
 	repls map[string]bool
+	// haveReadyCalls counts HaveReadyConnections invocations, so a test can
+	// assert the lease setup (which calls it per replica) runs once per pass.
+	haveReadyCalls int
 }
 
 func (tc *testClient) HaveReadyConnections(ctx context.Context, rd *rfpb.ReplicaDescriptor) (bool, error) {
+	tc.haveReadyCalls++
 	key := replicaKey(rd)
 	return tc.repls[key], nil
 }
 
 func (tc *testClient) GetForReplica(ctx context.Context, rd *rfpb.ReplicaDescriptor) (rfspb.ApiClient, error) {
 	return nil, nil
+}
+
+// testStore is a minimal IStore for driving computeActionForRangeTask. Only
+// GetRange and HaveLease affect the rebalance decision under test; the rest are
+// unreached stubs.
+type testStore struct {
+	rd *rfpb.RangeDescriptor
+}
+
+func (ts *testStore) GetReplica(rangeID uint64) (*replica.Replica, error) { return nil, nil }
+func (ts *testStore) GetRange(rangeID uint64) *rfpb.RangeDescriptor       { return ts.rd }
+func (ts *testStore) HaveLease(ctx context.Context, rangeID uint64) bool  { return true }
+func (ts *testStore) AddReplica(ctx context.Context, req *rfpb.AddReplicaRequest) (*rfpb.AddReplicaResponse, error) {
+	return nil, nil
+}
+func (ts *testStore) RemoveReplica(ctx context.Context, req *rfpb.RemoveReplicaRequest) (*rfpb.RemoveReplicaResponse, error) {
+	return nil, nil
+}
+func (ts *testStore) GetReplicaStates(ctx context.Context, rd *rfpb.RangeDescriptor) map[uint64]constants.ReplicaState {
+	return nil
+}
+func (ts *testStore) SplitRange(ctx context.Context, req *rfpb.SplitRangeRequest) (*rfpb.SplitRangeResponse, error) {
+	return nil, nil
+}
+func (ts *testStore) TransferLeadership(ctx context.Context, req *rfpb.TransferLeadershipRequest) (*rfpb.TransferLeadershipResponse, error) {
+	return nil, nil
+}
+func (ts *testStore) NHID() string                                                 { return "" }
+func (ts *testStore) ReserveRangeIDs(ctx context.Context, n int) ([]uint64, error) { return nil, nil }
+func (ts *testStore) InitializeShardsForPartition(ctx context.Context, nodeGrpcAddrs map[string]string, partition disk.Partition) error {
+	return nil
 }
 
 // usage builds a StoreUsage. Tests that don't care about disk usage
@@ -1803,6 +1840,158 @@ func newQPSTestQueue(t *testing.T, usages []*rfpb.StoreUsage, rd *rfpb.RangeDesc
 		clock: clockwork.NewFakeClock(),
 	}
 	return rq
+}
+
+// orderingUsage builds a StoreUsage with per-store zone, read QPS, propose QPS,
+// lease count, replica count, and disk fullness, for the lease-vs-replica
+// ordering tests.
+func orderingUsage(nhid, zone string, readQPS, proposeQPS, leaseCount, replicaCount int64, diskFull bool) *rfpb.StoreUsage {
+	used, free := int64(100), int64(900)
+	if diskFull {
+		used, free = 990, 10
+	}
+	return &rfpb.StoreUsage{
+		Node:           &rfpb.NodeDescriptor{Nhid: nhid, Zone: zone},
+		ReadQps:        readQPS,
+		RaftProposeQps: proposeQPS,
+		LeaseCount:     leaseCount,
+		ReplicaCount:   replicaCount,
+		TotalBytesUsed: used,
+		TotalBytesFree: free,
+	}
+}
+
+// newActionTestQueue wires a Queue with a testStore so computeActionForRangeTask
+// runs end to end. The local replica is replica 1 (nhid-1). Returns the client
+// so tests can inspect HaveReadyConnections call counts.
+func newActionTestQueue(t *testing.T, usages []*rfpb.StoreUsage, rd *rfpb.RangeDescriptor) (*Queue, *rangeTask, *testClient) {
+	flags.Set(t, "cache.raft.enable_load_based_rebalance", true)
+	rbs := &storemap.ReplicasByStatus{LiveReplicas: rd.GetReplicas()}
+	client := &testClient{repls: map[string]bool{}}
+	for _, repl := range rd.GetReplicas() {
+		client.repls[replicaKey(repl)] = true
+	}
+	rq := &Queue{
+		storeMap:             newTestStoreMap(usages, rbs),
+		store:                &testStore{rd: rd},
+		apiClient:            client,
+		minReplicasPerRange:  len(rd.GetReplicas()),
+		minMetaRangeReplicas: 5,
+	}
+	rq.baseQueue = newBaseQueue(log.NamedSubLogger("test"), clockwork.NewFakeClock(), rq)
+	repl := &testReplica{
+		rangeID:   rd.GetRangeId(),
+		replicaID: 1,
+		usage:     &rfpb.ReplicaUsage{ReadQps: 100, RaftProposeQps: 1000},
+	}
+	return rq, &rangeTask{repl: repl}, client
+}
+
+// TestLeaseCountRanksBelowReplicaQPS is the C3 reproduce. When both a
+// propose-QPS replica move and a lease-count move are available, the load
+// objective (replica) must win. Before the ordering fix the lease-count phase
+// ran first and returned DriverRebalanceLease.
+func TestLeaseCountRanksBelowReplicaQPS(t *testing.T) {
+	ctx := context.Background()
+	rd := &rfpb.RangeDescriptor{
+		RangeId:  2,
+		Replicas: replicas(2, "nhid-1", "nhid-2", "nhid-3"),
+	}
+	usages := []*rfpb.StoreUsage{
+		// nhid-1 (local) is lease-heavy (70, well above the ~30 mean): the
+		// source of a lease-count transfer to a below-mean replica store. The
+		// local replica can't be a replica-move source, so a replica shed must
+		// come from elsewhere. Read QPS is balanced, so the read-QPS lease phase
+		// finds nothing.
+		orderingUsage("nhid-1", "zone-a", 100, 100, 70, 90, false),
+		// nhid-2 (non-local replica) is propose-hot: the source of a
+		// propose-QPS replica shed. Below-mean lease count → also a lease-count
+		// target (but write-hot, so it loses to nhid-3 there).
+		orderingUsage("nhid-2", "zone-b", 100, 5000, 10, 90, false),
+		orderingUsage("nhid-3", "zone-c", 100, 100, 20, 90, false),
+		// Cold non-replica stores in existing zones: propose-QPS replica-move
+		// targets that preserve zone diversity.
+		orderingUsage("nhid-4", "zone-b", 100, 100, 20, 90, false),
+		orderingUsage("nhid-5", "zone-c", 100, 100, 20, 90, false),
+	}
+	rq, task, _ := newActionTestQueue(t, usages, rd)
+	action, _, _ := rq.computeActionForRangeTask(ctx, task)
+	require.Equal(t, DriverRebalanceReplica, action)
+}
+
+// TestLeaseBlockedSuppressesLeaseCount: a blocked read-QPS lease result must
+// suppress the lease-count phase, as it did when both were one call. With no
+// replica move available, the action is Noop — not a lease-count move.
+func TestLeaseBlockedSuppressesLeaseCount(t *testing.T) {
+	ctx := context.Background()
+	rd := &rfpb.RangeDescriptor{
+		RangeId:  2,
+		Replicas: replicas(2, "nhid-1", "nhid-2", "nhid-3"),
+	}
+	// Read QPS: nhid-1 overfull, candidates close behind, so moving the range's
+	// 900 read QPS would invert the order → the QPS lease result is blocked.
+	// The cold stores that pull the read mean down are disk-full, so they can't
+	// be replica-move targets — no lease-unblock or propose replica move fires.
+	// Propose QPS balanced; lease counts imbalanced (a lease-count move would
+	// exist if not suppressed).
+	usages := []*rfpb.StoreUsage{
+		orderingUsage("nhid-1", "zone-a", 2540, 100, 50, 30, false),
+		orderingUsage("nhid-2", "zone-b", 2420, 100, 10, 30, false),
+		orderingUsage("nhid-3", "zone-c", 2420, 100, 10, 30, false),
+		orderingUsage("nhid-4", "zone-a", 100, 100, 10, 30, true),
+		orderingUsage("nhid-5", "zone-b", 100, 100, 10, 30, true),
+	}
+	rq, task, _ := newActionTestQueue(t, usages, rd)
+	task.repl.(*testReplica).usage.ReadQps = 900
+	action, _, _ := rq.computeActionForRangeTask(ctx, task)
+	require.Equal(t, DriverNoop, action)
+}
+
+// TestLeaseCountRespectsCooldown: in load-based mode a range in cooldown takes
+// no lease-count move. With no replica move available, the action is Noop.
+func TestLeaseCountRespectsCooldown(t *testing.T) {
+	ctx := context.Background()
+	rd := &rfpb.RangeDescriptor{
+		RangeId:  2,
+		Replicas: replicas(2, "nhid-1", "nhid-2", "nhid-3"),
+	}
+	// Lease counts imbalanced (a lease-count move exists), everything else
+	// balanced (no QPS or replica move).
+	usages := []*rfpb.StoreUsage{
+		orderingUsage("nhid-1", "zone-a", 100, 100, 50, 30, false),
+		orderingUsage("nhid-2", "zone-b", 100, 100, 10, 30, false),
+		orderingUsage("nhid-3", "zone-c", 100, 100, 10, 30, false),
+		orderingUsage("nhid-4", "zone-a", 100, 100, 10, 30, false),
+		orderingUsage("nhid-5", "zone-b", 100, 100, 10, 30, false),
+	}
+	rq, task, _ := newActionTestQueue(t, usages, rd)
+	// Put the range in cooldown.
+	rq.lastRebalanceExpiry = map[uint64]time.Time{2: rq.clock.Now().Add(time.Hour)}
+	action, _, _ := rq.computeActionForRangeTask(ctx, task)
+	require.Equal(t, DriverNoop, action)
+}
+
+// TestLeaseSetupRunsOncePerPass: the QPS and count lease phases share one
+// memoized setup, so HaveReadyConnections is called once per replica across the
+// pass (2 candidates → 2 calls), not once per phase.
+func TestLeaseSetupRunsOncePerPass(t *testing.T) {
+	ctx := context.Background()
+	rd := &rfpb.RangeDescriptor{
+		RangeId:  2,
+		Replicas: replicas(2, "nhid-1", "nhid-2", "nhid-3"),
+	}
+	// Balanced read + propose (both phases run: QPS finds nothing but is not
+	// blocked, so the count phase also runs), lease counts imbalanced.
+	usages := []*rfpb.StoreUsage{
+		orderingUsage("nhid-1", "zone-a", 100, 100, 50, 30, false),
+		orderingUsage("nhid-2", "zone-b", 100, 100, 10, 30, false),
+		orderingUsage("nhid-3", "zone-c", 100, 100, 10, 30, false),
+		orderingUsage("nhid-4", "zone-a", 100, 100, 10, 30, false),
+		orderingUsage("nhid-5", "zone-b", 100, 100, 10, 30, false),
+	}
+	rq, task, client := newActionTestQueue(t, usages, rd)
+	_, _, _ = rq.computeActionForRangeTask(ctx, task)
+	require.Equal(t, 2, client.haveReadyCalls)
 }
 
 func TestRebalanceLeasesQPS(t *testing.T) {

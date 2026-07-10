@@ -36,9 +36,11 @@ go_test(
     embed = [":driver"],
     deps = [
         "//enterprise/server/raft/constants",
+        "//enterprise/server/raft/replica",
         "//enterprise/server/raft/storemap",
         "//proto:raft_go_proto",
         "//proto:raft_service_go_proto",
+        "//server/util/disk",
         "//server/util/log",
         "//server/util/proto",
         "//server/util/testing/flags",
