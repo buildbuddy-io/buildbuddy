@@ -3345,12 +3345,22 @@ func (c *FirecrackerContainer) createSnapshot(ctx context.Context, snapshotDetai
 		metrics.Stage: "create_snapshot",
 	}).Dec()
 
-	// By default, mmapped chunks are managed by the executor-wide shared LRU.
+	// When exporting snapshots, we limit the number of chunks mmapped at a time.
+	// Snapshots are exported sequentially, so we don't want recently touched
+	// chunks to stay mmapped longer than necessary.
 	//
-	// When exporting snapshots, we should limit the number of chunks mmapped at a time.
-	// Snapshots are exported sequentially, so we don't want recently touched chunks to stay mmapped longer than necessary.
-	if err := c.memoryStore.LimitMmappedChunks(c.snapshotWriteMaxMmappedChunks()); err != nil {
-		return status.WrapError(err, "set limited LRU for snapshot export")
+	// Full snapshots create a fresh memoryStore that snapshotDetails already
+	// constructs with this limit (via COWOptions.MaxMmappedChunks), so there's
+	// nothing to do here. Only diff snapshots reuse a store that uses the shared
+	// executor LRU, so we apply a limit here.
+	//
+	// Re-limiting the full-snapshot store would allocate a second,
+	// identically-sized LRU and orphan the first, leaking its evictor
+	// goroutines.
+	if snapshotDetails.snapshotType == diffSnapshotType {
+		if err := c.memoryStore.LimitMmappedChunks(c.snapshotWriteMaxMmappedChunks()); err != nil {
+			return status.WrapError(err, "set limited LRU for snapshot export")
+		}
 	}
 
 	machineStart := time.Now()
