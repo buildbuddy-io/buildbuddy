@@ -138,14 +138,15 @@ func TestReadMemoryMax(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "memory.max"), []byte("1073741824\n"), 0644))
 	limit, err := ReadMemoryMax(dir)
 	require.NoError(t, err)
-	require.Equal(t, int64(1073741824), limit)
+	require.NotNil(t, limit)
+	require.Equal(t, int64(1073741824), *limit)
 
 	// The special value "max" means the cgroup has no memory limit, which is
-	// reported as -1.
+	// reported as nil.
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "memory.max"), []byte("max\n"), 0644))
 	limit, err = ReadMemoryMax(dir)
 	require.NoError(t, err)
-	require.Equal(t, int64(-1), limit)
+	require.Nil(t, limit)
 }
 
 func TestParsePSI(t *testing.T) {

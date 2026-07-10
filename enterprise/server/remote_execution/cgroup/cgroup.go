@@ -450,33 +450,37 @@ func ReadMemoryCurrent(dir string) (int64, error) {
 }
 
 // ReadMemoryMax reads the "memory.max" file under the given cgroup directory
-// and returns the configured memory limit in bytes, or -1 if the limit is
+// and returns the configured memory limit in bytes, or nil if the limit is
 // "max" (unlimited). The directory should be an absolute path, including the
 // /sys/fs/cgroup prefix.
-func ReadMemoryMax(dir string) (int64, error) {
+func ReadMemoryMax(dir string) (*int64, error) {
 	b, err := os.ReadFile(filepath.Join(dir, "memory.max"))
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 	s := strings.TrimSpace(string(b))
 	if s == "max" {
-		return -1, nil
+		return nil, nil
 	}
-	return strconv.ParseInt(s, 10, 64)
+	v, err := strconv.ParseInt(s, 10, 64)
+	if err != nil {
+		return nil, err
+	}
+	return &v, nil
 }
 
 // ReadEffectiveMemoryLimit returns the smallest "memory.max" limit in effect
 // for the cgroup at the given absolute path, taking ancestor cgroup limits
-// into account. It returns -1 if neither the cgroup nor any of its ancestors
+// into account. It returns nil if neither the cgroup nor any of its ancestors
 // sets a limit.
-func ReadEffectiveMemoryLimit(dir string) (int64, error) {
-	limit := int64(-1)
+func ReadEffectiveMemoryLimit(dir string) (*int64, error) {
+	var limit *int64
 	for dir = filepath.Clean(dir); strings.HasPrefix(dir, RootPath+string(os.PathSeparator)); dir = ParentPath(dir) {
 		v, err := ReadMemoryMax(dir)
 		if err != nil {
-			return 0, err
+			return nil, err
 		}
-		if v >= 0 && (limit < 0 || v < limit) {
+		if v != nil && (limit == nil || *v < *limit) {
 			limit = v
 		}
 	}

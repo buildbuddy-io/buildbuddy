@@ -34,14 +34,14 @@ func NewMemoryMonitor(cgroupPath string) (MemoryMonitor, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read cgroup memory limit: %w", err)
 	}
-	if limitBytes < 0 {
+	if limitBytes == nil {
 		log.Infof("Executor cgroup has no memory limit; the OOM killer will measure system memory usage.")
 		return systemMemoryMonitor{}, nil
 	}
-	log.Infof("Executor OOM killer is measuring memory usage of cgroup %q with effective memory limit %d bytes", cgroupPath, limitBytes)
+	log.Infof("Executor OOM killer is measuring memory usage of cgroup %q with effective memory limit %d bytes", cgroupPath, *limitBytes)
 	return &cgroupMemoryMonitor{
 		dir:        dir,
-		limitBytes: limitBytes,
+		limitBytes: *limitBytes,
 	}, nil
 }
 
