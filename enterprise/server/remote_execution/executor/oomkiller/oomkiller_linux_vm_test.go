@@ -149,6 +149,24 @@ func TestVMNewMemoryMonitorUsesEffectiveLimitFromAncestors(t *testing.T) {
 	require.Equal(t, int64(268435456), cgroupMonitor.limitBytes)
 }
 
+func TestVMReadEffectiveMemoryLimitTreatsRealRootAsUnlimited(t *testing.T) {
+	// The real cgroup v2 root has no memory.max file. The effective limit
+	// walk should treat it as unlimited rather than returning an error.
+	limit, err := cgroup.ReadEffectiveMemoryLimit(cgroup.RootPath)
+	require.NoError(t, err)
+	require.Nil(t, limit)
+}
+
+func TestVMNewMemoryMonitorAtRealRootUsesSystemMemory(t *testing.T) {
+	// An empty cgroup path means the executor is at the cgroupfs root. The VM
+	// root cgroup is a real cgroup v2 root with no memory accounting files,
+	// so the monitor should measure system memory.
+	monitor, err := NewMemoryMonitor("")
+	require.NoError(t, err)
+	_, ok := monitor.(*systemMemoryMonitor)
+	require.True(t, ok, "expected a system memory monitor, got %T", monitor)
+}
+
 // setupTestCgroup creates a cgroup with the memory controller enabled and
 // returns its absolute cgroupfs directory. The cgroup and any processes still
 // running in it are cleaned up when the test finishes.

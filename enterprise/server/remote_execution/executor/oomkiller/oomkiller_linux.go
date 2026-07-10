@@ -5,6 +5,7 @@ package oomkiller
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/cgroup"
@@ -14,12 +15,24 @@ import (
 // NewMemoryMonitor returns the default executor memory monitor. cgroupPath is
 // the executor's starting cgroup path relative to the cgroupfs root. The
 // monitor measures the cgroup's memory usage against its effective memory
-// limit. If the cgroup is unknown (empty cgroupPath), does not have the memory
-// controller enabled, or has no memory limit, the monitor measures system
-// memory usage instead, since the executor is then bounded by system memory.
+// limit. If cgroup-based accounting is unavailable (cgroup v1, the real
+// cgroup v2 root, no memory controller, or no memory limit), the monitor
+// measures system memory usage instead, since the executor is then bounded by
+// system memory.
 func NewMemoryMonitor(cgroupPath string) (MemoryMonitor, error) {
 	if cgroupPath == "" {
-		return newSystemMemoryMonitor()
+		// The executor is at the cgroupfs root. Under a cgroup namespace
+		// (e.g. when the executor runs in a container), the root directory is
+		// really a non-root cgroup on the host and can be monitored like any
+		// other cgroup. The real cgroup v2 root (and cgroup v1) has no
+		// memory.current file, and system memory is the right measurement.
+		if _, err := os.Stat(filepath.Join(cgroup.RootPath, "memory.current")); err != nil {
+			if !os.IsNotExist(err) {
+				return nil, err
+			}
+			log.Infof("Executor is in the root cgroup; the OOM killer will measure system memory usage.")
+			return newSystemMemoryMonitor()
+		}
 	}
 	dir := filepath.Join(cgroup.RootPath, cgroupPath)
 	controllers, err := cgroup.EnabledControllers(dir)
