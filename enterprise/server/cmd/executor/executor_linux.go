@@ -53,7 +53,6 @@ const (
 // It returns the original executor cgroup and the parent where task cgroups
 // are placed, both relative to the cgroup root.
 func setupCgroups() (*Cgroups, error) {
-	cgroups := &Cgroups{}
 	startingCgroup, err := cgroup.GetCurrent()
 	if err != nil {
 		if errors.Is(err, cgroup.ErrV1NotSupported) {
@@ -61,12 +60,11 @@ func setupCgroups() (*Cgroups, error) {
 		} else {
 			log.Warningf("Could not determine starting cgroup: %s", err)
 		}
-		return cgroups, nil
+		return &Cgroups{}, nil
 	}
-	cgroups.StartingCgroup = startingCgroup
 
 	if !*childCgroupsEnabled {
-		return cgroups, nil
+		return &Cgroups{StartingCgroup: startingCgroup}, nil
 	}
 
 	// Create the executor cgroup and move the executor process to it.
@@ -107,8 +105,10 @@ func setupCgroups() (*Cgroups, error) {
 		return nil, fmt.Errorf("inherit subtree control: %w", err)
 	}
 
-	cgroups.CgroupParent = filepath.Join(startingCgroup, taskCgroupName)
-	return cgroups, nil
+	return &Cgroups{
+		StartingCgroup: startingCgroup,
+		CgroupParent:   taskCgroup,
+	}, nil
 }
 
 func moveTiniToExecutorCgroup(executorCgroupPath string) error {
