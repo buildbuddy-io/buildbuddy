@@ -149,6 +149,21 @@ func TestReadMemoryMax(t *testing.T) {
 	require.Nil(t, limit)
 }
 
+func TestReadMemoryStatField(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "memory.stat"), []byte("anon 1024\nfile 2048\ninactive_file 512\n"), 0644))
+
+	// The requested field's value should be returned, ignoring other fields.
+	value, err := ReadMemoryStatField(dir, "inactive_file")
+	require.NoError(t, err)
+	require.Equal(t, int64(512), value)
+
+	// Requesting a field that is not present in memory.stat should return an
+	// error.
+	_, err = ReadMemoryStatField(dir, "nonexistent_field")
+	require.Error(t, err)
+}
+
 func TestParsePSI(t *testing.T) {
 	r := strings.NewReader(`some avg10=0.00 avg60=1.00 avg300=4.11 total=123456
 full avg10=0.01 avg60=0.50 avg300=1.23 total=23456
