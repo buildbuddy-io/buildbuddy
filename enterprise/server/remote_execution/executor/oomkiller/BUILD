@@ -4,7 +4,11 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 
 go_library(
     name = "oomkiller",
-    srcs = ["oomkiller.go"],
+    srcs = [
+        "oomkiller.go",
+        "oomkiller_linux.go",
+        "oomkiller_notlinux.go",
+    ],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor/oomkiller",
     deps = [
         "//enterprise/server/remote_execution/executorplatform",
@@ -17,12 +21,20 @@ go_library(
         "//server/util/log",
         "//server/util/platform",
         "//server/util/status",
-    ],
+    ] + select({
+        "@io_bazel_rules_go//go/platform:linux": [
+            "//enterprise/server/remote_execution/cgroup",
+        ],
+        "//conditions:default": [],
+    }),
 )
 
 go_test(
     name = "oomkiller_test",
-    srcs = ["oomkiller_test.go"],
+    srcs = [
+        "oomkiller_linux_test.go",
+        "oomkiller_test.go",
+    ],
     embed = [":oomkiller"],
     # TODO: enable this test on macOS once bare isolation type is supported.
     target_compatible_with = ["@platforms//os:linux"],

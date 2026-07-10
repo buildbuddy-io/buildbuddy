@@ -95,7 +95,9 @@ var (
 
 // Cgroups contains the executor's cgroup paths discovered during setup.
 type Cgroups struct {
-	// StartingCgroup is the cgroup that contained the executor before setup.
+	// StartingCgroup is the cgroup that contained the executor before setup,
+	// relative to the cgroupfs root. It is empty if the cgroup could not be
+	// determined or if the executor started in the root cgroup.
 	StartingCgroup string
 	// CgroupParent is the parent under which task cgroups are created.
 	CgroupParent string
@@ -402,7 +404,11 @@ func main() {
 
 	var oomKiller oomkiller.Killer
 	if oomkiller.Enabled() {
-		k, err := oomkiller.New(rootContext, oomkiller.NewMemoryMonitor(cgroups.StartingCgroup))
+		monitor, err := oomkiller.NewMemoryMonitor(cgroups.StartingCgroup)
+		if err != nil {
+			log.Fatalf("Error initializing executor OOM killer memory monitor: %s", err)
+		}
+		k, err := oomkiller.New(rootContext, monitor)
 		if err != nil {
 			log.Fatalf("Error initializing executor OOM killer: %s", err)
 		}

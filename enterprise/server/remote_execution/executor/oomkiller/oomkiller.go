@@ -25,10 +25,6 @@ package oomkiller
 import (
 	"context"
 	"fmt"
-	"os"
-	"path/filepath"
-	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -115,61 +111,21 @@ type MemoryMonitor interface {
 	Snapshot(ctx context.Context) (*MemorySnapshot, error)
 }
 
-// NewMemoryMonitor returns the default executor memory monitor. cgroupPath is
-// the executor's starting cgroup path relative to the cgroupfs root. If empty,
-// the monitor uses system memory instead.
-func NewMemoryMonitor(cgroupPath string) MemoryMonitor {
-	if cgroupPath == "" {
-		return resourcesMemoryMonitor{}
-	}
-	cgroupPath = filepath.Join("/sys/fs/cgroup", cgroupPath)
-	monitor := &cgroupMemoryMonitor{
-		cgroupPath: cgroupPath,
-		limitBytes: resources.GetAllocatedRAMBytes(),
-	}
-	if _, err := monitor.readMemoryCurrent(); err != nil {
-		log.Warningf("Failed to read executor cgroup memory for OOM monitoring; falling back to system memory: %s", err)
-		return resourcesMemoryMonitor{}
-	}
-	return monitor
-}
+// systemMemoryMonitor measures system-wide memory usage. It is used when
+// cgroup-based measurement is unavailable.
+type systemMemoryMonitor struct{}
 
-type resourcesMemoryMonitor struct{}
-
-func (resourcesMemoryMonitor) Snapshot(_ context.Context) (*MemorySnapshot, error) {
+func (systemMemoryMonitor) Snapshot(_ context.Context) (*MemorySnapshot, error) {
 	limitBytes := resources.GetAllocatedRAMBytes()
-	availableBytes := resources.GetSysFreeRAMBytes()
+	availableBytes, err := resources.GetSysFreeRAMBytes()
+	if err != nil {
+		return nil, fmt.Errorf("read system free memory: %w", err)
+	}
 	return &MemorySnapshot{
 		UsedBytes:      max(int64(0), limitBytes-availableBytes),
 		LimitBytes:     limitBytes,
 		AvailableBytes: availableBytes,
 	}, nil
-}
-
-type cgroupMemoryMonitor struct {
-	cgroupPath string
-	limitBytes int64
-}
-
-func (m *cgroupMemoryMonitor) Snapshot(_ context.Context) (*MemorySnapshot, error) {
-	usedBytes, err := m.readMemoryCurrent()
-	if err != nil {
-		return nil, fmt.Errorf("read executor cgroup memory: %w", err)
-	}
-	usedBytes = max(int64(0), usedBytes)
-	return &MemorySnapshot{
-		UsedBytes:      usedBytes,
-		LimitBytes:     m.limitBytes,
-		AvailableBytes: max(int64(0), m.limitBytes-usedBytes),
-	}, nil
-}
-
-func (m *cgroupMemoryMonitor) readMemoryCurrent() (int64, error) {
-	b, err := os.ReadFile(filepath.Join(m.cgroupPath, "memory.current"))
-	if err != nil {
-		return 0, err
-	}
-	return strconv.ParseInt(strings.TrimSpace(string(b)), 10, 64)
 }
 
 type killer struct {

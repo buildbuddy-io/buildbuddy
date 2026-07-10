@@ -173,10 +173,12 @@ func Configure(mmapLRUEnabled bool) error {
 	return nil
 }
 
-func GetSysFreeRAMBytes() int64 {
+func GetSysFreeRAMBytes() (int64, error) {
 	mem := gosigar.Mem{}
-	mem.Get()
-	return int64(mem.ActualFree)
+	if err := mem.Get(); err != nil {
+		return 0, fmt.Errorf("get memory info: %w", err)
+	}
+	return int64(mem.ActualFree), nil
 }
 
 func GetAllocatedRAMBytes() int64 {

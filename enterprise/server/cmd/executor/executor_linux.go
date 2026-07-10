@@ -58,7 +58,7 @@ func setupCgroups() (*Cgroups, error) {
 		log.Warningf("Could not determine starting cgroup: %s", err)
 		return cgroups, nil
 	}
-	cgroups.StartingCgroup = filepath.Clean(startingCgroup)
+	cgroups.StartingCgroup = startingCgroup
 
 	if !*childCgroupsEnabled {
 		return cgroups, nil
