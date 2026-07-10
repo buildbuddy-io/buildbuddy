@@ -93,6 +93,17 @@ var (
 	maxThreads        = flag.Int("executor.max_threads", 0, "The maximum number of threads to allow before panicking. If unset, the golang default will be used (currently 10,000).")
 )
 
+// Cgroups contains the executor's cgroup paths discovered during setup.
+// On platforms other than linux, all fields are empty.
+type Cgroups struct {
+	// StartingCgroup is the cgroup that contained the executor before setup,
+	// relative to the cgroupfs root. It is empty if the cgroup could not be
+	// determined or if the executor started in the root cgroup.
+	StartingCgroup string
+	// CgroupParent is the parent under which task cgroups are created.
+	CgroupParent string
+}
+
 func isOldEndpoint(endpoint string) bool {
 	u, err := url.Parse(endpoint)
 	return err == nil && u.Hostname() == "cloud.buildbuddy.io"
@@ -387,14 +398,18 @@ func main() {
 	imageCacheAuth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
 	env.SetImageCacheAuthenticator(imageCacheAuth)
 
-	tasksCgroupParent, err := setupCgroups()
+	cgroups, err := setupCgroups()
 	if err != nil {
 		log.Fatalf("cgroup setup failed: %s", err)
 	}
 
 	var oomKiller oomkiller.Killer
 	if oomkiller.Enabled() {
-		k, err := oomkiller.New(rootContext, oomkiller.NewMemoryMonitor())
+		monitor, err := oomkiller.NewMemoryMonitor(cgroups.StartingCgroup)
+		if err != nil {
+			log.Fatalf("Error initializing executor OOM killer memory monitor: %s", err)
+		}
+		k, err := oomkiller.New(rootContext, monitor)
 		if err != nil {
 			log.Fatalf("Error initializing executor OOM killer: %s", err)
 		}
@@ -402,7 +417,7 @@ func main() {
 	}
 
 	runnerPool, err := runner.NewPool(env, cacheRoot, &runner.PoolOptions{
-		CgroupParent: tasksCgroupParent,
+		CgroupParent: cgroups.CgroupParent,
 		OOMKiller:    oomKiller,
 	})
 	if err != nil {

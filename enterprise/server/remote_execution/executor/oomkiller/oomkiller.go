@@ -111,19 +111,30 @@ type MemoryMonitor interface {
 	Snapshot(ctx context.Context) (*MemorySnapshot, error)
 }
 
-// NewMemoryMonitor returns the default executor memory monitor.
-func NewMemoryMonitor() MemoryMonitor {
-	return resourcesMemoryMonitor{}
+// systemMemoryMonitor measures system-wide memory usage against total system
+// memory. It is used when cgroup-based measurement is unavailable or when the
+// executor cgroup has no memory limit.
+type systemMemoryMonitor struct {
+	// totalBytes is the total system memory, read once at startup.
+	totalBytes int64
 }
 
-type resourcesMemoryMonitor struct{}
+func newSystemMemoryMonitor() (*systemMemoryMonitor, error) {
+	totalBytes, err := resources.GetSysTotalRAMBytes()
+	if err != nil {
+		return nil, fmt.Errorf("read system total memory: %w", err)
+	}
+	return &systemMemoryMonitor{totalBytes: totalBytes}, nil
+}
 
-func (resourcesMemoryMonitor) Snapshot(_ context.Context) (*MemorySnapshot, error) {
-	limitBytes := resources.GetAllocatedRAMBytes()
-	availableBytes := resources.GetSysFreeRAMBytes()
+func (m *systemMemoryMonitor) Snapshot(_ context.Context) (*MemorySnapshot, error) {
+	availableBytes, err := resources.GetSysFreeRAMBytes()
+	if err != nil {
+		return nil, fmt.Errorf("read system free memory: %w", err)
+	}
 	return &MemorySnapshot{
-		UsedBytes:      max(int64(0), limitBytes-availableBytes),
-		LimitBytes:     limitBytes,
+		UsedBytes:      m.totalBytes - availableBytes,
+		LimitBytes:     m.totalBytes,
 		AvailableBytes: availableBytes,
 	}, nil
 }
