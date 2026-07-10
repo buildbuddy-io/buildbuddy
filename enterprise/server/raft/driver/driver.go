@@ -600,8 +600,32 @@ func (rq *Queue) populateCandidateQPS(c *candidate, p loadParams, readQPSMean, p
 	a := adj[c.nhid]
 	c.readQPS = max(c.usage.GetReadQps()+int64(a.readQPS), 0)
 	c.readQPSMeanLevel = qpsMeanLevel(p, readQPSMean, c.readQPS)
+	rq.populateCandidateProposeQPS(c, p, proposeQPSMean, adj)
+}
+
+// populateCandidateProposeQPS fills only the propose-QPS fields. Up/down
+// replication ranks by propose QPS alone (via compareForReplicaRebalance), so
+// they use this instead of populateCandidateQPS to skip the unused read-QPS
+// banding.
+func (rq *Queue) populateCandidateProposeQPS(c *candidate, p loadParams, proposeQPSMean float64, adj map[string]pendingAdj) {
+	a := adj[c.nhid]
 	c.proposeQPS = max(c.usage.GetRaftProposeQps()+int64(a.proposeQPS), 0)
 	c.proposeQPSMeanLevel = qpsMeanLevel(p, proposeQPSMean, c.proposeQPS)
+}
+
+// proposeQPSRankingGate decides, given that load-based mode is on, whether
+// up/down replication should rank candidates by propose QPS. QPS ranking
+// applies only when the propose dimension clears the floor; below it, ranking
+// falls back to count (compareByScoreAndID) so noise can't dominate. It returns
+// the loadParams and pending-move ledger snapshot the caller uses to populate
+// candidate propose QPS. Callers pass the cluster propose mean and must have
+// already checked isLoadBasedRebalanceEnabled.
+func (rq *Queue) proposeQPSRankingGate(ctx context.Context, proposeMean float64) (useQPS bool, p loadParams, adj map[string]pendingAdj) {
+	p = rq.loadParams(ctx)
+	if !qpsSignalPresent(p, proposeMean) {
+		return false, p, nil
+	}
+	return true, p, rq.pendingAdjustments()
 }
 
 // evalCtx memoizes the values that are expensive to recompute within a single
@@ -1279,26 +1303,18 @@ func (rq *Queue) findNodesForAllocation(storesWithStats *storemap.StoresWithStat
 //
 // A new replica joins as a follower: it applies the raft log, so it takes on
 // the range's propose/apply QPS, but it does not serve reads. In load-based
-// mode we therefore rank targets by propose QPS (via compareForReplicaRebalance,
-// the same comparator the rebalance path uses) so a new replica lands where a
-// rebalance would want it — avoiding the wasteful add-to-hot-then-move-off. The
-// ranking never vetoes: if every candidate is propose-hot, the least-hot still
-// wins, so up-replication always places when a candidate exists.
+// mode we therefore rank targets by propose QPS (via
+// compareForReplicaRebalance, the same comparator the rebalance path uses) so a
+// new replica lands where a rebalance would want it — avoiding the wasteful
+// add-to-hot-then-move-off. The ranking never vetoes: if every candidate is
+// propose-hot, the least-hot still wins, so up-replication always places when a
+// candidate exists.
 func (rq *Queue) findNodeForAllocation(ctx context.Context, rd *rfpb.RangeDescriptor, storesWithStats *storemap.StoresWithStats) *rfpb.NodeDescriptor {
-	// Rank by propose QPS only when load-based mode is on AND the propose
-	// dimension clears the QPS floor. Below the floor qpsMeanLevel still bands
-	// on noise, so without this gate tiny propose-QPS differences would
-	// dominate replica count in a low-traffic cluster. This mirrors the
-	// proposeSignal gate on the rebalance path.
-	useQPS := false
+	var useQPS bool
 	var p loadParams
 	var adj map[string]pendingAdj
 	if rq.isLoadBasedRebalanceEnabled(ctx) {
-		p = rq.loadParams(ctx)
-		useQPS = qpsSignalPresent(p, storesWithStats.RaftProposeQPS.Mean)
-		if useQPS {
-			adj = rq.pendingAdjustments()
-		}
+		useQPS, p, adj = rq.proposeQPSRankingGate(ctx, storesWithStats.RaftProposeQPS.Mean)
 	}
 	var candidates []*candidate
 	existing := append(rd.GetReplicas(), rd.GetRemoved()...)
@@ -1326,7 +1342,7 @@ func (rq *Queue) findNodeForAllocation(ctx context.Context, rd *rfpb.RangeDescri
 			rendezvousScore:       rendezvousScore(rangeID, nhid),
 		}
 		if useQPS {
-			rq.populateCandidateQPS(c, p, storesWithStats.ReadQPS.Mean, storesWithStats.RaftProposeQPS.Mean, adj)
+			rq.populateCandidateProposeQPS(c, p, storesWithStats.RaftProposeQPS.Mean, adj)
 		}
 		candidates = append(candidates, c)
 	}
@@ -1637,8 +1653,16 @@ func (rq *Queue) findRebalanceLeaseOp(ctx context.Context, rd *rfpb.RangeDescrip
 // findRebalanceLeaseOpLoaded evaluates both lease phases (read-QPS, then
 // count) in one call, QPS first. It is the combined form used at apply time by
 // rebalanceLease to re-derive whichever op computeActionForRangeTask picked.
-// computeActionForRangeTask itself calls the phases separately so it can run the
-// replica phase between them (load objectives before the lease-count objective).
+// computeActionForRangeTask itself calls the phases separately so it can run
+// the replica phase between them (load objectives before the lease-count
+// objective).
+//
+// Apply-time note: if gossip has shifted since the decision so the read-QPS
+// phase now returns blocked, this short-circuits (below) before the count
+// phase, and a lease-count move decided earlier is skipped this pass. That is
+// intentional: blocked means reads now want to move with no target, so the
+// driver reconsiders next scan (likely a lease-unblock replica move) rather
+// than applying a stale count move.
 func (rq *Queue) findRebalanceLeaseOpLoaded(ctx context.Context, rd *rfpb.RangeDescriptor, localRepl IReplica, loadBased bool, p loadParams, allStoresStats *storemap.StoresWithStats, ec *evalCtx) leaseRebalanceResult {
 	globalMean, existing, candidates, ok := ec.leaseSetup(ctx, rd)
 	if !ok {
@@ -1652,17 +1676,17 @@ func (rq *Queue) findRebalanceLeaseOpLoaded(ctx context.Context, rd *rfpb.RangeD
 		}
 		// No load-based lease op for this range; fall through to the
 		// count-based check so lease counts still converge for ranges the load
-		// controller leaves alone (e.g. the many ranges under the worth-it floor).
+		// controller leaves alone (e.g. ranges under the worth-it floor).
 	}
 	return rq.findRebalanceLeaseOpCount(rd, globalMean, existing, candidates, loadBased, p, allStoresStats, ec)
 }
 
 // findRebalanceLeaseOpCount balances lease counts across stores. It ranks below
 // the replica phase, so computeActionForRangeTask calls it only after the
-// propose-QPS replica phase has had its chance. In load-based mode a count lease
-// move must not undo load balance (the post-move read veto) and fully respects
-// the cooldown (a lease transfer costs a read blip, so a range in cooldown takes
-// no lease move at all).
+// propose-QPS replica phase has had its chance. In load-based mode a count
+// lease move must not undo load balance (the post-move read veto) and fully
+// respects the cooldown (a lease transfer costs a read blip, so a range in
+// cooldown takes no lease move at all).
 func (rq *Queue) findRebalanceLeaseOpCount(rd *rfpb.RangeDescriptor, globalMean float64, existing *candidate, candidates []*candidate, loadBased bool, p loadParams, allStoresStats *storemap.StoresWithStats, ec *evalCtx) leaseRebalanceResult {
 	if loadBased && rq.inCooldown(rd.GetRangeId()) {
 		return leaseRebalanceResult{}
@@ -2265,21 +2289,15 @@ func (rq *Queue) findReplicaForRemoval(ctx context.Context, rd *rfpb.RangeDescri
 
 	// For QPS banding we need the cluster-wide propose mean, not the mean over
 	// just this range's replica stores. Fetch the all-stores snapshot only in
-	// load-based mode, where the QPS ranking uses it. Rank by QPS only when the
-	// propose dimension clears the floor; below it qpsMeanLevel bands on noise,
-	// which would let tiny propose-QPS differences dominate replica count. This
-	// mirrors the proposeSignal gate on the rebalance path.
-	useQPS := false
+	// load-based mode, where the QPS ranking uses it (for both the cluster mean
+	// and populating candidate propose QPS).
+	var useQPS bool
 	var p loadParams
 	var adj map[string]pendingAdj
 	var allStores *storemap.StoresWithStats
 	if rq.isLoadBasedRebalanceEnabled(ctx) {
-		p = rq.loadParams(ctx)
 		allStores = rq.storeMap.GetStoresWithStats()
-		useQPS = qpsSignalPresent(p, allStores.RaftProposeQPS.Mean)
-		if useQPS {
-			adj = rq.pendingAdjustments()
-		}
+		useQPS, p, adj = rq.proposeQPSRankingGate(ctx, allStores.RaftProposeQPS.Mean)
 	}
 
 	replicasByZone := make(map[string]int)
@@ -2299,7 +2317,7 @@ func (rq *Queue) findReplicaForRemoval(ctx context.Context, rd *rfpb.RangeDescri
 			rendezvousScore:       rendezvousScore(rd.GetRangeId(), nhid),
 		}
 		if useQPS {
-			rq.populateCandidateQPS(c, p, allStores.ReadQPS.Mean, allStores.RaftProposeQPS.Mean, adj)
+			rq.populateCandidateProposeQPS(c, p, allStores.RaftProposeQPS.Mean, adj)
 		}
 		candidates = append(candidates, c)
 	}
