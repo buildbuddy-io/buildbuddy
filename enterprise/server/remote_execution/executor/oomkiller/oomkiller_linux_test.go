@@ -16,7 +16,7 @@ func TestCgroupMemoryMonitorSnapshot(t *testing.T) {
 	monitor := &cgroupMemoryMonitor{dir: cgroupDir, limitBytes: 1000}
 
 	// The monitor should report usage from the executor cgroup and calculate
-	// the remaining headroom relative to the configured executor limit.
+	// the remaining headroom relative to the cgroup memory limit.
 	snapshot, err := monitor.Snapshot(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, &MemorySnapshot{UsedBytes: 750, LimitBytes: 1000, AvailableBytes: 250}, snapshot)
@@ -39,9 +39,9 @@ func TestCgroupMemoryMonitorSnapshot_UsageAboveLimit(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(cgroupDir, "memory.current"), []byte("1250"), 0644))
 	monitor := &cgroupMemoryMonitor{dir: cgroupDir, limitBytes: 1000}
 
-	// Cgroup usage can exceed the executor's assignable memory. Preserve the
-	// observed usage so the killer remains over threshold, but clamp the
-	// reported headroom to zero.
+	// If usage somehow exceeds the memory limit, preserve the observed usage
+	// so the killer remains over threshold, but clamp the reported headroom to
+	// zero.
 	snapshot, err := monitor.Snapshot(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, &MemorySnapshot{UsedBytes: 1250, LimitBytes: 1000, AvailableBytes: 0}, snapshot)

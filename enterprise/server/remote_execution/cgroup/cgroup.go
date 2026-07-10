@@ -449,6 +449,40 @@ func ReadMemoryCurrent(dir string) (int64, error) {
 	return readInt64FromFile(filepath.Join(dir, "memory.current"))
 }
 
+// ReadMemoryMax reads the "memory.max" file under the given cgroup directory
+// and returns the configured memory limit in bytes, or -1 if the limit is
+// "max" (unlimited). The directory should be an absolute path, including the
+// /sys/fs/cgroup prefix.
+func ReadMemoryMax(dir string) (int64, error) {
+	b, err := os.ReadFile(filepath.Join(dir, "memory.max"))
+	if err != nil {
+		return 0, err
+	}
+	s := strings.TrimSpace(string(b))
+	if s == "max" {
+		return -1, nil
+	}
+	return strconv.ParseInt(s, 10, 64)
+}
+
+// ReadEffectiveMemoryLimit returns the smallest "memory.max" limit in effect
+// for the cgroup at the given absolute path, taking ancestor cgroup limits
+// into account. It returns -1 if neither the cgroup nor any of its ancestors
+// sets a limit.
+func ReadEffectiveMemoryLimit(dir string) (int64, error) {
+	limit := int64(-1)
+	for dir = filepath.Clean(dir); strings.HasPrefix(dir, RootPath+string(os.PathSeparator)); dir = ParentPath(dir) {
+		v, err := ReadMemoryMax(dir)
+		if err != nil {
+			return 0, err
+		}
+		if v >= 0 && (limit < 0 || v < limit) {
+			limit = v
+		}
+	}
+	return limit, nil
+}
+
 // ReadPidsEvents reads the "pids.events" file under the given cgroup
 // directory and returns the counter values as a map. The directory should be an
 // absolute path, including the /sys/fs/cgroup prefix.

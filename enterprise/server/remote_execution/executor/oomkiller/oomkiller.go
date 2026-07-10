@@ -111,19 +111,23 @@ type MemoryMonitor interface {
 	Snapshot(ctx context.Context) (*MemorySnapshot, error)
 }
 
-// systemMemoryMonitor measures system-wide memory usage. It is used when
-// cgroup-based measurement is unavailable.
+// systemMemoryMonitor measures system-wide memory usage against total system
+// memory. It is used when cgroup-based measurement is unavailable or when the
+// executor cgroup has no memory limit.
 type systemMemoryMonitor struct{}
 
 func (systemMemoryMonitor) Snapshot(_ context.Context) (*MemorySnapshot, error) {
-	limitBytes := resources.GetAllocatedRAMBytes()
+	totalBytes, err := resources.GetSysTotalRAMBytes()
+	if err != nil {
+		return nil, fmt.Errorf("read system total memory: %w", err)
+	}
 	availableBytes, err := resources.GetSysFreeRAMBytes()
 	if err != nil {
 		return nil, fmt.Errorf("read system free memory: %w", err)
 	}
 	return &MemorySnapshot{
-		UsedBytes:      max(int64(0), limitBytes-availableBytes),
-		LimitBytes:     limitBytes,
+		UsedBytes:      totalBytes - availableBytes,
+		LimitBytes:     totalBytes,
 		AvailableBytes: availableBytes,
 	}, nil
 }
