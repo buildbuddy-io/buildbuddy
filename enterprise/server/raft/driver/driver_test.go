@@ -463,10 +463,101 @@ func TestFindNodeForAllocation(t *testing.T) {
 			}
 			rq.baseQueue = &baseQueue{log: log.NamedSubLogger("test"), impl: rq}
 			storesWithStats := storemap.CreateStoresWithStats(tc.usages)
-			actual := rq.findNodeForAllocation(tc.rd, storesWithStats)
+			actual := rq.findNodeForAllocation(context.Background(), tc.rd, storesWithStats)
 			require.EqualExportedValues(t, tc.expected, actual)
 		})
 	}
+}
+
+// TestUpReplicateAvoidsProposeHotTarget: in load-based mode, up-replication
+// ranks targets by propose QPS, so a new replica lands on the propose-cold
+// store even when replica counts are equal.
+func TestUpReplicateAvoidsProposeHotTarget(t *testing.T) {
+	rd := &rfpb.RangeDescriptor{
+		RangeId:  1,
+		Replicas: replicas(1, "nhid-1", "nhid-2", "nhid-3"),
+	}
+	// Counts favor nhid-4 (lower count = better count target), QPS favors
+	// nhid-5 (cold). QPS wins, so the neutered/count-only ranking would pick
+	// the opposite node.
+	usages := []*rfpb.StoreUsage{
+		countQPSUsage("nhid-1", "zone-a", 30, 0),
+		countQPSUsage("nhid-2", "zone-a", 30, 0),
+		countQPSUsage("nhid-3", "zone-a", 30, 0),
+		countQPSUsage("nhid-4", "zone-b", 5, 5000), // propose-hot, low count
+		countQPSUsage("nhid-5", "zone-b", 20, 100), // propose-cold, high count
+	}
+	rq := newQPSTestQueue(t, usages, rd)
+	target := rq.findNodeForAllocation(context.Background(), rd, storemap.CreateStoresWithStats(usages))
+	require.Equal(t, "nhid-5", target.GetNhid())
+}
+
+// TestUpReplicatePlacesWhenAllTargetsHot: the QPS ranking never vetoes, so when
+// every candidate is propose-hot up-replication still places, on the least hot.
+func TestUpReplicatePlacesWhenAllTargetsHot(t *testing.T) {
+	rd := &rfpb.RangeDescriptor{
+		RangeId:  1,
+		Replicas: replicas(1, "nhid-1", "nhid-2", "nhid-3"),
+	}
+	// Both candidates propose-hot; nhid-5 is the less hot. Counts favor nhid-4,
+	// so the count-only ranking would pick the hotter node — QPS must decide.
+	usages := []*rfpb.StoreUsage{
+		countQPSUsage("nhid-1", "zone-a", 30, 0),
+		countQPSUsage("nhid-2", "zone-a", 30, 0),
+		countQPSUsage("nhid-3", "zone-a", 30, 0),
+		countQPSUsage("nhid-4", "zone-b", 5, 5000),
+		countQPSUsage("nhid-5", "zone-b", 20, 4000),
+	}
+	rq := newQPSTestQueue(t, usages, rd)
+	target := rq.findNodeForAllocation(context.Background(), rd, storemap.CreateStoresWithStats(usages))
+	require.NotNil(t, target)
+	require.Equal(t, "nhid-5", target.GetNhid()) // least hot
+}
+
+// TestUpReplicateIgnoresQPSWhenNotLoadBased: with load-based rebalancing off,
+// up-replication ranks by replica count only, ignoring propose QPS.
+func TestUpReplicateIgnoresQPSWhenNotLoadBased(t *testing.T) {
+	flags.Set(t, "cache.raft.enable_load_based_rebalance", false)
+	rd := &rfpb.RangeDescriptor{
+		RangeId:  1,
+		Replicas: replicas(1, "nhid-1", "nhid-2", "nhid-3"),
+	}
+	usages := []*rfpb.StoreUsage{
+		usage("nhid-1", "zone-a", 10, 100, 900),
+		usage("nhid-2", "zone-a", 10, 100, 900),
+		usage("nhid-3", "zone-a", 10, 100, 900),
+		// nhid-4: low count (best count target) but propose-hot.
+		// nhid-5: high count but propose-cold.
+		countQPSUsage("nhid-4", "zone-b", 5, 5000),
+		countQPSUsage("nhid-5", "zone-b", 20, 100),
+	}
+	rq := &Queue{minReplicasPerRange: 3}
+	rq.baseQueue = &baseQueue{log: log.NamedSubLogger("test"), impl: rq}
+	target := rq.findNodeForAllocation(context.Background(), rd, storemap.CreateStoresWithStats(usages))
+	// Count wins: nhid-4 (count 5) is the better target despite being hot.
+	require.Equal(t, "nhid-4", target.GetNhid())
+}
+
+// TestUpReplicateIgnoresQPSBelowFloor: when the propose-QPS dimension is below
+// the floor, up-replication ranks by count only — below-floor QPS noise must
+// not dominate. Same layout as TestUpReplicateAvoidsProposeHotTarget, but the
+// propose values are tiny (mean well under the 100 floor), so the count target
+// nhid-4 wins instead of the propose-cold nhid-5.
+func TestUpReplicateIgnoresQPSBelowFloor(t *testing.T) {
+	rd := &rfpb.RangeDescriptor{
+		RangeId:  1,
+		Replicas: replicas(1, "nhid-1", "nhid-2", "nhid-3"),
+	}
+	usages := []*rfpb.StoreUsage{
+		countQPSUsage("nhid-1", "zone-a", 30, 0),
+		countQPSUsage("nhid-2", "zone-a", 30, 0),
+		countQPSUsage("nhid-3", "zone-a", 30, 0),
+		countQPSUsage("nhid-4", "zone-b", 5, 50),  // low count, slightly hotter
+		countQPSUsage("nhid-5", "zone-b", 20, 10), // high count, colder
+	}
+	rq := newQPSTestQueue(t, usages, rd)
+	target := rq.findNodeForAllocation(context.Background(), rd, storemap.CreateStoresWithStats(usages))
+	require.Equal(t, "nhid-4", target.GetNhid())
 }
 
 func TestFindNodesForAllocation(t *testing.T) {
@@ -877,10 +968,113 @@ func TestFindReplicaForRemoval(t *testing.T) {
 				minReplicasPerRange: tc.minReplicasPerRange,
 			}
 			rq.baseQueue = newBaseQueue(log.NamedSubLogger("test"), clock, rq)
-			actual := rq.findReplicaForRemoval(tc.rd, tc.replicaStateMap, localReplicaID)
+			actual := rq.findReplicaForRemoval(context.Background(), tc.rd, tc.replicaStateMap, localReplicaID)
 			require.EqualExportedValues(t, tc.expected, actual)
 		})
 	}
+}
+
+// TestDownReplicateRemovesFromProposeHotStore: in load-based mode the removal
+// victim is the propose-hot store, since dropping a follower sheds its
+// propose/apply load.
+func TestDownReplicateRemovesFromProposeHotStore(t *testing.T) {
+	flags.Set(t, "cache.raft.enable_load_based_rebalance", true)
+	localReplicaID := uint64(1)
+	clock := clockwork.NewFakeClock()
+	outsideGrace := clock.Now().Add(-10 * time.Minute).UnixMicro()
+	rd := &rfpb.RangeDescriptor{
+		RangeId:                1,
+		LastAddedReplicaId:     proto.Uint64(4),
+		LastReplicaAddedAtUsec: proto.Int64(outsideGrace),
+		Replicas:               replicas(1, "nhid-1", "nhid-2", "nhid-3", "nhid-4"),
+	}
+	replicaStateMap := map[uint64]constants.ReplicaState{
+		1: constants.ReplicaStateCurrent,
+		2: constants.ReplicaStateCurrent,
+		3: constants.ReplicaStateCurrent,
+		4: constants.ReplicaStateCurrent,
+	}
+	// nhid-2 has the highest count (count-only would remove it); nhid-4 is
+	// propose-hot. QPS wins, so the victim is nhid-4, not nhid-2.
+	usages := []*rfpb.StoreUsage{
+		countQPSUsage("nhid-1", "", 30, 100),
+		countQPSUsage("nhid-2", "", 50, 100), // highest count
+		countQPSUsage("nhid-3", "", 30, 100),
+		countQPSUsage("nhid-4", "", 30, 5000), // propose-hot
+	}
+	rbs := &storemap.ReplicasByStatus{LiveReplicas: rd.GetReplicas()}
+	rq := &Queue{storeMap: newTestStoreMap(usages, rbs), minReplicasPerRange: 3}
+	rq.baseQueue = newBaseQueue(log.NamedSubLogger("test"), clock, rq)
+	victim := rq.findReplicaForRemoval(context.Background(), rd, replicaStateMap, localReplicaID)
+	require.Equal(t, uint64(4), victim.GetReplicaId())
+}
+
+// TestDownReplicateVictimUnchangedWhenNotLoadBased: with load-based off, the
+// victim is chosen by replica count, ignoring propose QPS.
+func TestDownReplicateVictimUnchangedWhenNotLoadBased(t *testing.T) {
+	flags.Set(t, "cache.raft.enable_load_based_rebalance", false)
+	localReplicaID := uint64(1)
+	clock := clockwork.NewFakeClock()
+	outsideGrace := clock.Now().Add(-10 * time.Minute).UnixMicro()
+	rd := &rfpb.RangeDescriptor{
+		RangeId:                1,
+		LastAddedReplicaId:     proto.Uint64(4),
+		LastReplicaAddedAtUsec: proto.Int64(outsideGrace),
+		Replicas:               replicas(1, "nhid-1", "nhid-2", "nhid-3", "nhid-4"),
+	}
+	replicaStateMap := map[uint64]constants.ReplicaState{
+		1: constants.ReplicaStateCurrent,
+		2: constants.ReplicaStateCurrent,
+		3: constants.ReplicaStateCurrent,
+		4: constants.ReplicaStateCurrent,
+	}
+	usages := []*rfpb.StoreUsage{
+		countQPSUsage("nhid-1", "", 30, 100),
+		countQPSUsage("nhid-2", "", 50, 100), // highest count
+		countQPSUsage("nhid-3", "", 30, 100),
+		countQPSUsage("nhid-4", "", 30, 5000), // propose-hot but average count
+	}
+	rbs := &storemap.ReplicasByStatus{LiveReplicas: rd.GetReplicas()}
+	rq := &Queue{storeMap: newTestStoreMap(usages, rbs), minReplicasPerRange: 3}
+	rq.baseQueue = newBaseQueue(log.NamedSubLogger("test"), clock, rq)
+	victim := rq.findReplicaForRemoval(context.Background(), rd, replicaStateMap, localReplicaID)
+	// Count wins: nhid-2 (count 50) is removed, not the propose-hot nhid-4.
+	require.Equal(t, uint64(2), victim.GetReplicaId())
+}
+
+// TestDownReplicateIgnoresQPSBelowFloor: with load-based on but the propose
+// dimension below the floor, the victim is chosen by count (nhid-2), not by the
+// tiny below-floor propose difference that would otherwise pick nhid-4.
+func TestDownReplicateIgnoresQPSBelowFloor(t *testing.T) {
+	flags.Set(t, "cache.raft.enable_load_based_rebalance", true)
+	localReplicaID := uint64(1)
+	clock := clockwork.NewFakeClock()
+	outsideGrace := clock.Now().Add(-10 * time.Minute).UnixMicro()
+	rd := &rfpb.RangeDescriptor{
+		RangeId:                1,
+		LastAddedReplicaId:     proto.Uint64(4),
+		LastReplicaAddedAtUsec: proto.Int64(outsideGrace),
+		Replicas:               replicas(1, "nhid-1", "nhid-2", "nhid-3", "nhid-4"),
+	}
+	replicaStateMap := map[uint64]constants.ReplicaState{
+		1: constants.ReplicaStateCurrent,
+		2: constants.ReplicaStateCurrent,
+		3: constants.ReplicaStateCurrent,
+		4: constants.ReplicaStateCurrent,
+	}
+	// Propose values are tiny (mean 30, under the 100 floor). Count favors
+	// removing nhid-2; the below-floor propose noise on nhid-4 must not win.
+	usages := []*rfpb.StoreUsage{
+		countQPSUsage("nhid-1", "", 30, 10),
+		countQPSUsage("nhid-2", "", 50, 10), // highest count
+		countQPSUsage("nhid-3", "", 30, 10),
+		countQPSUsage("nhid-4", "", 30, 90), // slightly hotter, still below floor
+	}
+	rbs := &storemap.ReplicasByStatus{LiveReplicas: rd.GetReplicas()}
+	rq := &Queue{storeMap: newTestStoreMap(usages, rbs), minReplicasPerRange: 3}
+	rq.baseQueue = newBaseQueue(log.NamedSubLogger("test"), clock, rq)
+	victim := rq.findReplicaForRemoval(context.Background(), rd, replicaStateMap, localReplicaID)
+	require.Equal(t, uint64(2), victim.GetReplicaId())
 }
 
 func TestRebalanceReplica(t *testing.T) {
@@ -1571,6 +1765,19 @@ func qpsUsage(nhid, zone string, readQPS, proposeQPS int64) *rfpb.StoreUsage {
 		ReplicaCount:   30,
 		LeaseCount:     10,
 		ReadQps:        readQPS,
+		RaftProposeQps: proposeQPS,
+		TotalBytesUsed: 100,
+		TotalBytesFree: 900,
+	}
+}
+
+// countQPSUsage builds a StoreUsage with an explicit replica count and propose
+// QPS, for replication tests that vary both.
+func countQPSUsage(nhid, zone string, replicaCount, proposeQPS int64) *rfpb.StoreUsage {
+	return &rfpb.StoreUsage{
+		Node:           &rfpb.NodeDescriptor{Nhid: nhid, Zone: zone},
+		ReplicaCount:   replicaCount,
+		LeaseCount:     10,
 		RaftProposeQps: proposeQPS,
 		TotalBytesUsed: 100,
 		TotalBytesFree: 900,

@@ -801,7 +801,7 @@ func (rq *Queue) computeActionForRangeTask(ctx context.Context, task *rangeTask)
 	if curReplicas < minReplicas || len(rd.GetStaging()) > 0 {
 		action = DriverAddReplica
 		adjustedPriority := action.Priority() + float64(desiredQuorum-curReplicas)
-		change := rq.addReplica(rd)
+		change := rq.addReplica(ctx, rd)
 		if change == nil {
 			// not able to find target node for allocation; if there is
 			// in-progress replica removal, complete it so this can be a target
@@ -1182,7 +1182,30 @@ func (rq *Queue) findNodesForAllocation(storesWithStats *storemap.StoresWithStat
 }
 
 // findNodeForAllocation finds a target node for the range to up-replicate.
-func (rq *Queue) findNodeForAllocation(rd *rfpb.RangeDescriptor, storesWithStats *storemap.StoresWithStats) *rfpb.NodeDescriptor {
+//
+// A new replica joins as a follower: it applies the raft log, so it takes on
+// the range's propose/apply QPS, but it does not serve reads. In load-based
+// mode we therefore rank targets by propose QPS (via compareForReplicaRebalance,
+// the same comparator the rebalance path uses) so a new replica lands where a
+// rebalance would want it — avoiding the wasteful add-to-hot-then-move-off. The
+// ranking never vetoes: if every candidate is propose-hot, the least-hot still
+// wins, so up-replication always places when a candidate exists.
+func (rq *Queue) findNodeForAllocation(ctx context.Context, rd *rfpb.RangeDescriptor, storesWithStats *storemap.StoresWithStats) *rfpb.NodeDescriptor {
+	// Rank by propose QPS only when load-based mode is on AND the propose
+	// dimension clears the QPS floor. Below the floor qpsMeanLevel still bands
+	// on noise, so without this gate tiny propose-QPS differences would
+	// dominate replica count in a low-traffic cluster. This mirrors the
+	// proposeSignal gate on the rebalance path.
+	useQPS := false
+	var p loadParams
+	var adj map[string]pendingAdj
+	if rq.isLoadBasedRebalanceEnabled(ctx) {
+		p = rq.loadParams(ctx)
+		useQPS = qpsSignalPresent(p, storesWithStats.RaftProposeQPS.Mean)
+		if useQPS {
+			adj = rq.pendingAdjustments()
+		}
+	}
 	var candidates []*candidate
 	existing := append(rd.GetReplicas(), rd.GetRemoved()...)
 	rangeID := rd.GetRangeId()
@@ -1201,13 +1224,17 @@ func (rq *Queue) findNodeForAllocation(rd *rfpb.RangeDescriptor, storesWithStats
 		}
 		rq.log.Debugf("add node %+v to candidate list", su.GetNode())
 		nhid := su.GetNode().GetNhid()
-		candidates = append(candidates, &candidate{
+		c := &candidate{
 			nhid:                  nhid,
 			usage:                 su,
 			replicaCount:          su.GetReplicaCount(),
 			replicaCountMeanLevel: replicaCountMeanLevel(storesWithStats, su),
 			rendezvousScore:       rendezvousScore(rangeID, nhid),
-		})
+		}
+		if useQPS {
+			rq.populateCandidateQPS(c, p, storesWithStats.ReadQPS.Mean, storesWithStats.RaftProposeQPS.Mean, adj)
+		}
+		candidates = append(candidates, c)
 	}
 	if len(candidates) == 0 {
 		return nil
@@ -1223,7 +1250,11 @@ func (rq *Queue) findNodeForAllocation(rd *rfpb.RangeDescriptor, storesWithStats
 			replicasByZone[su.GetNode().GetZone()]++
 		}
 	}
-	return slices.MaxFunc(candidates, compareByZoneAndScore(replicasByZone)).usage.GetNode()
+	inner := compareByScoreAndID
+	if useQPS {
+		inner = compareForReplicaRebalance
+	}
+	return slices.MaxFunc(candidates, compareByZoneThen(replicasByZone, inner)).usage.GetNode()
 }
 
 type removeDataOp struct {
@@ -1268,9 +1299,9 @@ func (rq *Queue) splitRange(rd *rfpb.RangeDescriptor) *change {
 	}
 }
 
-func (rq *Queue) addReplica(rd *rfpb.RangeDescriptor) *change {
+func (rq *Queue) addReplica(ctx context.Context, rd *rfpb.RangeDescriptor) *change {
 	storesWithStats := rq.storeMap.GetStoresWithStats()
-	target := rq.findNodeForAllocation(rd, storesWithStats)
+	target := rq.findNodeForAllocation(ctx, rd, storesWithStats)
 	if target == nil {
 		rq.log.Debugf("cannot find targets for range descriptor:%+v", rd)
 		return nil
@@ -1298,14 +1329,14 @@ func (rq *Queue) initializePartition(ctx context.Context, p disk.Partition) erro
 	return rq.store.InitializeShardsForPartition(ctx, nodeGrpcAddrs, p)
 }
 
-func (rq *Queue) replaceDeadReplica(rd *rfpb.RangeDescriptor) *change {
+func (rq *Queue) replaceDeadReplica(ctx context.Context, rd *rfpb.RangeDescriptor) *change {
 	replicasByStatus := rq.storeMap.DivideByStatus(rd.GetReplicas())
 	dead := findDeadReplica(rd.GetReplicas(), replicasByStatus)
 	if dead == nil {
 		// nothing to remove
 		return nil
 	}
-	change := rq.addReplica(rd)
+	change := rq.addReplica(ctx, rd)
 	if change == nil {
 		rq.log.Debug("replaceDeadReplica cannot find node for allocation")
 		return nil
@@ -2143,7 +2174,14 @@ func (rq *Queue) findRemovableReplicas(rd *rfpb.RangeDescriptor, replicaStateMap
 	return replicasBehind
 }
 
-func (rq *Queue) findReplicaForRemoval(rd *rfpb.RangeDescriptor, replicaStateMap map[uint64]constants.ReplicaState, localReplicaID uint64) *rfpb.ReplicaDescriptor {
+// findReplicaForRemoval picks which replica to drop when down-replicating. In
+// load-based mode it ranks victims by propose QPS (via
+// compareForReplicaRebalance, then MinFunc): removing a follower sheds the
+// range's propose/apply load, so the propose-hot store is the one to remove
+// from. This is the mirror of findNodeForAllocation — same comparator, worst
+// target instead of best. Removal is a correctness event, so the ranking never
+// blocks: it only reorders among the removable replicas.
+func (rq *Queue) findReplicaForRemoval(ctx context.Context, rd *rfpb.RangeDescriptor, replicaStateMap map[uint64]constants.ReplicaState, localReplicaID uint64) *rfpb.ReplicaDescriptor {
 	lastReplIDAdded := rd.LastAddedReplicaId
 	if lastReplIDAdded != nil && rd.LastReplicaAddedAtUsec != nil {
 		if rq.clock.Since(time.UnixMicro(rd.GetLastReplicaAddedAtUsec())) > *newReplicaGracePeriod {
@@ -2177,6 +2215,25 @@ func (rq *Queue) findReplicaForRemoval(rd *rfpb.RangeDescriptor, replicaStateMap
 	// Get all replica stores to be able to get per-zone counts.
 	stores := rq.storeMap.GetStoresWithStatsFromIDs(replicaNhids)
 
+	// For QPS banding we need the cluster-wide propose mean, not the mean over
+	// just this range's replica stores. Fetch the all-stores snapshot only in
+	// load-based mode, where the QPS ranking uses it. Rank by QPS only when the
+	// propose dimension clears the floor; below it qpsMeanLevel bands on noise,
+	// which would let tiny propose-QPS differences dominate replica count. This
+	// mirrors the proposeSignal gate on the rebalance path.
+	useQPS := false
+	var p loadParams
+	var adj map[string]pendingAdj
+	var allStores *storemap.StoresWithStats
+	if rq.isLoadBasedRebalanceEnabled(ctx) {
+		p = rq.loadParams(ctx)
+		allStores = rq.storeMap.GetStoresWithStats()
+		useQPS = qpsSignalPresent(p, allStores.RaftProposeQPS.Mean)
+		if useQPS {
+			adj = rq.pendingAdjustments()
+		}
+	}
+
 	replicasByZone := make(map[string]int)
 	var candidates []*candidate
 	for _, su := range stores.Usages {
@@ -2185,28 +2242,39 @@ func (rq *Queue) findReplicaForRemoval(rd *rfpb.RangeDescriptor, replicaStateMap
 		if !removableSet.Contains(nhid) || nhid == localNhid {
 			continue
 		}
-		candidates = append(candidates, &candidate{
+		c := &candidate{
 			nhid:                  nhid,
 			usage:                 su,
 			replicaCount:          su.GetReplicaCount(),
 			replicaCountMeanLevel: replicaCountMeanLevel(stores, su),
 			fullDisk:              isDiskFull(su),
 			rendezvousScore:       rendezvousScore(rd.GetRangeId(), nhid),
-		})
+		}
+		if useQPS {
+			rq.populateCandidateQPS(c, p, allStores.ReadQPS.Mean, allStores.RaftProposeQPS.Mean, adj)
+		}
+		candidates = append(candidates, c)
 	}
 	if len(candidates) == 0 {
 		// cannot find candidates for removal
 		return nil
 	}
 
-	worst := slices.MinFunc(candidates, compareByZoneAndScore(replicasByZone))
+	// MinFunc picks the worst target as the removal victim. In load-based mode
+	// that is the propose-hottest (then count-overfull) store; otherwise the
+	// count-overfull store, as before.
+	inner := compareByScoreAndID
+	if useQPS {
+		inner = compareForReplicaRebalance
+	}
+	worst := slices.MinFunc(candidates, compareByZoneThen(replicasByZone, inner))
 	return replicaByNhid[worst.nhid]
 }
 
 func (rq *Queue) removeReplica(ctx context.Context, rd *rfpb.RangeDescriptor, localRepl IReplica) *change {
 	replicaStateMap := rq.store.GetReplicaStates(ctx, rd)
 	localReplicaID := localRepl.ReplicaID()
-	removingReplica := rq.findReplicaForRemoval(rd, replicaStateMap, localReplicaID)
+	removingReplica := rq.findReplicaForRemoval(ctx, rd, replicaStateMap, localReplicaID)
 	if removingReplica == nil {
 		return nil
 	}
@@ -2316,9 +2384,9 @@ func (rq *Queue) processRangeTask(ctx context.Context, task *driverTask, action 
 	case DriverSplitRange:
 		change = rq.splitRange(rd)
 	case DriverAddReplica:
-		change = rq.addReplica(rd)
+		change = rq.addReplica(ctx, rd)
 	case DriverReplaceDeadReplica:
-		change = rq.replaceDeadReplica(rd)
+		change = rq.replaceDeadReplica(ctx, rd)
 	case DriverRemoveReplica:
 		change = rq.removeReplica(ctx, rd, repl)
 	case DriverRemoveDeadReplica:
