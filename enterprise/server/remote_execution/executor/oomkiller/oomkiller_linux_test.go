@@ -22,6 +22,18 @@ func TestCgroupMemoryMonitorSnapshot(t *testing.T) {
 	require.Equal(t, &MemorySnapshot{UsedBytes: 750, LimitBytes: 1000, AvailableBytes: 250}, snapshot)
 }
 
+func TestCgroupMemoryMonitorSnapshot_NegativeUsage(t *testing.T) {
+	cgroupDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(cgroupDir, "memory.current"), []byte("-5"), 0644))
+	monitor := &cgroupMemoryMonitor{dir: cgroupDir, limitBytes: 1000}
+
+	// The kernel never reports negative memory usage, so a negative value
+	// means the read went wrong somehow. Report an error instead of feeding a
+	// bogus measurement to the killer.
+	_, err := monitor.Snapshot(t.Context())
+	require.ErrorContains(t, err, "negative")
+}
+
 func TestCgroupMemoryMonitorSnapshot_UsageAboveLimit(t *testing.T) {
 	cgroupDir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(cgroupDir, "memory.current"), []byte("1250"), 0644))

@@ -51,7 +51,9 @@ func (m *cgroupMemoryMonitor) Snapshot(_ context.Context) (*MemorySnapshot, erro
 	if err != nil {
 		return nil, fmt.Errorf("read executor cgroup memory: %w", err)
 	}
-	usedBytes = max(int64(0), usedBytes)
+	if usedBytes < 0 {
+		return nil, fmt.Errorf("cgroup memory.current is negative (%d)", usedBytes)
+	}
 	return &MemorySnapshot{
 		UsedBytes:      usedBytes,
 		LimitBytes:     m.limitBytes,
