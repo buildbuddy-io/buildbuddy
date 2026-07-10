@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
@@ -48,7 +49,29 @@ const (
 	acmeBlobstoreTimeout = 10 * time.Second
 )
 
-type handler struct {
+// Handler is a DNS handler serving a set of authoritative zones. The served
+// records and zones live in an immutable zoneData snapshot behind an atomic
+// pointer, so a watcher (e.g. one polling zone files from GCS) can hot-swap the
+// entire set with Update while in-flight requests continue to read a consistent
+// prior snapshot without locking.
+type Handler struct {
+	// data holds the current immutable zone snapshot. ServeDNS loads it once per
+	// request; Update atomically replaces it. Never nil after NewHandler.
+	data atomic.Pointer[zoneData]
+
+	// acme, when non-nil, makes this server self-host ACME DNS-01 validation:
+	// it accepts RFC2136 UPDATEs for in-zone _acme-challenge.* TXT records and
+	// answers queries for them from the blobstore-backed store.
+	acme *Challenges
+
+	env environment.Env
+}
+
+// zoneData is an immutable snapshot of the records and zones the handler serves.
+// It is never mutated after construction (buildZoneData); a new snapshot is
+// built and swapped in wholesale by Handler.Update, so readers that loaded an
+// earlier pointer keep seeing a consistent set.
+type zoneData struct {
 	records map[string][]dns.RR
 
 	// zones are the authoritative zones we serve (one per SOA record), sorted
@@ -58,13 +81,6 @@ type handler struct {
 	// for. Empty when no zone file supplied an SOA, in which case zone
 	// membership is not enforced (see zoneFor).
 	zones []zone
-
-	// acme, when non-nil, makes this server self-host ACME DNS-01 validation:
-	// it accepts RFC2136 UPDATEs for in-zone _acme-challenge.* TXT records and
-	// answers queries for them from the blobstore-backed store.
-	acme *Challenges
-
-	env environment.Env
 }
 
 // zone is a single authoritative zone: its apex (the canonical SOA owner) and
@@ -75,21 +91,33 @@ type zone struct {
 	soa  dns.RR
 }
 
+// Update atomically replaces the served zone data with a snapshot built from
+// resources. Called by a zone-file watcher when the underlying files change; it
+// takes effect for requests that load the snapshot after this returns, while
+// in-flight requests finish against the snapshot they already loaded.
+func (h *Handler) Update(resources []dns.RR) {
+	h.data.Store(buildZoneData(resources))
+}
+
 // zoneFor returns the zone most specifically enclosing name (the longest apex
 // that is a suffix of name), or nil if name falls under none of our zones. It
 // also returns nil when we serve no zones at all (no SOA was loaded); callers
 // treat that as "membership not enforced" and fall back to plain record lookup.
-func (h *handler) zoneFor(name string) *zone {
-	for i := range h.zones {
-		if dns.IsSubDomain(h.zones[i].apex, name) {
-			return &h.zones[i]
+func (d *zoneData) zoneFor(name string) *zone {
+	for i := range d.zones {
+		if dns.IsSubDomain(d.zones[i].apex, name) {
+			return &d.zones[i]
 		}
 	}
 	return nil
 }
 
-func (h *handler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
+func (h *Handler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 	start := time.Now()
+	// Load the zone snapshot once up front so every decision in this request --
+	// zone routing, resolution, negative-SOA selection -- sees one consistent
+	// set even if a watcher swaps in new data mid-request.
+	d := h.data.Load()
 	m := new(dns.Msg)
 	m.SetReply(r)
 	m.Authoritative = true
@@ -142,8 +170,8 @@ func (h *handler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 	// answer REFUSED rather than an NXDOMAIN we have no zone SOA to anchor. When
 	// no zones are configured, zoneFor is nil for everything and this gate is
 	// skipped -- resolution proceeds over the records as an SOA-less set.
-	z := h.zoneFor(qName)
-	if len(h.zones) > 0 && z == nil {
+	z := d.zoneFor(qName)
+	if len(d.zones) > 0 && z == nil {
 		m.Rcode = dns.RcodeRefused
 		m.Authoritative = false
 		if err := w.WriteMsg(m); err != nil {
@@ -155,7 +183,7 @@ func (h *handler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 	// Self-hosted ACME: answer in-zone _acme-challenge.* names from the
 	// blobstore-backed store (records are set/removed via RFC2136 UPDATE). A name
 	// with a current value is answered; one without is authoritative NODATA.
-	if h.acme != nil && h.isACMEChallengeName(qName) {
+	if h.acme != nil && d.isACMEChallengeName(qName) {
 		if qType == dns.TypeTXT {
 			ctx, cancel := context.WithTimeout(context.Background(), acmeBlobstoreTimeout)
 			defer cancel()
@@ -177,7 +205,7 @@ func (h *handler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 	}
 
 	var negative bool
-	m.Answer, m.Rcode, negative = h.resolve(qName, qType)
+	m.Answer, m.Rcode, negative = d.resolve(qName, qType)
 
 	// ASN-based routing: when the name already resolves to an address in our
 	// zone, an experiment may override that address for this client.
@@ -211,11 +239,11 @@ func (h *handler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 // the name exists but has no record of the requested type) and so should carry
 // the zone SOA for negative caching. A CNAME chain that exits the zone is not
 // negative: it is a normal partial answer the recursive resolver completes.
-func (h *handler) resolve(qName string, qType uint16) ([]dns.RR, int, bool) {
+func (d *zoneData) resolve(qName string, qType uint16) ([]dns.RR, int, bool) {
 	var answer []dns.RR
 	name := qName
 	for i := 0; i < maxCNAMEDepth; i++ {
-		records, ok := h.lookup(name)
+		records, ok := d.lookup(name)
 		if !ok {
 			// The queried name itself not existing is NXDOMAIN. Reaching a
 			// dead end while chasing a CNAME just means the chain continues
@@ -349,12 +377,12 @@ func attachClientSubnetScopeIfPresent(m, r *dns.Msg) {
 // the closest-encloser / empty-non-terminal rules, so a wildcard could match a
 // name that a fully correct server would treat as an existing empty node. This
 // holds for every name in the zones we serve, but isn't generally complete.
-func (h *handler) lookup(name string) ([]dns.RR, bool) {
-	if rrs, ok := h.records[name]; ok {
+func (d *zoneData) lookup(name string) ([]dns.RR, bool) {
+	if rrs, ok := d.records[name]; ok {
 		return rrs, true
 	}
 	for off, end := dns.NextLabel(name, 0); !end; off, end = dns.NextLabel(name, off) {
-		if rrs, ok := h.records["*."+name[off:]]; ok {
+		if rrs, ok := d.records["*."+name[off:]]; ok {
 			out := make([]dns.RR, len(rrs))
 			for i, rr := range rrs {
 				cp := dns.Copy(rr)
@@ -372,8 +400,8 @@ func (h *handler) lookup(name string) ([]dns.RR, bool) {
 // canonicalized (lowercase, fqdn) by ServeDNS and acmeChallengePrefix is
 // lowercase, so the prefix check identifies the leftmost label without
 // allocating.
-func (h *handler) isACMEChallengeName(name string) bool {
-	return strings.HasPrefix(name, acmeChallengePrefix) && h.zoneFor(name) != nil
+func (d *zoneData) isACMEChallengeName(name string) bool {
+	return strings.HasPrefix(name, acmeChallengePrefix) && d.zoneFor(name) != nil
 }
 
 // txtRecords builds a TXT RRset owned by name from the given string values.
@@ -392,10 +420,11 @@ func txtRecords(name string, vals []string) []dns.RR {
 // rfc2136 solver to set and remove the _acme-challenge TXT records we self-host.
 // It requires a valid TSIG signature and only ever touches in-zone
 // _acme-challenge TXT names, so the TSIG key can't be used to rewrite the zone.
-func (h *handler) serveUpdate(w dns.ResponseWriter, r *dns.Msg) int {
+func (h *Handler) serveUpdate(w dns.ResponseWriter, r *dns.Msg) int {
 	m := new(dns.Msg)
 	m.SetReply(r)
 
+	d := h.data.Load()
 	reqTSIG := r.IsTsig()
 	// TsigStatus() is nil for an unsigned message too, so also require that the
 	// request actually carried a TSIG.
@@ -412,7 +441,7 @@ func (h *handler) serveUpdate(w dns.ResponseWriter, r *dns.Msg) int {
 	// dispatch on the header rather than the concrete type.
 	for _, rr := range r.Ns { // RFC2136: the records to apply live in the Ns section.
 		hdr := rr.Header()
-		if hdr.Rrtype != dns.TypeTXT || !h.isACMEChallengeName(dns.CanonicalName(hdr.Name)) {
+		if hdr.Rrtype != dns.TypeTXT || !d.isACMEChallengeName(dns.CanonicalName(hdr.Name)) {
 			m.SetRcode(r, dns.RcodeRefused)
 			writeUpdateReply(w, m, reqTSIG)
 			return dns.RcodeRefused
@@ -576,7 +605,22 @@ func addrFromNetAddr(a net.Addr) netip.Addr {
 // NewHandler builds a DNS handler serving resources. acme, if non-nil,
 // self-hosts ACME DNS-01: the handler accepts RFC2136 UPDATEs for
 // _acme-challenge TXT records and answers queries for them from it.
-func NewHandler(env environment.Env, resources []dns.RR, acme *Challenges) dns.Handler {
+//
+// The served records can later be replaced wholesale via Handler.Update (e.g.
+// by a watcher polling zone files from GCS).
+func NewHandler(env environment.Env, resources []dns.RR, acme *Challenges) *Handler {
+	h := &Handler{
+		acme: acme,
+		env:  env,
+	}
+	h.data.Store(buildZoneData(resources))
+	return h
+}
+
+// buildZoneData builds an immutable zone snapshot from resources: an
+// owner-name-indexed record map and the list of zones (one per SOA), sorted
+// most-specific first.
+func buildZoneData(resources []dns.RR) *zoneData {
 	records := make(map[string][]dns.RR, len(resources))
 	var zones []zone
 	for _, rr := range resources {
@@ -595,11 +639,9 @@ func NewHandler(env environment.Env, resources []dns.RR, acme *Challenges) dns.H
 	sort.SliceStable(zones, func(i, j int) bool {
 		return dns.CountLabel(zones[i].apex) > dns.CountLabel(zones[j].apex)
 	})
-	return &handler{
+	return &zoneData{
 		records: records,
 		zones:   zones,
-		acme:    acme,
-		env:     env,
 	}
 }
 
@@ -610,16 +652,21 @@ func NewHandler(env environment.Env, resources []dns.RR, acme *Challenges) dns.H
 // parse error. This matches the zone files we serve, which are exported from
 // Cloud DNS with fully-qualified names.
 func ParseZoneFile(fileName string) ([]dns.RR, error) {
-	file, err := os.Open(fileName)
+	data, err := os.ReadFile(fileName)
 	if err != nil {
 		return nil, err
 	}
-	defer file.Close()
+	return ParseZoneBytes(data, filepath.Base(fileName))
+}
 
+// ParseZoneBytes parses the resource records from the bytes of a zone file.
+// name is used only to label parse errors (typically the file or object name).
+// See ParseZoneFile for owner-name qualification rules.
+func ParseZoneBytes(data []byte, name string) ([]dns.RR, error) {
 	// The empty origin means relative names can only be qualified by an in-file
 	// "$ORIGIN" directive; otherwise they error rather than being silently
 	// mis-qualified.
-	parser := dns.NewZoneParser(file, "", filepath.Base(fileName))
+	parser := dns.NewZoneParser(strings.NewReader(string(data)), "", name)
 	records := make([]dns.RR, 0)
 	for rr, ok := parser.Next(); ok; rr, ok = parser.Next() {
 		records = append(records, rr)

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"iter"
 	"net/http"
 	"strings"
 	"time"
@@ -21,6 +22,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"google.golang.org/api/googleapi"
+	"google.golang.org/api/iterator"
 	"google.golang.org/api/option"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -147,6 +149,34 @@ func (g *GCSBlobStore) ReadBlob(ctx context.Context, blobName string) ([]byte, e
 		return util.Decompress(b, err)
 	} else {
 		return b, err
+	}
+}
+
+// List returns an iterator over the names of all objects in the bucket whose
+// name begins with prefix. It is not part of the Blobstore interface (only GCS
+// supports it) and is used to discover the set of zone-file objects under a
+// path. Each iteration yields a full object name (including prefix), suitable
+// for ReadBlob, or a non-nil error; the caller should stop on the first error.
+// Objects are fetched lazily from GCS as the range advances, so a caller that
+// breaks early never pages in the rest of the (potentially large) listing.
+func (g *GCSBlobStore) List(ctx context.Context, prefix string) iter.Seq2[string, error] {
+	return func(yield func(string, error) bool) {
+		ctx, spn := tracing.StartSpan(ctx)
+		defer spn.End()
+		it := g.bucketHandle.Objects(ctx, &storage.Query{Prefix: prefix})
+		for {
+			attrs, err := it.Next()
+			if errors.Is(err, iterator.Done) {
+				return
+			}
+			if err != nil {
+				yield("", err)
+				return
+			}
+			if !yield(attrs.Name, nil) {
+				return
+			}
+		}
 	}
 }
 
