@@ -619,27 +619,6 @@ func GetCopy(b Reader, key []byte) ([]byte, error) {
 	return val, nil
 }
 
-// GetFunc invokes fn with the raw value stored for the given key. The buffer
-// passed to fn is owned by pebble and is only valid for the duration of the
-// call: fn must not retain it or return any slices aliasing it. This avoids
-// the value copy that GetCopy makes and the full proto parse that GetProto
-// makes, which is useful on hot paths that only inspect a small part of the
-// value.
-func GetFunc(b Reader, key []byte, fn func(buf []byte) error) error {
-	buf, closer, err := b.Get(key)
-	if err != nil {
-		if err == pebble.ErrNotFound {
-			return status.NotFoundErrorf("key %q not found", key)
-		}
-		return err
-	}
-	defer closer.Close()
-	if len(buf) == 0 {
-		return status.NotFoundErrorf("key %q not found (empty value)", key)
-	}
-	return fn(buf)
-}
-
 func GetProto(b Reader, key []byte, pb proto.Message) error {
 	buf, closer, err := b.Get(key)
 	if err != nil {

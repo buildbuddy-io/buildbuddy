@@ -376,17 +376,20 @@ func BenchmarkFileMetadataLookup(b *testing.B) {
 				md.ReturnToVTPool()
 			}
 		})
-		// What findMissing uses: the generated FindMissing wire view.
+		// What findMissing uses: the raw stored value decoded with the
+		// generated FindMissing wire view.
 		b.Run(tc.name+"/view", func(b *testing.B) {
 			b.ReportAllocs()
 			var v sgpb.FileMetadataFindMissingView
-			parse := func(value []byte) error {
-				return v.UnmarshalWire(value)
-			}
 			for i := 0; i < b.N; i++ {
-				if err := bbpebble.GetFunc(db, key, parse); err != nil {
+				buf, closer, err := db.Get(key)
+				if err != nil {
 					b.Fatal(err)
 				}
+				if err := v.UnmarshalWire(buf); err != nil {
+					b.Fatal(err)
+				}
+				closer.Close()
 			}
 		})
 	}
