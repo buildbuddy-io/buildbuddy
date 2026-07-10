@@ -37,7 +37,7 @@ var (
 	usage = `
 bb ` + flags.Name() + ` <invocation-id-or-url> [target...] [--lines=100000] [--test_filter=TestName] [--target=remote.buildbuddy.io]
 
-Views build logs from BuildBuddy using the GetEventLogChunk API.
+Fetch and display build logs or test logs for an invocation.
 
 If one or more target labels are given (and/or --test_filter is set), prints the
 output of failed test cases instead of the full build logs. --test_filter is a
