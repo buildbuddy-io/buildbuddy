@@ -7,17 +7,23 @@ import (
 	"log"
 	"math"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/chunkstore"
+	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_kvstore"
 	"github.com/buildbuddy-io/buildbuddy/server/eventlog"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/mockinvocationdb"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/mockstore"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/terminal"
 	"github.com/buildbuddy-io/buildbuddy/server/util/terminal/testdata"
+	"github.com/open-feature/go-sdk/openfeature"
+	"github.com/open-feature/go-sdk/openfeature/memprovider"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -307,4 +313,189 @@ func TestANSICursorBufferWriterCloseAfterWriteLoopShutsDown(t *testing.T) {
 	// Closing the writer should succeed even though the write loop already
 	// flushed the log contents and shut down.
 	require.NoError(t, w.Close(t.Context()))
+}
+
+// testKeyValStore wraps MemoryKeyValStore to count writes.
+type testKeyValStore struct {
+	*memory_kvstore.MemoryKeyValStore
+
+	setCount           atomic.Int64
+	replaceSuffixCount atomic.Int64
+}
+
+func newTestKeyValStore(t *testing.T) *testKeyValStore {
+	m, err := memory_kvstore.NewMemoryKeyValStore()
+	require.NoError(t, err)
+	return &testKeyValStore{MemoryKeyValStore: m}
+}
+
+func (s *testKeyValStore) Set(ctx context.Context, key string, val []byte) error {
+	if err := s.MemoryKeyValStore.Set(ctx, key, val); err != nil {
+		return err
+	}
+	// A nil value deletes the key; don't count deletes as sets.
+	if val != nil {
+		s.setCount.Add(1)
+	}
+	return nil
+}
+
+func (s *testKeyValStore) ReplaceSuffix(ctx context.Context, key string, expectedLength, offset int64, data []byte) error {
+	if err := s.MemoryKeyValStore.ReplaceSuffix(ctx, key, expectedLength, offset, data); err != nil {
+		return err
+	}
+	s.replaceSuffixCount.Add(1)
+	return nil
+}
+
+// waitForWrites waits until the store has recorded the given number of Set
+// and ReplaceSuffix calls.
+func waitForWrites(t *testing.T, kv *testKeyValStore, setCount, replaceSuffixCount int64) {
+	t.Helper()
+	require.Eventually(t, func() bool {
+		return kv.setCount.Load() == setCount && kv.replaceSuffixCount.Load() == replaceSuffixCount
+	}, 5*time.Second, 10*time.Millisecond)
+}
+
+// newInProgressInvocation returns an invocation row for an invocation that is
+// in progress and has no log chunks in blobstore yet, so that event log reads
+// are served from the live chunk in the key-value store.
+func newInProgressInvocation(iid string) *tables.Invocation {
+	return &tables.Invocation{
+		InvocationID:     iid,
+		Attempt:          1,
+		LastChunkId:      chunkstore.ChunkIndexAsStringId(math.MaxUint16),
+		InvocationStatus: int64(inspb.InvocationStatus_PARTIAL_INVOCATION_STATUS),
+	}
+}
+
+func TestEventLogWriterSuffixWrites(t *testing.T) {
+	ctx := t.Context()
+	testID := "d42dec38-e4db-4f8a-a1f6-1e2f1b370b52"
+	kv := newTestKeyValStore(t)
+	env := testenv.GetTestEnv(t)
+	env.SetBlobstore(mockstore.New())
+	env.SetKeyValStore(kv)
+	env.SetInvocationDB(&mockinvocationdb.MockInvocationDB{DB: map[string]*tables.Invocation{
+		testID: newInProgressInvocation(testID),
+	}})
+
+	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
+		"build_event_stream.live_chunk_suffix_writes_enabled": {
+			State:          memprovider.Enabled,
+			DefaultVariant: "true",
+			Variants:       map[string]any{"true": true},
+		},
+	})
+	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
+	fp, err := experiments.NewFlagProvider(t.Name())
+	require.NoError(t, err)
+
+	path := eventlog.GetEventLogPathFromInvocationIdAndAttempt(testID, 1)
+	v2Key := path + "/v2"
+	w, err := eventlog.NewEventLogWriter(ctx, env.GetBlobstore(), kv, nil, fp, "unused-pubsub-channel", path, 80, 10)
+	require.NoError(t, err)
+
+	// Write "1\n" - should call Set since there's nothing to append to.
+	_, err = w.Write(ctx, []byte("1\n"))
+	require.NoError(t, err)
+	waitForWrites(t, kv, 1, 0)
+
+	// Should be able to read back "1\n"
+	rsp, err := eventlog.GetEventLogChunk(ctx, env, &elpb.GetEventLogChunkRequest{
+		InvocationId: testID,
+		ChunkId:      chunkstore.ChunkIndexAsStringId(0),
+		MinLines:     100,
+	})
+	require.NoError(t, err)
+	require.True(t, rsp.GetLive())
+	require.Equal(t, "1\n", string(rsp.GetBuffer()))
+
+	// Write line 2 - this should call ReplaceSuffix to just append "2\n"
+	_, err = w.Write(ctx, []byte("2\n"))
+	require.NoError(t, err)
+	waitForWrites(t, kv, 1, 1)
+
+	// Should be able to read back "1\n2\n"
+	rsp, err = eventlog.GetEventLogChunk(ctx, env, &elpb.GetEventLogChunkRequest{
+		InvocationId: testID,
+		ChunkId:      chunkstore.ChunkIndexAsStringId(0),
+		MinLines:     100,
+	})
+	require.NoError(t, err)
+	require.True(t, rsp.GetLive())
+	require.Equal(t, "1\n2\n", string(rsp.GetBuffer()))
+
+	// The v1 (proto-based storage) key should not be written when suffix writes
+	// are enabled.
+	_, err = kv.Get(ctx, path)
+	require.True(t, status.IsNotFoundError(err), "expected NotFound for v1 key, got %v", err)
+
+	// Overwrite line 2 using cursor control. We should still call ReplaceSuffix
+	// in this case, since "1\n" is still a common prefix.
+	_, err = w.Write(ctx, []byte("\x1b[A\r3\n"))
+	require.NoError(t, err)
+	waitForWrites(t, kv, 1, 2)
+
+	// Should now be able to read back "1\n3\n"
+	rsp, err = eventlog.GetEventLogChunk(ctx, env, &elpb.GetEventLogChunkRequest{
+		InvocationId: testID,
+		ChunkId:      chunkstore.ChunkIndexAsStringId(0),
+		MinLines:     100,
+	})
+	require.NoError(t, err)
+	require.True(t, rsp.GetLive())
+	require.Equal(t, "1\n3\n", string(rsp.GetBuffer()))
+
+	// Evict the stored value so the next suffix write fails, due to the prefix
+	// length mismatching the expected length.
+	require.NoError(t, kv.Set(ctx, v2Key, nil))
+	_, err = w.Write(ctx, []byte("4\n"))
+	require.NoError(t, err)
+	waitForWrites(t, kv, 2, 2)
+
+	// Should be able to read back "1\n3\n4\n" - the "1\n3\n" should not get
+	// lost even though the key was evicted.
+	rsp, err = eventlog.GetEventLogChunk(ctx, env, &elpb.GetEventLogChunkRequest{
+		InvocationId: testID,
+		ChunkId:      chunkstore.ChunkIndexAsStringId(0),
+		MinLines:     100,
+	})
+	require.NoError(t, err)
+	require.True(t, rsp.GetLive())
+	require.Equal(t, "1\n3\n4\n", string(rsp.GetBuffer()))
+}
+
+func TestEventLogWriterFullWritesWhenExperimentDisabled(t *testing.T) {
+	ctx := t.Context()
+	testID := "d42dec38-e4db-4f8a-a1f6-1e2f1b370b52"
+	kv := newTestKeyValStore(t)
+	env := testenv.GetTestEnv(t)
+	env.SetBlobstore(mockstore.New())
+	env.SetKeyValStore(kv)
+	env.SetInvocationDB(&mockinvocationdb.MockInvocationDB{DB: map[string]*tables.Invocation{
+		testID: newInProgressInvocation(testID),
+	}})
+
+	path := eventlog.GetEventLogPathFromInvocationIdAndAttempt(testID, 1)
+	w, err := eventlog.NewEventLogWriter(ctx, env.GetBlobstore(), kv, nil, nil, "unused-pubsub-channel", path, 80, 10)
+	require.NoError(t, err)
+
+	_, err = w.Write(ctx, []byte("1\n"))
+	require.NoError(t, err)
+	_, err = w.Write(ctx, []byte("2\n"))
+	require.NoError(t, err)
+
+	// Should call Set() twice - each Set() overwrites the full cumulative live
+	// chunk.
+	waitForWrites(t, kv, 2, 0)
+
+	rsp, err := eventlog.GetEventLogChunk(ctx, env, &elpb.GetEventLogChunkRequest{
+		InvocationId: testID,
+		ChunkId:      chunkstore.ChunkIndexAsStringId(0),
+		MinLines:     100,
+	})
+	require.NoError(t, err)
+	require.True(t, rsp.GetLive())
+	require.Equal(t, "1\n2\n", string(rsp.GetBuffer()))
 }

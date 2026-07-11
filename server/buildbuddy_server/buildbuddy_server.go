@@ -37,6 +37,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/target"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/canary"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
@@ -1829,7 +1830,10 @@ func (s *BuildBuddyServer) WriteEventLog(stream bbspb.BuildBuddyService_WriteEve
 			default:
 				return status.InvalidArgumentErrorf("Unsupported log type %s", req.GetType())
 			}
-			eventLogWriter, err = eventlog.NewEventLogWriter(ctx, s.env.GetBlobstore(), s.env.GetKeyValStore(), s.env.GetPubSub(), pubsubChannel, eventLogPath, eventlog.DefaultTerminalLineLength, eventlog.DefaultTerminalLinesBuffered)
+			// Attach the invocation ID to the context so experiments evaluated
+			// by the log writer can target and bucket by invocation.
+			writerCtx := bazel_request.OverrideRequestMetadata(ctx, &repb.RequestMetadata{ToolInvocationId: req.GetMetadata().GetInvocationId()})
+			eventLogWriter, err = eventlog.NewEventLogWriter(writerCtx, s.env.GetBlobstore(), s.env.GetKeyValStore(), s.env.GetPubSub(), s.env.GetExperimentFlagProvider(), pubsubChannel, eventLogPath, eventlog.DefaultTerminalLineLength, eventlog.DefaultTerminalLinesBuffered)
 			if err != nil {
 				return err
 			}
