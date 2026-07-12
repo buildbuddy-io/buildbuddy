@@ -504,7 +504,7 @@ func (c *Cache) Contains(ctx context.Context, r *rspb.ResourceName) (contains bo
 	start := c.opts.Clock.Now()
 	defer c.recordMetrics("Contains", resultErr, start)
 
-	missing, err := c.FindMissing(ctx, []*rspb.ResourceName{r})
+	missing, err := c.FindMissing(ctx, []*rspb.ResourceName{r}, repb.FindMissingBlobsRequest_CONTAINS)
 	if err != nil {
 		return false, err
 	}
@@ -547,7 +547,7 @@ func (c *Cache) Metadata(ctx context.Context, r *rspb.ResourceName) (cm *interfa
 	}, nil
 }
 
-func (c *Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName) (digests []*repb.Digest, resultErr error) {
+func (c *Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName, _ repb.FindMissingBlobsRequest_Purpose) (digests []*repb.Digest, resultErr error) {
 	start := c.opts.Clock.Now()
 	defer c.recordMetrics("FindMissing", resultErr, start)
 	ctx, spn := tracing.StartSpan(ctx)

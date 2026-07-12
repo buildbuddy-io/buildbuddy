@@ -127,7 +127,9 @@ func (s *ContentAddressableStorageServer) FindMissingBlobs(ctx context.Context, 
 		}
 		digestsToLookup = append(digestsToLookup, rn.ToProto())
 	}
-	missing, err := s.cache.FindMissing(ctx, digestsToLookup)
+	// Forward the incoming request's purpose so present/absent metrics are
+	// attributed to the originating code path.
+	missing, err := s.cache.FindMissing(ctx, digestsToLookup, req.GetPurpose())
 	if err != nil {
 		return nil, err
 	}
@@ -1327,7 +1329,9 @@ func (s *ContentAddressableStorageServer) splitBlob(ctx context.Context, req *re
 		return nil, err
 	}
 
-	if resp, err := s.FindMissingBlobs(ctx, manifest.ToFindMissingBlobsRequest()); err != nil {
+	fmReq := manifest.ToFindMissingBlobsRequest()
+	fmReq.Purpose = repb.FindMissingBlobsRequest_BYTESTREAM_CHUNKING
+	if resp, err := s.FindMissingBlobs(ctx, fmReq); err != nil {
 		return nil, err
 	} else if len(resp.GetMissingBlobDigests()) > 0 {
 		return nil, status.NotFoundErrorf("required chunks not found in CAS: %s", chunking.DigestsSummary(resp.GetMissingBlobDigests()))

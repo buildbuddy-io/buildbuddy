@@ -182,7 +182,7 @@ func (c *errorCache) Contains(ctx context.Context, r *rspb.ResourceName) (bool, 
 	return false, errors.New("error cache contains err")
 }
 
-func (c *errorCache) FindMissing(ctx context.Context, resources []*rspb.ResourceName) ([]*repb.Digest, error) {
+func (c *errorCache) FindMissing(ctx context.Context, resources []*rspb.ResourceName, _ repb.FindMissingBlobsRequest_Purpose) ([]*repb.Digest, error) {
 	c.calls.Add(1)
 	return nil, errors.New("error cache find missing err")
 }
@@ -958,7 +958,7 @@ func TestCopyDataInBackground_FindMissing(t *testing.T) {
 			require.NoError(t, err)
 
 			// FindMissing should queue copies in background
-			missing, err := mc.FindMissing(ctx, []*rspb.ResourceName{r1, r2, r3})
+			missing, err := mc.FindMissing(ctx, []*rspb.ResourceName{r1, r2, r3}, repb.FindMissingBlobsRequest_UNKNOWN)
 			require.NoError(t, err)
 			require.Equal(t, []*repb.Digest{r3.GetDigest()}, missing)
 
@@ -1098,12 +1098,12 @@ func TestFindMissing(t *testing.T) {
 	require.NoError(t, err)
 
 	rns := []*rspb.ResourceName{r, notSetR1, notSetR2}
-	missing, err := mc.FindMissing(ctx, rns)
+	missing, err := mc.FindMissing(ctx, rns, repb.FindMissingBlobsRequest_UNKNOWN)
 	require.NoError(t, err)
 	require.ElementsMatch(t, []*repb.Digest{notSetR1.GetDigest(), notSetR2.GetDigest()}, missing)
 
 	rns = []*rspb.ResourceName{r}
-	missing, err = mc.FindMissing(ctx, rns)
+	missing, err = mc.FindMissing(ctx, rns, repb.FindMissingBlobsRequest_UNKNOWN)
 	require.NoError(t, err)
 	require.Empty(t, missing)
 }
@@ -1134,7 +1134,7 @@ func TestFindMissing_DestSrcMismatch(t *testing.T) {
 	require.NoError(t, err)
 
 	rns := []*rspb.ResourceName{r, r2, r3}
-	missing, err := mc.FindMissing(ctx, rns)
+	missing, err := mc.FindMissing(ctx, rns, repb.FindMissingBlobsRequest_UNKNOWN)
 	require.NoError(t, err)
 	// Even though d3 is written to the dest cache, expect output to reflect that it's missing from src cache
 	require.ElementsMatch(t, []*repb.Digest{r3.GetDigest()}, missing)
@@ -1171,7 +1171,7 @@ func TestFindMissing_DestErr(t *testing.T) {
 
 	// Should return data from src cache without error
 	rns := digest.ResourceNames(rspb.CacheType_CAS, "", []*repb.Digest{r.GetDigest(), notSetR1.GetDigest(), notSetR2.GetDigest()})
-	missing, err := mc.FindMissing(ctx, rns)
+	missing, err := mc.FindMissing(ctx, rns, repb.FindMissingBlobsRequest_UNKNOWN)
 	require.NoError(t, err)
 	for range 5 {
 		if destCache.calls.Load() > 4 {
@@ -1543,7 +1543,7 @@ func testOnlyOneCache(t *testing.T, reverse bool) {
 	require.NoError(t, err)
 	require.Equal(t, int64(100), md.StoredSizeBytes)
 	// findmissing
-	missing, err := mc.FindMissing(ctx, []*rspb.ResourceName{r})
+	missing, err := mc.FindMissing(ctx, []*rspb.ResourceName{r}, repb.FindMissingBlobsRequest_UNKNOWN)
 	require.NoError(t, err)
 	require.Empty(t, missing)
 	// get

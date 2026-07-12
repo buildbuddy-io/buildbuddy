@@ -1883,6 +1883,44 @@ message FindMissingBlobsRequest {
   // length of the blob digest hashes and the digest functions announced
   // in the server's capabilities.
   DigestFunction.Value digest_function = 3;
+
+  // NOTE: fields below are BuildBuddy extensions, not part of the upstream
+  // REAPI. They use high tag numbers so they will not collide with fields
+  // added upstream.
+
+  // Purpose identifies which internal code path originated a FindMissingBlobs
+  // call. BuildBuddy's own clients populate it; external clients (e.g. Bazel)
+  // leave it UNKNOWN. It is used purely for observability (present/absent rate
+  // by purpose) and MUST NOT affect the result of the lookup.
+  enum Purpose {
+    // Default / unset. External clients that don't set the field land here,
+    // so UNKNOWN doubles as a signal for "originated outside BuildBuddy".
+    UNKNOWN = 0;
+    // atime_updater: batched remote FindMissingBlobs sent purely to bump atime.
+    ATIME_UPDATE = 1;
+    // Validating that an ActionResult's output digests still exist before
+    // returning it (action_cache_server / execution_server AC validation).
+    AC_VALIDATION = 2;
+    // Executor checking which action output files already exist before upload.
+    EXECUTOR_OUTPUT_UPLOAD = 3;
+    // Client-side upload existence check (cachetools / ci_runner runfiles).
+    CLIENT_UPLOAD = 4;
+    // Chunked (bytestream) read/upload manifest + chunk-existence checks.
+    BYTESTREAM_CHUNKING = 5;
+    // Cache proxy (bytestream / CAS proxy) local-or-remote existence checks.
+    CACHE_PROXY = 6;
+    // Remote-asset Fetch: FindMissing used to renew a fetched blob's atime.
+    REMOTE_ASSET_FETCH = 7;
+    // VM snapshot artifact existence checks (snaploader).
+    SNAPSHOT = 8;
+    // Cache migration copy / secondary-cache diff.
+    CACHE_MIGRATION = 9;
+    // Write-path "does this already exist?" dedupe guard.
+    WRITE_DEDUPE = 10;
+    // A Contains() existence check, which is implemented on top of FindMissing.
+    CONTAINS = 11;
+  }
+  Purpose purpose = 1000;
 }
 
 // A response message for

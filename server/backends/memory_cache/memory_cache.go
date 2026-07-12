@@ -134,7 +134,7 @@ func (m *MemoryCache) Metadata(ctx context.Context, r *rspb.ResourceName) (*inte
 	}, nil
 }
 
-func (m *MemoryCache) FindMissing(ctx context.Context, resources []*rspb.ResourceName) ([]*repb.Digest, error) {
+func (m *MemoryCache) FindMissing(ctx context.Context, resources []*rspb.ResourceName, _ repb.FindMissingBlobsRequest_Purpose) ([]*repb.Digest, error) {
 	var missing []*repb.Digest
 	// No parallelism here either. Not necessary for an in-memory cache.
 	for _, r := range resources {

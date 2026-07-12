@@ -198,8 +198,9 @@ func (c *Proxy) FindMissing(ctx context.Context, req *dcpb.FindMissingRequest) (
 	if err != nil {
 		return nil, err
 	}
-
-	missing, err := c.cache.FindMissing(ctx, req.GetResources())
+	// Forward the purpose the originating node stamped on the request so the
+	// local cache attributes present/absent metrics to the right code path.
+	missing, err := c.cache.FindMissing(ctx, req.GetResources(), req.GetPurpose())
 	if err != nil {
 		return nil, err
 	}
@@ -361,7 +362,7 @@ func (c *Proxy) Write(stream dcpb.DistributedCache_WriteServer) error {
 		rn := req.GetResource()
 		if writeCloser == nil {
 			if rn.GetCacheType() == rspb.CacheType_CAS && req.GetCheckAlreadyExists() {
-				missing, err := c.cache.FindMissing(ctx, []*rspb.ResourceName{rn})
+				missing, err := c.cache.FindMissing(ctx, []*rspb.ResourceName{rn}, repb.FindMissingBlobsRequest_WRITE_DEDUPE)
 				if err == nil && len(missing) == 0 {
 					return status.AlreadyExistsError("CAS digest already exists")
 				}
@@ -406,7 +407,7 @@ func (c *Proxy) Heartbeat(ctx context.Context, req *dcpb.HeartbeatRequest) (*dcp
 }
 
 func (c *Proxy) RemoteContains(ctx context.Context, peer string, r *rspb.ResourceName) (bool, error) {
-	missing, err := c.RemoteFindMissing(ctx, peer, []*rspb.ResourceName{r})
+	missing, err := c.RemoteFindMissing(ctx, peer, []*rspb.ResourceName{r}, repb.FindMissingBlobsRequest_CONTAINS)
 	if err != nil {
 		return false, err
 	}
@@ -452,9 +453,12 @@ func (c *Proxy) RemoteGetWithMetadata(ctx context.Context, peer string, r *rspb.
 	}, nil
 }
 
-func (c *Proxy) RemoteFindMissing(ctx context.Context, peer string, resources []*rspb.ResourceName) ([]*repb.Digest, error) {
+func (c *Proxy) RemoteFindMissing(ctx context.Context, peer string, resources []*rspb.ResourceName, purpose repb.FindMissingBlobsRequest_Purpose) ([]*repb.Digest, error) {
 	req := &dcpb.FindMissingRequest{
 		Resources: resources,
+		// Propagate the originating purpose to the authoritative peer so it can
+		// attribute present/absent metrics to the right code path.
+		Purpose: purpose,
 	}
 	client, err := c.getClient(ctx, peer)
 	if err != nil {

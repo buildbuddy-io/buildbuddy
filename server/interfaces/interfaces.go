@@ -297,7 +297,7 @@ type Cache interface {
 	// Normal cache-like operations
 	Contains(ctx context.Context, r *rspb.ResourceName) (bool, error)
 	Metadata(ctx context.Context, r *rspb.ResourceName) (*CacheMetadata, error)
-	FindMissing(ctx context.Context, resources []*rspb.ResourceName) ([]*repb.Digest, error)
+	FindMissing(ctx context.Context, resources []*rspb.ResourceName, purpose repb.FindMissingBlobsRequest_Purpose) ([]*repb.Digest, error)
 	Get(ctx context.Context, r *rspb.ResourceName) ([]byte, error)
 	GetWithMetadata(ctx context.Context, r *rspb.ResourceName) ([]byte, *CacheMetadata, error)
 	GetMulti(ctx context.Context, resources []*rspb.ResourceName) (map[*repb.Digest][]byte, error)

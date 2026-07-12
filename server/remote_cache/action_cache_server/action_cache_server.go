@@ -71,7 +71,7 @@ func NewActionCacheServer(env environment.Env) (*ActionCacheServer, error) {
 }
 
 func checkFilesExist(ctx context.Context, cache interfaces.Cache, instanceName string, digestFunction repb.DigestFunction_Value, chunkingEnabled bool, efp interfaces.ExperimentFlagProvider, digests []*rspb.ResourceName) error {
-	missing, err := cache.FindMissing(ctx, digests)
+	missing, err := cache.FindMissing(ctx, digests, repb.FindMissingBlobsRequest_AC_VALIDATION)
 	if err != nil {
 		return err
 	}

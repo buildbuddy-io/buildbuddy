@@ -1165,12 +1165,12 @@ func TestFindMissing(t *testing.T) {
 			require.NoError(t, err)
 
 			rns := []*rspb.ResourceName{r, notSetR1, notSetR2}
-			missing, err := pc.FindMissing(ctx, rns)
+			missing, err := pc.FindMissing(ctx, rns, repb.FindMissingBlobsRequest_UNKNOWN)
 			require.NoError(t, err)
 			require.ElementsMatch(t, []*repb.Digest{notSetR1.GetDigest(), notSetR2.GetDigest()}, missing)
 
 			rns = []*rspb.ResourceName{r}
-			missing, err = pc.FindMissing(ctx, rns)
+			missing, err = pc.FindMissing(ctx, rns, repb.FindMissingBlobsRequest_UNKNOWN)
 			require.NoError(t, err)
 			require.Empty(t, missing)
 		})
@@ -2376,7 +2376,7 @@ func benchmarkFindMissing(b *testing.B, pc *pebble_cache.PebbleCache, ctx contex
 		keys := randomDigests(len(digestKeys))
 
 		b.StartTimer()
-		missing, err := pc.FindMissing(ctx, keys)
+		missing, err := pc.FindMissing(ctx, keys, repb.FindMissingBlobsRequest_UNKNOWN)
 		if err != nil {
 			b.Fatal(err)
 		}

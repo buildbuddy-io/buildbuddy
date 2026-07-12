@@ -49,6 +49,10 @@ const (
 	// Cache name: Custom name to describe the cache, like "pebble-cache".
 	CacheNameLabel = "cache_name"
 
+	// FindMissing purpose: which internal code path originated a FindMissing
+	// lookup (see repb.FindMissingBlobsRequest.Purpose), e.g. "ATIME_UPDATE".
+	PurposeLabel = "purpose"
+
 	// Process exit code of an executed action.
 	ExitCodeLabel = "exit_code"
 
@@ -428,6 +432,10 @@ const (
 	MissStatusLabel        = "miss"
 	PartialStatusLabel     = "partial"
 	UncacheableStatusLabel = "uncacheable"
+
+	// FindMissing per-blob outcome: whether a checked blob was present or absent.
+	PresentStatusLabel = "present"
+	AbsentStatusLabel  = "absent"
 
 	LocalOnlyCacheProxyRequestLabel = "local_only"
 	DefaultCacheProxyRequestLabel   = "default"
@@ -3640,6 +3648,17 @@ var (
 		Help:      "Count of digests within FindMissing requests.",
 	}, []string{
 		CacheNameLabel,
+	})
+
+	PebbleCacheFindMissingBlobStatusCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "pebble_cache_find_missing_blob_status_count",
+		Help:      "Count of blobs checked by FindMissing, by present/absent status and originating purpose.",
+	}, []string{
+		CacheNameLabel,
+		PurposeLabel,
+		StatusLabel,
 	})
 
 	// ## Podman metrics

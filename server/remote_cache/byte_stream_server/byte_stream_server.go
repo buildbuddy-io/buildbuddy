@@ -281,7 +281,7 @@ func (s *ByteStreamServer) attemptReadChunked(ctx context.Context, rn *digest.CA
 		chunkRN.SetCompressor(rn.GetCompressor())
 		rns = append(rns, chunkRN.ToProto())
 	}
-	if missing, err := s.cache.FindMissing(ctx, rns); err != nil {
+	if missing, err := s.cache.FindMissing(ctx, rns, repb.FindMissingBlobsRequest_BYTESTREAM_CHUNKING); err != nil {
 		metrics.ByteStreamServerChunkedReadFailures.With(prometheus.Labels{
 			metrics.ChunkedFailureReasonLabel: "chunk_find_missing_error",
 			metrics.StatusHumanReadableLabel:  status.MetricsLabel(err),

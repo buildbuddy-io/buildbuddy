@@ -49,14 +49,14 @@ func (c *ComposableCache) Metadata(ctx context.Context, r *rspb.ResourceName) (*
 	return c.inner.Metadata(ctx, r)
 }
 
-func (c *ComposableCache) FindMissing(ctx context.Context, resources []*rspb.ResourceName) ([]*repb.Digest, error) {
+func (c *ComposableCache) FindMissing(ctx context.Context, resources []*rspb.ResourceName, purpose repb.FindMissingBlobsRequest_Purpose) ([]*repb.Digest, error) {
 	if len(resources) == 0 {
 		return nil, nil
 	}
 	cacheType := resources[0].GetCacheType()
 	instanceName := resources[0].GetInstanceName()
 
-	missingDigests, err := c.outer.FindMissing(ctx, resources)
+	missingDigests, err := c.outer.FindMissing(ctx, resources, purpose)
 	missingResources := digest.ResourceNames(cacheType, instanceName, missingDigests)
 	if err != nil {
 		missingResources = resources
@@ -64,7 +64,7 @@ func (c *ComposableCache) FindMissing(ctx context.Context, resources []*rspb.Res
 	if len(missingResources) == 0 {
 		return nil, nil
 	}
-	return c.inner.FindMissing(ctx, missingResources)
+	return c.inner.FindMissing(ctx, missingResources, purpose)
 }
 
 func (c *ComposableCache) Get(ctx context.Context, r *rspb.ResourceName) ([]byte, error) {

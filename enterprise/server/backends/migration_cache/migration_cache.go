@@ -438,21 +438,21 @@ func (mc *MigrationCache) Metadata(ctx context.Context, r *rspb.ResourceName) (*
 	return srcMetadata, srcErr
 }
 
-func (mc *MigrationCache) FindMissing(ctx context.Context, resources []*rspb.ResourceName) ([]*repb.Digest, error) {
+func (mc *MigrationCache) FindMissing(ctx context.Context, resources []*rspb.ResourceName, purpose repb.FindMissingBlobsRequest_Purpose) ([]*repb.Digest, error) {
 	ctx, spn := tracing.StartSpan(ctx)
 	defer spn.End()
 	conf, err := mc.config(ctx)
 	if err != nil {
 		return nil, err
 	}
-	srcMissing, srcErr := conf.src.FindMissing(ctx, resources)
+	srcMissing, srcErr := conf.src.FindMissing(ctx, resources, purpose)
 
 	if srcErr == nil && conf.dest != nil && conf.doubleRead() {
 		go func() {
 			// Timeout is slightly larger than p99.9 latency.
 			ctx, cancel := background.ExtendContextForFinalization(ctx, 2*time.Second)
 			defer cancel()
-			dstMissing, dstErr := conf.dest.FindMissing(ctx, resources)
+			dstMissing, dstErr := conf.dest.FindMissing(ctx, resources, purpose)
 			if dstErr != nil {
 				log.CtxWarningf(ctx, "Migration dest FindMissing %v failed: %s", resources, dstErr)
 				for _, r := range resources {

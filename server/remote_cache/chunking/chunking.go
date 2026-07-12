@@ -338,7 +338,7 @@ func (cm *Manifest) Store(ctx context.Context, cache interfaces.Cache) error {
 	// avoiding the cost of reading all chunk data for verification.
 	g, goCtx := errgroup.WithContext(ctx)
 	g.Go(func() error {
-		missing, err := cache.FindMissing(goCtx, cm.ChunkResourceNames())
+		missing, err := cache.FindMissing(goCtx, cm.ChunkResourceNames(), repb.FindMissingBlobsRequest_BYTESTREAM_CHUNKING)
 		if err != nil {
 			return err
 		}
@@ -724,7 +724,7 @@ func (c *MissingChunkChecker) AnyChunkMissing(ctx context.Context, manifest *Man
 
 	// Issue the FindMissing network call outside the lock so concurrent
 	// callers don't serialize on it.
-	missingDigests, err := c.cache.FindMissing(ctx, unknownChunks)
+	missingDigests, err := c.cache.FindMissing(ctx, unknownChunks, repb.FindMissingBlobsRequest_BYTESTREAM_CHUNKING)
 	if err != nil {
 		return false, err
 	}

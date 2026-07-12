@@ -399,7 +399,7 @@ func (g *GCSCache) Metadata(ctx context.Context, r *rspb.ResourceName) (*interfa
 	}, nil
 }
 
-func (g *GCSCache) FindMissing(ctx context.Context, resources []*rspb.ResourceName) ([]*repb.Digest, error) {
+func (g *GCSCache) FindMissing(ctx context.Context, resources []*rspb.ResourceName, _ repb.FindMissingBlobsRequest_Purpose) ([]*repb.Digest, error) {
 	lock := sync.RWMutex{} // protects(missing)
 	var missing []*repb.Digest
 	eg, ctx := errgroup.WithContext(ctx)

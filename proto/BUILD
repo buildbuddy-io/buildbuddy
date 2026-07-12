@@ -209,6 +209,7 @@ proto_library(
         "distributed_cache.proto",
     ],
     deps = [
+        ":remote_execution_proto",
         ":resource_proto",
         "@com_github_planetscale_vtprotobuf//include/github.com/planetscale/vtprotobuf/vtproto:vtproto_proto",
     ],
@@ -1703,6 +1704,7 @@ go_proto_library(
     mode = "messages_and_services",
     proto = ":distributed_cache_proto",
     deps = [
+        ":remote_execution_go_proto",
         ":resource_go_proto",
         "@com_github_planetscale_vtprotobuf//include/github.com/planetscale/vtprotobuf/vtproto:vtproto_go_proto",
     ],

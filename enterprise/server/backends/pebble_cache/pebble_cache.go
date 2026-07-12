@@ -1624,7 +1624,7 @@ func (p *PebbleCache) handleMetadataMismatch(ctx context.Context, causeErr error
 }
 
 func (p *PebbleCache) Contains(ctx context.Context, r *rspb.ResourceName) (bool, error) {
-	missing, err := p.FindMissing(ctx, []*rspb.ResourceName{r})
+	missing, err := p.FindMissing(ctx, []*rspb.ResourceName{r}, repb.FindMissingBlobsRequest_CONTAINS)
 	if err != nil {
 		return false, err
 	}
@@ -1669,7 +1669,7 @@ func (p *PebbleCache) Metadata(ctx context.Context, r *rspb.ResourceName) (*inte
 	}, nil
 }
 
-func (p *PebbleCache) FindMissing(ctx context.Context, resources []*rspb.ResourceName) ([]*repb.Digest, error) {
+func (p *PebbleCache) FindMissing(ctx context.Context, resources []*rspb.ResourceName, purpose repb.FindMissingBlobsRequest_Purpose) ([]*repb.Digest, error) {
 	ctx, spn := tracing.StartSpan(ctx)
 	defer spn.End()
 	if spn.IsRecording() {
@@ -1693,6 +1693,20 @@ func (p *PebbleCache) FindMissing(ctx context.Context, resources []*rspb.Resourc
 		err = p.findMissing(ctx, db, groupID, encryption, r)
 		if err != nil {
 			missing = append(missing, r.GetDigest())
+		}
+	}
+
+	if len(resources) > 0 {
+		purposeLabel := purpose.String()
+		if present := len(resources) - len(missing); present > 0 {
+			metrics.PebbleCacheFindMissingBlobStatusCount.
+				WithLabelValues(p.name, purposeLabel, metrics.PresentStatusLabel).
+				Add(float64(present))
+		}
+		if len(missing) > 0 {
+			metrics.PebbleCacheFindMissingBlobStatusCount.
+				WithLabelValues(p.name, purposeLabel, metrics.AbsentStatusLabel).
+				Add(float64(len(missing)))
 		}
 	}
 	return missing, nil

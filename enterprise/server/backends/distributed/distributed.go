@@ -842,9 +842,9 @@ func (c *Cache) remoteGetWithMetadata(ctx context.Context, peer string, r *rspb.
 	return c.distributedProxy.RemoteGetWithMetadata(ctx, peer, r)
 }
 
-func (c *Cache) remoteFindMissing(ctx context.Context, peer string, rns []*rspb.ResourceName) ([]*repb.Digest, error) {
+func (c *Cache) remoteFindMissing(ctx context.Context, peer string, rns []*rspb.ResourceName, purpose repb.FindMissingBlobsRequest_Purpose) ([]*repb.Digest, error) {
 	if !c.opts.DisableLocalLookup && peer == c.opts.ListenAddr {
-		return c.local.FindMissing(ctx, rns)
+		return c.local.FindMissing(ctx, rns, purpose)
 	}
 
 	stillMissing := make([]*rspb.ResourceName, 0, len(rns))
@@ -858,7 +858,7 @@ func (c *Cache) remoteFindMissing(ctx context.Context, peer string, rns []*rspb.
 	if len(stillMissing) == 0 {
 		return nil, nil
 	}
-	return c.distributedProxy.RemoteFindMissing(ctx, peer, stillMissing)
+	return c.distributedProxy.RemoteFindMissing(ctx, peer, stillMissing, purpose)
 }
 
 func (c *Cache) remoteGetMulti(ctx context.Context, peer string, rns []*rspb.ResourceName) (map[*repb.Digest][]byte, error) {
@@ -1217,7 +1217,7 @@ func (c *Cache) GetWithMetadata(ctx context.Context, r *rspb.ResourceName) ([]by
 	return nil, nil, status.NotFoundErrorf("Exhausted all peers attempting to GetWithMetadata %q.", d.GetHash())
 }
 
-func (c *Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName) ([]*repb.Digest, error) {
+func (c *Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName, purpose repb.FindMissingBlobsRequest_Purpose) ([]*repb.Digest, error) {
 	if len(resources) == 0 {
 		return nil, nil
 	}
@@ -1277,7 +1277,7 @@ func (c *Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName)
 			peer := peer
 			resources := resources
 			eg.Go(func() error {
-				peerRsp, err := c.remoteFindMissing(gCtx, peer, resources)
+				peerRsp, err := c.remoteFindMissing(gCtx, peer, resources, purpose)
 				peerMissingHashes := make(map[string]struct{})
 				for _, d := range peerRsp {
 					peerMissingHashes[d.GetHash()] = struct{}{}

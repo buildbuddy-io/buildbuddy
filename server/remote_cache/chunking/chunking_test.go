@@ -581,9 +581,9 @@ type findMissingTrackingCache struct {
 	findMissingCalls int
 }
 
-func (c *findMissingTrackingCache) FindMissing(ctx context.Context, resources []*rspb.ResourceName) ([]*repb.Digest, error) {
+func (c *findMissingTrackingCache) FindMissing(ctx context.Context, resources []*rspb.ResourceName, purpose repb.FindMissingBlobsRequest_Purpose) ([]*repb.Digest, error) {
 	c.findMissingCalls++
-	return c.Cache.FindMissing(ctx, resources)
+	return c.Cache.FindMissing(ctx, resources, purpose)
 }
 
 type booleanFlagProvider struct {

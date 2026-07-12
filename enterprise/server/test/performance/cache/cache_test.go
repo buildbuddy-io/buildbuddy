@@ -40,6 +40,7 @@ import (
 	"google.golang.org/grpc/test/bufconn"
 
 	mdspb "github.com/buildbuddy-io/buildbuddy/proto/metadata_service"
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 )
 
@@ -331,7 +332,7 @@ func benchmarkFindMissing(ctx context.Context, c interfaces.Cache, digestSizeByt
 	b.ReportAllocs()
 
 	for b.Loop() {
-		_, err := c.FindMissing(ctx, digests)
+		_, err := c.FindMissing(ctx, digests, repb.FindMissingBlobsRequest_UNKNOWN)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -496,7 +497,7 @@ func BenchmarkParallel(b *testing.B) {
 						require.NoError(b, err)
 						require.Equal(b, dbuf.buf, res)
 
-						missing, err := cache.Cache.FindMissing(ctx, []*rspb.ResourceName{dbuf.d})
+						missing, err := cache.Cache.FindMissing(ctx, []*rspb.ResourceName{dbuf.d}, repb.FindMissingBlobsRequest_UNKNOWN)
 						require.NoError(b, err)
 						require.Len(b, missing, 0, "expected no missing digests")
 					}
