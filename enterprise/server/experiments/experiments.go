@@ -10,6 +10,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
@@ -88,7 +89,8 @@ func setProvider(env *real_environment.RealEnv, provider openfeature.FeatureProv
 // flag provider is installed in openfeature.
 func NewFlagProvider(clientName string) (*FlagProvider, error) {
 	return &FlagProvider{
-		client: openfeature.NewClient(clientName),
+		client:  openfeature.NewClient(clientName),
+		podName: resources.GetK8sPodName(),
 	}, nil
 }
 
@@ -111,6 +113,10 @@ func (d *details) Variant() string {
 // FlagProvider implements the interface.ExperimentFlagProvider interface.
 type FlagProvider struct {
 	client *openfeature.Client
+
+	// Kubernetes pod name, computed once and added to the evaluation context so
+	// experiments can target an individual pod.
+	podName string
 }
 
 // Statusz reports a simple statusz page so it's clear on a running app which
@@ -142,6 +148,7 @@ type Option func(*Options)
 //   - invocation_id: Parsed from the bazel request metadata, if set.
 //   - action_id: Parsed from the bazel request metadata, if set.
 //   - region: Parsed from app.region, if set.
+//   - pod_name: The Kubernetes pod name (MY_POD_NAME), if set.
 //
 // The fields allow enabling features at the group level (default), or by
 // user, invocation, or action. Care should be taken to not enable experiments
@@ -175,6 +182,9 @@ func (fp *FlagProvider) getEvaluationContext(ctx context.Context, opts ...any) o
 	}
 	if currentRegion := region.ConfiguredAppRegion(); currentRegion != "" {
 		options.attributes["region"] = currentRegion
+	}
+	if fp.podName != "" {
+		options.attributes["pod_name"] = fp.podName
 	}
 	for _, optI := range opts {
 		if opt, ok := optI.(Option); ok {
