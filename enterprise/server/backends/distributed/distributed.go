@@ -1344,6 +1344,22 @@ func (c *Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName,
 			missMetric.Observe(float64(lookups))
 		}
 	}
+
+	// Record the LOGICAL present/absent counts by purpose (deduplicated across
+	// replica retries), a complementary view to the per-node pebble metric.
+	if len(resources) > 0 {
+		purposeLabel := purpose.String()
+		if present := len(resources) - len(missing); present > 0 {
+			metrics.DistributedCacheFindMissingBlobStatusCount.
+				WithLabelValues(purposeLabel, metrics.PresentStatusLabel).
+				Add(float64(present))
+		}
+		if len(missing) > 0 {
+			metrics.DistributedCacheFindMissingBlobStatusCount.
+				WithLabelValues(purposeLabel, metrics.AbsentStatusLabel).
+				Add(float64(len(missing)))
+		}
+	}
 	return missing, nil
 }
 

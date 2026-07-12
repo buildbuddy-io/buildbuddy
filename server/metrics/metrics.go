@@ -955,6 +955,23 @@ var (
 		CacheHitMissStatus,
 	})
 
+	// DistributedCacheFindMissingBlobStatusCount counts blobs checked by
+	// FindMissing at the distributed-cache layer, by present/absent status and
+	// originating purpose. Unlike pebble_cache_find_missing_blob_status_count
+	// (which is per-node and double-counts a blob that is retried across
+	// replicas), this records the LOGICAL result once per requested digest --
+	// present if found on any replica, absent only if missing everywhere -- so
+	// it reflects the true client-facing present/absent rate per code path.
+	DistributedCacheFindMissingBlobStatusCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "distributed_cache_find_missing_blob_status_count",
+		Help:      "Count of blobs checked by FindMissing at the distributed-cache layer, by logical present/absent status and originating purpose.",
+	}, []string{
+		PurposeLabel,
+		StatusLabel,
+	})
+
 	DistributedCacheBackfillLatencyUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_cache",
@@ -3654,7 +3671,7 @@ var (
 		Namespace: bbNamespace,
 		Subsystem: "remote_cache",
 		Name:      "pebble_cache_find_missing_blob_status_count",
-		Help:      "Count of blobs checked by FindMissing, by present/absent status and originating purpose.",
+		Help:      "Count of blobs checked by FindMissing on this node, by present/absent status and originating purpose. This is the per-node LOOKUP view: a blob retried across replicas by the distributed cache is counted on each node, so absents are inflated by replication vs the logical rate (see distributed_cache_find_missing_blob_status_count).",
 	}, []string{
 		CacheNameLabel,
 		PurposeLabel,
