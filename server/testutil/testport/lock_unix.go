@@ -6,14 +6,23 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"syscall"
 )
+
+var portLockFiles sync.Map
 
 // lockPort acquires an exclusive cross-process lock for the given port to
 // prevent parallel test processes from choosing the same port. The lock is
 // released automatically when the process exits.
 func lockPort(port int) bool {
-	lockPath := filepath.Join(os.TempDir(), fmt.Sprintf("testport.%d.lock", port))
+	// Bazel sandboxes can set TMPDIR to a sandbox-local directory, but these
+	// locks need to coordinate all test processes on the host.
+	lockDir := filepath.Join("/tmp", fmt.Sprintf("buildbuddy-testport-locks-%d", os.Getuid()))
+	if err := os.MkdirAll(lockDir, 0700); err != nil {
+		return false
+	}
+	lockPath := filepath.Join(lockDir, fmt.Sprintf("testport.%d.lock", port))
 	f, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0600)
 	if err != nil {
 		return false
@@ -22,7 +31,9 @@ func lockPort(port int) bool {
 		f.Close()
 		return false
 	}
-	// Intentionally not closing f: the flock is held for the lifetime of the
-	// process, preventing other test processes from claiming this port.
+	if _, loaded := portLockFiles.LoadOrStore(port, f); loaded {
+		f.Close()
+		return false
+	}
 	return true
 }
