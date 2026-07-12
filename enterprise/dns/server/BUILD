@@ -7,13 +7,12 @@ go_library(
     srcs = [
         "challenges.go",
         "server.go",
-        "watcher.go",
     ],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/dns/server",
     visibility = ["//visibility:public"],
     deps = [
+        "//enterprise/dns/watcher",
         "//enterprise/server/experiments",
-        "//server/backends/blobstore/gcs",
         "//server/environment",
         "//server/interfaces",
         "//server/metrics",
@@ -34,12 +33,12 @@ go_test(
     size = "small",
     srcs = [
         "server_test.go",
-        "watcher_test.go",
+        "zoneupdater_test.go",
     ],
     embed = [":server"],
     deps = [
+        "//enterprise/dns/watcher",
         "//enterprise/server/experiments",
-        "//server/backends/blobstore/gcs",
         "//server/interfaces",
         "//server/testutil/testenv",
         "//server/util/maxmind",

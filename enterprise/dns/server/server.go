@@ -12,10 +12,12 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/dns/watcher"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
+	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/maxmind"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -49,6 +51,16 @@ const (
 	// request path so a slow or hung backend can't block handler goroutines
 	// indefinitely.
 	acmeBlobstoreTimeout = 10 * time.Second
+
+	// zoneFileInvalidAlert is the constant alert name emitted when a single GCS
+	// zone-file object fails to parse or is missing its SOA. It is a Prometheus
+	// metric label, so it must stay constant -- the offending object name goes
+	// in the alert's log message, not the label.
+	zoneFileInvalidAlert = "dns_zone_file_invalid"
+
+	// zoneFileSuffix is the object-name suffix that marks a bucket object as a
+	// zone file to serve. Objects without it are ignored.
+	zoneFileSuffix = ".zone"
 )
 
 // Handler is a DNS handler serving a set of authoritative zones. The served
@@ -713,4 +725,72 @@ func hasSOA(rrs []dns.RR) bool {
 		}
 	}
 	return false
+}
+
+// WatchZoneFiles serves, via handler, every ".zone" object in store's bucket,
+// reloading them whenever they change. Each object is parsed and verified
+// independently: one that fails is skipped (and alerted) while the rest keep
+// serving their last-good records. It is non-fatal -- an empty or unreachable
+// bucket just comes up serving nothing and keeps watching -- and returns after
+// the initial best-effort load; changes thereafter are applied in the
+// background until ctx is cancelled.
+func WatchZoneFiles(ctx context.Context, handler *Handler, store watcher.Store, interval time.Duration) {
+	u := &zoneUpdater{handler: handler, files: make(map[string][]dns.RR)}
+	watcher.New(store, zoneFileSuffix, interval, u.apply).Start(ctx)
+}
+
+// zoneUpdater turns the raw object deltas a watcher emits into served DNS
+// records. It parses each changed object, verifies its SOA, keeps the last-good
+// records of any that fail (and alerts), drops removed objects, and swaps the
+// assembled record set into the handler. It is driven only from the watcher's
+// single poll goroutine, so its files map needs no lock.
+type zoneUpdater struct {
+	handler *Handler
+	files   map[string][]dns.RR // last-good records per object name
+}
+
+// apply is the watcher's onUpdate callback. Because the watcher re-delivers an
+// object only when its content changes, a parse failure here alerts once per
+// bad version rather than on every poll.
+func (u *zoneUpdater) apply(up watcher.Update) {
+	changed := false
+	for name, data := range up.Changed {
+		records, err := ParseAndVerifyZone(data, name)
+		if err != nil {
+			// One bad file must not disturb the others: alert so we can fix it,
+			// and keep this object's last-good records, if any.
+			alert.UnexpectedEvent(zoneFileInvalidAlert, "zone file %q rejected, keeping last-good: %s", name, err)
+			continue
+		}
+		u.files[name] = records
+		changed = true
+	}
+	for _, name := range up.Removed {
+		if _, ok := u.files[name]; ok {
+			delete(u.files, name)
+			changed = true
+		}
+	}
+	if !changed {
+		// Every changed object was rejected (last-good kept) and nothing served
+		// was removed: the served set is unchanged, so don't swap or log.
+		return
+	}
+	u.handler.Update(u.assemble())
+	log.Infof("dns: serving %d zone file(s) from GCS", len(u.files))
+}
+
+// assemble builds the full record set to serve: every last-good object's
+// records, ordered by object name so the resulting snapshot is deterministic.
+func (u *zoneUpdater) assemble() []dns.RR {
+	names := make([]string, 0, len(u.files))
+	for name := range u.files {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	var out []dns.RR
+	for _, name := range names {
+		out = append(out, u.files[name]...)
+	}
+	return out
 }

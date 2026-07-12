@@ -191,7 +191,7 @@ func startDNSServer(env *real_environment.RealEnv) error {
 			cancelWatch()
 			return nil
 		})
-		server.NewZoneWatcher(handler, bs, *gcsPollInterval).Start(watchCtx)
+		server.WatchZoneFiles(watchCtx, handler, bs, *gcsPollInterval)
 	}
 
 	addr := fmt.Sprintf("%s:%d", *listen, *dnsPort)
