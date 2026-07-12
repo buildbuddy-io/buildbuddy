@@ -71,9 +71,9 @@ func TestZoneUpdater_LoadsValidZones(t *testing.T) {
 func TestZoneUpdater_RejectsBadFileKeepsOthers(t *testing.T) {
 	h, u := newUpdater()
 	u.apply(changedUpdate(map[string][]byte{
-		"good.zone":  zoneFileWithA("good.example.", "1.1.1.1"),
-		"nosoa.zone": []byte("nosoa.example. 60 IN A 3.3.3.3\n"), // no SOA
-		"broken.zone": []byte("@@@ not a zone @@@\n"),            // unparseable
+		"good.zone":   zoneFileWithA("good.example.", "1.1.1.1"),
+		"nosoa.zone":  []byte("nosoa.example. 60 IN A 3.3.3.3\n"), // no SOA
+		"broken.zone": []byte("@@@ not a zone @@@\n"),             // unparseable
 	}))
 
 	assert.Equal(t, []string{"good.example."}, servedApexes(h))
