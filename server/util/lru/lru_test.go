@@ -303,3 +303,75 @@ func TestThreadSafeLRU_ConcurrentAccess(t *testing.T) {
 
 	require.LessOrEqual(t, l.Len(), 10)
 }
+
+func TestSetMaxSize(t *testing.T) {
+	testConfigs(t, func(t *testing.T, config *lru.Config[int]) {
+		cfg := *config
+		cfg.MaxSize = 3
+		cfg.SizeFn = func(value int) int64 { return 1 }
+		l, err := lru.New[int](&cfg)
+		require.NoError(t, err)
+
+		require.True(t, l.Add("a", 1))
+		require.True(t, l.Add("b", 2))
+		require.True(t, l.Add("c", 3))
+		require.Equal(t, 3, l.Len())
+
+		// Shrinking evicts least-recently-used entries down to the new max.
+		l.SetMaxSize(1)
+		require.Equal(t, 1, l.Len())
+		require.Equal(t, int64(1), l.Size())
+		require.True(t, l.Contains("c")) // most recently added survives
+		require.False(t, l.Contains("a"))
+		require.False(t, l.Contains("b"))
+
+		// Growing allows more entries again.
+		l.SetMaxSize(3)
+		require.True(t, l.Add("d", 4))
+		require.True(t, l.Add("e", 5))
+		require.Equal(t, 3, l.Len())
+
+		// Max of 0 drops everything and retains nothing added afterwards.
+		l.SetMaxSize(0)
+		require.Equal(t, 0, l.Len())
+		require.True(t, l.Add("f", 6)) // Add reports success...
+		require.Equal(t, 0, l.Len())   // ...but the entry is immediately evicted.
+
+		// Negative is treated as 0 (must not panic or spin).
+		l.SetMaxSize(-5)
+		require.Equal(t, 0, l.Len())
+	})
+}
+
+func TestPurge(t *testing.T) {
+	testConfigs(t, func(t *testing.T, config *lru.Config[int]) {
+		evictions := []eviction{}
+		cfg := *config
+		cfg.MaxSize = 10
+		cfg.SizeFn = func(value int) int64 { return 1 }
+		cfg.OnEvict = func(key string, value int, reason lru.EvictionReason) {
+			evictions = append(evictions, eviction{key, value, reason})
+		}
+		l, err := lru.New[int](&cfg)
+		require.NoError(t, err)
+
+		require.True(t, l.Add("a", 1))
+		require.True(t, l.Add("b", 2))
+
+		l.Purge()
+		require.Equal(t, 0, l.Len())
+		require.Equal(t, int64(0), l.Size())
+		require.False(t, l.Contains("a"))
+		require.False(t, l.Contains("b"))
+		// onEvict is invoked once per entry, with ManualEviction.
+		require.Len(t, evictions, 2)
+		for _, e := range evictions {
+			require.Equal(t, lru.ManualEviction, e.reason)
+		}
+
+		// The LRU remains usable after a purge.
+		require.True(t, l.Add("c", 3))
+		require.True(t, l.Contains("c"))
+		require.Equal(t, 1, l.Len())
+	})
+}
