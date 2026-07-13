@@ -53,6 +53,7 @@ import (
 
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	clpb "github.com/buildbuddy-io/buildbuddy/proto/command_line"
+	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
 	gitutil "github.com/buildbuddy-io/buildbuddy/server/util/git"
@@ -303,6 +304,7 @@ type buildEventReporter struct {
 	isWorkflow bool
 	apiKey     string
 	bep        *build_event_publisher.Publisher
+	besConn    *grpc_client.ClientConnPool
 	uploader   *bes_artifacts.Uploader
 	log        *invocationLog
 
@@ -327,8 +329,13 @@ func newBuildEventReporter(ctx context.Context, besBackend string, apiKey string
 		}
 	}
 
-	bep, err := build_event_publisher.New(besBackend, apiKey, iid)
+	conn, err := grpc_client.DialSimple(besBackend)
 	if err != nil {
+		return nil, status.UnavailableErrorf("dial BES backend: %s", err)
+	}
+	bep, err := build_event_publisher.New(pepb.NewPublishBuildEventClient(conn), apiKey, iid)
+	if err != nil {
+		conn.Close()
 		return nil, status.UnavailableErrorf("failed to initialize build event publisher: %s", err)
 	}
 	bep.Start(ctx)
@@ -342,7 +349,7 @@ func newBuildEventReporter(ctx context.Context, besBackend string, apiKey string
 		uploader = ul
 	}
 
-	return &buildEventReporter{apiKey: apiKey, bep: bep, uploader: uploader, log: newInvocationLog(redactionValues), invocationID: iid, isWorkflow: isWorkflow, childInvocations: []string{}}, nil
+	return &buildEventReporter{apiKey: apiKey, bep: bep, besConn: conn, uploader: uploader, log: newInvocationLog(redactionValues), invocationID: iid, isWorkflow: isWorkflow, childInvocations: []string{}}, nil
 }
 
 func (r *buildEventReporter) InvocationID() string {
@@ -507,7 +514,12 @@ func (r *buildEventReporter) Stop() error {
 		LastMessage: true,
 	})
 
-	if err := r.bep.Finish(); err != nil {
+	err := r.bep.Finish()
+	if r.besConn != nil {
+		r.besConn.Close()
+		r.besConn = nil
+	}
+	if err != nil {
 		// If we don't publish a build event successfully, then the status may not be
 		// reported to the Git provider successfully. Terminate with a code indicating
 		// that the executor can retry the action, so that we have another chance.

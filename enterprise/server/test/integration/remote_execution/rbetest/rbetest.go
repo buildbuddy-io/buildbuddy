@@ -529,6 +529,15 @@ func (s *BuildBuddyServer) GRPCAddress() string {
 	return fmt.Sprintf("grpc://localhost:%d", s.GRPCPort())
 }
 
+func (s *BuildBuddyServer) PublishBuildEventClient() pepb.PublishBuildEventClient {
+	conn, err := grpc_client.DialSimple(s.GRPCAddress())
+	require.NoError(s.t, err)
+	s.t.Cleanup(func() {
+		conn.Close()
+	})
+	return pepb.NewPublishBuildEventClient(conn)
+}
+
 const (
 	testCommandStateUnknown = iota
 	testCommandStateStarted
