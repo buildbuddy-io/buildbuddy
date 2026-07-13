@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pubsub"
@@ -105,9 +106,11 @@ func (o *hintedHandoffOrder) String() string {
 // TODO(go/b/6456): use memory cache instead of LRU for lookaside cache
 type Cache struct {
 	authenticator        interfaces.Authenticator
+	env                  environment.Env
 	local                interfaces.Cache
 	log                  log.Logger
 	lookaside            lru.LRU[lookasideCacheEntry]
+	rightsize            atomic.Pointer[rightsizeConfig]
 	peerZones            map[string]string
 	hintedHandoffsMu     *sync.RWMutex
 	hintedHandoffsByPeer map[string]chan *hintedHandoffOrder
@@ -217,6 +220,7 @@ func NewDistributedCache(env environment.Env, c interfaces.Cache, opts Options, 
 	}
 	dc := &Cache{
 		authenticator:       env.GetAuthenticator(),
+		env:                 env,
 		local:               c,
 		log:                 log.NamedSubLogger(fmt.Sprintf("Coordinator(%s)", opts.ListenAddr)),
 		opts:                opts,
@@ -233,6 +237,7 @@ func NewDistributedCache(env environment.Env, c interfaces.Cache, opts Options, 
 		hintedHandoffsMu:     &sync.RWMutex{},
 		hintedHandoffsByPeer: make(map[string]chan *hintedHandoffOrder, 0),
 	}
+	dc.rightsize.Store(&rightsizeConfig{enabled: true, ratio: defaultRightsizeLookasideRatio})
 
 	if opts.LookasideCacheSizeBytes > 0 {
 		l, err := lru.New[lookasideCacheEntry](&lru.Config[lookasideCacheEntry]{
@@ -433,6 +438,62 @@ func (c *Cache) lookasideKey(ctx context.Context, r *rspb.ResourceName) (key str
 	return "", false
 }
 
+const (
+	rightsizeLookasideEnabledFlag  = "cache_proxy.rightsize_lookaside_entries"
+	rightsizeLookasideRatioFlag    = "cache_proxy.rightsize_lookaside_min_slack_ratio"
+	defaultRightsizeLookasideRatio = 1.5
+	rightsizeConfigRefreshInterval = 30 * time.Second
+)
+
+type rightsizeConfig struct {
+	enabled bool
+	ratio   float64
+}
+
+// rightsizeLookasideData returns a right-sized copy of data when its backing
+// array is meaningfully larger than its length, otherwise data unchanged.
+func (c *Cache) rightsizeLookasideData(data []byte) []byte {
+	cfg := c.rightsize.Load()
+	if cfg != nil && cfg.enabled && float64(cap(data)) > float64(len(data))*cfg.ratio {
+		return bytes.Clone(data)
+	}
+	return data
+}
+
+func (c *Cache) refreshRightsizeConfig() {
+	enabled, ratio := true, float64(defaultRightsizeLookasideRatio)
+	if fp := c.env.GetExperimentFlagProvider(); fp != nil {
+		ctx := context.Background()
+		enabled = fp.Boolean(ctx, rightsizeLookasideEnabledFlag, enabled)
+		ratio = fp.Float64(ctx, rightsizeLookasideRatioFlag, ratio)
+	}
+	c.rightsize.Store(&rightsizeConfig{enabled: enabled, ratio: ratio})
+}
+
+func (c *Cache) watchRightsizeConfig(shutDownChan chan struct{}) {
+	c.refreshRightsizeConfig()
+
+	var changes chan struct{}
+	if fp := c.env.GetExperimentFlagProvider(); fp != nil {
+		changes = make(chan struct{}, 1)
+		unsubscribe := fp.Subscribe(changes)
+		defer unsubscribe()
+	}
+
+	ticker := time.NewTicker(rightsizeConfigRefreshInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-shutDownChan:
+			return
+		case <-changes:
+			c.refreshRightsizeConfig()
+		case <-ticker.C:
+			c.refreshRightsizeConfig()
+		}
+	}
+}
+
 func (c *Cache) addLookasideEntry(ctx context.Context, r *rspb.ResourceName, data []byte) {
 	if !c.lookasideCacheEnabled() {
 		return
@@ -453,6 +514,9 @@ func (c *Cache) addLookasideEntry(ctx context.Context, r *rspb.ResourceName, dat
 }
 
 func (c *Cache) setLookasideEntry(lookasideKey string, data []byte) {
+	// Right-size the slice before we store it so we don't retain oversized
+	// buffers.
+	data = c.rightsizeLookasideData(data)
 	entry := lookasideCacheEntry{
 		createdAtMillis: time.Now().UnixMilli(),
 		data:            data,
@@ -633,6 +697,7 @@ func (c *Cache) StartListening() error {
 	}
 	c.shutDownChan = make(chan struct{})
 	go c.heartbeatPeers(c.shutDownChan)
+	go c.watchRightsizeConfig(c.shutDownChan)
 	if c.heartbeatChannel != nil {
 		c.heartbeatChannel.StartAdvertising()
 	}
