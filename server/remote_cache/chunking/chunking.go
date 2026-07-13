@@ -18,6 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
+	"github.com/buildbuddy-io/buildbuddy/server/util/findmissing"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -338,7 +339,7 @@ func (cm *Manifest) Store(ctx context.Context, cache interfaces.Cache) error {
 	// avoiding the cost of reading all chunk data for verification.
 	g, goCtx := errgroup.WithContext(ctx)
 	g.Go(func() error {
-		missing, err := cache.FindMissing(goCtx, cm.ChunkResourceNames(), repb.FindMissingBlobsRequest_CDC_MANIFEST_STORE)
+		missing, err := cache.FindMissing(findmissing.ContextWithPurpose(goCtx, repb.FindMissingBlobsRequest_CDC_MANIFEST_STORE), cm.ChunkResourceNames())
 		if err != nil {
 			return err
 		}
@@ -727,7 +728,7 @@ func (c *MissingChunkChecker) AnyChunkMissing(ctx context.Context, manifest *Man
 
 	// Issue the FindMissing network call outside the lock so concurrent
 	// callers don't serialize on it.
-	missingDigests, err := c.cache.FindMissing(ctx, unknownChunks, c.purpose)
+	missingDigests, err := c.cache.FindMissing(findmissing.ContextWithPurpose(ctx, c.purpose), unknownChunks)
 	if err != nil {
 		return false, err
 	}

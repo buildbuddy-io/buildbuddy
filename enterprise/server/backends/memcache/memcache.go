@@ -151,7 +151,7 @@ func (c *Cache) Metadata(ctx context.Context, r *rspb.ResourceName) (*interfaces
 	}, nil
 }
 
-func (c *Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName, _ repb.FindMissingBlobsRequest_Purpose) ([]*repb.Digest, error) {
+func (c *Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName) ([]*repb.Digest, error) {
 	lock := sync.RWMutex{} // protects(missing)
 	var missing []*repb.Digest
 	eg, ctx := errgroup.WithContext(ctx)

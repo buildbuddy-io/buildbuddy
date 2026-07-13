@@ -19,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
+	"github.com/buildbuddy-io/buildbuddy/server/util/findmissing"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
@@ -200,7 +201,7 @@ func (c *Proxy) FindMissing(ctx context.Context, req *dcpb.FindMissingRequest) (
 	}
 	// Forward the purpose the originating node stamped on the request so the
 	// local cache attributes present/absent metrics to the right code path.
-	missing, err := c.cache.FindMissing(ctx, req.GetResources(), req.GetPurpose())
+	missing, err := c.cache.FindMissing(findmissing.ContextWithPurpose(ctx, req.GetPurpose()), req.GetResources())
 	if err != nil {
 		return nil, err
 	}
@@ -362,7 +363,7 @@ func (c *Proxy) Write(stream dcpb.DistributedCache_WriteServer) error {
 		rn := req.GetResource()
 		if writeCloser == nil {
 			if rn.GetCacheType() == rspb.CacheType_CAS && req.GetCheckAlreadyExists() {
-				missing, err := c.cache.FindMissing(ctx, []*rspb.ResourceName{rn}, repb.FindMissingBlobsRequest_WRITE_DEDUPE)
+				missing, err := c.cache.FindMissing(findmissing.ContextWithPurpose(ctx, repb.FindMissingBlobsRequest_WRITE_DEDUPE), []*rspb.ResourceName{rn})
 				if err == nil && len(missing) == 0 {
 					return status.AlreadyExistsError("CAS digest already exists")
 				}
@@ -407,7 +408,7 @@ func (c *Proxy) Heartbeat(ctx context.Context, req *dcpb.HeartbeatRequest) (*dcp
 }
 
 func (c *Proxy) RemoteContains(ctx context.Context, peer string, r *rspb.ResourceName) (bool, error) {
-	missing, err := c.RemoteFindMissing(ctx, peer, []*rspb.ResourceName{r}, repb.FindMissingBlobsRequest_CONTAINS)
+	missing, err := c.RemoteFindMissing(findmissing.ContextWithPurpose(ctx, repb.FindMissingBlobsRequest_CONTAINS), peer, []*rspb.ResourceName{r})
 	if err != nil {
 		return false, err
 	}
@@ -453,12 +454,12 @@ func (c *Proxy) RemoteGetWithMetadata(ctx context.Context, peer string, r *rspb.
 	}, nil
 }
 
-func (c *Proxy) RemoteFindMissing(ctx context.Context, peer string, resources []*rspb.ResourceName, purpose repb.FindMissingBlobsRequest_Purpose) ([]*repb.Digest, error) {
+func (c *Proxy) RemoteFindMissing(ctx context.Context, peer string, resources []*rspb.ResourceName) ([]*repb.Digest, error) {
 	req := &dcpb.FindMissingRequest{
 		Resources: resources,
 		// Propagate the originating purpose to the authoritative peer so it can
 		// attribute present/absent metrics to the right code path.
-		Purpose: purpose,
+		Purpose: findmissing.PurposeFromContext(ctx),
 	}
 	client, err := c.getClient(ctx, peer)
 	if err != nil {

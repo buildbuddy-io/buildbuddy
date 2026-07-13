@@ -33,6 +33,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
+	"github.com/buildbuddy-io/buildbuddy/server/util/findmissing"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lockmap"
@@ -1624,7 +1625,7 @@ func (p *PebbleCache) handleMetadataMismatch(ctx context.Context, causeErr error
 }
 
 func (p *PebbleCache) Contains(ctx context.Context, r *rspb.ResourceName) (bool, error) {
-	missing, err := p.FindMissing(ctx, []*rspb.ResourceName{r}, repb.FindMissingBlobsRequest_CONTAINS)
+	missing, err := p.FindMissing(findmissing.ContextWithPurpose(ctx, repb.FindMissingBlobsRequest_CONTAINS), []*rspb.ResourceName{r})
 	if err != nil {
 		return false, err
 	}
@@ -1669,7 +1670,7 @@ func (p *PebbleCache) Metadata(ctx context.Context, r *rspb.ResourceName) (*inte
 	}, nil
 }
 
-func (p *PebbleCache) FindMissing(ctx context.Context, resources []*rspb.ResourceName, purpose repb.FindMissingBlobsRequest_Purpose) ([]*repb.Digest, error) {
+func (p *PebbleCache) FindMissing(ctx context.Context, resources []*rspb.ResourceName) ([]*repb.Digest, error) {
 	ctx, spn := tracing.StartSpan(ctx)
 	defer spn.End()
 	if spn.IsRecording() {
@@ -1697,7 +1698,7 @@ func (p *PebbleCache) FindMissing(ctx context.Context, resources []*rspb.Resourc
 	}
 
 	if len(resources) > 0 {
-		purposeLabel := purpose.String()
+		purposeLabel := findmissing.PurposeFromContext(ctx).String()
 		if present := len(resources) - len(missing); present > 0 {
 			metrics.PebbleCacheFindMissingBlobStatusCount.
 				WithLabelValues(p.name, purposeLabel, metrics.PresentStatusLabel).

@@ -184,12 +184,12 @@ func TestFindMissing(t *testing.T) {
 			require.NoError(t, err)
 
 			rns := []*rspb.ResourceName{r, notSetR1, notSetR2}
-			missing, err := bc.FindMissing(ctx, rns, repb.FindMissingBlobsRequest_UNKNOWN)
+			missing, err := bc.FindMissing(ctx, rns)
 			require.NoError(t, err)
 			require.ElementsMatch(t, []*repb.Digest{notSetR1.GetDigest(), notSetR2.GetDigest()}, missing)
 
 			rns = []*rspb.ResourceName{r}
-			missing, err = bc.FindMissing(ctx, rns, repb.FindMissingBlobsRequest_UNKNOWN)
+			missing, err = bc.FindMissing(ctx, rns)
 			require.NoError(t, err)
 			require.Empty(t, missing)
 		})

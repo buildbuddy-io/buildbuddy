@@ -24,6 +24,7 @@ go_library(
         "//server/util/capabilities",
         "//server/util/cdc",
         "//server/util/compression",
+        "//server/util/findmissing",
         "//server/util/grpc_client",
         "//server/util/grpc_server",
         "//server/util/log",

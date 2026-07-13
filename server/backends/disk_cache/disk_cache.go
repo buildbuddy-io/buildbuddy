@@ -379,7 +379,7 @@ func (c *DiskCache) Metadata(ctx context.Context, r *rspb.ResourceName) (*interf
 	}, nil
 }
 
-func (c *DiskCache) FindMissing(ctx context.Context, resources []*rspb.ResourceName, _ repb.FindMissingBlobsRequest_Purpose) ([]*repb.Digest, error) {
+func (c *DiskCache) FindMissing(ctx context.Context, resources []*rspb.ResourceName) ([]*repb.Digest, error) {
 	if len(resources) == 0 {
 		return nil, nil
 	}

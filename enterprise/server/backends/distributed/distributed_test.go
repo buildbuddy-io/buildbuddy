@@ -943,13 +943,13 @@ func TestContainsMulti(t *testing.T) {
 	}
 
 	for _, baseCache := range baseCaches {
-		missingMap, err := baseCache.FindMissing(ctx, resourcesWritten, repb.FindMissingBlobsRequest_UNKNOWN)
+		missingMap, err := baseCache.FindMissing(ctx, resourcesWritten)
 		assert.Nil(t, err)
 		assert.Equal(t, 0, len(missingMap))
 	}
 
 	for _, distributedCache := range distributedCaches {
-		missingMap, err := distributedCache.FindMissing(ctx, resourcesWritten, repb.FindMissingBlobsRequest_UNKNOWN)
+		missingMap, err := distributedCache.FindMissing(ctx, resourcesWritten)
 		assert.Nil(t, err)
 		assert.Equal(t, 0, len(missingMap))
 	}
@@ -1069,13 +1069,13 @@ func TestFindMissing(t *testing.T) {
 
 	allResources := append(resourcesWritten, resourcesNotWritten...)
 	for _, baseCache := range baseCaches {
-		missing, err := baseCache.FindMissing(ctx, allResources, repb.FindMissingBlobsRequest_UNKNOWN)
+		missing, err := baseCache.FindMissing(ctx, allResources)
 		require.NoError(t, err)
 		require.ElementsMatch(t, missing, digestsNotWritten)
 	}
 
 	for _, distributedCache := range distributedCaches {
-		missing, err := distributedCache.FindMissing(ctx, allResources, repb.FindMissingBlobsRequest_UNKNOWN)
+		missing, err := distributedCache.FindMissing(ctx, allResources)
 		require.NoError(t, err)
 		require.ElementsMatch(t, missing, digestsNotWritten)
 	}
@@ -2094,7 +2094,7 @@ func TestReadThroughLookaside(t *testing.T) {
 	// Call FindMissing on all the digests -- this should also hit
 	// the lookaside cache.
 	for _, distributedCache := range distributedCaches {
-		missing, err := distributedCache.FindMissing(ctx, allResources, repb.FindMissingBlobsRequest_UNKNOWN)
+		missing, err := distributedCache.FindMissing(ctx, allResources)
 		require.NoError(t, err)
 		require.Equal(t, 0, len(missing))
 	}
@@ -3298,9 +3298,9 @@ func (t *tracedCache) Metadata(ctx context.Context, r *rspb.ResourceName) (*inte
 	t.addOps(Metadata, r)
 	return t.Cache.Metadata(ctx, r)
 }
-func (t *tracedCache) FindMissing(ctx context.Context, resources []*rspb.ResourceName, purpose repb.FindMissingBlobsRequest_Purpose) ([]*repb.Digest, error) {
+func (t *tracedCache) FindMissing(ctx context.Context, resources []*rspb.ResourceName) ([]*repb.Digest, error) {
 	t.addOps(FindMissing, resources...)
-	return t.Cache.FindMissing(ctx, resources, purpose)
+	return t.Cache.FindMissing(ctx, resources)
 }
 func (t *tracedCache) Get(ctx context.Context, r *rspb.ResourceName) ([]byte, error) {
 	t.addOps(Get, r)
@@ -3353,8 +3353,8 @@ func (pc *partitionedCache) Contains(ctx context.Context, r *rspb.ResourceName) 
 func (pc *partitionedCache) Metadata(ctx context.Context, r *rspb.ResourceName) (*interfaces.CacheMetadata, error) {
 	return pc.partition(ctx).Metadata(ctx, r)
 }
-func (pc *partitionedCache) FindMissing(ctx context.Context, resources []*rspb.ResourceName, purpose repb.FindMissingBlobsRequest_Purpose) ([]*repb.Digest, error) {
-	return pc.partition(ctx).FindMissing(ctx, resources, purpose)
+func (pc *partitionedCache) FindMissing(ctx context.Context, resources []*rspb.ResourceName) ([]*repb.Digest, error) {
+	return pc.partition(ctx).FindMissing(ctx, resources)
 }
 func (pc *partitionedCache) Get(ctx context.Context, r *rspb.ResourceName) ([]byte, error) {
 	return pc.partition(ctx).Get(ctx, r)

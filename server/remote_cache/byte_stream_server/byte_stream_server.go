@@ -21,6 +21,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
+	"github.com/buildbuddy-io/buildbuddy/server/util/findmissing"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -281,7 +282,7 @@ func (s *ByteStreamServer) attemptReadChunked(ctx context.Context, rn *digest.CA
 		chunkRN.SetCompressor(rn.GetCompressor())
 		rns = append(rns, chunkRN.ToProto())
 	}
-	if missing, err := s.cache.FindMissing(ctx, rns, repb.FindMissingBlobsRequest_BYTESTREAM_CHUNKING); err != nil {
+	if missing, err := s.cache.FindMissing(findmissing.ContextWithPurpose(ctx, repb.FindMissingBlobsRequest_BYTESTREAM_CHUNKING), rns); err != nil {
 		metrics.ByteStreamServerChunkedReadFailures.With(prometheus.Labels{
 			metrics.ChunkedFailureReasonLabel: "chunk_find_missing_error",
 			metrics.StatusHumanReadableLabel:  status.MetricsLabel(err),

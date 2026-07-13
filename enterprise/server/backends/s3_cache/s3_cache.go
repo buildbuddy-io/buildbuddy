@@ -497,7 +497,7 @@ func (s3c *S3Cache) metadata(ctx context.Context, r *rspb.ResourceName) (*s3.Hea
 	return head, nil
 }
 
-func (s3c *S3Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName, _ repb.FindMissingBlobsRequest_Purpose) ([]*repb.Digest, error) {
+func (s3c *S3Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName) ([]*repb.Digest, error) {
 	lock := sync.RWMutex{} // protects(missing)
 	var missing []*repb.Digest
 	eg, ctx := errgroup.WithContext(ctx)

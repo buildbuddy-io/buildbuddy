@@ -169,7 +169,7 @@ func (c *alwaysMissCache) Contains(ctx context.Context, r *rspb.ResourceName) (b
 	return false, nil
 }
 
-func (c *alwaysMissCache) FindMissing(ctx context.Context, resources []*rspb.ResourceName, _ repb.FindMissingBlobsRequest_Purpose) ([]*repb.Digest, error) {
+func (c *alwaysMissCache) FindMissing(ctx context.Context, resources []*rspb.ResourceName) ([]*repb.Digest, error) {
 	missing := make([]*repb.Digest, 0, len(resources))
 	for _, r := range resources {
 		missing = append(missing, r.GetDigest())

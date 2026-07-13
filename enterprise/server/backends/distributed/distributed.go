@@ -28,6 +28,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/consistent_hash"
+	"github.com/buildbuddy-io/buildbuddy/server/util/findmissing"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/kubediscovery"
@@ -842,9 +843,9 @@ func (c *Cache) remoteGetWithMetadata(ctx context.Context, peer string, r *rspb.
 	return c.distributedProxy.RemoteGetWithMetadata(ctx, peer, r)
 }
 
-func (c *Cache) remoteFindMissing(ctx context.Context, peer string, rns []*rspb.ResourceName, purpose repb.FindMissingBlobsRequest_Purpose) ([]*repb.Digest, error) {
+func (c *Cache) remoteFindMissing(ctx context.Context, peer string, rns []*rspb.ResourceName) ([]*repb.Digest, error) {
 	if !c.opts.DisableLocalLookup && peer == c.opts.ListenAddr {
-		return c.local.FindMissing(ctx, rns, purpose)
+		return c.local.FindMissing(ctx, rns)
 	}
 
 	stillMissing := make([]*rspb.ResourceName, 0, len(rns))
@@ -858,7 +859,7 @@ func (c *Cache) remoteFindMissing(ctx context.Context, peer string, rns []*rspb.
 	if len(stillMissing) == 0 {
 		return nil, nil
 	}
-	return c.distributedProxy.RemoteFindMissing(ctx, peer, stillMissing, purpose)
+	return c.distributedProxy.RemoteFindMissing(ctx, peer, stillMissing)
 }
 
 func (c *Cache) remoteGetMulti(ctx context.Context, peer string, rns []*rspb.ResourceName) (map[*repb.Digest][]byte, error) {
@@ -1217,10 +1218,11 @@ func (c *Cache) GetWithMetadata(ctx context.Context, r *rspb.ResourceName) ([]by
 	return nil, nil, status.NotFoundErrorf("Exhausted all peers attempting to GetWithMetadata %q.", d.GetHash())
 }
 
-func (c *Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName, purpose repb.FindMissingBlobsRequest_Purpose) ([]*repb.Digest, error) {
+func (c *Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName) ([]*repb.Digest, error) {
 	if len(resources) == 0 {
 		return nil, nil
 	}
+	purpose := findmissing.PurposeFromContext(ctx)
 
 	mu := sync.RWMutex{} // protects(foundMap)
 	hashResources := make(map[string][]*rspb.ResourceName, 0)
@@ -1277,7 +1279,7 @@ func (c *Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName,
 			peer := peer
 			resources := resources
 			eg.Go(func() error {
-				peerRsp, err := c.remoteFindMissing(gCtx, peer, resources, purpose)
+				peerRsp, err := c.remoteFindMissing(gCtx, peer, resources)
 				peerMissingHashes := make(map[string]struct{})
 				for _, d := range peerRsp {
 					peerMissingHashes[d.GetHash()] = struct{}{}

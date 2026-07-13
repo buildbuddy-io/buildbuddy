@@ -803,7 +803,7 @@ func TestFindMissing(t *testing.T) {
 			missingDigests = append(missingDigests, r.GetDigest())
 		}
 
-		remoteMissing, err := c.RemoteFindMissing(ctx, peer, append(existingDigests, missingResources...), repb.FindMissingBlobsRequest_UNKNOWN)
+		remoteMissing, err := c.RemoteFindMissing(ctx, peer, append(existingDigests, missingResources...))
 		require.NoError(t, err)
 		require.Empty(t, cmp.Diff(missingDigests, remoteMissing, protocmp.Transform()))
 	}
