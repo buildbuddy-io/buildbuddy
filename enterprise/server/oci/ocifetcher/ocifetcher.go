@@ -831,8 +831,8 @@ func (t *blobHeadFallbackTransport) RoundTrip(in *http.Request) (*http.Response,
 	if err != nil || in.Method != http.MethodHead || !blobHeadFallbackHost(in.URL.Hostname()) || !blobsPathRegexp.MatchString(in.URL.Path) {
 		return resp, err
 	}
-	// Only 401 and 405 can mean the HEAD method itself was rejected; other statuses (403,
-	// 404, 429, 5xx) are genuine answers that would apply equally to a GET.
+	// If HEAD is not allowed (405) then fall back to a GET.
+	// `public.ecr.aws` returns 401 instead of an explicit 405, so we fall back to GET in that case as well.
 	if resp.StatusCode != http.StatusUnauthorized && resp.StatusCode != http.StatusMethodNotAllowed {
 		return resp, nil
 	}
