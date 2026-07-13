@@ -216,13 +216,13 @@ func TestPublisher_RetriesAfterServerDisconnect(t *testing.T) {
 	err = publisher.Publish(&bespb.BuildEvent{})
 	require.NoError(t, err)
 	event := recvStreamRequest(t, received)
-	assert.Equal(t, int64(1), event.GetOrderedBuildEvent().GetSequenceNumber())
+	require.Equal(t, int64(1), event.GetOrderedBuildEvent().GetSequenceNumber())
 
 	// The publisher should notice the disconnect and retry the stream even
 	// though we aren't publishing any more events, re-sending the first event
 	// since it was never acked.
 	event = recvStreamRequest(t, received)
-	assert.Equal(t, int64(1), event.GetOrderedBuildEvent().GetSequenceNumber())
+	require.Equal(t, int64(1), event.GetOrderedBuildEvent().GetSequenceNumber())
 
 	// Finish the stream. The publisher should publish the finished event on
 	// the retried stream, and Finish should succeed once the server acks all
@@ -230,7 +230,7 @@ func TestPublisher_RetriesAfterServerDisconnect(t *testing.T) {
 	err = publisher.Finish()
 	require.NoError(t, err)
 	event = recvStreamRequest(t, received)
-	assert.Equal(t, int64(2), event.GetOrderedBuildEvent().GetSequenceNumber())
+	require.Equal(t, int64(2), event.GetOrderedBuildEvent().GetSequenceNumber())
 }
 
 func makeStreamID(invocationID, buildID string) *bepb.StreamId {

@@ -125,7 +125,6 @@ loop:
 		// event to publish.
 		select {
 		case err, ok := <-recvErr:
-			_ = stream.CloseSend()
 			if !ok {
 				// Recv returned io.EOF which normally means the stream closed
 				// cleanly, but in this case it's unexpected because the server
@@ -133,7 +132,7 @@ loop:
 				// events.
 				return status.UnavailableErrorf("server stream unexpectedly closed while publishing events")
 			}
-			return status.WrapError(err, "recv")
+			return err
 		case obe, ok := <-events:
 			if !ok {
 				// No more events to publish
