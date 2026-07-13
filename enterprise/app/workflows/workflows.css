@@ -375,6 +375,41 @@
   align-self: start;
 }
 
+.workflows-github-import .installation-import-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.workflows-github-import .github-installation-import-list {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+}
+
+.workflows-github-import .github-installation-import-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 40px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--color-border-primary);
+}
+
+.workflows-github-import .github-installation-import-item:first-child {
+  border-top: 1px solid var(--color-border-primary);
+}
+
+.workflows-github-import .github-installation-import-owner {
+  min-width: 0;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .workflows-github-import .repo-search {
   display: flex;
   gap: 8px;
