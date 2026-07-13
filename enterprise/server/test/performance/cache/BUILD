@@ -1,46 +1,45 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_test")
+load(":defs.bzl", "cache_benchmark")
 
 package(default_visibility = ["//enterprise:__subpackages__"])
 
-go_test(
+cache_benchmark(
+    name = "cache_set_test",
+    benchmark = "BenchmarkSet",
+)
+
+cache_benchmark(
+    name = "cache_read_test",
+    benchmark = "BenchmarkRead",
+)
+
+cache_benchmark(
+    name = "cache_get_single_test",
+    benchmark = "BenchmarkGetSingle",
+)
+
+cache_benchmark(
+    name = "cache_get_multi_test",
+    benchmark = "BenchmarkGetMulti",
+)
+
+cache_benchmark(
+    name = "cache_find_missing_test",
+    benchmark = "BenchmarkFindMissing",
+)
+
+cache_benchmark(
+    name = "cache_parallel_test",
+    benchmark = "BenchmarkParallel",
+)
+
+test_suite(
     name = "cache_test",
-    timeout = "long",
-    srcs = ["cache_test.go"],
-    args = [
-        "-test.bench=.",
-    ],
-    tags = ["performance"],
-    deps = [
-        "//enterprise/server/backends/cache_config",
-        "//enterprise/server/backends/distributed",
-        "//enterprise/server/backends/metacache",
-        "//enterprise/server/backends/migration_cache",
-        "//enterprise/server/backends/pebble_cache",
-        "//enterprise/server/experiments",
-        "//enterprise/server/filestore",
-        "//enterprise/server/testutil/mockmetadata",
-        "//proto:metadata_service_go_proto",
-        "//proto:resource_go_proto",
-        "//server/backends/disk_cache",
-        "//server/backends/memory_cache",
-        "//server/environment",
-        "//server/interfaces",
-        "//server/real_environment",
-        "//server/rpc/interceptors",
-        "//server/testutil/mockgcs",
-        "//server/testutil/testauth",
-        "//server/testutil/testdigest",
-        "//server/testutil/testenv",
-        "//server/testutil/testfs",
-        "//server/testutil/testport",
-        "//server/util/log",
-        "//server/util/prefix",
-        "//server/util/testing/flags",
-        "//server/util/tracing",
-        "@com_github_jonboulle_clockwork//:clockwork",
-        "@com_github_open_feature_go_sdk//openfeature",
-        "@com_github_open_feature_go_sdk//openfeature/memprovider",
-        "@com_github_stretchr_testify//require",
-        "@org_golang_google_grpc//test/bufconn",
+    tests = [
+        ":cache_find_missing_test",
+        ":cache_get_multi_test",
+        ":cache_get_single_test",
+        ":cache_parallel_test",
+        ":cache_read_test",
+        ":cache_set_test",
     ],
 )

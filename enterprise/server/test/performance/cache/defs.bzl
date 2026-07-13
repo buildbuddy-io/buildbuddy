@@ -1,0 +1,47 @@
+"""Macros for cache benchmarks."""
+
+load("@io_bazel_rules_go//go:def.bzl", "go_test")
+
+_DEPS = [
+    "//enterprise/server/backends/cache_config",
+    "//enterprise/server/backends/distributed",
+    "//enterprise/server/backends/metacache",
+    "//enterprise/server/backends/migration_cache",
+    "//enterprise/server/backends/pebble_cache",
+    "//enterprise/server/experiments",
+    "//enterprise/server/filestore",
+    "//enterprise/server/testutil/mockmetadata",
+    "//proto:metadata_service_go_proto",
+    "//proto:resource_go_proto",
+    "//server/backends/disk_cache",
+    "//server/backends/memory_cache",
+    "//server/environment",
+    "//server/interfaces",
+    "//server/real_environment",
+    "//server/rpc/interceptors",
+    "//server/testutil/mockgcs",
+    "//server/testutil/testauth",
+    "//server/testutil/testdigest",
+    "//server/testutil/testenv",
+    "//server/testutil/testfs",
+    "//server/testutil/testport",
+    "//server/util/log",
+    "//server/util/prefix",
+    "//server/util/testing/flags",
+    "//server/util/tracing",
+    "@com_github_jonboulle_clockwork//:clockwork",
+    "@com_github_open_feature_go_sdk//openfeature",
+    "@com_github_open_feature_go_sdk//openfeature/memprovider",
+    "@com_github_stretchr_testify//require",
+    "@org_golang_google_grpc//test/bufconn",
+]
+
+def cache_benchmark(name, benchmark):
+    go_test(
+        name = name,
+        timeout = "long",
+        srcs = ["cache_test.go"],
+        args = ["-test.bench=^%s$$" % benchmark],
+        tags = ["performance"],
+        deps = _DEPS,
+    )
