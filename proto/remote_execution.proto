@@ -1903,22 +1903,36 @@ message FindMissingBlobsRequest {
     AC_VALIDATION = 2;
     // Executor checking which action output files already exist before upload.
     EXECUTOR_OUTPUT_UPLOAD = 3;
-    // Client-side upload existence check (cachetools / ci_runner runfiles).
-    CLIENT_UPLOAD = 4;
     // Chunked (bytestream) read/upload manifest + chunk-existence checks.
-    BYTESTREAM_CHUNKING = 5;
+    BYTESTREAM_CHUNKING = 4;
     // Cache proxy (bytestream / CAS proxy) local-or-remote existence checks.
-    CACHE_PROXY = 6;
+    CACHE_PROXY = 5;
     // Remote-asset Fetch: FindMissing used to renew a fetched blob's atime.
-    REMOTE_ASSET_FETCH = 7;
+    REMOTE_ASSET_FETCH = 6;
     // VM snapshot artifact existence checks (snaploader).
-    SNAPSHOT = 8;
+    SNAPSHOT = 7;
     // Cache migration copy / secondary-cache diff.
-    CACHE_MIGRATION = 9;
+    CACHE_MIGRATION = 8;
     // Write-path "does this already exist?" dedupe guard.
-    WRITE_DEDUPE = 10;
+    WRITE_DEDUPE = 9;
     // A Contains() existence check, which is implemented on top of FindMissing.
-    CONTAINS = 11;
+    CONTAINS = 10;
+    // Chunk check from BSS proxy on Read.
+    CACHE_PROXY_BSS_CDC_READ = 11;
+    // Chunk check from BSS proxy on Write.
+    CACHE_PROXY_BSS_CDC_WRITE = 12;
+    // Data upload from CI runner.
+    CI_RUNNER_UPLOAD = 13;
+    // Mostly from executors.
+    CLIENT_BATCH_UPLOAD_CDC_CHUNKING = 14;
+    // Currently only used by SpliceBlob API.
+    CDC_MANIFEST_STORE = 15;
+    // AC validation checking existence of digest chunks.
+    AC_MISSING_CHUNK_VALIDATION = 16;
+    // CAS FindMissingBlobs checking existence of digest chunks.
+    FMB_CHUNK_VALIDATION = 17;
+    // CAS SplitBlob API.
+    CAS_SPLIT_BLOB = 18;
   }
   Purpose purpose = 1000;
 }

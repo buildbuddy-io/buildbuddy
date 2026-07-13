@@ -659,7 +659,7 @@ func uploadFromReaderWithChunking(ctx context.Context, env environment.Env, r *d
 
 	casClient := env.GetContentAddressableStorageClient()
 	fmReq := manifest.ToFindMissingBlobsRequest()
-	fmReq.Purpose = repb.FindMissingBlobsRequest_CLIENT_UPLOAD
+	fmReq.Purpose = repb.FindMissingBlobsRequest_CLIENT_BATCH_UPLOAD_CDC_CHUNKING
 	missingRsp, err := FindMissingBlobs(chunkCtx, casClient, fmReq)
 	if err != nil {
 		return nil, 0, status.WrapError(err, "find missing chunks")

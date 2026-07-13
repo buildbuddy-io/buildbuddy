@@ -1498,7 +1498,7 @@ func uploadRunfiles(ctx context.Context, workspaceRoot, runfilesDir string) ([]*
 	rsp, err := env.GetContentAddressableStorageClient().FindMissingBlobs(ctx, &repb.FindMissingBlobsRequest{
 		InstanceName: *remoteInstanceName,
 		BlobDigests:  digests,
-		Purpose:      repb.FindMissingBlobsRequest_CLIENT_UPLOAD,
+		Purpose:      repb.FindMissingBlobsRequest_CI_RUNNER_UPLOAD,
 	})
 	if err != nil {
 		return nil, nil, status.UnknownErrorf("could not check digest existence: %s", err)

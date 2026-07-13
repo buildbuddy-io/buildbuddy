@@ -87,7 +87,7 @@ func checkFilesExist(ctx context.Context, cache interfaces.Cache, instanceName s
 			return status.NotFoundErrorf("ActionResult output file %q not found in cache", digest.String(d))
 		}
 	}
-	checker := chunking.NewMissingChunkChecker(cache)
+	checker := chunking.NewMissingChunkChecker(cache, repb.FindMissingBlobsRequest_AC_MISSING_CHUNK_VALIDATION)
 	eg, egCtx := errgroup.WithContext(ctx)
 	eg.SetLimit(chunkCheckConcurrency)
 	for _, d := range missing {

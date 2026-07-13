@@ -139,7 +139,7 @@ func (s *ContentAddressableStorageServer) FindMissingBlobs(ctx context.Context, 
 	// Otherwise, use the read fallback threshold so old chunked blobs still
 	// count as present, except for the override-only chunk-size migration range.
 	if efp := s.env.GetExperimentFlagProvider(); len(missing) > 0 && !cdc.IsChunked(ctx) && chunking.Enabled(ctx, efp) {
-		checker := chunking.NewMissingChunkChecker(s.cache)
+		checker := chunking.NewMissingChunkChecker(s.cache, repb.FindMissingBlobsRequest_FMB_CHUNK_VALIDATION)
 		chunkedReadFallbackSizeBytes := chunking.MinChunkedReadFallbackSizeBytes(ctx, efp)
 
 		var mu sync.Mutex
@@ -1330,7 +1330,7 @@ func (s *ContentAddressableStorageServer) splitBlob(ctx context.Context, req *re
 	}
 
 	fmReq := manifest.ToFindMissingBlobsRequest()
-	fmReq.Purpose = repb.FindMissingBlobsRequest_BYTESTREAM_CHUNKING
+	fmReq.Purpose = repb.FindMissingBlobsRequest_CAS_SPLIT_BLOB
 	if resp, err := s.FindMissingBlobs(ctx, fmReq); err != nil {
 		return nil, err
 	} else if len(resp.GetMissingBlobDigests()) > 0 {
