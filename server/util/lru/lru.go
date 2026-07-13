@@ -41,6 +41,15 @@ type LRU[V any] interface {
 	// Remove()s the oldest value in the LRU. (See Remove() above).
 	RemoveOldest() (V, bool)
 
+	// SetMaxSize updates the maximum size of the LRU. If the new max is smaller
+	// than the current size, the least recently used entries are evicted (with
+	// SizeEviction) until the current size fits. New value must be positive.
+	SetMaxSize(maxSize int64) error
+
+	// Purge removes all entries from the LRU, invoking the eviction callback for
+	// each (with ManualEviction). The LRU remains usable afterwards.
+	Purge()
+
 	// Returns all keys in the LRU, ordered from most recently used to least.
 	Keys() []string
 }
@@ -340,6 +349,29 @@ func (c *lru[V]) removeElement(e *list.Element, reason EvictionReason) {
 	}
 }
 
+func (c *lru[V]) SetMaxSize(maxSize int64) error {
+	if maxSize <= 0 {
+		return errors.New("must provide a positive size")
+	}
+	c.maxSize = maxSize
+	for c.currentSize > c.maxSize {
+		c.removeOldest()
+	}
+	return nil
+}
+
+func (c *lru[V]) Purge() {
+	if c.onEvict != nil {
+		for e := c.evictList.Front(); e != nil; e = e.Next() {
+			kv := e.Value.(*Entry[V])
+			c.onEvict(kv.key, kv.value, ManualEviction)
+		}
+	}
+	c.evictList.Init()
+	c.items = make(map[string]*list.Element)
+	c.currentSize = 0
+}
+
 func (c *expiringLRU[V]) Add(key string, value V) bool {
 	return c.inner.Add(key, c.wrapValue(value))
 }
@@ -378,6 +410,14 @@ func (c *expiringLRU[V]) RemoveOldest() (V, bool) {
 		return zero, false
 	}
 	return entry.value, true
+}
+
+func (c *expiringLRU[V]) SetMaxSize(maxSize int64) error {
+	return c.inner.SetMaxSize(maxSize)
+}
+
+func (c *expiringLRU[V]) Purge() {
+	c.inner.Purge()
 }
 
 func (c *expiringLRU[V]) Len() int {
@@ -442,6 +482,18 @@ func (c *threadSafeLRU[V]) RemoveOldest() (V, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.inner.RemoveOldest()
+}
+
+func (c *threadSafeLRU[V]) SetMaxSize(maxSize int64) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.inner.SetMaxSize(maxSize)
+}
+
+func (c *threadSafeLRU[V]) Purge() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.inner.Purge()
 }
 
 func (c *threadSafeLRU[V]) Len() int {
