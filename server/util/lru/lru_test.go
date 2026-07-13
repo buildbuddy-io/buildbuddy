@@ -318,7 +318,8 @@ func TestSetMaxSize(t *testing.T) {
 		require.Equal(t, 3, l.Len())
 
 		// Shrinking evicts least-recently-used entries down to the new max.
-		l.SetMaxSize(1)
+		err = l.SetMaxSize(1)
+		require.NoError(t, err)
 		require.Equal(t, 1, l.Len())
 		require.Equal(t, int64(1), l.Size())
 		require.True(t, l.Contains("c")) // most recently added survives
@@ -326,20 +327,25 @@ func TestSetMaxSize(t *testing.T) {
 		require.False(t, l.Contains("b"))
 
 		// Growing allows more entries again.
-		l.SetMaxSize(3)
+		err = l.SetMaxSize(3)
+		require.NoError(t, err)
 		require.True(t, l.Add("d", 4))
 		require.True(t, l.Add("e", 5))
 		require.Equal(t, 3, l.Len())
 
-		// Max of 0 drops everything and retains nothing added afterwards.
-		l.SetMaxSize(0)
-		require.Equal(t, 0, l.Len())
-		require.True(t, l.Add("f", 6)) // Add reports success...
-		require.Equal(t, 0, l.Len())   // ...but the entry is immediately evicted.
+		// Max of 0 rejected, previous size kept.
+		err = l.SetMaxSize(0)
+		require.ErrorContains(t, err, "must provide a positive size")
+		require.Equal(t, 3, l.Len()) // Previous size retained.
+		require.True(t, l.Add("f", 6))
+		require.Equal(t, 3, l.Len())
 
-		// Negative is treated as 0 (must not panic or spin).
-		l.SetMaxSize(-5)
-		require.Equal(t, 0, l.Len())
+		// Negative is treated as 0.
+		err = l.SetMaxSize(0)
+		require.ErrorContains(t, err, "must provide a positive size")
+		require.Equal(t, 3, l.Len()) // Previous size retained.
+		require.True(t, l.Add("f", 6))
+		require.Equal(t, 3, l.Len())
 	})
 }
 
