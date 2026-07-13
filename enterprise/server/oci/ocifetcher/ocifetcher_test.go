@@ -19,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ocifetcher"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testregistry"
+	"github.com/buildbuddy-io/buildbuddy/server/http/httpclient"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
@@ -828,13 +829,10 @@ func TestFetchBlobStreamsDirectlyWhenBlobMetadataLookupFails(t *testing.T) {
 	blobPath := "/v2/test-metadata-fallback/blobs/" + layerDigest.String()
 	assertRequests(t, counter, map[string]int{
 		http.MethodGet + " /v2/": 1,
-		// Blob data is streamed despite metadata failures. No ranged GET
-		// fallbacks: those are only made for HEAD requests failing with
-		// 401, not 500.
+		// Blob data streams despite metadata failures; no ranged GET fallbacks for 500s.
 		http.MethodGet + " " + blobPath: 1,
-		// Three blob HEADs: go-containerregistry's retry transport makes
-		// up to three attempts for the Size() HEAD since 500 is a
-		// retryable status.
+		// go-containerregistry's retry transport makes up to three attempts for the
+		// Size() HEAD since 500 is a retryable status.
 		http.MethodHead + " " + blobPath: 3,
 	})
 
@@ -852,11 +850,8 @@ func TestFetchBlobStreamsDirectlyWhenBlobMetadataLookupFails(t *testing.T) {
 	})
 }
 
-// TestBlobHeadFallbackToRangedGet simulates a registry that, like
-// public.ecr.aws, rejects every HEAD request to blob endpoints with 401 while
-// allowing GET requests. Blob metadata should be fetched via the single-byte
-// ranged GET fallback, and blob fetching (including read-through caching)
-// should keep working end to end.
+// TestBlobHeadFallbackToRangedGet simulates a registry that, like public.ecr.aws, rejects every
+// blob HEAD with 401 while allowing GETs, so metadata comes from the ranged GET fallback.
 func TestBlobHeadFallbackToRangedGet(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -952,9 +947,16 @@ func TestBlobHeadFallbackToRangedGet(t *testing.T) {
 	}
 }
 
-// TestBlobHeadFallbackTransport exercises NewBlobHeadFallbackTransport
-// directly against servers that mimic public.ecr.aws: HEAD requests to blob
-// endpoints fail, and blob GETs redirect to a CDN on a different host.
+// testHTTPClient returns an httpclient-package client that is allowed to reach test servers on loopback.
+func testHTTPClient(t *testing.T) *http.Client {
+	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.0/8", "::1/128"})
+	allowedPrivateIPs, err := ocifetcher.ParseAllowedPrivateIPs()
+	require.NoError(t, err)
+	return httpclient.New(allowedPrivateIPs, "test")
+}
+
+// TestBlobHeadFallbackTransport exercises NewBlobHeadFallbackTransport directly against servers
+// that mimic public.ecr.aws: blob HEADs fail, and blob GETs redirect to a CDN on another host.
 func TestBlobHeadFallbackTransport(t *testing.T) {
 	t.Run("FollowsRedirectsAndStripsAuthorization", func(t *testing.T) {
 		const blobSize = 1234
@@ -968,9 +970,8 @@ func TestBlobHeadFallbackTransport(t *testing.T) {
 			_, _ = w.Write([]byte{0})
 		}))
 		defer cdn.Close()
-		// Redirect to the CDN via a different hostname so that the HTTP
-		// client treats it as a cross-host redirect and strips the
-		// Authorization header, as for a real registry-to-CDN redirect.
+		// Redirect via a different hostname so the client treats it as a cross-host
+		// redirect and strips Authorization, as for a real registry-to-CDN redirect.
 		cdnURL, err := url.Parse(cdn.URL)
 		require.NoError(t, err)
 		redirectTarget := "http://localhost:" + cdnURL.Port() + "/blob"
@@ -988,7 +989,7 @@ func TestBlobHeadFallbackTransport(t *testing.T) {
 		}))
 		defer registry.Close()
 
-		tr := ocifetcher.NewBlobHeadFallbackTransport(http.DefaultTransport)
+		tr := ocifetcher.NewBlobHeadFallbackTransport(testHTTPClient(t))
 		req, err := http.NewRequest(http.MethodHead, registry.URL+"/v2/test-image/blobs/sha256:abc", nil)
 		require.NoError(t, err)
 		req.Header.Set("Authorization", "Bearer registry-token")
@@ -1027,7 +1028,7 @@ func TestBlobHeadFallbackTransport(t *testing.T) {
 				}))
 				defer registry.Close()
 
-				tr := ocifetcher.NewBlobHeadFallbackTransport(http.DefaultTransport)
+				tr := ocifetcher.NewBlobHeadFallbackTransport(testHTTPClient(t))
 				req, err := http.NewRequest(http.MethodHead, registry.URL+"/v2/test-image/blobs/sha256:abc", nil)
 				require.NoError(t, err)
 				resp, err := tr.RoundTrip(req)
@@ -1053,7 +1054,7 @@ func TestBlobHeadFallbackTransport(t *testing.T) {
 		}))
 		defer registry.Close()
 
-		tr := ocifetcher.NewBlobHeadFallbackTransport(http.DefaultTransport)
+		tr := ocifetcher.NewBlobHeadFallbackTransport(testHTTPClient(t))
 		req, err := http.NewRequest(http.MethodHead, registry.URL+"/v2/test-image/blobs/sha256:abc", nil)
 		require.NoError(t, err)
 		resp, err := tr.RoundTrip(req)
@@ -1083,7 +1084,7 @@ func TestBlobHeadFallbackTransport(t *testing.T) {
 		}))
 		defer registry.Close()
 
-		tr := ocifetcher.NewBlobHeadFallbackTransport(http.DefaultTransport)
+		tr := ocifetcher.NewBlobHeadFallbackTransport(testHTTPClient(t))
 
 		// Successful blob HEAD: no fallback needed.
 		req, err := http.NewRequest(http.MethodHead, registry.URL+"/v2/test-image/blobs/sha256:abc", nil)
@@ -2245,9 +2246,8 @@ func TestFetchBlobSingleflightDifferentCredentials(t *testing.T) {
 		// Three /v2/ pings: one for each initial puller (creds1, creds2),
 		// plus one more when creds2 retries with a fresh puller after 401.
 		http.MethodGet + " /v2/": 3,
-		// Five blob GETs: one for creds1 (succeeds), two for creds2
-		// (first attempt 401, retry 401), plus one ranged GET fallback
-		// for each of creds2's two failed blob HEADs.
+		// Five blob GETs: one for creds1, two for creds2 (attempt + retry, both
+		// 401), plus one ranged GET fallback per failed creds2 blob HEAD.
 		http.MethodGet + " " + blobPath: 5,
 		// Three blob HEADs for layer.Size(): one for creds1 (succeeds),
 		// two for creds2 (Size is fetched before Compressed, so each

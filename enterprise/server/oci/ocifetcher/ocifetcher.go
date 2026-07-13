@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -618,7 +619,7 @@ func (s *ociFetcherServer) getRemoteOpts(ctx context.Context, creds *rgpb.Creden
 		}))
 	}
 
-	tr := NewBlobHeadFallbackTransport(httpclient.New(s.allowedPrivateIPs, "oci_fetcher").Transport)
+	tr := NewBlobHeadFallbackTransport(httpclient.New(s.allowedPrivateIPs, "oci_fetcher"))
 
 	if len(s.mirrors) > 0 {
 		opts = append(opts, remote.WithTransport(NewMirrorTransport(tr, s.mirrors)))
@@ -796,36 +797,33 @@ func Mirrors() []interfaces.MirrorConfig {
 	return *mirrors
 }
 
-// NewBlobHeadFallbackTransport wraps an http.RoundTripper so that HEAD
-// requests to blob endpoints that are rejected with HTTP 401, 403, or 405
-// are retried as GET requests with "Range: bytes=0-0", and the GET response
-// is converted back into an equivalent HEAD response. Some registries
-// (notably public.ecr.aws) reject every HEAD request to a blob endpoint with
-// 401, even though the OCI Distribution Spec requires HEAD support and the
-// same credentials authorize GET requests.
-//
-// The fallback is deliberately restricted to the statuses that can mean
-// "HEAD specifically was rejected": 401 (public.ecr.aws), 403 (e.g. a
-// redirect target presigned for GET only), and 405 (method not allowed).
-// Other statuses apply equally to GET, so issuing extra requests would be
-// pointless (404, 5xx) or counterproductive (429).
-func NewBlobHeadFallbackTransport(inner http.RoundTripper) http.RoundTripper {
-	return &blobHeadFallbackTransport{inner: inner}
+// blobsPathRegexp matches blob pull paths, "/v2/<name>/blobs/<digest>" per
+// https://github.com/opencontainers/distribution-spec/blob/main/spec.md#pulling-blobs.
+var blobsPathRegexp = regexp.MustCompile(`^/v2/.+/blobs/[a-z0-9+._-]+:[a-zA-Z0-9=_-]+$`)
+
+// NewBlobHeadFallbackTransport wraps client's transport to retry blob HEAD requests rejected
+// with 401 (public.ecr.aws rejects all blob HEADs), 403, or 405 as single-byte ranged GETs.
+func NewBlobHeadFallbackTransport(client *http.Client) http.RoundTripper {
+	return &blobHeadFallbackTransport{client: client}
 }
 
 var _ http.RoundTripper = (*blobHeadFallbackTransport)(nil)
 
 type blobHeadFallbackTransport struct {
-	inner http.RoundTripper
+	client *http.Client
 }
 
 func (t *blobHeadFallbackTransport) RoundTrip(in *http.Request) (*http.Response, error) {
-	resp, err := t.inner.RoundTrip(in)
-	if err != nil ||
-		in.Method != http.MethodHead ||
-		!headRejectionStatus(resp.StatusCode) ||
-		!strings.Contains(in.URL.Path, "/blobs/") {
+	resp, err := t.client.Transport.RoundTrip(in)
+	if err != nil || in.Method != http.MethodHead || !blobsPathRegexp.MatchString(in.URL.Path) {
 		return resp, err
+	}
+	// Only these statuses can mean the HEAD method itself was rejected; others apply equally
+	// to GET, so extra requests would be pointless (404, 5xx) or counterproductive (429).
+	if resp.StatusCode != http.StatusUnauthorized &&
+		resp.StatusCode != http.StatusForbidden &&
+		resp.StatusCode != http.StatusMethodNotAllowed {
+		return resp, nil
 	}
 	fallbackResp, fallbackErr := t.rangedGet(in)
 	if fallbackErr != nil {
@@ -836,39 +834,20 @@ func (t *blobHeadFallbackTransport) RoundTrip(in *http.Request) (*http.Response,
 	return fallbackResp, nil
 }
 
-// headRejectionStatus returns whether an HTTP status code in a HEAD response
-// can mean that the server rejected the HEAD method itself rather than the
-// resource being unavailable.
-func headRejectionStatus(statusCode int) bool {
-	switch statusCode {
-	case http.StatusUnauthorized, http.StatusForbidden, http.StatusMethodNotAllowed:
-		return true
-	}
-	return false
-}
-
-// rangedGet reissues a failed blob HEAD request as a GET for the first byte
-// of the blob and synthesizes an equivalent HEAD response from the result.
-// If the registry honors the Range header, the transfer is a single byte and
-// the full blob size comes from the Content-Range header. If it ignores the
-// Range header and replies 200, the full size is in Content-Length and
-// closing the body without reading it aborts the transfer after a few
-// packets.
+// rangedGet reissues a rejected blob HEAD request as a single-byte ranged GET and synthesizes
+// an equivalent HEAD response, with the full blob size from Content-Range or Content-Length.
 func (t *blobHeadFallbackTransport) rangedGet(headReq *http.Request) (*http.Response, error) {
 	req := headReq.Clone(headReq.Context())
 	req.Method = http.MethodGet
 	req.Header.Set("Range", "bytes=0-0")
-	// Use an http.Client so that redirects to blob CDNs are followed, with
-	// sensitive headers like Authorization stripped on cross-host redirects.
-	client := &http.Client{Transport: t.inner}
-	resp, err := client.Do(req)
+	// client.Do follows redirects to blob CDNs, stripping Authorization on cross-host redirects.
+	resp, err := t.client.Do(req)
 	if err != nil {
 		return nil, err
 	}
 	size, err := blobSizeFromRangedGetResponse(resp)
-	// Drain a range-honoring response (a single byte) so its connection can
-	// be reused, but no more than that: an oversized body is abandoned by
-	// closing the connection instead.
+	// Drain a range-honoring response (a single byte) so its connection can be reused; a body
+	// left unread beyond this (a registry that ignored Range) is aborted by the close instead.
 	io.Copy(io.Discard, io.LimitReader(resp.Body, 1024))
 	resp.Body.Close()
 	if err != nil {
@@ -890,13 +869,11 @@ func (t *blobHeadFallbackTransport) rangedGet(headReq *http.Request) (*http.Resp
 	return out, nil
 }
 
-// blobSizeFromRangedGetResponse extracts the full blob size from the response
-// to a single-byte ranged GET request.
+// blobSizeFromRangedGetResponse extracts the full blob size from a single-byte ranged GET response.
 func blobSizeFromRangedGetResponse(resp *http.Response) (int64, error) {
 	switch resp.StatusCode {
 	case http.StatusPartialContent, http.StatusRequestedRangeNotSatisfiable:
-		// "Content-Range: bytes 0-0/123" (206), or "bytes */0" for a 416
-		// response to a zero-length blob.
+		// "Content-Range: bytes 0-0/123" (206), or "bytes */0" (416, zero-length blob).
 		contentRange := resp.Header.Get("Content-Range")
 		slash := strings.LastIndexByte(contentRange, '/')
 		if slash < 0 {
