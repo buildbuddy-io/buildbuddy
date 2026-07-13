@@ -2344,10 +2344,15 @@ func (c *FirecrackerContainer) sendExecRequestToGuest(ctx context.Context, conn 
 				// Task completed; stop health checking.
 				return
 			}
-			ctx, cancel := context.WithTimeout(ctx, *healthCheckTimeout)
-			_, err := health.Check(ctx, &hlpb.HealthCheckRequest{Service: "vmexec"})
+			checkCtx, cancel := context.WithTimeout(ctx, *healthCheckTimeout)
+			_, err := health.Check(checkCtx, &hlpb.HealthCheckRequest{Service: "vmexec"})
 			cancel()
 			if err != nil {
+				// If the parent context was canceled, don't report it as a health check failure
+				// so that the underlying error is surfaced instead.
+				if ctx.Err() != nil {
+					return
+				}
 				healthCheckErrCh <- err
 				return
 			}
@@ -2361,8 +2366,19 @@ func (c *FirecrackerContainer) sendExecRequestToGuest(ctx context.Context, conn 
 		return res, true
 	case err := <-healthCheckErrCh:
 		cancelCgroupPoll()
-		res := commandutil.ErrorResult(status.UnavailableErrorf("VM health check failed (possibly crashed?): %s", err))
-		res.UsageStats = combineHostAndGuestStats(hostCgroupStats.TaskStats(), c.getLatestGuestStats())
+
+		errMsg := "VM health check failed (possibly crashed?)"
+		usage := combineHostAndGuestStats(hostCgroupStats.TaskStats(), c.getLatestGuestStats())
+
+		// If the guest used more than 95% of the memory, add a more detailed error message.
+		usedMemoryBytes := usage.GetPeakMemoryBytes()
+		totalMemoryBytes := c.VMConfig().GetMemSizeMb() * 1024 * 1024
+		if totalMemoryBytes > 0 && usedMemoryBytes >= int64(float64(totalMemoryBytes)*0.95) {
+			errMsg = fmt.Sprintf("VM health check failed after guest used %d/%d B memory (%.0f%%); likely out of memory", usedMemoryBytes, totalMemoryBytes, 100*float64(usedMemoryBytes)/float64(totalMemoryBytes))
+		}
+
+		res := commandutil.ErrorResult(status.UnavailableErrorf("%s: %s", errMsg, err))
+		res.UsageStats = usage
 		c.fillNetStats(ctx, res.UsageStats)
 		return res, false
 	}
@@ -3527,8 +3543,11 @@ func (c *FirecrackerContainer) firecrackerErrorReasons(execErr error, logTail st
 	errorReasons := []string{}
 	msg := strings.ToLower(execErr.Error())
 
-	if strings.Contains(msg, "vm health check failed") {
+	if strings.Contains(msg, "vm health check failed") && !strings.Contains(msg, "likely out of memory") {
 		errorReasons = append(errorReasons, "vm_health_check_failed")
+	}
+	if strings.Contains(msg, "likely out of memory") {
+		errorReasons = append(errorReasons, "vm_health_check_oom")
 	}
 	if strings.Contains(msg, "signal: killed") {
 		errorReasons = append(errorReasons, "signal_killed")
