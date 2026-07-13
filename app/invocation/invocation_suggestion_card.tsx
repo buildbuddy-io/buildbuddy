@@ -211,7 +211,34 @@ const matchers: SuggestionMatcher[] = [
     if (!model.isBazelInvocation()) return null;
     if (model.invocation.invocationStatus !== InvocationStatus.DISCONNECTED_INVOCATION_STATUS) return null;
 
-    const isBESUploadFullyAsync = model.optionsMap.get("bes_upload_mode") === "fully_async";
+    const besUploadMode = model.optionsMap.get("bes_upload_mode");
+    const isBESUploadAsync = besUploadMode === "fully_async" || besUploadMode === "nowait_for_upload_complete";
+    const ciEvidence = getCIEvidence(model);
+    // If this looks like a CI build with an async BES upload mode, we can be
+    // fairly confident about the cause of the disconnect: the CI runner kills
+    // Bazel once the command exits, before the upload completes.
+    if (isBESUploadAsync && ciEvidence) {
+      return {
+        level: SuggestionLevel.ERROR,
+        message: (
+          <>
+            Bazel disconnected from BuildBuddy before it finished uploading the build results. This is likely because
+            this CI build was run with <CommonBazelFlag>{`--bes_upload_mode=${besUploadMode}`}</CommonBazelFlag>, which
+            lets the bazel command exit before build events have finished uploading. CI runners typically kill the Bazel
+            server as soon as the job finishes, so the upload never completes. Consider setting{" "}
+            <CommonBazelFlag>--bes_upload_mode=wait_for_upload_complete</CommonBazelFlag> (the default) on CI.
+          </>
+        ),
+        reason: (
+          <>
+            Shown because the build finished with a disconnected status, looks like a CI build ({ciEvidence}), and has
+            the effective flag <span className="inline-code">--bes_upload_mode={besUploadMode}</span>.
+          </>
+        ),
+      };
+    }
+
+    const isBESUploadFullyAsync = besUploadMode === "fully_async";
 
     return {
       level: SuggestionLevel.ERROR,
@@ -776,6 +803,44 @@ export function SuggestionComponent({ suggestion }: SuggestionComponentProps) {
       </div>
     </div>
   );
+}
+
+/**
+ * Returns a phrase describing why the invocation looks like a CI build, for
+ * use in a suggestion reason, or null if it doesn't look like a CI build.
+ */
+function getCIEvidence(model: InvocationModel): React.ReactNode | null {
+  if (model.getRole() === "CI") {
+    return (
+      <>
+        the role is <span className="inline-code">CI</span>
+      </>
+    );
+  }
+  const ci = model.clientEnvMap.get("CI");
+  if (ci === "true" || ci === "1") {
+    return (
+      <>
+        <span className="inline-code">CI={ci}</span> is set
+      </>
+    );
+  }
+  // Buildkite and GitHub Actions set these variables on every job. Unlike
+  // most environment variables, these are on the server's redaction allowlist
+  // (the UI links to CI runs using them), so their values are visible here.
+  // Don't match on name prefixes: unrelated variables like GITHUB_TOKEN are
+  // often set in local dev environments and also show up here (with redacted
+  // values, since redaction preserves variable names).
+  for (const name of ["BUILDKITE_BUILD_URL", "GITHUB_RUN_ID"]) {
+    if (model.clientEnvMap.get(name)) {
+      return (
+        <>
+          the <span className="inline-code">{name}</span> environment variable is set
+        </>
+      );
+    }
+  }
+  return null;
 }
 
 /** Returns the given suggestion message if the given regex matches the build logs. */
