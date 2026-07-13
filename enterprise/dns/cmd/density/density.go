@@ -33,7 +33,16 @@ var (
 	monitoringAddr = flag.String("monitoring.listen", ":9090", "Address to listen for monitoring traffic on")
 
 	dnsPort   = flag.Int("dns.port", 53, "The port to listen for DNS traffic on")
-	zoneFiles = flag.Slice[string]("dns.zone_file", []string{}, "Path to a zone file to serve. Repeat the flag to serve records from multiple zones (each file's SOA anchors negative answers for names under its apex).")
+	zoneFiles = flag.Slice[string]("dns.zone_file", []string{}, "Path to a zone file to serve. Repeat the flag to serve records from multiple zones (each file's SOA anchors negative answers for names under its apex). Mutually exclusive with --dns.gcs.bucket.")
+
+	// Zone files can instead be loaded (and watched for changes) from a GCS
+	// bucket: every ".zone" object in the bucket is served, each loaded and
+	// verified independently. This is mutually exclusive with --dns.zone_file.
+	gcsBucket       = flag.String("dns.gcs.bucket", "", "GCS bucket to load and watch zone files (\".zone\" objects) from. Mutually exclusive with --dns.zone_file.")
+	gcsCredFile     = flag.String("dns.gcs.credentials_file", "", "Path to a JSON credentials file for the zone-file GCS bucket.")
+	gcsCreds        = flag.String("dns.gcs.credentials", "", "JSON credentials for the zone-file GCS bucket.", flag.Secret)
+	gcsProject      = flag.String("dns.gcs.project_id", "", "GCP project ID owning the zone-file GCS bucket.")
+	gcsPollInterval = flag.Duration("dns.gcs.poll_interval", 30*time.Second, "How often to poll the GCS bucket for zone-file changes.")
 
 	// Self-hosted ACME DNS-01: when dns.acme.gcs.bucket is set, density accepts
 	// RFC2136 UPDATEs for _acme-challenge TXT records (authenticated by the TSIG
@@ -118,33 +127,25 @@ func main() {
 	env.GetHealthChecker().WaitForGracefulShutdown()
 }
 
-// hasSOA reports whether rrs contains an SOA record, which a valid zone file
-// must define at its apex.
-func hasSOA(rrs []dns.RR) bool {
-	for _, rr := range rrs {
-		if rr.Header().Rrtype == dns.TypeSOA {
-			return true
-		}
-	}
-	return false
-}
-
 func startDNSServer(env *real_environment.RealEnv) error {
-	if len(*zoneFiles) == 0 {
-		return status.FailedPreconditionError("at least one --dns.zone_file must be configured")
+	// Zones come from exactly one source: local files or a GCS bucket.
+	gcsEnabled := *gcsBucket != ""
+	if gcsEnabled && len(*zoneFiles) > 0 {
+		return status.FailedPreconditionError("--dns.gcs.bucket and --dns.zone_file are mutually exclusive; configure exactly one zone source")
 	}
+	if !gcsEnabled && len(*zoneFiles) == 0 {
+		return status.FailedPreconditionError("no zone source configured; set --dns.zone_file or --dns.gcs.bucket")
+	}
+
+	// Local zone files are static and can't self-heal, so they're loaded
+	// fail-fast up front (each must define an SOA at its apex). GCS zones are
+	// loaded, and reloaded, by the watcher below, which is non-fatal and keeps
+	// the last-good version of each file.
 	var records []dns.RR
 	for _, zoneFile := range *zoneFiles {
-		rrs, err := server.ParseZoneFile(zoneFile)
+		rrs, err := server.ParseAndVerifyZoneFile(zoneFile)
 		if err != nil {
-			return status.WrapErrorf(err, "parse zone file %q", zoneFile)
-		}
-		// Every zone file must define an SOA at its apex. Without one, the zone
-		// contributes no apex, so its names route to no zone and are answered
-		// REFUSED even though their records loaded -- a silent, confusing
-		// failure. Refuse to start instead.
-		if !hasSOA(rrs) {
-			return status.FailedPreconditionErrorf("zone file %q has no SOA record; every zone file must define an SOA at its apex", zoneFile)
+			return status.WrapErrorf(err, "load zone file %q", zoneFile)
 		}
 		records = append(records, rrs...)
 	}
@@ -172,6 +173,26 @@ func startDNSServer(env *real_environment.RealEnv) error {
 	}
 
 	handler := server.NewHandler(env, records, acme)
+
+	// When zones are sourced from GCS, start the watcher: it does an initial
+	// best-effort load and then polls for changes, hot-swapping the handler's
+	// records. It's non-fatal, so the server comes up even if the bucket is
+	// momentarily unreachable or has no valid zone files yet.
+	if gcsEnabled {
+		if *gcsPollInterval <= 0 {
+			return status.InvalidArgumentErrorf("--dns.gcs.poll_interval must be positive, got %s", *gcsPollInterval)
+		}
+		bs, err := gcs.NewGCSBlobStore(context.Background(), *gcsBucket, *gcsCredFile, *gcsCreds, *gcsProject, false /*=enableCompression*/)
+		if err != nil {
+			return status.WrapError(err, "init zone-file blobstore")
+		}
+		watchCtx, cancelWatch := context.WithCancel(context.Background())
+		env.GetHealthChecker().RegisterShutdownFunction(func(context.Context) error {
+			cancelWatch()
+			return nil
+		})
+		server.WatchZoneFiles(watchCtx, handler, bs, *gcsPollInterval)
+	}
 
 	addr := fmt.Sprintf("%s:%d", *listen, *dnsPort)
 

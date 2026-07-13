@@ -11,10 +11,12 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/dns/server",
     visibility = ["//visibility:public"],
     deps = [
+        "//enterprise/dns/watcher",
         "//enterprise/server/experiments",
         "//server/environment",
         "//server/interfaces",
         "//server/metrics",
+        "//server/util/alert",
         "//server/util/lib/set",
         "//server/util/log",
         "//server/util/lru",
@@ -29,9 +31,13 @@ go_library(
 go_test(
     name = "server_test",
     size = "small",
-    srcs = ["server_test.go"],
+    srcs = [
+        "server_test.go",
+        "zoneupdater_test.go",
+    ],
+    embed = [":server"],
     deps = [
-        ":server",
+        "//enterprise/dns/watcher",
         "//enterprise/server/experiments",
         "//server/interfaces",
         "//server/testutil/testenv",

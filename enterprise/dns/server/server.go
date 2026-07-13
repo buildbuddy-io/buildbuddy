@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"net"
 	"net/netip"
@@ -8,14 +9,18 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/dns/watcher"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
+	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/maxmind"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	"github.com/miekg/dns"
 	"github.com/prometheus/client_golang/prometheus"
@@ -46,9 +51,41 @@ const (
 	// request path so a slow or hung backend can't block handler goroutines
 	// indefinitely.
 	acmeBlobstoreTimeout = 10 * time.Second
+
+	// zoneFileInvalidAlert is the constant alert name emitted when a single GCS
+	// zone-file object fails to parse or is missing its SOA. It is a Prometheus
+	// metric label, so it must stay constant -- the offending object name goes
+	// in the alert's log message, not the label.
+	zoneFileInvalidAlert = "dns_zone_file_invalid"
+
+	// zoneFileSuffix is the object-name suffix that marks a bucket object as a
+	// zone file to serve. Objects without it are ignored.
+	zoneFileSuffix = ".zone"
 )
 
-type handler struct {
+// Handler is a DNS handler serving a set of authoritative zones. The served
+// records and zones live in an immutable zoneData snapshot behind an atomic
+// pointer, so a watcher (e.g. one polling zone files from GCS) can hot-swap the
+// entire set with Update while in-flight requests continue to read a consistent
+// prior snapshot without locking.
+type Handler struct {
+	// data holds the current immutable zone snapshot. ServeDNS loads it once per
+	// request; Update atomically replaces it. Never nil after NewHandler.
+	data atomic.Pointer[zoneData]
+
+	// acme, when non-nil, makes this server self-host ACME DNS-01 validation:
+	// it accepts RFC2136 UPDATEs for in-zone _acme-challenge.* TXT records and
+	// answers queries for them from the blobstore-backed store.
+	acme *Challenges
+
+	env environment.Env
+}
+
+// zoneData is an immutable snapshot of the records and zones the handler serves.
+// It is never mutated after construction (buildZoneData); a new snapshot is
+// built and swapped in wholesale by Handler.Update, so readers that loaded an
+// earlier pointer keep seeing a consistent set.
+type zoneData struct {
 	records map[string][]dns.RR
 
 	// zones are the authoritative zones we serve (one per SOA record), sorted
@@ -58,13 +95,6 @@ type handler struct {
 	// for. Empty when no zone file supplied an SOA, in which case zone
 	// membership is not enforced (see zoneFor).
 	zones []zone
-
-	// acme, when non-nil, makes this server self-host ACME DNS-01 validation:
-	// it accepts RFC2136 UPDATEs for in-zone _acme-challenge.* TXT records and
-	// answers queries for them from the blobstore-backed store.
-	acme *Challenges
-
-	env environment.Env
 }
 
 // zone is a single authoritative zone: its apex (the canonical SOA owner) and
@@ -75,21 +105,33 @@ type zone struct {
 	soa  dns.RR
 }
 
+// Update atomically replaces the served zone data with a snapshot built from
+// resources. Called by a zone-file watcher when the underlying files change; it
+// takes effect for requests that load the snapshot after this returns, while
+// in-flight requests finish against the snapshot they already loaded.
+func (h *Handler) Update(resources []dns.RR) {
+	h.data.Store(buildZoneData(resources))
+}
+
 // zoneFor returns the zone most specifically enclosing name (the longest apex
 // that is a suffix of name), or nil if name falls under none of our zones. It
 // also returns nil when we serve no zones at all (no SOA was loaded); callers
 // treat that as "membership not enforced" and fall back to plain record lookup.
-func (h *handler) zoneFor(name string) *zone {
-	for i := range h.zones {
-		if dns.IsSubDomain(h.zones[i].apex, name) {
-			return &h.zones[i]
+func (d *zoneData) zoneFor(name string) *zone {
+	for i := range d.zones {
+		if dns.IsSubDomain(d.zones[i].apex, name) {
+			return &d.zones[i]
 		}
 	}
 	return nil
 }
 
-func (h *handler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
+func (h *Handler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 	start := time.Now()
+	// Load the zone snapshot once up front so every decision in this request --
+	// zone routing, resolution, negative-SOA selection -- sees one consistent
+	// set even if a watcher swaps in new data mid-request.
+	d := h.data.Load()
 	m := new(dns.Msg)
 	m.SetReply(r)
 	m.Authoritative = true
@@ -142,8 +184,8 @@ func (h *handler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 	// answer REFUSED rather than an NXDOMAIN we have no zone SOA to anchor. When
 	// no zones are configured, zoneFor is nil for everything and this gate is
 	// skipped -- resolution proceeds over the records as an SOA-less set.
-	z := h.zoneFor(qName)
-	if len(h.zones) > 0 && z == nil {
+	z := d.zoneFor(qName)
+	if len(d.zones) > 0 && z == nil {
 		m.Rcode = dns.RcodeRefused
 		m.Authoritative = false
 		if err := w.WriteMsg(m); err != nil {
@@ -155,7 +197,7 @@ func (h *handler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 	// Self-hosted ACME: answer in-zone _acme-challenge.* names from the
 	// blobstore-backed store (records are set/removed via RFC2136 UPDATE). A name
 	// with a current value is answered; one without is authoritative NODATA.
-	if h.acme != nil && h.isACMEChallengeName(qName) {
+	if h.acme != nil && d.isACMEChallengeName(qName) {
 		if qType == dns.TypeTXT {
 			ctx, cancel := context.WithTimeout(context.Background(), acmeBlobstoreTimeout)
 			defer cancel()
@@ -177,7 +219,7 @@ func (h *handler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 	}
 
 	var negative bool
-	m.Answer, m.Rcode, negative = h.resolve(qName, qType)
+	m.Answer, m.Rcode, negative = d.resolve(qName, qType)
 
 	// ASN-based routing: when the name already resolves to an address in our
 	// zone, an experiment may override that address for this client.
@@ -211,11 +253,11 @@ func (h *handler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 // the name exists but has no record of the requested type) and so should carry
 // the zone SOA for negative caching. A CNAME chain that exits the zone is not
 // negative: it is a normal partial answer the recursive resolver completes.
-func (h *handler) resolve(qName string, qType uint16) ([]dns.RR, int, bool) {
+func (d *zoneData) resolve(qName string, qType uint16) ([]dns.RR, int, bool) {
 	var answer []dns.RR
 	name := qName
 	for i := 0; i < maxCNAMEDepth; i++ {
-		records, ok := h.lookup(name)
+		records, ok := d.lookup(name)
 		if !ok {
 			// The queried name itself not existing is NXDOMAIN. Reaching a
 			// dead end while chasing a CNAME just means the chain continues
@@ -349,12 +391,12 @@ func attachClientSubnetScopeIfPresent(m, r *dns.Msg) {
 // the closest-encloser / empty-non-terminal rules, so a wildcard could match a
 // name that a fully correct server would treat as an existing empty node. This
 // holds for every name in the zones we serve, but isn't generally complete.
-func (h *handler) lookup(name string) ([]dns.RR, bool) {
-	if rrs, ok := h.records[name]; ok {
+func (d *zoneData) lookup(name string) ([]dns.RR, bool) {
+	if rrs, ok := d.records[name]; ok {
 		return rrs, true
 	}
 	for off, end := dns.NextLabel(name, 0); !end; off, end = dns.NextLabel(name, off) {
-		if rrs, ok := h.records["*."+name[off:]]; ok {
+		if rrs, ok := d.records["*."+name[off:]]; ok {
 			out := make([]dns.RR, len(rrs))
 			for i, rr := range rrs {
 				cp := dns.Copy(rr)
@@ -372,8 +414,8 @@ func (h *handler) lookup(name string) ([]dns.RR, bool) {
 // canonicalized (lowercase, fqdn) by ServeDNS and acmeChallengePrefix is
 // lowercase, so the prefix check identifies the leftmost label without
 // allocating.
-func (h *handler) isACMEChallengeName(name string) bool {
-	return strings.HasPrefix(name, acmeChallengePrefix) && h.zoneFor(name) != nil
+func (d *zoneData) isACMEChallengeName(name string) bool {
+	return strings.HasPrefix(name, acmeChallengePrefix) && d.zoneFor(name) != nil
 }
 
 // txtRecords builds a TXT RRset owned by name from the given string values.
@@ -392,10 +434,11 @@ func txtRecords(name string, vals []string) []dns.RR {
 // rfc2136 solver to set and remove the _acme-challenge TXT records we self-host.
 // It requires a valid TSIG signature and only ever touches in-zone
 // _acme-challenge TXT names, so the TSIG key can't be used to rewrite the zone.
-func (h *handler) serveUpdate(w dns.ResponseWriter, r *dns.Msg) int {
+func (h *Handler) serveUpdate(w dns.ResponseWriter, r *dns.Msg) int {
 	m := new(dns.Msg)
 	m.SetReply(r)
 
+	d := h.data.Load()
 	reqTSIG := r.IsTsig()
 	// TsigStatus() is nil for an unsigned message too, so also require that the
 	// request actually carried a TSIG.
@@ -412,7 +455,7 @@ func (h *handler) serveUpdate(w dns.ResponseWriter, r *dns.Msg) int {
 	// dispatch on the header rather than the concrete type.
 	for _, rr := range r.Ns { // RFC2136: the records to apply live in the Ns section.
 		hdr := rr.Header()
-		if hdr.Rrtype != dns.TypeTXT || !h.isACMEChallengeName(dns.CanonicalName(hdr.Name)) {
+		if hdr.Rrtype != dns.TypeTXT || !d.isACMEChallengeName(dns.CanonicalName(hdr.Name)) {
 			m.SetRcode(r, dns.RcodeRefused)
 			writeUpdateReply(w, m, reqTSIG)
 			return dns.RcodeRefused
@@ -576,7 +619,22 @@ func addrFromNetAddr(a net.Addr) netip.Addr {
 // NewHandler builds a DNS handler serving resources. acme, if non-nil,
 // self-hosts ACME DNS-01: the handler accepts RFC2136 UPDATEs for
 // _acme-challenge TXT records and answers queries for them from it.
-func NewHandler(env environment.Env, resources []dns.RR, acme *Challenges) dns.Handler {
+//
+// The served records can later be replaced wholesale via Handler.Update (e.g.
+// by a watcher polling zone files from GCS).
+func NewHandler(env environment.Env, resources []dns.RR, acme *Challenges) *Handler {
+	h := &Handler{
+		acme: acme,
+		env:  env,
+	}
+	h.data.Store(buildZoneData(resources))
+	return h
+}
+
+// buildZoneData builds an immutable zone snapshot from resources: an
+// owner-name-indexed record map and the list of zones (one per SOA), sorted
+// most-specific first.
+func buildZoneData(resources []dns.RR) *zoneData {
 	records := make(map[string][]dns.RR, len(resources))
 	var zones []zone
 	for _, rr := range resources {
@@ -595,11 +653,9 @@ func NewHandler(env environment.Env, resources []dns.RR, acme *Challenges) dns.H
 	sort.SliceStable(zones, func(i, j int) bool {
 		return dns.CountLabel(zones[i].apex) > dns.CountLabel(zones[j].apex)
 	})
-	return &handler{
+	return &zoneData{
 		records: records,
 		zones:   zones,
-		acme:    acme,
-		env:     env,
 	}
 }
 
@@ -610,16 +666,22 @@ func NewHandler(env environment.Env, resources []dns.RR, acme *Challenges) dns.H
 // parse error. This matches the zone files we serve, which are exported from
 // Cloud DNS with fully-qualified names.
 func ParseZoneFile(fileName string) ([]dns.RR, error) {
-	file, err := os.Open(fileName)
+	data, err := os.ReadFile(fileName)
 	if err != nil {
 		return nil, err
 	}
-	defer file.Close()
+	return ParseZoneBytes(data, filepath.Base(fileName))
+}
 
+// ParseZoneBytes parses the resource records from the bytes of a zone file.
+// name is used only to label parse errors (typically the file or object name).
+// See ParseZoneFile for owner-name qualification rules.
+func ParseZoneBytes(data []byte, name string) ([]dns.RR, error) {
 	// The empty origin means relative names can only be qualified by an in-file
 	// "$ORIGIN" directive; otherwise they error rather than being silently
-	// mis-qualified.
-	parser := dns.NewZoneParser(file, "", filepath.Base(fileName))
+	// mis-qualified. bytes.NewReader reads over data in place (no string copy),
+	// which matters on the watcher's reload path.
+	parser := dns.NewZoneParser(bytes.NewReader(data), "", name)
 	records := make([]dns.RR, 0)
 	for rr, ok := parser.Next(); ok; rr, ok = parser.Next() {
 		records = append(records, rr)
@@ -628,4 +690,107 @@ func ParseZoneFile(fileName string) ([]dns.RR, error) {
 		return nil, err
 	}
 	return records, nil
+}
+
+// ParseAndVerifyZone parses a zone file's bytes and requires it to define an SOA
+// at its apex. A file without an SOA contributes no apex, so its names would
+// route to no zone and be answered REFUSED even though they loaded -- a silent
+// failure -- so it is rejected here. name labels errors (file or object name).
+func ParseAndVerifyZone(data []byte, name string) ([]dns.RR, error) {
+	records, err := ParseZoneBytes(data, name)
+	if err != nil {
+		return nil, err
+	}
+	if !hasSOA(records) {
+		return nil, status.FailedPreconditionErrorf("zone file %q has no SOA record at its apex", name)
+	}
+	return records, nil
+}
+
+// ParseAndVerifyZoneFile reads a zone file and requires it to define an SOA at
+// its apex (see ParseAndVerifyZone).
+func ParseAndVerifyZoneFile(fileName string) ([]dns.RR, error) {
+	data, err := os.ReadFile(fileName)
+	if err != nil {
+		return nil, err
+	}
+	return ParseAndVerifyZone(data, filepath.Base(fileName))
+}
+
+// hasSOA reports whether rrs contains an SOA record.
+func hasSOA(rrs []dns.RR) bool {
+	for _, rr := range rrs {
+		if rr.Header().Rrtype == dns.TypeSOA {
+			return true
+		}
+	}
+	return false
+}
+
+// WatchZoneFiles serves, via handler, every ".zone" object in store's bucket,
+// reloading them whenever they change. Each object is parsed and verified
+// independently: one that fails is skipped (and alerted) while the rest keep
+// serving their last-good records. It is non-fatal -- an empty or unreachable
+// bucket just comes up serving nothing and keeps watching -- and returns after
+// the initial best-effort load; changes thereafter are applied in the
+// background until ctx is cancelled.
+func WatchZoneFiles(ctx context.Context, handler *Handler, store watcher.Store, interval time.Duration) {
+	u := &zoneUpdater{handler: handler, files: make(map[string][]dns.RR)}
+	watcher.New(store, zoneFileSuffix, interval, u.apply).Start(ctx)
+}
+
+// zoneUpdater turns the raw object deltas a watcher emits into served DNS
+// records. It parses each changed object, verifies its SOA, keeps the last-good
+// records of any that fail (and alerts), drops removed objects, and swaps the
+// assembled record set into the handler. It is driven only from the watcher's
+// single poll goroutine, so its files map needs no lock.
+type zoneUpdater struct {
+	handler *Handler
+	files   map[string][]dns.RR // last-good records per object name
+}
+
+// apply is the watcher's onUpdate callback. Because the watcher re-delivers an
+// object only when its content changes, a parse failure here alerts once per
+// bad version rather than on every poll.
+func (u *zoneUpdater) apply(up watcher.Update) {
+	changed := false
+	for name, data := range up.Changed {
+		records, err := ParseAndVerifyZone(data, name)
+		if err != nil {
+			// One bad file must not disturb the others: alert so we can fix it,
+			// and keep this object's last-good records, if any.
+			alert.UnexpectedEvent(zoneFileInvalidAlert, "zone file %q rejected, keeping last-good: %s", name, err)
+			continue
+		}
+		u.files[name] = records
+		changed = true
+	}
+	for _, name := range up.Removed {
+		if _, ok := u.files[name]; ok {
+			delete(u.files, name)
+			changed = true
+		}
+	}
+	if !changed {
+		// Every changed object was rejected (last-good kept) and nothing served
+		// was removed: the served set is unchanged, so don't swap or log.
+		return
+	}
+	u.handler.Update(u.assemble())
+	log.Infof("dns: serving %d zone file(s) from GCS", len(u.files))
+}
+
+// assemble builds the full record set to serve: every last-good object's
+// records, ordered by object name so the resulting snapshot is deterministic.
+func (u *zoneUpdater) assemble() []dns.RR {
+	names := make([]string, 0, len(u.files))
+	for name := range u.files {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	var out []dns.RR
+	for _, name := range names {
+		out = append(out, u.files[name]...)
+	}
+	return out
 }
