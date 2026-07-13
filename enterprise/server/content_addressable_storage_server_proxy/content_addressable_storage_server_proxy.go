@@ -16,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rpcutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -27,7 +28,11 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
-var enableGetTreeCaching = flag.Bool("cache_proxy.enable_get_tree_caching", false, "If true, the Cache Proxy attempts to serve GetTree requests out of the local cache. If false, GetTree requests are always proxied to the remote, authoritative cache.")
+var (
+	enableGetTreeCaching             = flag.Bool("cache_proxy.enable_get_tree_caching", false, "If true, the Cache Proxy attempts to serve GetTree requests out of the local cache. If false, GetTree requests are always proxied to the remote, authoritative cache.")
+	findMissingBlobsCacheTTL         = flag.Duration("cache_proxy.find_missing_blobs_cache_ttl", 0, "If greater than 0, the proxy caches digests reported by the backing cache as 'present' locally for FindMissingBlobs requests for this long.")
+	findMissingBlobsCacheSizeEntries = flag.Int64("cache_proxy.find_missing_blobs_cache_size_entries", 500*1000, "The number of digests to hold in the in-memory FindMissingBlobs digest cache. Only used if cache_proxy.find_missing_blobs_cache_ttl is greater than 0.")
+)
 
 type CASServerProxy struct {
 	supportsEncryption func(context.Context) bool
@@ -35,6 +40,21 @@ type CASServerProxy struct {
 	local              repb.ContentAddressableStorageServer
 	remote             repb.ContentAddressableStorageClient
 	localCache         interfaces.Cache
+
+	// Local, in-memory cache for digests served in response to FindMissingBlobs
+	// requests. It would be better if this could be in the backing "local"
+	// cache, but that poses two problems:
+	// 1. How can we control the TTL of that cache and ensure that the remote
+	//    (authoritative) cache serves these requests every so often to update
+	//    blob access times.
+	// 2. We don't have a mechanism through which we can tell the local cache
+	//    "this digest exists, even if we don't have it" which we need for the
+	//    remote-return path (local cache didn't have the digest, remote cache
+	//    did).
+	// TODO(go/b/7780): fix those issues.
+	findMissingCache       lru.LRU[struct{}]
+	findMissingCacheHits   prometheus.Counter
+	findMissingCacheMisses prometheus.Counter
 }
 
 func Register(env *real_environment.RealEnv) error {
@@ -65,6 +85,23 @@ func New(env environment.Env) (*CASServerProxy, error) {
 		local:              local,
 		remote:             remote,
 		localCache:         env.GetCache(),
+	}
+	if *findMissingBlobsCacheTTL > 0 {
+		cache, err := lru.New[struct{}](&lru.Config[struct{}]{
+			MaxSize:    *findMissingBlobsCacheSizeEntries,
+			SizeFn:     func(struct{}) int64 { return 1 },
+			ThreadSafe: true,
+			TTL:        *findMissingBlobsCacheTTL,
+			Clock:      env.GetClock(),
+		})
+		if err != nil {
+			return nil, status.InvalidArgumentErrorf("Error initializing FindMissingBlobs cache: %s", err)
+		}
+		proxy.findMissingCache = cache
+		proxy.findMissingCacheHits = metrics.FindMissingBlobsCacheLookups.With(
+			prometheus.Labels{metrics.CacheHitMissStatus: metrics.HitStatusLabel})
+		proxy.findMissingCacheMisses = metrics.FindMissingBlobsCacheLookups.With(
+			prometheus.Labels{metrics.CacheHitMissStatus: metrics.MissStatusLabel})
 	}
 	return &proxy, nil
 }
@@ -162,9 +199,74 @@ func (s *CASServerProxy) FindMissingBlobs(ctx context.Context, req *repb.FindMis
 	defer spn.End()
 	tracing.AddStringAttributeToCurrentSpan(ctx, "requested-blobs", strconv.Itoa(len(req.BlobDigests)))
 
-	// Always serve FindMissingBlobs requests out of the backing cache to
-	// avoid possible cache-inconsistency bugs.
-	return s.remote.FindMissingBlobs(ctx, req)
+	if s.findMissingCache == nil {
+		return s.remote.FindMissingBlobs(ctx, req)
+	}
+
+	// Construct all of the FindMissingBlobs cache keys upfront. We will need
+	// all of them, some of them twice.
+	user, err := s.authenticator.AuthenticatedUser(ctx)
+	groupID := interfaces.AuthAnonymousUser
+	if err == nil {
+		groupID = user.GetGroupID()
+	} else if !authutil.IsAnonymousUserError(err) {
+		log.Warningf("Error authenticating user, skipping FindMissingBlobs cache: %v", err)
+		return s.remote.FindMissingBlobs(ctx, req)
+	}
+	cacheKeys := map[string]string{}
+	for _, d := range req.GetBlobDigests() {
+		cacheKeys[digestKey(d)] = s.findMissingBlobsCacheKey(groupID, req, d)
+	}
+
+	// Consult the local FindMissingBlobs cache first to remove some digests.
+	misses := make([]*repb.Digest, 0, len(req.GetBlobDigests()))
+	for _, d := range req.GetBlobDigests() {
+		if !s.findMissingCache.Contains(cacheKeys[digestKey(d)]) {
+			misses = append(misses, d)
+		}
+	}
+
+	hits := len(req.GetBlobDigests()) - len(misses)
+	s.findMissingCacheHits.Add(float64(hits))
+	s.findMissingCacheMisses.Add(float64(len(misses)))
+
+	// All digests were found in the FindMissingBlobs cache, return.
+	if len(misses) == 0 {
+		return &repb.FindMissingBlobsResponse{}, nil
+	}
+
+	remoteReq := &repb.FindMissingBlobsRequest{
+		InstanceName:   req.GetInstanceName(),
+		BlobDigests:    misses,
+		DigestFunction: req.GetDigestFunction(),
+	}
+	rsp, err := s.remote.FindMissingBlobs(ctx, remoteReq)
+	if err != nil {
+		return rsp, err
+	}
+
+	// Cache the blobs the backing cache reported as present. We need to invert
+	// the set because the remote reports what's missing, not what's present.
+	missing := make(map[string]struct{}, len(rsp.GetMissingBlobDigests()))
+	for _, d := range rsp.GetMissingBlobDigests() {
+		missing[cacheKeys[digestKey(d)]] = struct{}{}
+	}
+	for _, d := range remoteReq.GetBlobDigests() {
+		key := cacheKeys[digestKey(d)]
+		if _, ok := missing[key]; !ok {
+			s.findMissingCache.Add(key, struct{}{})
+		}
+	}
+	return rsp, nil
+}
+
+// digestKey identifies a digest within a single FindMissingBlobs request.
+func digestKey(d *repb.Digest) string {
+	return d.GetHash() + "/" + strconv.FormatInt(d.GetSizeBytes(), 10)
+}
+
+func (s *CASServerProxy) findMissingBlobsCacheKey(groupID string, req *repb.FindMissingBlobsRequest, d *repb.Digest) string {
+	return groupID + "/" + digest.NewCASResourceName(d, req.GetInstanceName(), req.GetDigestFunction()).DownloadString()
 }
 
 func (s *CASServerProxy) BatchUpdateBlobs(ctx context.Context, req *repb.BatchUpdateBlobsRequest) (*repb.BatchUpdateBlobsResponse, error) {
