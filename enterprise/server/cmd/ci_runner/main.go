@@ -53,6 +53,7 @@ import (
 
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	clpb "github.com/buildbuddy-io/buildbuddy/proto/command_line"
+	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
 	gitutil "github.com/buildbuddy-io/buildbuddy/server/util/git"
@@ -327,7 +328,11 @@ func newBuildEventReporter(ctx context.Context, besBackend string, apiKey string
 		}
 	}
 
-	bep, err := build_event_publisher.New(besBackend, apiKey, iid)
+	conn, err := grpc_client.DialSimple(besBackend)
+	if err != nil {
+		return nil, status.UnavailableErrorf("dial BES backend: %s", err)
+	}
+	bep, err := build_event_publisher.New(pepb.NewPublishBuildEventClient(conn), apiKey, iid)
 	if err != nil {
 		return nil, status.UnavailableErrorf("failed to initialize build event publisher: %s", err)
 	}

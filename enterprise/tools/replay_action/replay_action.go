@@ -53,6 +53,7 @@ import (
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	clpb "github.com/buildbuddy-io/buildbuddy/proto/command_line"
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
+	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	ctrname "github.com/google/go-containerregistry/pkg/name"
 	ctr "github.com/google/go-containerregistry/pkg/v1"
@@ -1442,7 +1443,11 @@ type toolInvocationStream struct {
 
 func startToolInvocation(ctx context.Context) (*toolInvocationStream, error) {
 	// For now, just use target_executor as the BES backend.
-	pub, err := build_event_publisher.New(*targetExecutor, *targetAPIKey, *toolInvocationID)
+	conn, err := grpc_client.DialSimple(*targetExecutor)
+	if err != nil {
+		return nil, fmt.Errorf("dial BES backend: %w", err)
+	}
+	pub, err := build_event_publisher.New(pepb.NewPublishBuildEventClient(conn), *targetAPIKey, *toolInvocationID)
 	if err != nil {
 		return nil, fmt.Errorf("create build event publisher: %w", err)
 	}

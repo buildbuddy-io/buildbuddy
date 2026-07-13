@@ -1921,7 +1921,7 @@ func testInvocationCancellation(t *testing.T, tc cancelInvocationTestCase) {
 	initialTaskCount := testmetrics.CounterValue(t, metrics.RemoteExecutionTasksStartedCount)
 
 	iid := uuid.NewString()
-	bep, err := build_event_publisher.New(bbServer.GRPCAddress(), "", iid)
+	bep, err := build_event_publisher.New(bbServer.PublishBuildEventClient(), "", iid)
 	require.NoError(t, err)
 
 	ctx := context.Background()
@@ -2020,7 +2020,7 @@ func TestActionMerging_CancellationDoesntAffectMergedActions(t *testing.T) {
 	bbServer := rbe.AddBuildBuddyServer()
 	rbe.AddExecutor(t)
 
-	bep, err := build_event_publisher.New(bbServer.GRPCAddress(), "", "invocation1")
+	bep, err := build_event_publisher.New(bbServer.PublishBuildEventClient(), "", "invocation1")
 	require.NoError(t, err)
 
 	ctx := context.Background()
