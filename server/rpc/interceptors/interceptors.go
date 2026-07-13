@@ -134,13 +134,25 @@ func addClientIPToContext(ctx context.Context, env environment.Env) context.Cont
 		return addPeerIPToContext(ctx)
 	}
 
-	ctx, ok := clientip.SetFromXForwardedForHeader(ctx, hdrs[0])
+	ctx, ok := clientip.SetFromXForwardedForHeader(ctx, hdrs[0], peerIPFromContext(ctx))
 	if ok {
 		return ctx
 	}
 
 	// X-Forwarded-For header is present but not trusted. Fall back to peer.
 	return addPeerIPToContext(ctx)
+}
+
+func peerIPFromContext(ctx context.Context) string {
+	p, ok := peer.FromContext(ctx)
+	if !ok || p.Addr.Network() == "unix" {
+		return ""
+	}
+	ap, err := netip.ParseAddrPort(p.Addr.String())
+	if err != nil {
+		return ""
+	}
+	return ap.Addr().String()
 }
 
 func addPeerIPToContext(ctx context.Context) context.Context {
