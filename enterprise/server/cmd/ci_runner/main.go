@@ -1257,6 +1257,7 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 							RunfilesRoot:       runScriptInfo.runfilesRoot,
 							Runfiles:           runScriptInfo.runfiles,
 							RunfileDirectories: runScriptInfo.runfileDirs,
+							ExecutablePath:     runScriptInfo.executablePath,
 						}},
 					}
 					ar.reporter.Publish(e)
@@ -1372,10 +1373,11 @@ func deserializeAction(actionString string) (*config.Action, error) {
 }
 
 type runInfo struct {
-	args         []string
-	runfiles     []*bespb.File
-	runfileDirs  []*bespb.Tree
-	runfilesRoot string
+	args           []string
+	runfiles       []*bespb.File
+	runfileDirs    []*bespb.Tree
+	runfilesRoot   string
+	executablePath string
 }
 
 func collectRunfiles(runfilesDir string) (map[digest.Key]string, map[string]string, error) {
@@ -1551,6 +1553,10 @@ func processRunScript(ctx context.Context, runScript string) (*runInfo, error) {
 		return nil, status.UnknownErrorf("could not detect binary workspace root: %s", err)
 	}
 	wsRoot := filepath.Dir(wsFile)
+	executablePath, err := filepath.Rel(wsRoot, bin)
+	if err != nil {
+		return nil, status.UnknownErrorf("could not determine workspace-relative binary path: %s", err)
+	}
 
 	// The second line changes the working directory to within the runfiles directory.
 	cdLine := runScriptLines[1]
@@ -1578,10 +1584,11 @@ func processRunScript(ctx context.Context, runScript string) (*runInfo, error) {
 	}
 
 	return &runInfo{
-		args:         args,
-		runfiles:     runfiles,
-		runfileDirs:  runfileDirs,
-		runfilesRoot: runfilesRoot,
+		args:           args,
+		runfiles:       runfiles,
+		runfileDirs:    runfileDirs,
+		runfilesRoot:   runfilesRoot,
+		executablePath: executablePath,
 	}, nil
 }
 

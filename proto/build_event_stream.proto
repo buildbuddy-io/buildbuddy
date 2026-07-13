@@ -1658,6 +1658,8 @@ message RunTargetAnalyzed {
   repeated File runfiles = 3;
   // Any runtime directory dependencies for the runnable target.
   repeated Tree runfileDirectories = 4;
+  // Workspace-relative path to the executable selected by `bazel run`.
+  string executable_path = 5;
 }
 
 // Message describing a build event. Events will have an identifier that
