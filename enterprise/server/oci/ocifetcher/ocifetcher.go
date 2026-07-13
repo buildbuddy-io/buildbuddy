@@ -35,6 +35,7 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	ctrname "github.com/google/go-containerregistry/pkg/name"
 	ctr "github.com/google/go-containerregistry/pkg/v1"
+	ctrtypes "github.com/google/go-containerregistry/pkg/v1/types"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
@@ -383,6 +384,7 @@ func (s *ociFetcherServer) fetchBlobFromRemoteWriteToCacheAndResponse(ctx contex
 	// unavailable.
 	var mediaType string
 	var size int64
+	var sizeHEADUnauthorized bool
 	rc, err := withPullerRetry(ctx, s, digestRef, creds, func(puller *remote.Puller) (io.ReadCloser, error) {
 		layer, err := puller.Layer(ctx, digestRef)
 		if err != nil {
@@ -395,6 +397,7 @@ func (s *ociFetcherServer) fetchBlobFromRemoteWriteToCacheAndResponse(ctx contex
 			mediaType = string(mt)
 		}
 		if sz, err := layer.Size(); err != nil {
+			sizeHEADUnauthorized = isUnauthorizedTransportError(err)
 			log.CtxWarningf(ctx, "Could not get size for layer: %s", err)
 		} else {
 			size = sz
@@ -403,6 +406,19 @@ func (s *ociFetcherServer) fetchBlobFromRemoteWriteToCacheAndResponse(ctx contex
 	})
 	if err != nil {
 		return 0, err
+	}
+
+	// Some registries (notably public.ecr.aws) respond 401 to blob HEAD
+	// requests, leaving the size unknown even though the credentials grant
+	// access (the Compressed GET above succeeded). Recover the size with a
+	// GET closed after reading only the headers, so that the blob can still
+	// be cached.
+	if size == 0 && sizeHEADUnauthorized {
+		if sz, err := s.fetchBlobSizeViaGET(ctx, digestRef, creds); err != nil {
+			log.CtxWarningf(ctx, "Could not get size for layer via GET: %s", err)
+		} else {
+			size = sz
+		}
 	}
 
 	// streamAndClose streams from reader and closes it when done.
@@ -457,7 +473,7 @@ func (s *ociFetcherServer) fetchBlobMetadataFromCache(ctx context.Context, diges
 }
 
 func (s *ociFetcherServer) fetchBlobMetadataFromRemote(ctx context.Context, digestRef ctrname.Digest, creds *rgpb.Credentials) (*ofpb.FetchBlobMetadataResponse, error) {
-	return withPullerRetry(ctx, s, digestRef, creds, func(puller *remote.Puller) (*ofpb.FetchBlobMetadataResponse, error) {
+	resp, err := withPullerRetry(ctx, s, digestRef, creds, func(puller *remote.Puller) (*ofpb.FetchBlobMetadataResponse, error) {
 		layer, err := puller.Layer(ctx, digestRef)
 		if err != nil {
 			return nil, err
@@ -475,6 +491,82 @@ func (s *ociFetcherServer) fetchBlobMetadataFromRemote(ctx context.Context, dige
 			MediaType: string(mediaType),
 		}, nil
 	})
+	if err == nil || !status.IsUnauthenticatedError(err) {
+		return resp, err
+	}
+	// Some registries (notably public.ecr.aws) respond 401 to spec-compliant
+	// blob HEAD requests. Fall back to a GET, which carries the blob size in
+	// its Content-Length header. With genuinely bad credentials the GET fails
+	// with 401 as well.
+	size, getErr := s.fetchBlobSizeViaGET(ctx, digestRef, creds)
+	if getErr != nil {
+		return nil, getErr
+	}
+	return &ofpb.FetchBlobMetadataResponse{
+		Size: size,
+		// The layer media type is not recoverable from a blob response, but
+		// the HEAD-based path above reports this same constant: see
+		// remoteLayer.MediaType in go-containerregistry.
+		MediaType: string(ctrtypes.DockerLayer),
+	}, nil
+}
+
+// isUnauthorizedTransportError returns whether err is an HTTP 401 response
+// from the remote registry.
+func isUnauthorizedTransportError(err error) bool {
+	var transportErr *transport.Error
+	return errors.As(err, &transportErr) && transportErr.StatusCode == http.StatusUnauthorized
+}
+
+// fetchBlobSizeViaGET determines a blob's size by issuing a GET request for
+// it and closing the response body after reading only the headers. A
+// successful return also proves that the credentials grant pull access to
+// the blob's repository.
+func (s *ociFetcherServer) fetchBlobSizeViaGET(ctx context.Context, digestRef ctrname.Digest, creds *rgpb.Credentials) (int64, error) {
+	repo := digestRef.Context()
+	var auth authn.Authenticator = authn.Anonymous
+	if creds.GetUsername() != "" && creds.GetPassword() != "" {
+		auth = &authn.Basic{
+			Username: creds.GetUsername(),
+			Password: creds.GetPassword(),
+		}
+	}
+	var base http.RoundTripper = httpclient.New(s.allowedPrivateIPs, "oci_fetcher").Transport
+	if len(s.mirrors) > 0 {
+		base = NewMirrorTransport(base, s.mirrors)
+	}
+	rt, err := transport.NewWithContext(ctx, repo.Registry, auth, base, []string{repo.Scope(transport.PullScope)})
+	if err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return 0, err
+		}
+		return 0, RemoteRegistryError(err, "could not authenticate to remote registry")
+	}
+	u := url.URL{
+		Scheme: repo.Scheme(),
+		Host:   repo.RegistryStr(),
+		Path:   fmt.Sprintf("/v2/%s/blobs/%s", repo.RepositoryStr(), digestRef.DigestStr()),
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	if err != nil {
+		return 0, status.InternalErrorf("could not create blob request: %s", err)
+	}
+	client := &http.Client{Transport: rt}
+	resp, err := client.Do(req)
+	if err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return 0, err
+		}
+		return 0, RemoteRegistryError(err, "could not fetch blob from remote registry")
+	}
+	defer resp.Body.Close()
+	if err := transport.CheckError(resp, http.StatusOK); err != nil {
+		return 0, RemoteRegistryError(err, "could not fetch blob from remote registry")
+	}
+	if resp.ContentLength < 0 {
+		return 0, status.UnavailableErrorf("registry did not return a Content-Length for blob %q", digestRef)
+	}
+	return resp.ContentLength, nil
 }
 
 func parseManifestRef(ref string) (ctrname.Reference, error) {
@@ -521,7 +613,8 @@ func (s *ociFetcherServer) proveManifestAccess(ctx context.Context, imageRef ctr
 }
 
 // proveBlobAccess checks that the caller's credentials allow accessing the
-// blob's repository in the remote registry (via a metadata HEAD).
+// blob's repository in the remote registry (via a metadata HEAD, falling back
+// to a GET for registries that reject blob HEAD requests).
 func (s *ociFetcherServer) proveBlobAccess(ctx context.Context, digestRef ctrname.Digest, creds *rgpb.Credentials) error {
 	repo := digestRef.Context()
 	if s.accessProofCache.Contains(repoAccessKey(repo, creds)) {

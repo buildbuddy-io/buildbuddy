@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -2028,4 +2029,158 @@ func TestPrivateImageManifestCacheRequiresCredentials(t *testing.T) {
 			})
 		})
 	}
+}
+
+// TestBlobHEADRejectedByRegistry simulates public.ecr.aws, which responds 401
+// to spec-compliant blob HEAD requests. Blob metadata (and the access proof
+// it provides) must fall back to a GET whose body is closed without being
+// read.
+func TestBlobHEADRejectedByRegistry(t *testing.T) {
+	// The interceptor is armed only after the test image is pushed, since
+	// pushes also issue blob HEAD requests.
+	newBlobHEADRejector := func() (*atomic.Bool, func(w http.ResponseWriter, r *http.Request) bool) {
+		armed := &atomic.Bool{}
+		return armed, func(w http.ResponseWriter, r *http.Request) bool {
+			if armed.Load() && r.Method == http.MethodHead && strings.Contains(r.URL.Path, "/blobs/") {
+				w.WriteHeader(http.StatusUnauthorized)
+				return false
+			}
+			return true
+		}
+	}
+
+	t.Run("FetchBlobMetadata", func(t *testing.T) {
+		rejectHEADs, interceptor := newBlobHEADRejector()
+		reg, counter := setupRegistry(t, nil, interceptor)
+		imageName, img := reg.PushNamedImage(t, "test-image", nil)
+
+		layers, err := img.Layers()
+		require.NoError(t, err)
+		require.NotEmpty(t, layers)
+
+		layer := layers[0]
+		digest, err := layer.Digest()
+		require.NoError(t, err)
+		expectedSize, expectedMediaType := layerMetadata(t, layer)
+
+		server := newTestServer(t)
+		rejectHEADs.Store(true)
+		counter.Reset()
+		resp, err := server.FetchBlobMetadata(context.Background(), &ofpb.FetchBlobMetadataRequest{
+			Ref: imageName + "@" + digest.String(),
+		})
+		require.NoError(t, err)
+		require.Equal(t, expectedSize, resp.GetSize())
+		require.Equal(t, expectedMediaType, resp.GetMediaType())
+
+		// Two HEAD attempts (the puller is evicted and recreated on error),
+		// then the GET fallback with its own transport handshake.
+		blobPath := "/v2/test-image/blobs/" + digest.String()
+		assertRequests(t, counter, map[string]int{
+			http.MethodGet + " /v2/":         3,
+			http.MethodHead + " " + blobPath: 2,
+			http.MethodGet + " " + blobPath:  1,
+		})
+	})
+
+	t.Run("FetchBlobCachingAndCacheHitProof", func(t *testing.T) {
+		// Once the blob is cached, blob GETs serve garbage bytes (with a
+		// correct Content-Length) to prove that blob data comes from the
+		// cache and the access-proof GET reads only the response headers.
+		rejectHEADs, rejectHEADsInterceptor := newBlobHEADRejector()
+		var breakBlobGETs atomic.Bool
+		var blobSize int64
+		interceptor := func(w http.ResponseWriter, r *http.Request) bool {
+			if !rejectHEADsInterceptor(w, r) {
+				return false
+			}
+			if breakBlobGETs.Load() && r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/blobs/") {
+				w.Header().Set("Content-Length", strconv.FormatInt(blobSize, 10))
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write(bytes.Repeat([]byte("x"), int(blobSize)))
+				return false
+			}
+			return true
+		}
+		reg, counter := setupRegistry(t, nil, interceptor)
+		imageName, img := reg.PushNamedImage(t, "test-image", nil)
+
+		layers, err := img.Layers()
+		require.NoError(t, err)
+		require.NotEmpty(t, layers)
+
+		layer := layers[0]
+		digest, err := layer.Digest()
+		require.NoError(t, err)
+		expectedData := layerData(t, layer)
+		blobSize = int64(len(expectedData))
+
+		_, bsClient, acClient := setupCacheEnv(t)
+		server := newTestServerWithCache(t, bsClient, acClient)
+		ref := imageName + "@" + digest.String()
+		blobPath := "/v2/test-image/blobs/" + digest.String()
+
+		// Cache miss: the failed HEAD is replaced by a GET closed after
+		// reading only the headers, so the blob is still written to the
+		// cache. Two blob GETs total: the size probe and the stream.
+		rejectHEADs.Store(true)
+		counter.Reset()
+		stream := &mockFetchBlobServer{ctx: context.Background()}
+		err = server.FetchBlob(&ofpb.FetchBlobRequest{Ref: ref}, stream)
+		require.NoError(t, err)
+		require.Equal(t, expectedData, stream.collectData())
+		assertRequests(t, counter, map[string]int{
+			http.MethodGet + " /v2/":         2,
+			http.MethodHead + " " + blobPath: 1,
+			http.MethodGet + " " + blobPath:  2,
+		})
+
+		// Access is already proven on this server: pure cache hit.
+		counter.Reset()
+		stream = &mockFetchBlobServer{ctx: context.Background()}
+		err = server.FetchBlob(&ofpb.FetchBlobRequest{Ref: ref}, stream)
+		require.NoError(t, err)
+		require.Equal(t, expectedData, stream.collectData())
+		assertRequests(t, counter, map[string]int{})
+
+		// A fresh server sharing the cache must re-prove access. The HEAD is
+		// rejected, so the proof is the GET fallback; the garbage blob bytes
+		// from the registry must not reach the response.
+		breakBlobGETs.Store(true)
+		server = newTestServerWithCache(t, bsClient, acClient)
+		counter.Reset()
+		stream = &mockFetchBlobServer{ctx: context.Background()}
+		err = server.FetchBlob(&ofpb.FetchBlobRequest{Ref: ref}, stream)
+		require.NoError(t, err)
+		require.Equal(t, expectedData, stream.collectData())
+		assertRequests(t, counter, map[string]int{
+			http.MethodGet + " /v2/":         3,
+			http.MethodHead + " " + blobPath: 2,
+			http.MethodGet + " " + blobPath:  1,
+		})
+	})
+
+	t.Run("InvalidCredentialsStillRejected", func(t *testing.T) {
+		rejectHEADs, interceptor := newBlobHEADRejector()
+		registryCreds := &testregistry.BasicAuthCreds{Username: "testuser", Password: "testpass"}
+		reg, _ := setupRegistry(t, registryCreds, interceptor)
+		imageName, img := reg.PushNamedImage(t, "test-image", registryCreds)
+
+		layers, err := img.Layers()
+		require.NoError(t, err)
+		require.NotEmpty(t, layers)
+
+		layer := layers[0]
+		digest, err := layer.Digest()
+		require.NoError(t, err)
+
+		server := newTestServer(t)
+		rejectHEADs.Store(true)
+		_, err = server.FetchBlobMetadata(context.Background(), &ofpb.FetchBlobMetadataRequest{
+			Ref:         imageName + "@" + digest.String(),
+			Credentials: &rgpb.Credentials{Username: "wrong", Password: "wrong"},
+		})
+		require.Error(t, err)
+		require.True(t, status.IsUnauthenticatedError(err), "expected Unauthenticated, got: %v", err)
+	})
 }
