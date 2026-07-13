@@ -36,6 +36,11 @@ var (
 	recordOrigin                   = flag.Bool("cache.record_action_result_origin", true, "If true, the origin of the action result will be added to it's auxiliary metadata.")
 )
 
+// chunkCheckConcurrency bounds how many chunked-manifest fallback lookups
+// checkFilesExist performs in parallel. Each lookup issues independent cache
+// reads, so the work is I/O-bound.
+const chunkCheckConcurrency = 8
+
 type ActionCacheServer struct {
 	env   environment.Env
 	cache interfaces.Cache
@@ -76,24 +81,32 @@ func checkFilesExist(ctx context.Context, cache interfaces.Cache, instanceName s
 	if !chunkingEnabled {
 		return status.NotFoundErrorf("ActionResult output file %q not found in cache", chunking.DigestsSummary(missing))
 	}
-	checker := chunking.NewMissingChunkChecker(cache)
+	minFallbackSizeBytes := chunking.MinChunkedReadFallbackSizeBytes(ctx, efp)
 	for _, d := range missing {
-		if d.GetSizeBytes() <= chunking.MinChunkedReadFallbackSizeBytes(ctx, efp) || chunking.ShouldDiscardLegacyChunkedBlob(ctx, efp, d.GetSizeBytes()) {
+		if d.GetSizeBytes() <= minFallbackSizeBytes || chunking.ShouldDiscardLegacyChunkedBlob(ctx, efp, d.GetSizeBytes()) {
 			return status.NotFoundErrorf("ActionResult output file %q not found in cache", digest.String(d))
 		}
-		manifest, err := chunking.LoadManifest(ctx, cache, d, instanceName, digestFunction)
-		if err != nil {
-			return status.WrapErrorf(err, "ActionResult output file %q: load chunk manifest", digest.String(d))
-		}
-		anyMissing, err := checker.AnyChunkMissing(ctx, manifest)
-		if err != nil {
-			return status.WrapErrorf(err, "ActionResult output file %q: failed to check chunks", digest.String(d))
-		}
-		if anyMissing {
-			return status.NotFoundErrorf("ActionResult output file %q: missing chunks", digest.String(d))
-		}
 	}
-	return nil
+	checker := chunking.NewMissingChunkChecker(cache)
+	eg, egCtx := errgroup.WithContext(ctx)
+	eg.SetLimit(chunkCheckConcurrency)
+	for _, d := range missing {
+		eg.Go(func() error {
+			manifest, err := chunking.LoadManifest(egCtx, cache, d, instanceName, digestFunction)
+			if err != nil {
+				return status.WrapErrorf(err, "ActionResult output file %q: load chunk manifest", digest.String(d))
+			}
+			anyMissing, err := checker.AnyChunkMissing(egCtx, manifest)
+			if err != nil {
+				return status.WrapErrorf(err, "ActionResult output file %q: failed to check chunks", digest.String(d))
+			}
+			if anyMissing {
+				return status.NotFoundErrorf("ActionResult output file %q: missing chunks", digest.String(d))
+			}
+			return nil
+		})
+	}
+	return eg.Wait()
 }
 
 func ValidateActionResult(ctx context.Context, cache interfaces.Cache, remoteInstanceName string, digestFunction repb.DigestFunction_Value, chunkingEnabled bool, efp interfaces.ExperimentFlagProvider, r *repb.ActionResult) error {
