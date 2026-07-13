@@ -4,8 +4,11 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -825,11 +828,13 @@ func TestFetchBlobStreamsDirectlyWhenBlobMetadataLookupFails(t *testing.T) {
 	blobPath := "/v2/test-metadata-fallback/blobs/" + layerDigest.String()
 	assertRequests(t, counter, map[string]int{
 		http.MethodGet + " /v2/": 1,
-		// Blob data is streamed despite metadata failures.
+		// Blob data is streamed despite metadata failures. No ranged GET
+		// fallbacks: those are only made for HEAD requests failing with
+		// 401, not 500.
 		http.MethodGet + " " + blobPath: 1,
-		// Three blob HEADs: MediaType() HEAD (500), Size() HEAD (500),
-		// plus one internal HEAD from go-containerregistry during
-		// Compressed() to determine content length.
+		// Three blob HEADs: go-containerregistry's retry transport makes
+		// up to three attempts for the Size() HEAD since 500 is a
+		// retryable status.
 		http.MethodHead + " " + blobPath: 3,
 	})
 
@@ -844,6 +849,269 @@ func TestFetchBlobStreamsDirectlyWhenBlobMetadataLookupFails(t *testing.T) {
 		// No /v2/ ping: puller stays cached across metadata failures.
 		http.MethodGet + " " + blobPath:  1,
 		http.MethodHead + " " + blobPath: 3,
+	})
+}
+
+// TestBlobHeadFallbackToRangedGet simulates a registry that, like
+// public.ecr.aws, rejects every HEAD request to blob endpoints with 401 while
+// allowing GET requests. Blob metadata should be fetched via the single-byte
+// ranged GET fallback, and blob fetching (including read-through caching)
+// should keep working end to end.
+func TestBlobHeadFallbackToRangedGet(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		// stripRange simulates a registry that ignores the Range header and
+		// responds 200 with the full blob instead of 206 with a single byte.
+		stripRange    bool
+		registryCreds *testregistry.BasicAuthCreds
+		requestCreds  *rgpb.Credentials
+	}{
+		{name: "RangeHonored/NoAuth"},
+		{
+			name:          "RangeHonored/WithAuth",
+			registryCreds: &testregistry.BasicAuthCreds{Username: "testuser", Password: "testpass"},
+			requestCreds:  &rgpb.Credentials{Username: "testuser", Password: "testpass"},
+		},
+		{name: "RangeIgnored/NoAuth", stripRange: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			// Only reject blob HEADs after the test image has been pushed.
+			var rejectBlobHeads atomic.Bool
+			reg, counter := setupRegistry(t, tc.registryCreds, func(w http.ResponseWriter, r *http.Request) bool {
+				if !rejectBlobHeads.Load() || !strings.Contains(r.URL.Path, "/blobs/") {
+					return true
+				}
+				if r.Method == http.MethodHead {
+					w.WriteHeader(http.StatusUnauthorized)
+					return false
+				}
+				if tc.stripRange {
+					r.Header.Del("Range")
+				}
+				return true
+			})
+			imageName, img := reg.PushNamedImage(t, "test-image", tc.registryCreds)
+			rejectBlobHeads.Store(true)
+
+			layers, err := img.Layers()
+			require.NoError(t, err)
+			require.NotEmpty(t, layers)
+			layer := layers[0]
+			digest, err := layer.Digest()
+			require.NoError(t, err)
+			expectedSize, expectedMediaType := layerMetadata(t, layer)
+			expectedData := layerData(t, layer)
+
+			_, bsClient, acClient := setupCacheEnv(t)
+			server := newTestServerWithCache(t, bsClient, acClient)
+			blobRef := imageName + "@" + digest.String()
+			blobPath := "/v2/test-image/blobs/" + digest.String()
+
+			// Blob metadata is fetched via the ranged GET fallback.
+			counter.Reset()
+			resp, err := server.FetchBlobMetadata(context.Background(), &ofpb.FetchBlobMetadataRequest{
+				Ref:         blobRef,
+				Credentials: tc.requestCreds,
+			})
+			require.NoError(t, err)
+			require.Equal(t, expectedSize, resp.GetSize())
+			require.Equal(t, expectedMediaType, resp.GetMediaType())
+			assertRequests(t, counter, map[string]int{
+				http.MethodGet + " /v2/":         1,
+				http.MethodHead + " " + blobPath: 1,
+				http.MethodGet + " " + blobPath:  1,
+			})
+
+			// Blob data still streams and populates the cache: one ranged
+			// GET fallback for the size lookup plus the data GET.
+			counter.Reset()
+			stream := &mockFetchBlobServer{ctx: context.Background()}
+			err = server.FetchBlob(&ofpb.FetchBlobRequest{
+				Ref:         blobRef,
+				Credentials: tc.requestCreds,
+			}, stream)
+			require.NoError(t, err)
+			require.Equal(t, expectedData, stream.collectData())
+			assertRequests(t, counter, map[string]int{
+				http.MethodHead + " " + blobPath: 1,
+				http.MethodGet + " " + blobPath:  2,
+			})
+
+			// The read-through cache was populated, so another fetch is
+			// served without contacting the registry.
+			counter.Reset()
+			stream = &mockFetchBlobServer{ctx: context.Background()}
+			err = server.FetchBlob(&ofpb.FetchBlobRequest{
+				Ref:         blobRef,
+				Credentials: tc.requestCreds,
+			}, stream)
+			require.NoError(t, err)
+			require.Equal(t, expectedData, stream.collectData())
+			assertRequests(t, counter, map[string]int{})
+		})
+	}
+}
+
+// TestBlobHeadFallbackTransport exercises NewBlobHeadFallbackTransport
+// directly against servers that mimic public.ecr.aws: HEAD requests to blob
+// endpoints fail, and blob GETs redirect to a CDN on a different host.
+func TestBlobHeadFallbackTransport(t *testing.T) {
+	t.Run("FollowsRedirectsAndStripsAuthorization", func(t *testing.T) {
+		const blobSize = 1234
+		var cdnAuth, cdnRange string
+		cdn := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			cdnAuth = r.Header.Get("Authorization")
+			cdnRange = r.Header.Get("Range")
+			w.Header().Set("Content-Range", fmt.Sprintf("bytes 0-0/%d", blobSize))
+			w.Header().Set("Content-Length", "1")
+			w.WriteHeader(http.StatusPartialContent)
+			_, _ = w.Write([]byte{0})
+		}))
+		defer cdn.Close()
+		// Redirect to the CDN via a different hostname so that the HTTP
+		// client treats it as a cross-host redirect and strips the
+		// Authorization header, as for a real registry-to-CDN redirect.
+		cdnURL, err := url.Parse(cdn.URL)
+		require.NoError(t, err)
+		redirectTarget := "http://localhost:" + cdnURL.Port() + "/blob"
+
+		var headCount, getCount int
+		registry := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch r.Method {
+			case http.MethodHead:
+				headCount++
+				w.WriteHeader(http.StatusUnauthorized)
+			case http.MethodGet:
+				getCount++
+				http.Redirect(w, r, redirectTarget, http.StatusFound)
+			}
+		}))
+		defer registry.Close()
+
+		tr := ocifetcher.NewBlobHeadFallbackTransport(http.DefaultTransport)
+		req, err := http.NewRequest(http.MethodHead, registry.URL+"/v2/test-image/blobs/sha256:abc", nil)
+		require.NoError(t, err)
+		req.Header.Set("Authorization", "Bearer registry-token")
+		resp, err := tr.RoundTrip(req)
+		require.NoError(t, err)
+		defer resp.Body.Close()
+
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+		require.Equal(t, int64(blobSize), resp.ContentLength)
+		body, err := io.ReadAll(resp.Body)
+		require.NoError(t, err)
+		require.Empty(t, body, "synthesized HEAD response should have no body")
+		require.Equal(t, 1, headCount)
+		require.Equal(t, 1, getCount)
+		require.Equal(t, "bytes=0-0", cdnRange)
+		require.Empty(t, cdnAuth, "Authorization header should not be forwarded on a cross-host redirect")
+	})
+
+	t.Run("FallsBackForAllHeadRejectionStatuses", func(t *testing.T) {
+		for _, rejectionStatus := range []int{
+			http.StatusUnauthorized,
+			http.StatusForbidden,
+			http.StatusMethodNotAllowed,
+		} {
+			t.Run(fmt.Sprint(rejectionStatus), func(t *testing.T) {
+				const blobSize = 999
+				registry := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					if r.Method == http.MethodHead {
+						w.WriteHeader(rejectionStatus)
+						return
+					}
+					w.Header().Set("Content-Range", fmt.Sprintf("bytes 0-0/%d", blobSize))
+					w.Header().Set("Content-Length", "1")
+					w.WriteHeader(http.StatusPartialContent)
+					_, _ = w.Write([]byte{0})
+				}))
+				defer registry.Close()
+
+				tr := ocifetcher.NewBlobHeadFallbackTransport(http.DefaultTransport)
+				req, err := http.NewRequest(http.MethodHead, registry.URL+"/v2/test-image/blobs/sha256:abc", nil)
+				require.NoError(t, err)
+				resp, err := tr.RoundTrip(req)
+				require.NoError(t, err)
+				defer resp.Body.Close()
+
+				require.Equal(t, http.StatusOK, resp.StatusCode)
+				require.Equal(t, int64(blobSize), resp.ContentLength)
+			})
+		}
+	})
+
+	t.Run("ReturnsOriginalResponseWhenFallbackFails", func(t *testing.T) {
+		var headCount, getCount int
+		registry := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == http.MethodHead {
+				headCount++
+				w.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+			getCount++
+			w.WriteHeader(http.StatusNotFound)
+		}))
+		defer registry.Close()
+
+		tr := ocifetcher.NewBlobHeadFallbackTransport(http.DefaultTransport)
+		req, err := http.NewRequest(http.MethodHead, registry.URL+"/v2/test-image/blobs/sha256:abc", nil)
+		require.NoError(t, err)
+		resp, err := tr.RoundTrip(req)
+		require.NoError(t, err)
+		defer resp.Body.Close()
+
+		require.Equal(t, http.StatusUnauthorized, resp.StatusCode, "original HEAD failure should be preserved")
+		require.Equal(t, 1, headCount)
+		require.Equal(t, 1, getCount, "fallback GET should have been attempted")
+	})
+
+	t.Run("NoFallbackForOtherStatusesOrNonBlobPaths", func(t *testing.T) {
+		var getCount int
+		registry := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == http.MethodGet {
+				getCount++
+			}
+			switch {
+			case strings.Contains(r.URL.Path, "/manifests/"):
+				w.WriteHeader(http.StatusUnauthorized)
+			case strings.HasSuffix(r.URL.Path, "ratelimited"):
+				w.WriteHeader(http.StatusTooManyRequests)
+			default:
+				w.Header().Set("Content-Length", "42")
+				w.WriteHeader(http.StatusOK)
+			}
+		}))
+		defer registry.Close()
+
+		tr := ocifetcher.NewBlobHeadFallbackTransport(http.DefaultTransport)
+
+		// Successful blob HEAD: no fallback needed.
+		req, err := http.NewRequest(http.MethodHead, registry.URL+"/v2/test-image/blobs/sha256:abc", nil)
+		require.NoError(t, err)
+		resp, err := tr.RoundTrip(req)
+		require.NoError(t, err)
+		resp.Body.Close()
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+		require.Equal(t, int64(42), resp.ContentLength)
+
+		// Blob HEAD failing with a status other than 401 (e.g. 429): no
+		// fallback, so no additional load on an already-throttling registry.
+		req, err = http.NewRequest(http.MethodHead, registry.URL+"/v2/test-image/blobs/sha256:ratelimited", nil)
+		require.NoError(t, err)
+		resp, err = tr.RoundTrip(req)
+		require.NoError(t, err)
+		resp.Body.Close()
+		require.Equal(t, http.StatusTooManyRequests, resp.StatusCode, "non-401 blob HEAD failures should not fall back to GET")
+
+		// Manifest HEAD failing with 401: only blob endpoints fall back.
+		req, err = http.NewRequest(http.MethodHead, registry.URL+"/v2/test-image/manifests/latest", nil)
+		require.NoError(t, err)
+		resp, err = tr.RoundTrip(req)
+		require.NoError(t, err)
+		resp.Body.Close()
+		require.Equal(t, http.StatusUnauthorized, resp.StatusCode, "manifest HEAD failures should not fall back to GET")
+
+		require.Equal(t, 0, getCount)
 	})
 }
 
@@ -1977,9 +2245,10 @@ func TestFetchBlobSingleflightDifferentCredentials(t *testing.T) {
 		// Three /v2/ pings: one for each initial puller (creds1, creds2),
 		// plus one more when creds2 retries with a fresh puller after 401.
 		http.MethodGet + " /v2/": 3,
-		// Three blob GETs: one for creds1 (succeeds), two for creds2
-		// (first attempt 401, retry 401).
-		http.MethodGet + " " + blobPath: 3,
+		// Five blob GETs: one for creds1 (succeeds), two for creds2
+		// (first attempt 401, retry 401), plus one ranged GET fallback
+		// for each of creds2's two failed blob HEADs.
+		http.MethodGet + " " + blobPath: 5,
 		// Three blob HEADs for layer.Size(): one for creds1 (succeeds),
 		// two for creds2 (Size is fetched before Compressed, so each
 		// attempt calls it before the blob GET fails).
