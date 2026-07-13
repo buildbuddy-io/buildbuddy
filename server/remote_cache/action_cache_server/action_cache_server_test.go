@@ -692,6 +692,60 @@ func TestValidateActionResult_ChunkedOutputFile(t *testing.T) {
 	assert.True(t, status.IsNotFoundError(err))
 }
 
+func TestValidateActionResult_DiscardsLegacyChunkedOutputFileForAvgChunkSizeOverride(t *testing.T) {
+	flags.Set(t, "cache.avg_chunk_size_bytes", 512*1024)
+	flags.Set(t, "cache.min_chunked_read_fallback_size_bytes", 2*1024*1024)
+
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+	require.NoError(t, err)
+	cache := te.GetCache()
+
+	chunk1RN, chunk1Data := testdigest.RandomCASResourceBuf(t, 1024*1024)
+	chunk2RN, chunk2Data := testdigest.RandomCASResourceBuf(t, 1024*1024)
+	chunk3RN, chunk3Data := testdigest.RandomCASResourceBuf(t, 1024*1024)
+	require.NoError(t, cache.Set(ctx, chunk1RN, chunk1Data))
+	require.NoError(t, cache.Set(ctx, chunk2RN, chunk2Data))
+	require.NoError(t, cache.Set(ctx, chunk3RN, chunk3Data))
+
+	allData := append(append(chunk1Data, chunk2Data...), chunk3Data...)
+	blobDigest, err := digest.Compute(bytes.NewReader(allData), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+
+	cm := &chunking.Manifest{
+		BlobDigest:     blobDigest,
+		ChunkDigests:   []*repb.Digest{chunk1RN.GetDigest(), chunk2RN.GetDigest(), chunk3RN.GetDigest()},
+		InstanceName:   "",
+		DigestFunction: repb.DigestFunction_SHA256,
+	}
+	require.NoError(t, cm.Store(ctx, cache))
+
+	ar := &repb.ActionResult{
+		OutputFiles: []*repb.OutputFile{
+			{Path: "output.bin", Digest: blobDigest},
+		},
+	}
+
+	efp := actionCacheFlagProvider{intValues: map[string]int64{"cache.avg_chunk_size_override": 1024 * 1024}}
+	err = action_cache_server.ValidateActionResult(ctx, cache, "", repb.DigestFunction_SHA256, true, efp, ar)
+	require.Error(t, err)
+	assert.True(t, status.IsNotFoundError(err))
+}
+
+type actionCacheFlagProvider struct {
+	interfaces.ExperimentFlagProvider
+	intValues map[string]int64
+}
+
+func (p actionCacheFlagProvider) Int64(ctx context.Context, flagName string, defaultValue int64, opts ...any) int64 {
+	v, ok := p.intValues[flagName]
+	if ok {
+		return v
+	}
+	return defaultValue
+}
+
 func TestRecordOriginScorecard(t *testing.T) {
 	flags.Set(t, "cache.record_action_result_origin", true)
 	flags.Set(t, "cache.detailed_stats_enabled", true)

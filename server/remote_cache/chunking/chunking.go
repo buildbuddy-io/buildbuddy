@@ -107,6 +107,19 @@ func MinChunkedReadFallbackSizeBytes(ctx context.Context, efp interfaces.Experim
 	return min(*minChunkedReadFallbackSizeBytes, MaxChunkSizeBytes(ctx, efp))
 }
 
+// ShouldDiscardLegacyChunkedBlob reports whether a missing whole CAS blob should
+// skip manifest fallback while migrating to a larger avg chunk-size override.
+func ShouldDiscardLegacyChunkedBlob(ctx context.Context, efp interfaces.ExperimentFlagProvider, digestSizeBytes int64) bool {
+	if efp == nil {
+		return false
+	}
+	if AvgChunkSizeBytes(ctx, efp) <= *avgChunkSizeBytes {
+		return false
+	}
+	return digestSizeBytes > MinChunkedReadFallbackSizeBytes(ctx, efp) &&
+		digestSizeBytes <= MaxChunkSizeBytes(ctx, efp)
+}
+
 func MaxWriteSizeBytes(ctx context.Context, efp interfaces.ExperimentFlagProvider) int64 {
 	if efp == nil {
 		return defaultMaxChunkedWriteSizeBytes
