@@ -43,8 +43,8 @@ type LRU[V any] interface {
 
 	// SetMaxSize updates the maximum size of the LRU. If the new max is smaller
 	// than the current size, the least recently used entries are evicted (with
-	// SizeEviction) until the current size fits. A negative max is treated as 0.
-	SetMaxSize(maxSize int64)
+	// SizeEviction) until the current size fits. New value must be positive.
+	SetMaxSize(maxSize int64) error
 
 	// Purge removes all entries from the LRU, invoking the eviction callback for
 	// each (with ManualEviction). The LRU remains usable afterwards.
@@ -349,16 +349,15 @@ func (c *lru[V]) removeElement(e *list.Element, reason EvictionReason) {
 	}
 }
 
-func (c *lru[V]) SetMaxSize(maxSize int64) {
-	if maxSize < 0 {
-		maxSize = 0
+func (c *lru[V]) SetMaxSize(maxSize int64) error {
+	if maxSize <= 0 {
+		return errors.New("must provide a positive size")
 	}
 	c.maxSize = maxSize
-	// Evict least-recently-used entries until we fit. The Len check guards
-	// against spinning when maxSize is 0 and the list is already empty.
-	for c.currentSize > c.maxSize && c.evictList.Len() > 0 {
+	for c.currentSize > c.maxSize {
 		c.removeOldest()
 	}
+	return nil
 }
 
 func (c *lru[V]) Purge() {
@@ -413,8 +412,8 @@ func (c *expiringLRU[V]) RemoveOldest() (V, bool) {
 	return entry.value, true
 }
 
-func (c *expiringLRU[V]) SetMaxSize(maxSize int64) {
-	c.inner.SetMaxSize(maxSize)
+func (c *expiringLRU[V]) SetMaxSize(maxSize int64) error {
+	return c.inner.SetMaxSize(maxSize)
 }
 
 func (c *expiringLRU[V]) Purge() {
@@ -485,10 +484,10 @@ func (c *threadSafeLRU[V]) RemoveOldest() (V, bool) {
 	return c.inner.RemoveOldest()
 }
 
-func (c *threadSafeLRU[V]) SetMaxSize(maxSize int64) {
+func (c *threadSafeLRU[V]) SetMaxSize(maxSize int64) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.inner.SetMaxSize(maxSize)
+	return c.inner.SetMaxSize(maxSize)
 }
 
 func (c *threadSafeLRU[V]) Purge() {
