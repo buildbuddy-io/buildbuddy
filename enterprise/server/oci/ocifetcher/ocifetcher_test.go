@@ -1012,6 +1012,94 @@ func TestBlobHeadFallbackTransport(t *testing.T) {
 		require.Empty(t, cdnAuth, "Authorization header should not be forwarded on a cross-host redirect")
 	})
 
+	t.Run("StripsContentEncodingFromSynthesizedResponse", func(t *testing.T) {
+		const blobSize = 42
+		registry := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == http.MethodHead {
+				w.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+			// A CDN in front of the ranged GET may report Content-Encoding for the
+			// (single-byte) body it's serving; that shouldn't leak into the synthesized HEAD.
+			w.Header().Set("Content-Encoding", "gzip")
+			w.Header().Set("Content-Range", fmt.Sprintf("bytes 0-0/%d", blobSize))
+			w.Header().Set("Content-Length", "1")
+			w.WriteHeader(http.StatusPartialContent)
+			_, _ = w.Write([]byte{0})
+		}))
+		defer registry.Close()
+
+		tr := ocifetcher.NewBlobHeadFallbackTransport(testHTTPClient(t))
+		req, err := http.NewRequest(http.MethodHead, registry.URL+"/v2/test-image/blobs/sha256:abc", nil)
+		require.NoError(t, err)
+		resp, err := tr.RoundTrip(req)
+		require.NoError(t, err)
+		defer resp.Body.Close()
+
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+		require.Equal(t, int64(blobSize), resp.ContentLength)
+		require.Empty(t, resp.Header.Get("Content-Encoding"))
+	})
+
+	t.Run("MirroredRegistryGetsFallbackViaMirror", func(t *testing.T) {
+		// Only the original registry host is allowlisted; the mirror host is not.
+		flags.Set(t, "ocifetcher.blob_head_fallback_registries", []string{"localhost"})
+
+		const blobSize = 1234
+		var mirrorHeads, mirrorGets int
+		mirror := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == http.MethodHead {
+				mirrorHeads++
+				w.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+			mirrorGets++
+			w.Header().Set("Content-Range", fmt.Sprintf("bytes 0-0/%d", blobSize))
+			w.Header().Set("Content-Length", "1")
+			w.WriteHeader(http.StatusPartialContent)
+			_, _ = w.Write([]byte{0})
+		}))
+		defer mirror.Close()
+
+		var originHeads, originGets int
+		origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == http.MethodHead {
+				originHeads++
+			} else {
+				originGets++
+			}
+			w.WriteHeader(http.StatusUnauthorized)
+		}))
+		defer origin.Close()
+		originURL, err := url.Parse(origin.URL)
+		require.NoError(t, err)
+		originHost := "localhost:" + originURL.Port()
+
+		// Wire the transports the way getRemoteOpts does: the mirror transport inside the
+		// client, the fallback transport outside.
+		client := testHTTPClient(t)
+		client.Transport = ocifetcher.NewMirrorTransport(client.Transport, []interfaces.MirrorConfig{{
+			OriginalURL: "http://" + originHost,
+			MirrorURL:   mirror.URL,
+		}})
+		tr := ocifetcher.NewBlobHeadFallbackTransport(client)
+
+		req, err := http.NewRequest(http.MethodHead, "http://"+originHost+"/v2/test-image/blobs/sha256:abc", nil)
+		require.NoError(t, err)
+		resp, err := tr.RoundTrip(req)
+		require.NoError(t, err)
+		defer resp.Body.Close()
+
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+		require.Equal(t, int64(blobSize), resp.ContentLength)
+		// The HEAD went to the mirror, then to the origin via the mirror transport's own
+		// fallback; the ranged GET was rewritten to the mirror and served there.
+		require.Equal(t, 1, mirrorHeads)
+		require.Equal(t, 1, mirrorGets)
+		require.Equal(t, 1, originHeads)
+		require.Equal(t, 0, originGets)
+	})
+
 	t.Run("FallsBackForAllHeadRejectionStatuses", func(t *testing.T) {
 		for _, rejectionStatus := range []int{
 			http.StatusUnauthorized,

@@ -635,13 +635,14 @@ func (s *ociFetcherServer) getRemoteOpts(ctx context.Context, creds *rgpb.Creden
 		}))
 	}
 
-	tr := NewBlobHeadFallbackTransport(httpclient.New(s.allowedPrivateIPs, "oci_fetcher"))
-
+	client := httpclient.New(s.allowedPrivateIPs, "oci_fetcher")
+	// The mirror transport sits inside the client, below the blob HEAD fallback transport, so
+	// the fallback's allowlist check sees original registry hostnames rather than mirror
+	// hostnames and its ranged GETs get the same mirror rewriting as any other request.
 	if len(s.mirrors) > 0 {
-		opts = append(opts, remote.WithTransport(NewMirrorTransport(tr, s.mirrors)))
-	} else {
-		opts = append(opts, remote.WithTransport(tr))
+		client.Transport = NewMirrorTransport(client.Transport, s.mirrors)
 	}
+	opts = append(opts, remote.WithTransport(NewBlobHeadFallbackTransport(client)))
 
 	return opts
 }
@@ -885,6 +886,9 @@ func (t *blobHeadFallbackTransport) rangedGet(headReq *http.Request) (*http.Resp
 		Request:       headReq,
 	}
 	out.Header.Del("Content-Range")
+	// Content-Encoding describes the ranged GET's body, which the synthesized response doesn't
+	// carry; drop it so the result reads like a real HEAD response.
+	out.Header.Del("Content-Encoding")
 	out.Header.Set("Content-Length", strconv.FormatInt(size, 10))
 	return out, nil
 }
