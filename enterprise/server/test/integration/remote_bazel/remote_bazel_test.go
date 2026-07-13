@@ -152,7 +152,7 @@ func makeLocalGitRepo(t *testing.T, contents map[string]string) (path, commitSHA
 
 // Run remote bazel in a separate process so it doesn't interfere with
 // the local server and cause a race condition.
-func runRemoteBazelInSeparateProcess(t *testing.T, workDir string, serverAddress string, args ...string) {
+func runRemoteBazelInSeparateProcess(t *testing.T, workDir string, serverAddress string, args ...string) string {
 	cmd := testcli.Command(t, workDir, append(
 		[]string{
 			"remote",
@@ -166,6 +166,7 @@ func runRemoteBazelInSeparateProcess(t *testing.T, workDir string, serverAddress
 	b, err := cmd.CombinedOutput()
 	t.Log(string(b))
 	require.NoError(t, err)
+	return string(b)
 }
 
 func TestWithPrivateRepo(t *testing.T) {
@@ -486,6 +487,45 @@ int main() {
 	})
 	require.NoError(t, err)
 	require.NotContains(t, string(logResp.GetBuffer()), "Hello from main!")
+}
+
+func TestBuildRemotelyRunLocally_ShBinary(t *testing.T) {
+	repoDir, _ := makeLocalGitRepo(t, map[string]string{
+		"BUILD": `
+load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
+
+genrule(
+    name = "generated_script",
+    srcs = ["main.sh"],
+    outs = ["main-generated.sh"],
+    cmd = "cp $< $@",
+    executable = True,
+)
+
+sh_binary(
+    name = "main",
+    srcs = [":generated_script"],
+)
+`,
+		"main.sh": `#!/usr/bin/env bash
+echo "Hello from sh_binary!"
+`,
+	})
+
+	// Run a server and executor locally to run remote bazel against.
+	env, bbServer, _ := runLocalServerAndExecutor(t, "", "", nil)
+
+	// rules_shell sh_binary exposes both the runnable entrypoint and its
+	// underlying script as outputs. Verify that Remote Bazel selects the
+	// entrypoint among the multiple outputs.
+	randomStr := fmt.Sprintf("%d", time.Now().UnixMilli())
+	output := runRemoteBazelInSeparateProcess(t, repoDir, bbServer.GRPCAddress(),
+		"--runner_exec_properties=instance_name="+randomStr,
+		"--run_remotely=0",
+		"run",
+		":main",
+		fmt.Sprintf("--remote_header=x-buildbuddy-api-key=%s", env.APIKey1))
+	require.Contains(t, output, "Hello from sh_binary!")
 }
 
 func TestAccessingSecrets(t *testing.T) {
