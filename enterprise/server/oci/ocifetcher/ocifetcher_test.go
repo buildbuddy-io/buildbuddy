@@ -906,6 +906,60 @@ func TestFetchBlobStreamsDirectlyWhenBlobMetadataLookupFails(t *testing.T) {
 	})
 }
 
+// TestFetchBlobWriteToCacheHead401Fallback verifies that on the cache-miss
+// write-through path, a registry which rejects authenticated blob HEADs with
+// 401 (like public.ecr.aws) still yields the blob size and media type via a
+// ranged GET, so the blob is written through to the cache. A subsequent fetch
+// is then served entirely from cache without touching the registry.
+func TestFetchBlobWriteToCacheHead401Fallback(t *testing.T) {
+	var sawRangedGet atomic.Bool
+	var rejectBlobHeads atomic.Bool
+	reg, counter := setupRegistry(t, nil, func(w http.ResponseWriter, r *http.Request) bool {
+		if !strings.Contains(r.URL.Path, "/blobs/") {
+			return true
+		}
+		if r.Method == http.MethodHead && rejectBlobHeads.Load() {
+			w.WriteHeader(http.StatusUnauthorized)
+			return false
+		}
+		if r.Method == http.MethodGet && r.Header.Get("Range") == "bytes=0-0" {
+			sawRangedGet.Store(true)
+		}
+		return true
+	})
+	imageName, img := reg.PushNamedImage(t, "test-image", nil)
+	layers, err := img.Layers()
+	require.NoError(t, err)
+	require.NotEmpty(t, layers)
+	layer := layers[0]
+	digest, err := layer.Digest()
+	require.NoError(t, err)
+	expectedData := layerData(t, layer)
+
+	server := newTestServer(t)
+	blobRef := imageName + "@" + digest.String()
+	rejectBlobHeads.Store(true)
+
+	// First fetch: cache miss. The blob HEAD 401s, so size and media type come
+	// from the ranged-GET fallback, letting the blob be written to the cache.
+	stream := &mockFetchBlobServer{ctx: context.Background()}
+	counter.Reset()
+	err = server.FetchBlob(&ofpb.FetchBlobRequest{Ref: blobRef}, stream)
+	require.NoError(t, err)
+	require.Equal(t, expectedData, stream.collectData())
+	require.True(t, sawRangedGet.Load(), "expected a ranged GET fallback for blob metadata")
+
+	// Second fetch: the blob, its metadata, and the access proof are now cached,
+	// so the request is served without any registry traffic. Without caching on
+	// the write-through path, this would hit the registry again.
+	stream = &mockFetchBlobServer{ctx: context.Background()}
+	counter.Reset()
+	err = server.FetchBlob(&ofpb.FetchBlobRequest{Ref: blobRef}, stream)
+	require.NoError(t, err)
+	require.Equal(t, expectedData, stream.collectData())
+	assertRequests(t, counter, map[string]int{})
+}
+
 func TestServerNoRetryOnContextErrors(t *testing.T) {
 	var headAttempts, getAttempts, blobAttempts atomic.Int32
 	var blockHead, blockGet, blockBlob atomic.Bool
@@ -2033,12 +2087,16 @@ func TestFetchBlobSingleflightDifferentCredentials(t *testing.T) {
 
 	blobPath := "/v2/test-image/blobs/" + digest.String()
 	assertRequests(t, counter, map[string]int{
-		// Three /v2/ pings: one for each initial puller (creds1, creds2),
-		// plus one more when creds2 retries with a fresh puller after 401.
-		http.MethodGet + " /v2/": 3,
-		// Three blob GETs: one for creds1 (succeeds), two for creds2
-		// (first attempt 401, retry 401).
-		http.MethodGet + " " + blobPath: 3,
+		// Five /v2/ pings: one for creds1's puller, and for each of creds2's
+		// two attempts one for the puller plus one for the ranged-GET
+		// fallback client (creds2's Size() HEAD 401s, which the fallback
+		// can't distinguish from the public.ecr.aws quirk, so it retries
+		// with a fresh authenticated client that pings /v2/ again).
+		http.MethodGet + " /v2/": 5,
+		// Five blob GETs: one for creds1 (succeeds); for each of creds2's
+		// two attempts, one ranged-GET fallback (401) plus one Compressed()
+		// GET (401).
+		http.MethodGet + " " + blobPath: 5,
 		// Three blob HEADs for layer.Size(): one for creds1 (succeeds),
 		// two for creds2 (Size is fetched before Compressed, so each
 		// attempt calls it before the blob GET fails).
