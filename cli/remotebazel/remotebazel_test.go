@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/login"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/test_data"
@@ -683,6 +684,10 @@ func TestParseArgs(t *testing.T) {
 		// Startup flags should be preserved.
 		"--output_base=/tmp/output_base",
 		"test",
+		// Remote configs should be added immediately after the Bazel command.
+		"--config=buildbuddy_remote_cache",
+		"--config=buildbuddy_bes_results_url",
+		"--config=buildbuddy_bes_backend",
 		// Bazel flags should be canonicalized.
 		"--compilation_mode=opt",
 		// Config flags should not be expanded and passed through to the remote runner as is.
@@ -692,13 +697,46 @@ func TestParseArgs(t *testing.T) {
 		// API key should be set.
 		"--remote_header=x-buildbuddy-api-key=test-api-key",
 		"//foo",
-		// Remote flags should be removed and replaced by the CLI.
-		"--config=buildbuddy_bes_backend",
-		"--config=buildbuddy_bes_results_url",
-		"--config=buildbuddy_remote_cache",
 	}, bazelArgs)
 	// Exec args should be preserved.
 	require.Equal(t, []string{"--exec_arg"}, execArgs)
+}
+
+func TestParseArgs_RunAddsRemoteArgsBeforeExecutableArgs(t *testing.T) {
+	t.Setenv("BUILDBUDDY_API_KEY", "test-api-key")
+	originalRunRemotely := *runRemotely
+	*runRemotely = false
+	t.Cleanup(func() { *runRemotely = originalRunRemotely })
+
+	bazelArgs, execArgs, err := parseArgs([]string{
+		"run",
+		"@bazel-diff//cli:bazel-diff",
+		"generate-hashes",
+		"--",
+		"--includeTargetType",
+		"-w",
+		".",
+	})
+	require.NoError(t, err)
+
+	// Rejoin and re-split the args to ensure that they are still properly formatted.
+	forwardedBazelArgs, forwardedExecArgs := arg.SplitExecutableArgs(
+		arg.JoinExecutableArgs(bazelArgs, execArgs),
+	)
+	require.Equal(t, "run", arg.GetCommand(forwardedBazelArgs))
+	require.Equal(t, []string{"@bazel-diff//cli:bazel-diff"}, arg.GetTargets(forwardedBazelArgs))
+	require.ElementsMatch(t, []string{
+		"buildbuddy_bes_backend",
+		"buildbuddy_bes_results_url",
+		"buildbuddy_remote_cache",
+	}, arg.GetMulti(forwardedBazelArgs, "config"))
+	require.Contains(t, forwardedBazelArgs, "--remote_upload_local_results")
+	require.Equal(t, []string{
+		"generate-hashes",
+		"--includeTargetType",
+		"-w",
+		".",
+	}, forwardedExecArgs)
 }
 
 func TestGetRemoteRunnerTarget(t *testing.T) {

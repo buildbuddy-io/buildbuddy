@@ -1,4 +1,5 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
 
 # gazelle:default_visibility //cli:__subpackages__,//enterprise:__subpackages__
 package(default_visibility = [
@@ -52,6 +53,7 @@ go_test(
     srcs = ["remotebazel_test.go"],
     embed = [":remotebazel"],
     deps = [
+        "//cli/arg",
         "//cli/login",
         "//cli/parser",
         "//cli/parser/test_data",

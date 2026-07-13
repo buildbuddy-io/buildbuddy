@@ -1438,12 +1438,9 @@ func parseArgs(commandLineArgs []string) ([]string, []string, error) {
 	}
 
 	// Because Remote Bazel just forwards the command to a remote runner, it
-	// doesn't need to use the traditional CLI parser, which attempts
-	// to expand --config and --bazelrc flags for an internal view of resolved flags.
+	// doesn't need to expand --config and --bazelrc flags for an internal view of resolved flags.
 	// (Attempting to use the parser would actually fail, because we add --config flags that
 	// are only defined on the remote runners.)
-	// Manually construct a BazelArgs struct because the login code expects it.
-	// TODO: Find a less hacky way to handle this.
 	bazelArgsStruct, err := arg.NewBazelArgsNoResolve(bazelArgs)
 	if err != nil {
 		return nil, nil, fmt.Errorf("parse bazel args: %w", err)
@@ -1451,24 +1448,34 @@ func parseArgs(commandLineArgs []string) ([]string, []string, error) {
 	if err := login.ConfigureAPIKey(bazelArgsStruct); err != nil {
 		return nil, nil, fmt.Errorf("configure api key: %w", err)
 	}
-	bazelArgs = bazelArgsStruct.Resolved()
 
 	// Ensure all bazel remote runs use the remote cache.
 	// The goal is to keep remote workloads close to our servers, so use the same
 	// app backend as the remote runner.
-	bazelArgs = arg.Remove(bazelArgs, "bes_backend")
-	bazelArgs = arg.Remove(bazelArgs, "remote_cache")
-	bazelArgs = append(bazelArgs, "--config=buildbuddy_bes_backend")
-	bazelArgs = append(bazelArgs, "--config=buildbuddy_bes_results_url")
-	bazelArgs = append(bazelArgs, "--config=buildbuddy_remote_cache")
-
-	// If the CLI needs to fetch build outputs, make sure the remote runner uploads them.
-	bazelCmd, _ := parser.GetBazelCommandAndIndex(bazelArgs)
-	if (!*runRemotely && bazelCmd == "run") || bazelCmd == "build" {
-		bazelArgs = append(bazelArgs, "--remote_upload_local_results")
+	if _, err := bazelArgsStruct.Pop("bes_backend"); err != nil {
+		return nil, nil, fmt.Errorf("remove BES backend: %w", err)
+	}
+	if _, err := bazelArgsStruct.Pop("remote_cache"); err != nil {
+		return nil, nil, fmt.Errorf("remove remote cache: %w", err)
+	}
+	extraArgs := []string{
+		"--config=buildbuddy_bes_backend",
+		"--config=buildbuddy_bes_results_url",
+		"--config=buildbuddy_remote_cache",
 	}
 
-	return bazelArgs, execArgs, nil
+	// If the CLI needs to fetch build outputs, make sure the remote runner uploads them.
+	bazelCmd := bazelArgsStruct.GetCommand()
+	if (!*runRemotely && bazelCmd == "run") || bazelCmd == "build" {
+		extraArgs = append(extraArgs, "--remote_upload_local_results")
+	}
+	for _, extraArg := range extraArgs {
+		if err := bazelArgsStruct.Prepend(extraArg); err != nil {
+			return nil, nil, fmt.Errorf("add remote bazel arg: %w", err)
+		}
+	}
+
+	return bazelArgsStruct.Forwarded(), execArgs, nil
 }
 
 // parseRemoteCliFlags parses flags that affect configuration of remote bazel.
