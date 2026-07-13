@@ -47,12 +47,24 @@ const (
 
 	accessProofCacheTTL        = 15 * time.Minute
 	accessProofCacheMaxEntries = 1000
+
+	// public.ecr.aws rejects all blob HEAD requests with 401; see blobHeadFallbackRegistries.
+	ecrPublicRegistry = "public.ecr.aws"
+	// A single-byte range keeps the blob HEAD fallback GET cheap while still exposing
+	// the full blob size in the response's Content-Range header.
+	blobHeadFallbackRange = "bytes=0-0"
+	// How much of a fallback response body to drain for connection reuse before closing.
+	blobHeadFallbackDrainLimit = 1024
 )
 
 var (
 	enabled           = flag.Bool("ocifetcher.enabled", false, "Whether to enable the OCI fetcher service.")
 	mirrors           = flag.Slice("executor.container_registry_mirrors", []interfaces.MirrorConfig{}, "")
 	allowedPrivateIPs = flag.Slice("executor.container_registry_allowed_private_ips", []string{}, "Allowed private IP ranges for container registries. Private IPs are disallowed by default.")
+
+	// Restricting the fallback to hosts known to reject blob HEADs keeps genuine 401s
+	// (e.g. expired credentials) from spawning an extra doomed GET per HEAD everywhere else.
+	blobHeadFallbackRegistries = flag.Slice("ocifetcher.blob_head_fallback_registries", []string{ecrPublicRegistry}, "Registry hosts whose rejected blob HEAD requests are retried as single-byte ranged GETs.")
 
 	blobBufPool = bytebufferpool.VariableSize(blobChunkSize)
 )
@@ -801,8 +813,8 @@ func Mirrors() []interfaces.MirrorConfig {
 // https://github.com/opencontainers/distribution-spec/blob/main/spec.md#pulling-blobs.
 var blobsPathRegexp = regexp.MustCompile(`^/v2/.+/blobs/[a-z0-9+._-]+:[a-zA-Z0-9=_-]+$`)
 
-// NewBlobHeadFallbackTransport wraps client's transport to retry blob HEAD requests rejected
-// with 401 (public.ecr.aws rejects all blob HEADs) or 405 as single-byte ranged GETs.
+// NewBlobHeadFallbackTransport wraps client's transport to retry blob HEAD requests that
+// registries in blobHeadFallbackRegistries reject with 401 or 405 as single-byte ranged GETs.
 func NewBlobHeadFallbackTransport(client *http.Client) http.RoundTripper {
 	return &blobHeadFallbackTransport{client: client}
 }
@@ -815,7 +827,7 @@ type blobHeadFallbackTransport struct {
 
 func (t *blobHeadFallbackTransport) RoundTrip(in *http.Request) (*http.Response, error) {
 	resp, err := t.client.Transport.RoundTrip(in)
-	if err != nil || in.Method != http.MethodHead || !blobsPathRegexp.MatchString(in.URL.Path) {
+	if err != nil || in.Method != http.MethodHead || !blobHeadFallbackHost(in.URL.Hostname()) || !blobsPathRegexp.MatchString(in.URL.Path) {
 		return resp, err
 	}
 	// Only 401 and 405 can mean the HEAD method itself was rejected; other statuses (403,
@@ -832,12 +844,22 @@ func (t *blobHeadFallbackTransport) RoundTrip(in *http.Request) (*http.Response,
 	return fallbackResp, nil
 }
 
+// blobHeadFallbackHost reports whether hostname is on the blob HEAD fallback allowlist.
+func blobHeadFallbackHost(hostname string) bool {
+	for _, h := range *blobHeadFallbackRegistries {
+		if strings.EqualFold(hostname, h) {
+			return true
+		}
+	}
+	return false
+}
+
 // rangedGet reissues a rejected blob HEAD request as a single-byte ranged GET and synthesizes
 // an equivalent HEAD response, with the full blob size from Content-Range or Content-Length.
 func (t *blobHeadFallbackTransport) rangedGet(headReq *http.Request) (*http.Response, error) {
 	req := headReq.Clone(headReq.Context())
 	req.Method = http.MethodGet
-	req.Header.Set("Range", "bytes=0-0")
+	req.Header.Set("Range", blobHeadFallbackRange)
 	// client.Do follows redirects to blob CDNs, stripping Authorization on cross-host redirects.
 	resp, err := t.client.Do(req)
 	if err != nil {
@@ -846,7 +868,7 @@ func (t *blobHeadFallbackTransport) rangedGet(headReq *http.Request) (*http.Resp
 	size, err := blobSizeFromRangedGetResponse(resp)
 	// Drain a range-honoring response (a single byte) so its connection can be reused; a body
 	// left unread beyond this (a registry that ignored Range) is aborted by the close instead.
-	io.Copy(io.Discard, io.LimitReader(resp.Body, 1024))
+	io.Copy(io.Discard, io.LimitReader(resp.Body, blobHeadFallbackDrainLimit))
 	resp.Body.Close()
 	if err != nil {
 		return nil, err
@@ -875,20 +897,24 @@ func blobSizeFromRangedGetResponse(resp *http.Response) (int64, error) {
 		contentRange := resp.Header.Get("Content-Range")
 		slash := strings.LastIndexByte(contentRange, '/')
 		if slash < 0 {
-			return 0, fmt.Errorf("missing or malformed Content-Range header %q", contentRange)
+			return 0, status.UnavailableErrorf("missing or malformed Content-Range header %q", contentRange)
+		}
+		if contentRange[slash+1:] == "*" {
+			// RFC 9110 permits "bytes 0-0/*" for an unknown complete length.
+			return 0, status.UnavailableErrorf("Content-Range header %q reports an unknown blob size", contentRange)
 		}
 		size, err := strconv.ParseInt(contentRange[slash+1:], 10, 64)
 		if err != nil || size < 0 {
-			return 0, fmt.Errorf("malformed Content-Range header %q", contentRange)
+			return 0, status.UnavailableErrorf("malformed Content-Range header %q", contentRange)
 		}
 		return size, nil
 	case http.StatusOK:
 		if resp.ContentLength < 0 {
-			return 0, fmt.Errorf("response has unknown content length")
+			return 0, status.UnavailableError("response reports an unknown content length")
 		}
 		return resp.ContentLength, nil
 	}
-	return 0, fmt.Errorf("HTTP status %d", resp.StatusCode)
+	return 0, status.UnavailableErrorf("HTTP status %d", resp.StatusCode)
 }
 
 // NewMirrorTransport wraps an http.RoundTripper with registry mirror support.

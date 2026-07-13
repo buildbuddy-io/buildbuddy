@@ -870,6 +870,7 @@ func TestBlobHeadFallbackToRangedGet(t *testing.T) {
 		{name: "RangeIgnored/NoAuth", stripRange: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			flags.Set(t, "ocifetcher.blob_head_fallback_registries", []string{"localhost"})
 			// Only reject blob HEADs after the test image has been pushed.
 			var rejectBlobHeads atomic.Bool
 			reg, counter := setupRegistry(t, tc.registryCreds, func(w http.ResponseWriter, r *http.Request) bool {
@@ -957,7 +958,10 @@ func testHTTPClient(t *testing.T) *http.Client {
 
 // TestBlobHeadFallbackTransport exercises NewBlobHeadFallbackTransport directly against servers
 // that mimic public.ecr.aws: blob HEADs fail, and blob GETs redirect to a CDN on another host.
+// httptest servers listen on 127.0.0.1, so that host is allowlisted for the fallback.
 func TestBlobHeadFallbackTransport(t *testing.T) {
+	flags.Set(t, "ocifetcher.blob_head_fallback_registries", []string{"127.0.0.1"})
+
 	t.Run("FollowsRedirectsAndStripsAuthorization", func(t *testing.T) {
 		const blobSize = 1234
 		var cdnAuth, cdnRange string
@@ -1063,6 +1067,54 @@ func TestBlobHeadFallbackTransport(t *testing.T) {
 		require.Equal(t, http.StatusUnauthorized, resp.StatusCode, "original HEAD failure should be preserved")
 		require.Equal(t, 1, headCount)
 		require.Equal(t, 1, getCount, "fallback GET should have been attempted")
+	})
+
+	t.Run("ReturnsOriginalResponseOnUnknownLengthContentRange", func(t *testing.T) {
+		registry := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == http.MethodHead {
+				w.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+			// RFC 9110 permits reporting an unknown complete length.
+			w.Header().Set("Content-Range", "bytes 0-0/*")
+			w.Header().Set("Content-Length", "1")
+			w.WriteHeader(http.StatusPartialContent)
+			_, _ = w.Write([]byte{0})
+		}))
+		defer registry.Close()
+
+		tr := ocifetcher.NewBlobHeadFallbackTransport(testHTTPClient(t))
+		req, err := http.NewRequest(http.MethodHead, registry.URL+"/v2/test-image/blobs/sha256:abc", nil)
+		require.NoError(t, err)
+		resp, err := tr.RoundTrip(req)
+		require.NoError(t, err)
+		defer resp.Body.Close()
+
+		require.Equal(t, http.StatusUnauthorized, resp.StatusCode, "unknown blob size should preserve the original HEAD failure")
+	})
+
+	t.Run("NoFallbackForNonAllowlistedHosts", func(t *testing.T) {
+		var getCount int
+		registry := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == http.MethodGet {
+				getCount++
+			}
+			w.WriteHeader(http.StatusUnauthorized)
+		}))
+		defer registry.Close()
+
+		// Reach the server as "localhost", which is not on the fallback allowlist here.
+		registryURL, err := url.Parse(registry.URL)
+		require.NoError(t, err)
+		req, err := http.NewRequest(http.MethodHead, "http://localhost:"+registryURL.Port()+"/v2/test-image/blobs/sha256:abc", nil)
+		require.NoError(t, err)
+		tr := ocifetcher.NewBlobHeadFallbackTransport(testHTTPClient(t))
+		resp, err := tr.RoundTrip(req)
+		require.NoError(t, err)
+		resp.Body.Close()
+
+		require.Equal(t, http.StatusUnauthorized, resp.StatusCode)
+		require.Equal(t, 0, getCount, "non-allowlisted hosts should not fall back to GET")
 	})
 
 	t.Run("NoFallbackForOtherStatusesOrNonBlobPaths", func(t *testing.T) {
@@ -2254,9 +2306,10 @@ func TestFetchBlobSingleflightDifferentCredentials(t *testing.T) {
 		// Three /v2/ pings: one for each initial puller (creds1, creds2),
 		// plus one more when creds2 retries with a fresh puller after 401.
 		http.MethodGet + " /v2/": 3,
-		// Five blob GETs: one for creds1, two for creds2 (attempt + retry, both
-		// 401), plus one ranged GET fallback per failed creds2 blob HEAD.
-		http.MethodGet + " " + blobPath: 5,
+		// Three blob GETs: one for creds1 (succeeds), two for creds2
+		// (first attempt 401, retry 401). The blob HEAD fallback does not
+		// fire: this registry is not on the fallback allowlist.
+		http.MethodGet + " " + blobPath: 3,
 		// Three blob HEADs for layer.Size(): one for creds1 (succeeds),
 		// two for creds2 (Size is fetched before Compressed, so each
 		// attempt calls it before the blob GET fails).
