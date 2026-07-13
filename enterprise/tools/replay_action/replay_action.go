@@ -1438,6 +1438,7 @@ type Execution struct {
 
 type toolInvocationStream struct {
 	*build_event_publisher.Publisher
+	besConn               *grpc_client.ClientConnPool
 	stopProgressStreaming func()
 }
 
@@ -1449,6 +1450,7 @@ func startToolInvocation(ctx context.Context) (*toolInvocationStream, error) {
 	}
 	pub, err := build_event_publisher.New(pepb.NewPublishBuildEventClient(conn), *targetAPIKey, *toolInvocationID)
 	if err != nil {
+		conn.Close()
 		return nil, fmt.Errorf("create build event publisher: %w", err)
 	}
 	pub.Start(ctx)
@@ -1527,6 +1529,7 @@ func startToolInvocation(ctx context.Context) (*toolInvocationStream, error) {
 
 	return &toolInvocationStream{
 		Publisher:             pub,
+		besConn:               conn,
 		stopProgressStreaming: stopProgress,
 	}, nil
 }
@@ -1608,6 +1611,7 @@ func connectStderrToStream(pub *build_event_publisher.Publisher) (stop func(), e
 }
 
 func (pub *toolInvocationStream) FinishWithError(toolErr error) error {
+	defer pub.besConn.Close()
 	// Disconnect stderr from the progress stream, flushing any remaining
 	// progress
 	pub.stopProgressStreaming()

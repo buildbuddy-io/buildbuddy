@@ -19,8 +19,6 @@ import (
 	"testing"
 	"time"
 
-	crand "crypto/rand"
-
 	"github.com/bazelbuild/rules_go/go/runfiles"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/action_cache_server_proxy"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/atime_updater"
@@ -89,6 +87,8 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/encoding/prototext"
+
+	crand "crypto/rand"
 
 	retpb "github.com/buildbuddy-io/buildbuddy/enterprise/server/test/integration/remote_execution/proto"
 	authpb "github.com/buildbuddy-io/buildbuddy/proto/auth"
