@@ -47,8 +47,7 @@ func NewBazelArgs(args []string) (*BazelArgs, error) {
 	return b, nil
 }
 
-// NewBazelArgsNoResolve creates a BazelArgs from an already-resolved []string
-// without performing config/bazelrc expansion.
+// NewBazelArgsNoResolve creates a BazelArgs without performing config/bazelrc expansion.
 func NewBazelArgsNoResolve(args []string) (*BazelArgs, error) {
 	parsed, err := parser.ParseArgs(args)
 	if err != nil {

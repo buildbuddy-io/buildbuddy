@@ -731,12 +731,30 @@ func TestParseArgs_RunAddsRemoteArgsBeforeExecutableArgs(t *testing.T) {
 		"buildbuddy_remote_cache",
 	}, arg.GetMulti(forwardedBazelArgs, "config"))
 	require.Contains(t, forwardedBazelArgs, "--remote_upload_local_results")
+	require.Equal(t,
+		"$BUILDBUDDY_CI_RUNNER_ROOT_DIR/bazel-run-scripts/run.sh",
+		arg.Get(forwardedBazelArgs, "script_path"),
+	)
 	require.Equal(t, []string{
 		"generate-hashes",
 		"--includeTargetType",
 		"-w",
 		".",
 	}, forwardedExecArgs)
+	require.Contains(t,
+		quoteRemoteBazelArgs(bazelArgs),
+		`--script_path="$BUILDBUDDY_CI_RUNNER_ROOT_DIR"/bazel-run-scripts/run.sh`,
+	)
+}
+
+func TestQuoteRemoteBazelArgs_RunScriptEnvVarExpanded(t *testing.T) {
+	// This flag should not be quoted with shlex.Quote, which explicitly prevents env var expansion.
+	// The path should be quoted with double quotes, so the remote shell expands the BUILDBUDDY_CI_RUNNER_ROOT_DIR
+	// env var.
+	require.Equal(t,
+		`--script_path="$BUILDBUDDY_CI_RUNNER_ROOT_DIR"/bazel-run-scripts/run.sh`,
+		quoteRemoteBazelArgs([]string{runScriptPathFlag}),
+	)
 }
 
 func TestGetRemoteRunnerTarget(t *testing.T) {

@@ -65,7 +65,9 @@ const (
 
 	// Name of the dir where the remote runner should write bazel run scripts
 	// (used to facilitate building a target remotely and running it locally).
-	runScriptDirName = "bazel-run-scripts"
+	runScriptDirName  = "bazel-run-scripts"
+	runScriptPathFlag = "--script_path=$BUILDBUDDY_CI_RUNNER_ROOT_DIR/" +
+		runScriptDirName + "/run.sh"
 
 	// `git remote` output is expected to look like:
 	// `origin	git@github.com:buildbuddy-io/buildbuddy.git (fetch)`
@@ -1383,19 +1385,7 @@ func HandleRemoteBazel(commandLineArgs []string) (int, error) {
 		// If we are running the target locally, remove the exec arguments for now,
 		// and append them when we actually run it
 		if runOutputLocally {
-			// Use shlex.Quote so that the command will be correctly parsed by the shell
-			// command line.
-			quotedArgs := shlex.Quote(bazelArgs...)
-
-			// To support building the target on the remote runner and running it locally,
-			// have Bazel write out a run script using the --script_path flag so we can
-			// extract run options (i.e. args, runfile information) from the generated run script.
-			//
-			// We do not pass this to shlex.Quote, or the env var won't be expanded
-			// correctly.
-			extraFlags := fmt.Sprintf("--script_path=$BUILDBUDDY_CI_RUNNER_ROOT_DIR/%s/run.sh", runScriptDirName)
-
-			cmd = fmt.Sprintf("bazel %s %s", quotedArgs, extraFlags)
+			cmd = fmt.Sprintf("bazel %s", quoteRemoteBazelArgs(bazelArgs))
 			localExecArgs = execArgs
 		} else {
 			cmd = fmt.Sprintf("bazel %s", shlex.Quote(arg.JoinExecutableArgs(bazelArgs, execArgs)...))
@@ -1469,6 +1459,12 @@ func parseArgs(commandLineArgs []string) ([]string, []string, error) {
 	if (!*runRemotely && bazelCmd == "run") || bazelCmd == "build" {
 		extraArgs = append(extraArgs, "--remote_upload_local_results")
 	}
+	// To support building the target on the remote runner and running it locally,
+	// have Bazel write out a run script using the --script_path flag so we can
+	// extract run options (i.e. args, runfile information) from the generated run script.
+	if !*runRemotely && bazelCmd == "run" {
+		extraArgs = append(extraArgs, runScriptPathFlag)
+	}
 	for _, extraArg := range extraArgs {
 		if err := bazelArgsStruct.Prepend(extraArg); err != nil {
 			return nil, nil, fmt.Errorf("add remote bazel arg: %w", err)
@@ -1476,6 +1472,25 @@ func parseArgs(commandLineArgs []string) ([]string, []string, error) {
 	}
 
 	return bazelArgsStruct.Forwarded(), execArgs, nil
+}
+
+// quoteRemoteBazelArgs quotes Bazel args for the remote shell so that the command will be correctly parsed by the shell
+// command line.
+func quoteRemoteBazelArgs(args []string) string {
+	quoted := make([]string, 0, len(args))
+	for _, arg := range args {
+		// The run script path flag contains an env var that we *want* expanded on the remote runner.
+		// We do not want to use shlex.Quote, which explicitly prevents env var expansion.
+		if path, ok := strings.CutPrefix(arg, "--script_path="); ok {
+			runnerRoot := "$BUILDBUDDY_CI_RUNNER_ROOT_DIR"
+			if relativePath, ok := strings.CutPrefix(path, runnerRoot+"/"); ok {
+				quoted = append(quoted, `--script_path="`+runnerRoot+`"`+shlex.Quote("/"+relativePath))
+				continue
+			}
+		}
+		quoted = append(quoted, shlex.Quote(arg))
+	}
+	return strings.Join(quoted, " ")
 }
 
 // parseRemoteCliFlags parses flags that affect configuration of remote bazel.
