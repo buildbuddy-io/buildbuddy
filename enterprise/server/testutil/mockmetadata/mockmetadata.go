@@ -24,9 +24,10 @@ func NewServer(maxSizeBytes int64, fs filestore.Store) (*Server, error) {
 	}
 
 	l, err := lru.New[*sgpb.FileMetadata](&lru.Config[*sgpb.FileMetadata]{
-		MaxSize: maxSizeBytes,
-		OnEvict: s.evict,
-		SizeFn:  func(value *sgpb.FileMetadata) int64 { return int64(proto.Size(value)) },
+		MaxSize:    maxSizeBytes,
+		OnEvict:    s.evict,
+		SizeFn:     func(value *sgpb.FileMetadata) int64 { return int64(proto.Size(value)) },
+		ThreadSafe: true,
 	})
 	if err != nil {
 		return nil, err
