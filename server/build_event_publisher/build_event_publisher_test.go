@@ -2,22 +2,30 @@ package build_event_publisher_test
 
 import (
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_publisher"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testbes"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/testing/protocmp"
-
-	bepb "github.com/buildbuddy-io/buildbuddy/proto/build_events"
-	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/timestamppb"
+
+	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
+	bepb "github.com/buildbuddy-io/buildbuddy/proto/build_events"
+	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 )
 
 const eventWaitTimeout = time.Second
+
+// streamRequestWaitTimeout is the max time to wait for the test BES server to
+// receive a stream request. It accounts for the publisher's retry backoff.
+const streamRequestWaitTimeout = 15 * time.Second
 
 func TestEventBufferDeliveryScenarios(t *testing.T) {
 	tests := []struct {
@@ -185,6 +193,46 @@ func TestEventBuffer_MultipleSubscriptionsSerial(t *testing.T) {
 	requireClosed(t, events2)
 }
 
+func TestPublisher_RetriesAfterServerDisconnect(t *testing.T) {
+	// Set up a fake BES server that fails the stream with an error after
+	// receiving the first event, then acks events normally on any subsequent
+	// streams.
+	server, client := testbes.Run(t)
+	received := make(chan *pepb.PublishBuildToolEventStreamRequest, 16)
+	var failedOnce atomic.Bool
+	server.EventHandler = func(stream pepb.PublishBuildEvent_PublishBuildToolEventStreamServer, streamID *bepb.StreamId, event *pepb.PublishBuildToolEventStreamRequest) error {
+		received <- event
+		if failedOnce.CompareAndSwap(false, true) {
+			return status.UnavailableError("test-induced server error")
+		}
+		return testbes.Ack(stream, streamID, event)
+	}
+
+	publisher, err := build_event_publisher.New(client, "" /*=apiKey*/, "test-invocation-id")
+	require.NoError(t, err)
+	publisher.Start(t.Context())
+
+	// Publish an event. The server should receive it, then break the stream.
+	err = publisher.Publish(&bespb.BuildEvent{})
+	require.NoError(t, err)
+	event := recvStreamRequest(t, received)
+	assert.Equal(t, int64(1), event.GetOrderedBuildEvent().GetSequenceNumber())
+
+	// The publisher should notice the disconnect and retry the stream even
+	// though we aren't publishing any more events, re-sending the first event
+	// since it was never acked.
+	event = recvStreamRequest(t, received)
+	assert.Equal(t, int64(1), event.GetOrderedBuildEvent().GetSequenceNumber())
+
+	// Finish the stream. The publisher should publish the finished event on
+	// the retried stream, and Finish should succeed once the server acks all
+	// events.
+	err = publisher.Finish()
+	require.NoError(t, err)
+	event = recvStreamRequest(t, received)
+	assert.Equal(t, int64(2), event.GetOrderedBuildEvent().GetSequenceNumber())
+}
+
 func makeStreamID(invocationID, buildID string) *bepb.StreamId {
 	return &bepb.StreamId{
 		InvocationId: invocationID,
@@ -223,6 +271,17 @@ func recvEvent(tb testing.TB, ch <-chan *pepb.OrderedBuildEvent) (*pepb.OrderedB
 	case <-time.After(eventWaitTimeout):
 		tb.Fatalf("timed out waiting for event")
 		return nil, false
+	}
+}
+
+func recvStreamRequest(tb testing.TB, ch <-chan *pepb.PublishBuildToolEventStreamRequest) *pepb.PublishBuildToolEventStreamRequest {
+	tb.Helper()
+	select {
+	case req := <-ch:
+		return req
+	case <-time.After(streamRequestWaitTimeout):
+		tb.Fatalf("timed out waiting for the server to receive a stream request")
+		return nil
 	}
 }
 

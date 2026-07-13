@@ -100,9 +100,9 @@ func (p *Publisher) run(ctx context.Context) error {
 		return status.WrapError(err, "error dialing bes_backend")
 	}
 
-	doneReceiving := make(chan error, 1)
+	recvErr := make(chan error, 1)
 	go func() {
-		defer close(doneReceiving)
+		defer close(recvErr)
 		for {
 			_, err := stream.Recv()
 			if err == nil {
@@ -111,7 +111,7 @@ func (p *Publisher) run(ctx context.Context) error {
 			if err == io.EOF {
 				return
 			}
-			doneReceiving <- status.UnavailableErrorf("recv failed: %s", err)
+			recvErr <- status.UnavailableErrorf("recv failed: %s", err)
 			return
 		}
 	}()
@@ -119,10 +119,30 @@ func (p *Publisher) run(ctx context.Context) error {
 	events, cancel := p.events.Subscribe()
 	defer cancel()
 
-	for obe := range events {
-		req := &pepb.PublishBuildToolEventStreamRequest{OrderedBuildEvent: obe}
-		if err := stream.Send(req); err != nil {
-			return status.UnavailableErrorf("send failed: %s", err)
+loop:
+	for {
+		// Wait until either the server closes the stream or we have another
+		// event to publish.
+		select {
+		case err, ok := <-recvErr:
+			_ = stream.CloseSend()
+			if !ok {
+				// Recv returned io.EOF which normally means the stream closed
+				// cleanly, but in this case it's unexpected because the server
+				// should not close the stream until we're done publishing our
+				// events.
+				return status.UnavailableErrorf("server stream unexpectedly closed while publishing events")
+			}
+			return status.WrapError(err, "recv")
+		case obe, ok := <-events:
+			if !ok {
+				// No more events to publish
+				break loop
+			}
+			req := &pepb.PublishBuildToolEventStreamRequest{OrderedBuildEvent: obe}
+			if err := stream.Send(req); err != nil {
+				return status.UnavailableErrorf("send failed: %s", err)
+			}
 		}
 	}
 	// After successfully transmitting all events, close our side of the stream
@@ -130,8 +150,7 @@ func (p *Publisher) run(ctx context.Context) error {
 	if err := stream.CloseSend(); err != nil {
 		return status.UnavailableErrorf("close send failed: %s", err)
 	}
-	// Return any error from receiving ACKs
-	return <-doneReceiving
+	return <-recvErr
 }
 
 func (p *Publisher) Publish(bazelEvent *bespb.BuildEvent) error {
