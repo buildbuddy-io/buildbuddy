@@ -67,6 +67,10 @@ var (
 	blobHeadFallbackRegistries = flag.Slice("ocifetcher.blob_head_fallback_registries", []string{ecrPublicRegistry}, "Registry hosts whose rejected blob HEAD requests are retried as single-byte ranged GETs.")
 
 	blobBufPool = bytebufferpool.VariableSize(blobChunkSize)
+
+	// blobsPathRegexp matches blob pull paths, "/v2/<name>/blobs/<digest>" per
+	// https://github.com/opencontainers/distribution-spec/blob/main/spec.md#pulling-blobs.
+	blobsPathRegexp = regexp.MustCompile(`^/v2/.+/blobs/[a-z0-9+._-]+:[a-zA-Z0-9=_-]+$`)
 )
 
 type ociFetcherServer struct {
@@ -808,10 +812,6 @@ func ParseAllowedPrivateIPs() ([]*net.IPNet, error) {
 func Mirrors() []interfaces.MirrorConfig {
 	return *mirrors
 }
-
-// blobsPathRegexp matches blob pull paths, "/v2/<name>/blobs/<digest>" per
-// https://github.com/opencontainers/distribution-spec/blob/main/spec.md#pulling-blobs.
-var blobsPathRegexp = regexp.MustCompile(`^/v2/.+/blobs/[a-z0-9+._-]+:[a-zA-Z0-9=_-]+$`)
 
 // NewBlobHeadFallbackTransport wraps client's transport to retry blob HEAD requests that
 // registries in blobHeadFallbackRegistries reject with 401 or 405 as single-byte ranged GETs.
