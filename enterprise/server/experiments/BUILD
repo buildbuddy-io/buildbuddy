@@ -11,6 +11,7 @@ go_library(
         "//proto:group_go_proto",
         "//server/interfaces",
         "//server/real_environment",
+        "//server/resources",
         "//server/util/bazel_request",
         "//server/util/claims",
         "//server/util/flag",
