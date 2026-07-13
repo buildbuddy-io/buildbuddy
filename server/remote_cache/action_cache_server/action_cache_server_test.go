@@ -3,6 +3,7 @@ package action_cache_server_test
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -688,6 +689,49 @@ func TestValidateActionResult_ChunkedOutputFile(t *testing.T) {
 
 	chunkingDisabled := false
 	err = action_cache_server.ValidateActionResult(ctx, cache, "", repb.DigestFunction_SHA256, chunkingDisabled, te.GetExperimentFlagProvider(), ar)
+	require.Error(t, err)
+	assert.True(t, status.IsNotFoundError(err))
+}
+
+func TestValidateActionResult_ManyChunkedOutputFiles(t *testing.T) {
+	flags.Set(t, "cache.min_chunked_read_fallback_size_bytes", 1024)
+
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+	require.NoError(t, err)
+	cache := te.GetCache()
+
+	ar := &repb.ActionResult{}
+	var lastChunkRN *rspb.ResourceName
+	for i := 0; i < 20; i++ {
+		chunk1RN, chunk1Data := testdigest.RandomCASResourceBuf(t, 4*1024)
+		chunk2RN, chunk2Data := testdigest.RandomCASResourceBuf(t, 4*1024)
+		require.NoError(t, cache.Set(ctx, chunk1RN, chunk1Data))
+		require.NoError(t, cache.Set(ctx, chunk2RN, chunk2Data))
+
+		blobDigest, err := digest.Compute(bytes.NewReader(append(chunk1Data, chunk2Data...)), repb.DigestFunction_SHA256)
+		require.NoError(t, err)
+		cm := &chunking.Manifest{
+			BlobDigest:     blobDigest,
+			ChunkDigests:   []*repb.Digest{chunk1RN.GetDigest(), chunk2RN.GetDigest()},
+			InstanceName:   "",
+			DigestFunction: repb.DigestFunction_SHA256,
+		}
+		require.NoError(t, cm.Store(ctx, cache))
+
+		ar.OutputFiles = append(ar.OutputFiles, &repb.OutputFile{
+			Path:   fmt.Sprintf("output_%d.bin", i),
+			Digest: blobDigest,
+		})
+		lastChunkRN = chunk2RN
+	}
+
+	require.NoError(t, action_cache_server.ValidateActionResult(ctx, cache, "", repb.DigestFunction_SHA256, true, te.GetExperimentFlagProvider(), ar))
+
+	// Deleting a single chunk should make validation fail with NotFound.
+	require.NoError(t, cache.Delete(ctx, lastChunkRN))
+	err = action_cache_server.ValidateActionResult(ctx, cache, "", repb.DigestFunction_SHA256, true, te.GetExperimentFlagProvider(), ar)
 	require.Error(t, err)
 	assert.True(t, status.IsNotFoundError(err))
 }
