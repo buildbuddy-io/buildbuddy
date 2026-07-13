@@ -908,10 +908,11 @@ func TestFetchBlobStreamsDirectlyWhenBlobMetadataLookupFails(t *testing.T) {
 
 // TestFetchBlobWriteToCacheHead401Fallback verifies that on the cache-miss
 // write-through path, a registry which rejects authenticated blob HEADs with
-// 401 (like public.ecr.aws) still yields the blob size and media type via a
-// ranged GET, so the blob is written through to the cache. A subsequent fetch
-// is then served entirely from cache without touching the registry.
+// 401 (like public.ecr.aws) still yields the blob size via a ranged GET, so the
+// blob is written through to the cache. A subsequent fetch is then served
+// entirely from cache without touching the registry.
 func TestFetchBlobWriteToCacheHead401Fallback(t *testing.T) {
+	const fallbackContentType = "application/octet-stream"
 	var sawRangedGet atomic.Bool
 	var rejectBlobHeads atomic.Bool
 	reg, counter := setupRegistry(t, nil, func(w http.ResponseWriter, r *http.Request) bool {
@@ -924,6 +925,7 @@ func TestFetchBlobWriteToCacheHead401Fallback(t *testing.T) {
 		}
 		if r.Method == http.MethodGet && r.Header.Get("Range") == "bytes=0-0" {
 			sawRangedGet.Store(true)
+			w.Header().Set("Content-Type", fallbackContentType)
 		}
 		return true
 	})
@@ -935,19 +937,25 @@ func TestFetchBlobWriteToCacheHead401Fallback(t *testing.T) {
 	digest, err := layer.Digest()
 	require.NoError(t, err)
 	expectedData := layerData(t, layer)
+	expectedMediaType, err := layer.MediaType()
+	require.NoError(t, err)
 
 	server := newTestServer(t)
 	blobRef := imageName + "@" + digest.String()
 	rejectBlobHeads.Store(true)
 
-	// First fetch: cache miss. The blob HEAD 401s, so size and media type come
-	// from the ranged-GET fallback, letting the blob be written to the cache.
+	// First fetch: cache miss. The blob HEAD 401s, so size comes from the
+	// ranged-GET fallback, letting the blob be written to the cache.
 	stream := &mockFetchBlobServer{ctx: context.Background()}
 	counter.Reset()
 	err = server.FetchBlob(&ofpb.FetchBlobRequest{Ref: blobRef}, stream)
 	require.NoError(t, err)
 	require.Equal(t, expectedData, stream.collectData())
 	require.True(t, sawRangedGet.Load(), "expected a ranged GET fallback for blob metadata")
+	metadata, err := server.FetchBlobMetadata(context.Background(), &ofpb.FetchBlobMetadataRequest{Ref: blobRef})
+	require.NoError(t, err)
+	require.Equal(t, string(expectedMediaType), metadata.GetMediaType())
+	require.NotEqual(t, fallbackContentType, metadata.GetMediaType())
 
 	// Second fetch: the blob, its metadata, and the access proof are now cached,
 	// so the request is served without any registry traffic. Without caching on
@@ -958,6 +966,40 @@ func TestFetchBlobWriteToCacheHead401Fallback(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, expectedData, stream.collectData())
 	assertRequests(t, counter, map[string]int{})
+}
+
+func TestFetchBlobMetadataRangeGetWithUnknownContentLength(t *testing.T) {
+	var rejectBlobHeads atomic.Bool
+	reg, _ := setupRegistry(t, nil, func(w http.ResponseWriter, r *http.Request) bool {
+		if !strings.Contains(r.URL.Path, "/blobs/") || !rejectBlobHeads.Load() {
+			return true
+		}
+		if r.Method == http.MethodHead {
+			w.WriteHeader(http.StatusUnauthorized)
+			return false
+		}
+		if r.Method == http.MethodGet && r.Header.Get("Range") == "bytes=0-0" {
+			w.WriteHeader(http.StatusOK)
+			// A response larger than net/http's automatic Content-Length buffer is
+			// sent with chunked encoding, leaving Response.ContentLength at -1.
+			_, _ = w.Write(make([]byte, 4096))
+			return false
+		}
+		return true
+	})
+	imageName, img := reg.PushNamedImage(t, "test-image", nil)
+	layers, err := img.Layers()
+	require.NoError(t, err)
+	require.NotEmpty(t, layers)
+	digest, err := layers[0].Digest()
+	require.NoError(t, err)
+
+	server := newTestServer(t)
+	rejectBlobHeads.Store(true)
+	_, err = server.FetchBlobMetadata(context.Background(), &ofpb.FetchBlobMetadataRequest{
+		Ref: imageName + "@" + digest.String(),
+	})
+	require.ErrorContains(t, err, "unknown content length")
 }
 
 func TestServerNoRetryOnContextErrors(t *testing.T) {

@@ -473,10 +473,9 @@ func (s *ociFetcherServer) fetchBlobMetadataFromRemote(ctx context.Context, dige
 // come from the HEAD request that layer.Size() performs plus layer.MediaType().
 // Some registries (notably public.ecr.aws) reject authenticated blob HEAD
 // requests with 401 even for valid credentials; when layer.Size() hits that, we
-// fall back to a ranged GET and read both the size and the content type from its
-// response. layer.MediaType() is therefore only consulted after a HEAD has
-// succeeded, so this does not depend on how layer.MediaType() is implemented on
-// a registry that rejects HEADs. Non-401 errors are returned as-is.
+// fall back to a ranged GET for the size. Blob GET responses do not reliably
+// identify the OCI media type, so that still comes from layer.MediaType().
+// Non-401 errors are returned as-is.
 func (s *ociFetcherServer) blobMetadataFromRemote(ctx context.Context, layer ctr.Layer, digestRef ctrname.Digest, creds *rgpb.Credentials) (int64, string, error) {
 	size, err := layer.Size()
 	if err != nil {
@@ -484,7 +483,10 @@ func (s *ociFetcherServer) blobMetadataFromRemote(ctx context.Context, layer ctr
 		if !errors.As(err, &transportErr) || transportErr.StatusCode != http.StatusUnauthorized {
 			return 0, "", err
 		}
-		return s.fetchBlobMetadataWithRangeGet(ctx, digestRef, creds)
+		size, err = s.fetchBlobSizeWithRangeGet(ctx, digestRef, creds)
+		if err != nil {
+			return 0, "", err
+		}
 	}
 	mediaType, err := layer.MediaType()
 	if err != nil {
@@ -493,12 +495,12 @@ func (s *ociFetcherServer) blobMetadataFromRemote(ctx context.Context, layer ctr
 	return size, string(mediaType), nil
 }
 
-// fetchBlobMetadataWithRangeGet works around registries (notably public.ecr.aws)
+// fetchBlobSizeWithRangeGet works around registries (notably public.ecr.aws)
 // which reject authenticated blob HEAD requests with 401. It is only called
 // after go-containerregistry's normal authentication flow and HEAD retry have
-// completed and still returned 401. It reads the size and content type from a
-// ranged GET, which those registries do serve.
-func (s *ociFetcherServer) fetchBlobMetadataWithRangeGet(ctx context.Context, digestRef ctrname.Digest, creds *rgpb.Credentials) (int64, string, error) {
+// completed and still returned 401. It reads the size from a ranged GET, which
+// those registries do serve.
+func (s *ociFetcherServer) fetchBlobSizeWithRangeGet(ctx context.Context, digestRef ctrname.Digest, creds *rgpb.Credentials) (int64, error) {
 	client := httpclient.New(s.allowedPrivateIPs, "oci_fetcher")
 	tr := client.Transport
 	if len(s.mirrors) > 0 {
@@ -515,7 +517,7 @@ func (s *ociFetcherServer) fetchBlobMetadataWithRangeGet(ctx context.Context, di
 	repo := digestRef.Context()
 	authenticatedTransport, err := transport.NewWithContext(ctx, repo.Registry, auth, tr, []string{repo.Scope(transport.PullScope)})
 	if err != nil {
-		return 0, "", err
+		return 0, err
 	}
 	client.Transport = authenticatedTransport
 
@@ -526,29 +528,31 @@ func (s *ociFetcherServer) fetchBlobMetadataWithRangeGet(ctx context.Context, di
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {
-		return 0, "", err
+		return 0, err
 	}
 	req.Header.Set("Range", "bytes=0-0")
 	resp, err := client.Do(req)
 	if err != nil {
-		return 0, "", err
+		return 0, err
 	}
 	defer resp.Body.Close()
 	if err := transport.CheckError(resp, http.StatusOK, http.StatusPartialContent); err != nil {
-		return 0, "", err
+		return 0, err
 	}
-	mediaType := resp.Header.Get("Content-Type")
 	if resp.StatusCode == http.StatusOK {
-		return resp.ContentLength, mediaType, nil
+		if resp.ContentLength < 0 {
+			return 0, fmt.Errorf("blob GET response has unknown content length")
+		}
+		return resp.ContentLength, nil
 	}
 	// For a 206 response, Content-Length is the length of the partial body
 	// (1 byte here). The total blob size is the value after the slash in
 	// Content-Range, for example "bytes 0-0/3418409".
 	size, err := blobSizeFromContentRange(resp.Header.Get("Content-Range"))
 	if err != nil {
-		return 0, "", err
+		return 0, err
 	}
-	return size, mediaType, nil
+	return size, nil
 }
 
 func parseManifestRef(ref string) (ctrname.Reference, error) {
