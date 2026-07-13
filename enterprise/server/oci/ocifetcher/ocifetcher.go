@@ -10,6 +10,8 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -464,7 +466,14 @@ func (s *ociFetcherServer) fetchBlobMetadataFromRemote(ctx context.Context, dige
 		}
 		size, err := layer.Size()
 		if err != nil {
-			return nil, err
+			var transportErr *transport.Error
+			if !errors.As(err, &transportErr) || transportErr.StatusCode != http.StatusUnauthorized {
+				return nil, err
+			}
+			size, err = s.fetchBlobSizeWithRangeGet(ctx, digestRef, creds)
+			if err != nil {
+				return nil, err
+			}
 		}
 		mediaType, err := layer.MediaType()
 		if err != nil {
@@ -475,6 +484,58 @@ func (s *ociFetcherServer) fetchBlobMetadataFromRemote(ctx context.Context, dige
 			MediaType: string(mediaType),
 		}, nil
 	})
+}
+
+// fetchBlobSizeWithRangeGet works around registries (notably public.ecr.aws)
+// which reject authenticated blob HEAD requests with 401. It is only called
+// after go-containerregistry's normal authentication flow and HEAD retry have
+// completed and still returned 401.
+func (s *ociFetcherServer) fetchBlobSizeWithRangeGet(ctx context.Context, digestRef ctrname.Digest, creds *rgpb.Credentials) (int64, error) {
+	client := httpclient.New(s.allowedPrivateIPs, "oci_fetcher")
+	tr := client.Transport
+	if len(s.mirrors) > 0 {
+		tr = NewMirrorTransport(tr, s.mirrors)
+	}
+
+	auth := authn.Anonymous
+	if creds != nil && creds.GetUsername() != "" && creds.GetPassword() != "" {
+		auth = &authn.Basic{
+			Username: creds.GetUsername(),
+			Password: creds.GetPassword(),
+		}
+	}
+	repo := digestRef.Context()
+	authenticatedTransport, err := transport.NewWithContext(ctx, repo.Registry, auth, tr, []string{repo.Scope(transport.PullScope)})
+	if err != nil {
+		return 0, err
+	}
+	client.Transport = authenticatedTransport
+
+	u := url.URL{
+		Scheme: repo.Scheme(),
+		Host:   repo.RegistryStr(),
+		Path:   fmt.Sprintf("/v2/%s/blobs/%s", repo.RepositoryStr(), digestRef.DigestStr()),
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	if err != nil {
+		return 0, err
+	}
+	req.Header.Set("Range", "bytes=0-0")
+	resp, err := client.Do(req)
+	if err != nil {
+		return 0, err
+	}
+	defer resp.Body.Close()
+	if err := transport.CheckError(resp, http.StatusOK, http.StatusPartialContent); err != nil {
+		return 0, err
+	}
+	if resp.StatusCode == http.StatusOK {
+		return resp.ContentLength, nil
+	}
+	// For a 206 response, Content-Length is the length of the partial body
+	// (1 byte here). The total blob size is the value after the slash in
+	// Content-Range, for example "bytes 0-0/3418409".
+	return blobSizeFromContentRange(resp.Header.Get("Content-Range"))
 }
 
 func parseManifestRef(ref string) (ctrname.Reference, error) {
@@ -625,6 +686,18 @@ func (s *ociFetcherServer) getRemoteOpts(ctx context.Context, creds *rgpb.Creden
 	}
 
 	return opts
+}
+
+func blobSizeFromContentRange(contentRange string) (int64, error) {
+	_, total, ok := strings.Cut(contentRange, "/")
+	if !ok || total == "" || total == "*" {
+		return 0, fmt.Errorf("invalid Content-Range header %q", contentRange)
+	}
+	size, err := strconv.ParseInt(total, 10, 64)
+	if err != nil || size < 0 {
+		return 0, fmt.Errorf("invalid Content-Range header %q", contentRange)
+	}
+	return size, nil
 }
 
 func (s *ociFetcherServer) getOrCreatePuller(ctx context.Context, imageRef ctrname.Reference, creds *rgpb.Credentials) (*remote.Puller, error) {

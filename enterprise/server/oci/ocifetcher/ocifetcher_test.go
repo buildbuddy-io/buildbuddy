@@ -479,6 +479,65 @@ func TestServerHappyPath(t *testing.T) {
 	}
 }
 
+func TestFetchBlobFromCacheHead401Fallback(t *testing.T) {
+	var sawFallback atomic.Bool
+	var sawAuthenticatedHead atomic.Bool
+	var rejectBlobHeads atomic.Bool
+	registryCreds := &testregistry.BasicAuthCreds{Username: "user", Password: "pass"}
+	requestCreds := &rgpb.Credentials{Username: registryCreds.Username, Password: registryCreds.Password}
+	reg, counter := setupRegistry(t, registryCreds, func(w http.ResponseWriter, r *http.Request) bool {
+		if !strings.Contains(r.URL.Path, "/blobs/") {
+			return true
+		}
+		if r.Method == http.MethodHead && rejectBlobHeads.Load() {
+			username, password, ok := r.BasicAuth()
+			sawAuthenticatedHead.Store(ok && username == registryCreds.Username && password == registryCreds.Password)
+			w.WriteHeader(http.StatusUnauthorized)
+			return false
+		}
+		if r.Method == http.MethodGet && r.Header.Get("Range") == "bytes=0-0" {
+			sawFallback.Store(true)
+		}
+		return true
+	})
+	imageName, img := reg.PushNamedImage(t, "test-image", registryCreds)
+	layers, err := img.Layers()
+	require.NoError(t, err)
+	require.NotEmpty(t, layers)
+	layer := layers[0]
+	digest, err := layer.Digest()
+	require.NoError(t, err)
+	expectedData := layerData(t, layer)
+	expectedSize := int64(len(expectedData))
+	expectedMediaType, err := layer.MediaType()
+	require.NoError(t, err)
+
+	_, bsClient, acClient := setupCacheEnv(t)
+	ref := imageName + "@" + digest.String()
+	seedBlobCache(t, bsClient, acClient, ref, expectedData, string(expectedMediaType))
+	server := newTestServerWithCache(t, bsClient, acClient)
+	rejectBlobHeads.Store(true)
+	counter.Reset()
+	stream := &mockFetchBlobServer{ctx: context.Background()}
+	err = server.FetchBlob(&ofpb.FetchBlobRequest{
+		Ref:         imageName + "@" + digest.String(),
+		Credentials: requestCreds,
+	}, stream)
+
+	require.NoError(t, err)
+	require.Equal(t, expectedSize, int64(len(stream.collectData())))
+	require.Equal(t, expectedData, stream.collectData())
+	require.True(t, sawAuthenticatedHead.Load(), "expected HEAD to be authenticated before returning 401")
+	require.True(t, sawFallback.Load(), "expected a ranged GET fallback")
+	blobPath := "/v2/test-image/blobs/" + digest.String()
+	assertRequests(t, counter, map[string]int{
+		// One auth handshake for the HEAD and another for the fallback client.
+		http.MethodGet + " /v2/":         2,
+		http.MethodHead + " " + blobPath: 1,
+		http.MethodGet + " " + blobPath:  1,
+	})
+}
+
 func TestServerMissingAndInvalidCredentials(t *testing.T) {
 	credsCases := []struct {
 		name         string
