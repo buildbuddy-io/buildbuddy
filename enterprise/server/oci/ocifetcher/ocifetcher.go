@@ -374,9 +374,8 @@ func recordFetchBlobMetrics(role string, err error, duration time.Duration) {
 // simultaneously using read-through caching.
 // It returns the content length of the blob (0 if metadata was unavailable).
 func (s *ociFetcherServer) fetchBlobFromRemoteWriteToCacheAndResponse(ctx context.Context, digestRef ctrname.Digest, repo ctrname.Repository, hash ctr.Hash, creds *rgpb.Credentials, stream ofpb.OCIFetcher_FetchBlobServer) (int64, error) {
-	// All HTTP-triggering calls (Compressed, and the Size/MediaType HEAD
-	// inside blobMetadataFromRemote) must be inside the retry scope so that
-	// token refresh covers them, not just the lazy Layer() reference creation.
+	// All methods that can make HTTP requests must be called inside the retry scope so that
+	// token refresh covers them.
 	//
 	// Metadata is fetched before Compressed so that there is no open
 	// ReadCloser to leak if it fails and triggers a retry. It is best-effort:
@@ -389,7 +388,6 @@ func (s *ociFetcherServer) fetchBlobFromRemoteWriteToCacheAndResponse(ctx contex
 		if err != nil {
 			return nil, err
 		}
-		// Best-effort metadata for read-through caching.
 		if sz, mt, err := s.blobMetadataFromRemote(ctx, layer, digestRef, creds); err != nil {
 			log.CtxWarningf(ctx, "Could not get metadata for layer: %s", err)
 		} else {
@@ -469,17 +467,12 @@ func (s *ociFetcherServer) fetchBlobMetadataFromRemote(ctx context.Context, dige
 	})
 }
 
-// blobMetadataFromRemote returns the blob's size and media type. Normally both
-// come from the HEAD request that layer.Size() performs plus layer.MediaType().
-// Some registries (notably public.ecr.aws) reject authenticated blob HEAD
-// requests with 401 even for valid credentials; when layer.Size() hits that, we
-// fall back to a ranged GET for the size. Blob GET responses do not reliably
-// identify the OCI media type, so that still comes from layer.MediaType().
-// Non-401 errors are returned as-is.
+// blobMetadataFromRemote returns the blob's size and media type.
 func (s *ociFetcherServer) blobMetadataFromRemote(ctx context.Context, layer ctr.Layer, digestRef ctrname.Digest, creds *rgpb.Credentials) (int64, string, error) {
 	size, err := layer.Size()
 	if err != nil {
 		var transportErr *transport.Error
+		// Handle registries (public.ecr.aws) that always respond HTTP 401 to blob HEAD requests.
 		if !errors.As(err, &transportErr) || transportErr.StatusCode != http.StatusUnauthorized {
 			return 0, "", err
 		}
@@ -495,11 +488,6 @@ func (s *ociFetcherServer) blobMetadataFromRemote(ctx context.Context, layer ctr
 	return size, string(mediaType), nil
 }
 
-// fetchBlobSizeWithRangeGet works around registries (notably public.ecr.aws)
-// which reject authenticated blob HEAD requests with 401. It is only called
-// after go-containerregistry's normal authentication flow and HEAD retry have
-// completed and still returned 401. It reads the size from a ranged GET, which
-// those registries do serve.
 func (s *ociFetcherServer) fetchBlobSizeWithRangeGet(ctx context.Context, digestRef ctrname.Digest, creds *rgpb.Credentials) (int64, error) {
 	client := httpclient.New(s.allowedPrivateIPs, "oci_fetcher")
 	tr := client.Transport
@@ -545,9 +533,8 @@ func (s *ociFetcherServer) fetchBlobSizeWithRangeGet(ctx context.Context, digest
 		}
 		return resp.ContentLength, nil
 	}
-	// For a 206 response, Content-Length is the length of the partial body
-	// (1 byte here). The total blob size is the value after the slash in
-	// Content-Range, for example "bytes 0-0/3418409".
+	// For a 206 response, Content-Length is the length of the partial body,
+	// so use the Content-Range header.
 	size, err := blobSizeFromContentRange(resp.Header.Get("Content-Range"))
 	if err != nil {
 		return 0, err
