@@ -802,7 +802,7 @@ func Mirrors() []interfaces.MirrorConfig {
 var blobsPathRegexp = regexp.MustCompile(`^/v2/.+/blobs/[a-z0-9+._-]+:[a-zA-Z0-9=_-]+$`)
 
 // NewBlobHeadFallbackTransport wraps client's transport to retry blob HEAD requests rejected
-// with 401 (public.ecr.aws rejects all blob HEADs), 403, or 405 as single-byte ranged GETs.
+// with 401 (public.ecr.aws rejects all blob HEADs) or 405 as single-byte ranged GETs.
 func NewBlobHeadFallbackTransport(client *http.Client) http.RoundTripper {
 	return &blobHeadFallbackTransport{client: client}
 }
@@ -818,11 +818,9 @@ func (t *blobHeadFallbackTransport) RoundTrip(in *http.Request) (*http.Response,
 	if err != nil || in.Method != http.MethodHead || !blobsPathRegexp.MatchString(in.URL.Path) {
 		return resp, err
 	}
-	// Only these statuses can mean the HEAD method itself was rejected; others apply equally
-	// to GET, so extra requests would be pointless (404, 5xx) or counterproductive (429).
-	if resp.StatusCode != http.StatusUnauthorized &&
-		resp.StatusCode != http.StatusForbidden &&
-		resp.StatusCode != http.StatusMethodNotAllowed {
+	// Only 401 and 405 can mean the HEAD method itself was rejected; other statuses (403,
+	// 404, 429, 5xx) are genuine answers that would apply equally to a GET.
+	if resp.StatusCode != http.StatusUnauthorized && resp.StatusCode != http.StatusMethodNotAllowed {
 		return resp, nil
 	}
 	fallbackResp, fallbackErr := t.rangedGet(in)

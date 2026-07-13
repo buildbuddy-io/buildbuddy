@@ -1011,7 +1011,6 @@ func TestBlobHeadFallbackTransport(t *testing.T) {
 	t.Run("FallsBackForAllHeadRejectionStatuses", func(t *testing.T) {
 		for _, rejectionStatus := range []int{
 			http.StatusUnauthorized,
-			http.StatusForbidden,
 			http.StatusMethodNotAllowed,
 		} {
 			t.Run(fmt.Sprint(rejectionStatus), func(t *testing.T) {
@@ -1077,6 +1076,8 @@ func TestBlobHeadFallbackTransport(t *testing.T) {
 				w.WriteHeader(http.StatusUnauthorized)
 			case strings.HasSuffix(r.URL.Path, "ratelimited"):
 				w.WriteHeader(http.StatusTooManyRequests)
+			case strings.HasSuffix(r.URL.Path, "forbidden"):
+				w.WriteHeader(http.StatusForbidden)
 			default:
 				w.Header().Set("Content-Length", "42")
 				w.WriteHeader(http.StatusOK)
@@ -1095,14 +1096,21 @@ func TestBlobHeadFallbackTransport(t *testing.T) {
 		require.Equal(t, http.StatusOK, resp.StatusCode)
 		require.Equal(t, int64(42), resp.ContentLength)
 
-		// Blob HEAD failing with a status other than 401 (e.g. 429): no
-		// fallback, so no additional load on an already-throttling registry.
+		// Blob HEAD 429: no fallback, so no additional load on an already-throttling registry.
 		req, err = http.NewRequest(http.MethodHead, registry.URL+"/v2/test-image/blobs/sha256:ratelimited", nil)
 		require.NoError(t, err)
 		resp, err = tr.RoundTrip(req)
 		require.NoError(t, err)
 		resp.Body.Close()
-		require.Equal(t, http.StatusTooManyRequests, resp.StatusCode, "non-401 blob HEAD failures should not fall back to GET")
+		require.Equal(t, http.StatusTooManyRequests, resp.StatusCode, "429 blob HEAD failures should not fall back to GET")
+
+		// Blob HEAD 403: treated as a genuine authorization denial, no fallback.
+		req, err = http.NewRequest(http.MethodHead, registry.URL+"/v2/test-image/blobs/sha256:forbidden", nil)
+		require.NoError(t, err)
+		resp, err = tr.RoundTrip(req)
+		require.NoError(t, err)
+		resp.Body.Close()
+		require.Equal(t, http.StatusForbidden, resp.StatusCode, "403 blob HEAD failures should not fall back to GET")
 
 		// Manifest HEAD failing with 401: only blob endpoints fall back.
 		req, err = http.NewRequest(http.MethodHead, registry.URL+"/v2/test-image/manifests/latest", nil)
