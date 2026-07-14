@@ -68,6 +68,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	executil "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/execution"
+	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
@@ -441,6 +442,21 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 			rmd := bazel_request.GetRequestMetadata(ctx)
 			executionProto.TargetLabel = rmd.GetTargetId()
 			executionProto.ActionMnemonic = rmd.GetActionMnemonic()
+			if value, ok := rexec.LookupEnv(cmd.GetEnvironmentVariables(), "TEST_SIZE"); ok {
+				if testSize, ok := bespb.TestSize_value[strings.ToUpper(value)]; ok && testSize != int32(bespb.TestSize_UNKNOWN) {
+					executionProto.TestSize = strings.ToLower(bespb.TestSize(testSize).String())
+				}
+			}
+			if value, ok := rexec.LookupEnv(cmd.GetEnvironmentVariables(), "TEST_SHARD_INDEX"); ok {
+				if shardIndex, err := strconv.ParseUint(value, 10, 32); err == nil {
+					executionProto.TestShardIndex = uint32(shardIndex)
+				}
+			}
+			if value, ok := rexec.LookupEnv(cmd.GetEnvironmentVariables(), "TEST_TOTAL_SHARDS"); ok {
+				if totalShards, err := strconv.ParseUint(value, 10, 32); err == nil {
+					executionProto.TestTotalShards = uint32(totalShards)
+				}
+			}
 			executionProto.DiskBytesRead = md.GetUsageStats().GetCgroupIoStats().GetRbytes()
 			executionProto.DiskBytesWritten = md.GetUsageStats().GetCgroupIoStats().GetWbytes()
 			executionProto.DiskWriteOperations = md.GetUsageStats().GetCgroupIoStats().GetWios()

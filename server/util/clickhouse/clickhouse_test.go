@@ -91,6 +91,20 @@ func TestExecutionFromProto(t *testing.T) {
 				RecycleRunner: true,
 			},
 		},
+		{
+			name: "TestMetadata",
+			in: &repb.StoredExecution{
+				ExecutionId:     executionID,
+				TestSize:        "large",
+				TestShardIndex:  2,
+				TestTotalShards: 6,
+			},
+			want: &schema.Execution{
+				TestSize:        "large",
+				TestShardIndex:  2,
+				TestTotalShards: 6,
+			},
+		},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			// Convert the stored execution as the ClickHouse flush path does.
@@ -100,6 +114,9 @@ func TestExecutionFromProto(t *testing.T) {
 			// The row should preserve direct proto fields while also parsing
 			// the execution ID resource fields.
 			require.Equal(t, testCase.want.RecycleRunner, execution.RecycleRunner)
+			require.Equal(t, testCase.want.TestSize, execution.TestSize)
+			require.Equal(t, testCase.want.TestShardIndex, execution.TestShardIndex)
+			require.Equal(t, testCase.want.TestTotalShards, execution.TestTotalShards)
 			require.Equal(t, testCase.in.GetExecutionId(), reconstructExecutionID(t, execution))
 		})
 	}
@@ -142,10 +159,13 @@ func TestFlushExecutionStats_SkipsMalformedExecutionIDs(t *testing.T) {
 
 	err := env.GetOLAPDBHandle().FlushExecutionStats(ctx, invocation, []*repb.StoredExecution{
 		{
-			ExecutionId:    validExecutionID,
-			InvocationUuid: invocationUUID,
-			UpdatedAtUsec:  nowUsec,
-			CreatedAtUsec:  nowUsec,
+			ExecutionId:     validExecutionID,
+			InvocationUuid:  invocationUUID,
+			UpdatedAtUsec:   nowUsec,
+			CreatedAtUsec:   nowUsec,
+			TestSize:        "enormous",
+			TestShardIndex:  3,
+			TestTotalShards: 8,
 		},
 		{
 			ExecutionId:    "not-a-resource-name",
@@ -170,6 +190,9 @@ func TestFlushExecutionStats_SkipsMalformedExecutionIDs(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, rows, 1)
 	require.Equal(t, validExecutionID, reconstructExecutionID(t, &rows[0]))
+	require.Equal(t, "enormous", rows[0].TestSize)
+	require.Equal(t, uint32(3), rows[0].TestShardIndex)
+	require.Equal(t, uint32(8), rows[0].TestTotalShards)
 }
 
 func TestFlushExecutionStats_AllMalformedExecutionIDs_SkipsInsert(t *testing.T) {

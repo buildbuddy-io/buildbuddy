@@ -16,6 +16,7 @@ go_library(
         "//enterprise/server/tasksize",
         "//enterprise/server/util/ci_runner_env",
         "//enterprise/server/util/execution",
+        "//proto:build_event_stream_go_proto",
         "//proto:execution_stats_go_proto",
         "//proto:invocation_status_go_proto",
         "//proto:remote_execution_go_proto",

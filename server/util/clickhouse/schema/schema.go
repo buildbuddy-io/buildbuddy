@@ -204,6 +204,11 @@ type Execution struct {
 	TargetLabel    string `gorm:"codec:ZSTD(1)"`
 	ActionMnemonic string `gorm:"codec:ZSTD(1)"`
 
+	// Test metadata
+	TestSize        string `gorm:"type:LowCardinality(String)"`
+	TestShardIndex  uint32 `gorm:"codec:T64,ZSTD(1)"`
+	TestTotalShards uint32 `gorm:"codec:T64,ZSTD(1)"`
+
 	// IOStats
 	FileDownloadCount        int64 `gorm:"codec:T64,ZSTD(1)"`
 	FileDownloadSizeBytes    int64 `gorm:"codec:T64,ZSTD(1)"`
@@ -359,6 +364,9 @@ func (e *Execution) AdditionalFields() []string {
 		"OutputPath",
 		"TargetLabel",
 		"ActionMnemonic",
+		"TestSize",
+		"TestShardIndex",
+		"TestTotalShards",
 		"DiskBytesRead",
 		"DiskBytesWritten",
 		"DiskReadOperations",

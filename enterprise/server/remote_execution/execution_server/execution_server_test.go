@@ -802,6 +802,11 @@ func TestExecuteAndPublishOperation(t *testing.T) {
 			expectedExecutionUsage: tables.UsageCounts{LinuxExecutionDurationUsec: durationUsec},
 			flexibleCompute:        true,
 		},
+		{
+			name:                   "InvalidTestSize",
+			expectedExecutionUsage: tables.UsageCounts{LinuxExecutionDurationUsec: durationUsec},
+			invalidTestSize:        "extra-large",
+		},
 	} {
 		for _, flushAfterCleanup := range []bool{false, true} {
 			test := test
@@ -831,6 +836,7 @@ type publishTest struct {
 	useDefaultPool           bool
 	recycleRunner            bool
 	flushAfterCleanup        bool
+	invalidTestSize          string
 	// flexibleCompute routes the execution into the flexible-compute branch
 	// of incrementOLAPExecutionUsage.
 	flexibleCompute bool
@@ -883,10 +889,22 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 	if test.recycleRunner {
 		platformProperties = append(platformProperties, &repb.Platform_Property{Name: "recycle-runner", Value: "true"})
 	}
-	arn := uploadAction(clientCtx, t, env, instanceName, digestFunction, &repb.Action{
+	testSizeEnvValue := "large"
+	if test.invalidTestSize != "" {
+		testSizeEnvValue = test.invalidTestSize
+	}
+	arn := uploadActionWithCommand(clientCtx, t, env, instanceName, digestFunction, &repb.Action{
 		Timeout:    &durationpb.Duration{Seconds: 10},
 		DoNotCache: test.doNotCache,
 		Platform:   &repb.Platform{Properties: platformProperties},
+	}, &repb.Command{
+		Arguments:   []string{"test"},
+		OutputFiles: []string{"bazel-out/k8-fastbuild/bin/some/test"},
+		EnvironmentVariables: []*repb.Command_EnvironmentVariable{
+			{Name: "TEST_SHARD_INDEX", Value: "2"},
+			{Name: "TEST_SIZE", Value: testSizeEnvValue},
+			{Name: "TEST_TOTAL_SHARDS", Value: "6"},
+		},
 	})
 	executionClient, err := client.Execute(clientCtx, &repb.ExecuteRequest{
 		InstanceName:   arn.GetInstanceName(),
@@ -1158,6 +1176,10 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 
 	// Check that we recorded the executions
 	assert.Equal(t, 1, len(collectedExecutions))
+	wantTestSize := "large"
+	if test.invalidTestSize != "" {
+		wantTestSize = ""
+	}
 	expectedExecution := &repb.StoredExecution{
 		ExecutionId:                  taskID,
 		GroupId:                      "group1",
@@ -1177,6 +1199,9 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 		RequestedTimeoutUsec:         10000000,
 		TargetLabel:                  "//some:test",
 		ActionMnemonic:               "TestRunner",
+		TestSize:                     wantTestSize,
+		TestShardIndex:               2,
+		TestTotalShards:              6,
 		SelfHosted:                   test.expectedSelfHosted,
 		Region:                       "test-region",
 		Os:                           "linux",
