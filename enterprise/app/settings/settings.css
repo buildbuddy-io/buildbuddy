@@ -131,11 +131,18 @@
   align-self: flex-start;
 }
 
+.settings {
+  /* Settings tab sidebar dimensions on large screens. Also used to cap the
+   * autosized content width so it never overlaps the tabs. */
+  --settings-tabs-width: 200px;
+  --settings-tabs-margin: 32px;
+}
+
 /* Large screen */
 @media (min-width: 1281px) {
   .settings .settings-tabs {
-    margin-right: 32px;
-    width: 200px;
+    margin-right: var(--settings-tabs-margin);
+    width: var(--settings-tabs-width);
   }
 }
 
@@ -213,6 +220,23 @@
 .settings .settings-content {
   width: 800px;
   max-width: 100%;
+}
+
+/* The API keys tabs start at the default width but grow to fit long key
+ * names on one line, up to the space left by the settings tabs. */
+@media (min-width: 1281px) {
+  .settings .settings-content.settings-content-autosize {
+    width: fit-content;
+    min-width: 800px;
+    max-width: calc(100% - var(--settings-tabs-width) - var(--settings-tabs-margin));
+  }
+
+  /* Cap text blocks at the default width so only the key list drives the
+   * growth. */
+  .settings .settings-content.settings-content-autosize > :not(.api-keys),
+  .settings .settings-content.settings-content-autosize .api-keys > :not(.api-keys-list) {
+    max-width: 800px;
+  }
 }
 
 .settings .settings-tab-group {
