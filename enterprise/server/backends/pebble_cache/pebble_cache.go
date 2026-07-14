@@ -2265,8 +2265,7 @@ func (p *PebbleCache) TestingWaitForGC(ctx context.Context) error {
 }
 
 type evictionKey struct {
-	bytes           []byte
-	storageMetadata *sgpb.StorageMetadata
+	bytes []byte
 }
 
 func (k *evictionKey) ID() string {
@@ -2530,8 +2529,7 @@ func (e *partitionEvictor) maybeAddToSampleChan(iter pebble.Iterator, fileMetada
 	sizeBytes := getSizeOnLocalDisk(keyBytes, fileMetadata, e.includeMetadataSize)
 	sample := &approxlru.Sample[*evictionKey]{
 		Key: &evictionKey{
-			bytes:           keyBytes,
-			storageMetadata: fileMetadata.GetStorageMetadata(),
+			bytes: keyBytes,
 		},
 		SizeBytes: sizeBytes,
 		Timestamp: atime,
@@ -2816,7 +2814,7 @@ func (e *partitionEvictor) doEvict(sample *approxlru.Sample[*evictionKey]) {
 		return
 	}
 
-	if err := e.deleteFile(sample.Key.bytes, key, md.GetFileRecord().GetIsolation().GetGroupId(), md.GetLastModifyUsec(), sample.SizeBytes, sample.Key.storageMetadata); err != nil {
+	if err := e.deleteFile(sample.Key.bytes, key, md.GetFileRecord().GetIsolation().GetGroupId(), md.GetLastModifyUsec(), sample.SizeBytes, md.GetStorageMetadata()); err != nil {
 		log.Errorf("[%s] Error evicting file for key %q: %s (ignoring)", e.cacheName, sample.Key, err)
 		return
 	}
