@@ -18,7 +18,7 @@ import { TrendsChartId } from "../../../app/router/router";
 
 export interface ChartDataSeries {
   name: string;
-  formatHoverValue?: (datum: number) => string;
+  formatHoverValue?: (datum: number) => string | JSX.Element;
   extractValue: (datum: number) => number | null;
   onClick?: (datum: number) => void;
   isLine?: boolean;
@@ -97,19 +97,19 @@ function TrendsChartTooltip({ active, payload, labelFormatter, shouldRender, dat
   if (!active || !payload || payload.length < 1 || !shouldRender()) {
     return null;
   }
+  // Look each payload entry's series up by name so a series' label always pairs
+  // with its own value, regardless of the order (or gaps) in `payload`.
+  const seriesByName = new Map(dataSeries.map((ds) => [ds.name, ds]));
   return (
     <div className="trend-chart-hover">
       <div className="trend-chart-hover-label">{labelFormatter(payload[0].payload)}</div>
       <div className="trend-chart-hover-value">
-        {dataSeries.map((ds, index) => {
-          if (index >= payload.length) {
-            return <></>;
+        {payload.map((data, index) => {
+          const ds = seriesByName.get(data.name as string);
+          if (!ds) {
+            return <React.Fragment key={index}></React.Fragment>;
           }
-          const data = payload[index];
-          if (data === undefined) {
-            return <></>;
-          }
-          return <div>{ds.formatHoverValue ? ds.formatHoverValue(data.value) : data.value}</div>;
+          return <div key={index}>{ds.formatHoverValue ? ds.formatHoverValue(data.value) : data.value}</div>;
         })}
       </div>
     </div>
@@ -168,7 +168,7 @@ export default class TrendsChartComponent extends React.Component<Props, State> 
           activeDot={{ pointerEvents: "none" }}
           yAxisId={axis}
           name={ds.name}
-          dot={false}
+          dot={true}
           dataKey={ds.extractValue}
           isAnimationActive={false}
           connectNulls={true}

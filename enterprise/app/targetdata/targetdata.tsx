@@ -275,15 +275,6 @@ export default class TargetDataComponent extends React.Component<Props, State> {
     });
   }
 
-  // True when every dimension has an explicit (non-"all") selection, meaning
-  // we've narrowed down to (approximately) a single action.
-  private allFiltersSelected(): boolean {
-    return FILTER_DIMENSIONS.every((dimension) => {
-      const selected = this.state.filters[dimension.key];
-      return Boolean(selected) && selected !== ALL_VALUES;
-    });
-  }
-
   // Returns the distinct values available for `dimension`, constrained to the
   // timelines that match every OTHER active filter selection. This narrows each
   // dropdown's options based on what the user has already picked elsewhere.
@@ -406,11 +397,12 @@ export default class TargetDataComponent extends React.Component<Props, State> {
     // Cap the table to the first few rows until the user opts into the full
     // list. The charts are unaffected and always plot every matching action.
     const timelines = this.state.showAllRows ? allTimelines : allTimelines.slice(0, INITIAL_ROW_LIMIT);
-    // Once every dropdown is set, abbreviate output paths so the distinguishing
-    // parts stand out. Each row is diffed against another matching action: rows
-    // compare against the first row, and the first row compares against the
-    // second so it too gets abbreviated.
-    const abbreviate = this.allFiltersSelected();
+    // Once a specific mnemonic is selected, abbreviate output paths so the
+    // distinguishing parts stand out. Each row is diffed against another matching
+    // action: rows compare against the first row, and the first row compares
+    // against the second so it too gets abbreviated.
+    const selectedMnemonic = this.state.filters["mnemonic"];
+    const abbreviate = Boolean(selectedMnemonic) && selectedMnemonic !== ALL_VALUES;
     const comparePathFor = (i: number): string | undefined => {
       if (!abbreviate) return undefined;
       return (i === 0 ? timelines[1] : timelines[0])?.outputPath;
@@ -476,6 +468,12 @@ export default class TargetDataComponent extends React.Component<Props, State> {
       const durationByStartTime = new Map<number, number>();
       const memoryByStartTime = new Map<number, number>();
       const cpuByStartTime = new Map<number, number>();
+      let endOfPath = timeline.outputPath;
+      const lastSlash = timeline.outputPath.lastIndexOf("/");
+      if (lastSlash >= 0) {
+        endOfPath = "..." + endOfPath.slice(lastSlash);
+      }
+      const endOfPathElement = () => <div>{endOfPath}</div>;
       for (const e of timeline.execution) {
         durationByStartTime.set(+(e.startTimeUsec ?? 0), +(e.durationUsec ?? 0));
         memoryByStartTime.set(+(e.startTimeUsec ?? 0), +(e.peakMemoryBytes ?? 0));
@@ -488,21 +486,36 @@ export default class TargetDataComponent extends React.Component<Props, State> {
           const d = durationByStartTime.get(startTimeUsec);
           return d ? d / MICROSECONDS_PER_SECOND : null;
         },
-        formatHoverValue: (value) => format.durationSec(value || 0),
+        formatHoverValue: (value) => (
+          <>
+            {endOfPathElement()}
+            <div>{format.durationSec(value || 0)}</div>
+          </>
+        ),
         color: COLORS[i % COLORS.length],
       });
       cpuSeries.push({
         name: "cpu" + i,
         isLine: true,
         extractValue: (startTimeUsec) => cpuByStartTime.get(startTimeUsec) ?? null,
-        formatHoverValue: (value) => format.durationMillis((value ?? 0) / 1e6),
+        formatHoverValue: (value) => (
+          <>
+            {endOfPathElement()}
+            <div>{format.durationMillis((value ?? 0) / 1e6)}</div>
+          </>
+        ),
         color: COLORS[i % COLORS.length],
       });
       memorySeries.push({
         name: "memory" + i,
         isLine: true,
         extractValue: (startTimeUsec) => memoryByStartTime.get(startTimeUsec) ?? null,
-        formatHoverValue: (value) => format.bytes(value || 0),
+        formatHoverValue: (value) => (
+          <>
+            {endOfPathElement()}
+            <div>{format.bytes(value || 0)}</div>
+          </>
+        ),
         color: COLORS[i % COLORS.length],
       });
 
