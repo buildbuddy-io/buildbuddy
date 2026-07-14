@@ -16,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/upgrade"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -57,7 +58,7 @@ func startTestRegistry(t *testing.T, users map[string]interfaces.UserInfo) (*cac
 	})
 	env.SetAuthenticator(testauth.NewTestAuthenticator(t, users))
 
-	registry, err := cache_proxy_registry_server.NewCacheProxyRegistryServer(env)
+	registry, err := cache_proxy_registry_server.NewCacheProxyRegistryServer(env, upgrade.NewDetector(nil))
 	require.NoError(t, err)
 	env.SetCacheProxyRegistryService(registry)
 
