@@ -1,12 +1,31 @@
 package options_test
 
 import (
+	"flag"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/options"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/options/flag_form"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
+
+func TestDefinitionsFromFlagSet(t *testing.T) {
+	testFlags := flag.NewFlagSet("test_flagset", flag.ContinueOnError)
+	testFlags.Bool("enabled", false, "")
+	testFlags.String("name", "", "")
+
+	definitions := options.DefinitionsFromFlagSet(testFlags, "test_command")
+	byName := make(map[string]*options.Definition, len(definitions))
+	for _, definition := range definitions {
+		byName[definition.Name()] = definition
+	}
+
+	require.True(t, byName["enabled"].HasNegative())
+	require.False(t, byName["enabled"].RequiresValue())
+	require.True(t, byName["name"].RequiresValue())
+	require.False(t, byName["name"].Multi())
+}
 
 func RequiredValueDefinition(name, oldname, shortname string, opts ...options.DefinitionOpt) *options.Definition {
 	return options.NewDefinition(

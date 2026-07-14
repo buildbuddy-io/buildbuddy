@@ -27,6 +27,10 @@ var (
 	//
 	// It is nil until Register in cli_command/register is called.
 	Aliases map[string]*Command
+
+	// BBFlagSetsByCommand contains BB-specific flags.
+	// Unlike CommandsByName, it may contain Bazel commands such as "run" if they have BB-specific flags.
+	BBFlagSetsByCommand = map[string][]*flag.FlagSet{}
 )
 
 // GetCommand returns the Command corresponding to the provided command name or
@@ -39,4 +43,15 @@ func GetCommand(commandName string) *Command {
 		return command
 	}
 	return nil
+}
+
+// RegisterBBFlagSet adds BB-specific flags to a command. The command may be a
+// BB command or a Bazel command.
+func RegisterBBFlagSet(commandName string, flags *flag.FlagSet) {
+	BBFlagSetsByCommand[commandName] = append(BBFlagSetsByCommand[commandName], flags)
+}
+
+// GetBBFlagSets returns the BB-specific flag sets registered for a command.
+func GetBBFlagSets(commandName string) []*flag.FlagSet {
+	return BBFlagSetsByCommand[commandName]
 }

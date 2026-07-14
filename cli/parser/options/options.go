@@ -1,8 +1,10 @@
 package options
 
 import (
+	"flag"
 	"fmt"
 	"iter"
+	"reflect"
 	"slices"
 	"strings"
 
@@ -10,6 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/arguments"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/bazelrc"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/options/flag_form"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lib/seq"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lib/set"
 
@@ -197,6 +200,38 @@ func NewDefinition(name string, opts ...DefinitionOpt) *Definition {
 		opt(d)
 	}
 	return d
+}
+
+// DefinitionsFromFlagSet converts CLI-specific flags declared in a Go flag set
+// into definitions understood by the argument parser.
+func DefinitionsFromFlagSet(flagSet *flag.FlagSet, supportedCommands ...string) []*Definition {
+	if flagSet == nil {
+		return nil
+	}
+	var definitions []*Definition
+	flagSet.VisitAll(func(f *flag.Flag) {
+		opts := []DefinitionOpt{
+			WithPluginID(NativeBuiltinPluginID),
+			WithSupportFor(supportedCommands...),
+		}
+		valueType, err := flagutil.GetTypeForFlagValue(f.Value)
+		if err != nil {
+			valueType = reflect.TypeOf(f.Value)
+		}
+		for valueType.Kind() == reflect.Pointer {
+			valueType = valueType.Elem()
+		}
+		if valueType.Kind() == reflect.Bool {
+			opts = append(opts, WithNegative())
+		} else {
+			opts = append(opts, WithRequiresValue())
+		}
+		if valueType.Kind() == reflect.Slice || valueType.Kind() == reflect.Map {
+			opts = append(opts, WithMulti())
+		}
+		definitions = append(definitions, NewDefinition(f.Name, opts...))
+	})
+	return definitions
 }
 
 // DefinitionFrom takes a FlagInfo proto message and converts it into a

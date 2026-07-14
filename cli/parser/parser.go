@@ -5,6 +5,7 @@ package parser
 import (
 	"bytes"
 	"encoding/base64"
+	"flag"
 	"fmt"
 	"io"
 	"maps"
@@ -165,8 +166,8 @@ func NewParser(optionDefinitions []*options.Definition, commands []string, alias
 	return p
 }
 
-// GetNativeParser can parse native bb options without needing to start the bazel
-// client or server.
+// GetNativeParser returns a lightweight parser for commands and flags implemented
+// by the bb CLI. It does not load Bazel's full flag definitions.
 func GetNativeParser() *Parser {
 	definitions := slices.Collect(maps.Values(nativeDefinitions))
 	aliases := map[string]string{}
@@ -178,6 +179,39 @@ func GetNativeParser() *Parser {
 		slices.Collect(maps.Keys(cli_command.CommandsByName)),
 		aliases,
 	)
+}
+
+// GetBBParserForCommand returns a parser for the BB-specific flags associated
+// with the given command. Commands can be either CLI-specific commands, or
+// Bazel commands that are extended by the bb CLI.
+func GetBBParserForCommand(commandName string) (*Parser, error) {
+	p := GetNativeParser()
+
+	// Parses flags for bb CLI-specific commands.
+	if command := cli_command.GetCommand(commandName); command != nil {
+		if err := p.AddFlagSet(command.Flags, command.Name); err != nil {
+			return nil, err
+		}
+	}
+
+	// Parses CLI flags that apply to regular bazel commands.
+	// (e.g. `--stream_run_logs` for `bazel run`)
+	for _, flags := range cli_command.GetBBFlagSets(commandName) {
+		if err := p.AddFlagSet(flags, commandName); err != nil {
+			return nil, err
+		}
+	}
+	return p, nil
+}
+
+// AddFlagSet teaches the parser about CLI-specific flags declared in a Go flagset.
+func (p *Parser) AddFlagSet(flagSet *flag.FlagSet, supportedCommands ...string) error {
+	for _, definition := range options.DefinitionsFromFlagSet(flagSet, supportedCommands...) {
+		if err := p.AddOptionDefinition(definition); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // GetHelpParser returns a parser that can parse bazel options, native options,
