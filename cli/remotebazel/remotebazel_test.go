@@ -122,6 +122,25 @@ func TestParseRemoteCliFlags(t *testing.T) {
 			},
 		},
 		{
+			name: "slow git fetch flags",
+			inputArgs: []string{
+				"--git_slow_fetch_timeout=15s",
+				"--git_slow_fetch_retries=3",
+				"--git_slow_fetch_rate=102400",
+				"build",
+				"//...",
+			},
+			expectedOutput: []string{
+				"build",
+				"//...",
+			},
+			expectedFlagValue: map[string]string{
+				"git_slow_fetch_timeout": "15s",
+				"git_slow_fetch_retries": "3",
+				"git_slow_fetch_rate":    "102400",
+			},
+		},
+		{
 			name: "repeated remote cli flags",
 			inputArgs: []string{
 				"--env=key=val",

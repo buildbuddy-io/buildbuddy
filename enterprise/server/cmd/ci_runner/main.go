@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/base64"
@@ -18,7 +17,6 @@ import (
 	"regexp"
 	"runtime"
 	"slices"
-	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -26,6 +24,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/bes_artifacts"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ci_runner_env"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/git_fetch"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/config"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_publisher"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
@@ -194,6 +193,9 @@ var (
 	gitCleanExclude       = flag.Slice("git_clean_exclude", []string{}, "Directories to exclude from `git clean` while setting up the repo.")
 	gitFetchFilters       = flag.Slice("git_fetch_filters", []string{}, "Filters to apply to `git fetch` commands.")
 	gitFetchDepth         = flag.Int("git_fetch_depth", smartFetchDepth, "Depth to use for `git fetch` commands.")
+	gitSlowFetchTimeout   = flag.Duration("git_slow_fetch_timeout", 10*time.Second, "How long the Git receive rate must remain below git_slow_fetch_rate before canceling the fetch attempt.")
+	gitSlowFetchRetries   = flag.Int("git_slow_fetch_retries", 0, "Number of times to retry a slow Git fetch. 0 disables slow fetch detection.")
+	gitSlowFetchRate      = flag.Int64("git_slow_fetch_rate", 200*units.KiB, "Git receive rate threshold, in bytes per second, below which a fetch is considered slow.")
 	// Flags to configure merge-with-base behavior
 	targetRepoURL = flag.String("target_repo_url", "", "If different from pushed_repo_url, indicates a fork (`pushed_repo_url`) is being merged into this repo.")
 	targetBranch  = flag.String("target_branch", "", "If different from pushed_branch, pushed_branch should be merged into this branch in the target repo.")
@@ -274,8 +276,8 @@ type workspace struct {
 	// reported for all action logs instead of actually executing the action.
 	setupError error
 
-	// Total bytes fetched by git fetch commands run during setup, parsed from
-	// git trace2 event logs.
+	// Total bytes fetched by git fetch commands run during setup, collected
+	// from Git trace streams.
 	gitFetchTotalBytes int64
 
 	// Total time spent running git fetch commands during setup.
@@ -2265,8 +2267,8 @@ func (ws *workspace) fetch(ctx context.Context, remoteURL string, refs []string,
 		}
 	}
 	// Force progress reporting (rather than relying on stderr being a
-	// terminal), since git only logs fetched byte totals to the trace2 event
-	// log when progress meters are active.
+	// terminal), since git only emits fetched byte totals to the trace2 event
+	// stream when progress meters are active.
 	fetchArgs := []string{"fetch", "--force", "--progress"}
 	for _, filter := range *gitFetchFilters {
 		fetchArgs = append(fetchArgs, "--filter="+filter)
@@ -2288,79 +2290,17 @@ func (ws *workspace) fetch(ctx context.Context, remoteURL string, refs []string,
 	}
 	fetchArgs = append(fetchArgs, remoteName)
 	fetchArgs = append(fetchArgs, refs...)
-
-	// Have git log trace2 events to a file under .git/info, from which the
-	// exact number of fetched bytes is parsed once the fetch completes. The
-	// log is deleted after parsing.
-	fetchEnv := map[string]string{}
-	// GIT_TRACE2 requires an abspath.
-	trace2Path, err := filepath.Abs(filepath.Join(".git", "info", "fetch_trace2.jsonl"))
-	if err != nil {
-		backendLog.Warningf("Could not resolve the git trace2 event log path; git fetch stats will not be collected: %s", err)
-	} else {
-		// Remove any leftover log (e.g. if a previous run was interrupted
-		// mid-fetch), since git appends to the log file.
-		_ = os.Remove(trace2Path)
-		fetchEnv["GIT_TRACE2_EVENT"] = trace2Path
-		// Progress data events can be nested inside other trace2 regions;
-		// raise the nesting limit (default 2) so they aren't dropped.
-		fetchEnv["GIT_TRACE2_EVENT_NESTING"] = "5"
-	}
-
-	fetchStart := time.Now()
-	_, fetchErr := gitWithEnv(ctx, ws.log, fetchEnv, fetchArgs...)
-	ws.gitFetchDuration += time.Since(fetchStart)
-	// Count fetched bytes even if the fetch failed, since a failed fetch may
-	// be retried (e.g. with a different depth) and we want the total to
-	// reflect all data transferred.
-	if fetchEnv["GIT_TRACE2_EVENT"] != "" {
-		if f, err := os.Open(trace2Path); err != nil {
-			backendLog.Warningf("Could not open the git trace2 event log; git fetch stats may be undercounted: %s", err)
-		} else {
-			ws.gitFetchTotalBytes += parseGitFetchedBytes(f)
-			f.Close()
+	fetchResult := gitFetch(ctx, ws.log, fetchArgs...)
+	ws.gitFetchTotalBytes += fetchResult.TotalBytes
+	ws.gitFetchDuration += fetchResult.Duration
+	if fetchResult.Err != nil {
+		errorOutput := ""
+		if commandErr, ok := fetchResult.Err.(*commandError); ok {
+			errorOutput = commandErr.Output
 		}
-		_ = os.Remove(trace2Path)
-	}
-	if fetchErr != nil {
-		return status.WrapError(fetchErr, fetchErr.Output)
+		return status.WrapError(fetchResult.Err, errorOutput)
 	}
 	return nil
-}
-
-// parseGitFetchedBytes returns the total number of bytes fetched by a git
-// command, parsed from its trace2 event log. Progress meters that display
-// throughput (such as "Receiving objects") log a "total_bytes" data event
-// when they complete. Child processes such as git-index-pack inherit
-// GIT_TRACE2_EVENT and append their events to the same log file. Returns 0
-// if the log contains no such events (e.g. everything was already up to
-// date).
-func parseGitFetchedBytes(trace2EventLog io.Reader) int64 {
-	var total int64
-	scanner := bufio.NewScanner(trace2EventLog)
-	// Trace2 event lines are small (typically well under 1KiB); a line
-	// exceeding this limit would stop the scan and drop the remaining events.
-	scanner.Buffer(make([]byte, 0, 1024*1024), 1024*1024)
-	for scanner.Scan() {
-		var event struct {
-			Event    string `json:"event"`
-			Category string `json:"category"`
-			Key      string `json:"key"`
-			Value    string `json:"value"`
-		}
-		if err := json.Unmarshal(scanner.Bytes(), &event); err != nil {
-			continue
-		}
-		if event.Event != "data" || event.Category != "progress" || event.Key != "total_bytes" {
-			continue
-		}
-		n, err := strconv.ParseInt(event.Value, 10, 64)
-		if err != nil {
-			continue
-		}
-		total += n
-	}
-	return total
 }
 
 // Writes a wrapper script that invokes the ci_runner with the bazel_wrapper subcommand.
@@ -2442,10 +2382,32 @@ func git(ctx context.Context, out io.Writer, args ...string) (string, *commandEr
 }
 
 func gitWithEnv(ctx context.Context, out io.Writer, env map[string]string, args ...string) (string, *commandError) {
+	return gitWithEnvAndExtraFiles(ctx, out, env, nil, args...)
+}
+
+func gitWithEnvAndExtraFiles(ctx context.Context, out io.Writer, env map[string]string, extraFiles []*os.File, args ...string) (string, *commandError) {
 	if err := printCommandLine(out, "git", args...); err != nil {
-		return "", &commandError{err, ""}
+		return "", &commandError{Err: err}
 	}
-	return runCommandWithOutput(ctx, "git", args, env, "" /*=dir*/, out)
+	return runCommandWithOutputAndExtraFiles(ctx, "git", args, env, "" /*=dir*/, out, extraFiles)
+}
+
+func gitFetch(ctx context.Context, out io.Writer, args ...string) git_fetch.Result {
+	return git_fetch.Run(ctx, git_fetch.Options{
+		Output:                 out,
+		SlowRateBytesPerSecond: *gitSlowFetchRate,
+		SlowTimeout:            *gitSlowFetchTimeout,
+		Retries:                *gitSlowFetchRetries,
+		WriteStatus: func(format string, args ...any) {
+			writeCommandSummary(out, format, args...)
+		},
+	}, func(ctx context.Context, out io.Writer, env map[string]string, extraFiles []*os.File, args ...string) (string, error) {
+		output, err := gitWithEnvAndExtraFiles(ctx, out, env, extraFiles, args...)
+		if err != nil {
+			return output, err
+		}
+		return output, nil
+	}, args...)
 }
 
 func isPushedRefInFork() bool {
@@ -2617,18 +2579,27 @@ func runBashCommand(ctx context.Context, cmd string, env map[string]string, dir 
 }
 
 func runCommandWithOutput(ctx context.Context, executable string, args []string, env map[string]string, dir string, outputSink io.Writer) (string, *commandError) {
+	return runCommandWithOutputAndExtraFiles(ctx, executable, args, env, dir, outputSink, nil)
+}
+
+func runCommandWithOutputAndExtraFiles(ctx context.Context, executable string, args []string, env map[string]string, dir string, outputSink io.Writer, extraFiles []*os.File) (string, *commandError) {
 	var buf bytes.Buffer
 	w := io.MultiWriter(outputSink, &buf)
 
-	if err := runCommand(ctx, executable, args, env, dir, w); err != nil {
-		return "", &commandError{err, buf.String()}
+	if err := runCommandWithExtraFiles(ctx, executable, args, env, dir, w, extraFiles); err != nil {
+		return "", &commandError{Err: err, Output: buf.String()}
 	}
 	output := buf.String()
 	return strings.TrimSpace(output), nil
 }
 
 func runCommand(ctx context.Context, executable string, args []string, env map[string]string, dir string, outputSink io.Writer) error {
+	return runCommandWithExtraFiles(ctx, executable, args, env, dir, outputSink, nil)
+}
+
+func runCommandWithExtraFiles(ctx context.Context, executable string, args []string, env map[string]string, dir string, outputSink io.Writer, extraFiles []*os.File) error {
 	cmd := exec.CommandContext(ctx, executable, args...)
+	cmd.ExtraFiles = extraFiles
 	cmd.Env = os.Environ()
 	for k, v := range env {
 		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", k, v))

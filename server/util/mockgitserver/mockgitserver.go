@@ -38,6 +38,7 @@ package mockgitserver
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -48,6 +49,7 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 )
@@ -143,6 +145,11 @@ type Options struct {
 	//
 	// If empty, the path is resolved using `git --exec-path`.
 	GitHTTPBackendPath string
+
+	// UploadPackBytesPerSecond limits git-upload-pack response throughput. A
+	// value of zero disables throttling. This is intended to simulate slow
+	// repository downloads in tests.
+	UploadPackBytesPerSecond int64
 }
 
 // NewHandler returns an HTTP handler that serves requests on / from the given
@@ -188,8 +195,72 @@ func NewHandler(projectRoot string, opts Options) http.Handler {
 			Env:    env,
 			Stderr: logWriter,
 		}
-		cgiHandler.ServeHTTP(w, r)
+		responseWriter := w
+		if opts.UploadPackBytesPerSecond > 0 && strings.HasSuffix(r.URL.Path, "/git-upload-pack") {
+			responseWriter = &rateLimitedResponseWriter{
+				ResponseWriter: w,
+				ctx:            r.Context(),
+				bytesPerSecond: opts.UploadPackBytesPerSecond,
+			}
+		}
+		cgiHandler.ServeHTTP(responseWriter, r)
 	})
+}
+
+type rateLimitedResponseWriter struct {
+	http.ResponseWriter
+	ctx            context.Context
+	bytesPerSecond int64
+	bytesWritten   int64
+	start          time.Time
+}
+
+func (w *rateLimitedResponseWriter) Write(data []byte) (int, error) {
+	if w.start.IsZero() {
+		w.start = time.Now()
+	}
+	totalWritten := 0
+	for len(data) > 0 {
+		chunkSize := min(len(data), 32*1024)
+		targetBytes := w.bytesWritten + int64(chunkSize)
+		targetDelay := time.Duration(float64(targetBytes) / float64(w.bytesPerSecond) * float64(time.Second))
+		delay := time.Until(w.start.Add(targetDelay))
+		if delay > 0 {
+			timer := time.NewTimer(delay)
+			select {
+			case <-w.ctx.Done():
+				timer.Stop()
+				return totalWritten, w.ctx.Err()
+			case <-timer.C:
+			}
+		} else {
+			select {
+			case <-w.ctx.Done():
+				return totalWritten, w.ctx.Err()
+			default:
+			}
+		}
+
+		n, err := w.ResponseWriter.Write(data[:chunkSize])
+		w.bytesWritten += int64(n)
+		totalWritten += n
+		data = data[n:]
+		w.Flush()
+		if err != nil {
+			return totalWritten, err
+		}
+		if n != chunkSize {
+			return totalWritten, io.ErrShortWrite
+		}
+	}
+	return totalWritten, nil
+}
+
+// Flush sends buffered response bytes to the Git client.
+func (w *rateLimitedResponseWriter) Flush() {
+	if flusher, ok := w.ResponseWriter.(http.Flusher); ok {
+		flusher.Flush()
+	}
 }
 
 func findGitHTTPBackend() (string, error) {

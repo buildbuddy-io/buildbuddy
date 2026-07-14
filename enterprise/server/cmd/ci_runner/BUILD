@@ -1,6 +1,6 @@
 load("@io_bazel_rules_docker//container:container.bzl", "container_image")
 load("@io_bazel_rules_docker//go:image.bzl", "go_image")
-load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
 
 # gazelle:default_visibility //enterprise:__subpackages__
 package(
@@ -16,6 +16,7 @@ go_library(
     deps = [
         "//enterprise/server/bes_artifacts",
         "//enterprise/server/util/ci_runner_env",
+        "//enterprise/server/util/git_fetch",
         "//enterprise/server/workflow/config",
         "//proto:build_event_stream_go_proto",
         "//proto:command_line_go_proto",
@@ -73,11 +74,4 @@ go_image(
     base = ":base_image",
     binary = ":ci_runner",
     tags = ["manual"],
-)
-
-go_test(
-    name = "ci_runner_test",
-    srcs = ["main_test.go"],
-    embed = [":ci_runner_lib"],
-    deps = ["@com_github_stretchr_testify//assert"],
 )

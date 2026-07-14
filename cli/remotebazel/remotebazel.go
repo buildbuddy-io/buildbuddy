@@ -92,6 +92,9 @@ var (
 	runFromBranch           = RemoteFlagset.String("run_from_branch", "", "A GitHub branch to base the remote run off. If unset, the remote workspace will mirror your local workspace.")
 	runFromCommit           = RemoteFlagset.String("run_from_commit", "", "A GitHub commit SHA to base the remote run off. If unset, the remote workspace will mirror your local workspace.")
 	gitFetchDepth           = RemoteFlagset.Int("git_fetch_depth", -1, "Git fetch depth. Defaults to 'smart' behavior chosen by the remote runner. Can be set to 0 to fetch the full history, or N >= 1 to fetch the last N commits.")
+	gitSlowFetchTimeout     = RemoteFlagset.Duration("git_slow_fetch_timeout", 10*time.Second, "How long the Git receive rate must remain below git_slow_fetch_rate before canceling the fetch attempt.")
+	gitSlowFetchRetries     = RemoteFlagset.Int("git_slow_fetch_retries", 0, "Number of times to retry a slow Git fetch. 0 disables slow fetch detection.")
+	gitSlowFetchRate        = RemoteFlagset.Int64("git_slow_fetch_rate", 200*1024, "Git receive rate threshold, in bytes per second, below which a fetch is considered slow.")
 	// From a shell, pass the JSON in single quotes.
 	// Ex. --run_from_snapshot='{"snapshotId":"XXX","instanceName":""}'
 	runFromSnapshot = RemoteFlagset.String("run_from_snapshot", "", "JSON for a snapshot key that the remote runner should be resumed from. If unset, the snapshot key is determined programatically.")
@@ -1068,6 +1071,13 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 
 	if *gitFetchDepth >= 0 {
 		req.RunnerFlags = append(req.RunnerFlags, fmt.Sprintf("--git_fetch_depth=%d", *gitFetchDepth))
+	}
+	if *gitSlowFetchRetries > 0 {
+		req.RunnerFlags = append(req.RunnerFlags,
+			fmt.Sprintf("--git_slow_fetch_timeout=%s", gitSlowFetchTimeout.String()),
+			fmt.Sprintf("--git_slow_fetch_retries=%d", *gitSlowFetchRetries),
+			fmt.Sprintf("--git_slow_fetch_rate=%d", *gitSlowFetchRate),
+		)
 	}
 
 	req.GetRepoState().Patch = append(req.GetRepoState().Patch, repoConfig.Patches...)
