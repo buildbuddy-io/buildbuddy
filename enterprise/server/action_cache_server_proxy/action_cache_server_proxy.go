@@ -236,9 +236,10 @@ func (s *ActionCacheServerProxy) GetActionResult(ctx context.Context, req *repb.
 	if authutil.EncryptionEnabled(ctx, s.authenticator) && !s.supportsEncryption(ctx) {
 		resp, err := s.remoteACClient.GetActionResult(ctx, req)
 		labels := prometheus.Labels{
-			metrics.StatusLabel:           status.MetricsLabel(err),
-			metrics.CacheHitMissStatus:    metrics.UncacheableStatusLabel,
-			metrics.CacheProxyRequestType: proxy_util.RequestTypeLabelFromContext(ctx),
+			metrics.StatusLabel:            status.MetricsLabel(err),
+			metrics.CacheHitMissStatus:     metrics.UncacheableStatusLabel,
+			metrics.CacheProxyRequestType:  proxy_util.RequestTypeLabelFromContext(ctx),
+			metrics.CacheProxyResultSource: "remote_uncacheable",
 		}
 		metrics.ActionCacheProxiedReadRequests.With(labels).Inc()
 		metrics.ActionCacheProxiedReadBytes.With(labels).Add(float64(proto.Size(resp)))
@@ -258,9 +259,10 @@ func (s *ActionCacheServerProxy) GetActionResult(ctx context.Context, req *repb.
 			cacheStatus = metrics.HitStatusLabel
 		}
 		labels := prometheus.Labels{
-			metrics.StatusLabel:           status.MetricsLabel(err),
-			metrics.CacheHitMissStatus:    cacheStatus,
-			metrics.CacheProxyRequestType: metrics.LocalOnlyCacheProxyRequestLabel,
+			metrics.StatusLabel:            status.MetricsLabel(err),
+			metrics.CacheHitMissStatus:     cacheStatus,
+			metrics.CacheProxyRequestType:  metrics.LocalOnlyCacheProxyRequestLabel,
+			metrics.CacheProxyResultSource: "local_only",
 		}
 		metrics.ActionCacheProxiedReadRequests.With(labels).Inc()
 		metrics.ActionCacheProxiedReadBytes.With(labels).Add(float64(proto.Size(rsp)))
@@ -297,9 +299,10 @@ func (s *ActionCacheServerProxy) GetActionResult(ctx context.Context, req *repb.
 				sizeBytes := int64(proto.Size(localResult))
 				s.recordLocalACHit(ctx, req, localResult, sizeBytes)
 				labels := prometheus.Labels{
-					metrics.StatusLabel:           status.MetricsLabel(nil),
-					metrics.CacheHitMissStatus:    metrics.HitStatusLabel,
-					metrics.CacheProxyRequestType: metrics.DefaultCacheProxyRequestLabel,
+					metrics.StatusLabel:            status.MetricsLabel(nil),
+					metrics.CacheHitMissStatus:     metrics.HitStatusLabel,
+					metrics.CacheProxyRequestType:  metrics.DefaultCacheProxyRequestLabel,
+					metrics.CacheProxyResultSource: "ttl_fast_path",
 				}
 				metrics.ActionCacheProxiedReadRequests.With(labels).Inc()
 				metrics.ActionCacheProxiedReadBytes.With(labels).Add(float64(sizeBytes))
@@ -331,6 +334,7 @@ func (s *ActionCacheServerProxy) GetActionResult(ctx context.Context, req *repb.
 		proto.Equal(req.GetCachedActionResultDigest(), resp.GetActionResultDigest()) {
 		resp = local
 		labels[metrics.CacheHitMissStatus] = metrics.HitStatusLabel
+		labels[metrics.CacheProxyResultSource] = "remote_digest_match"
 		if ttl > 0 {
 			casRN := digest.NewCASResourceName(req.GetCachedActionResultDigest(), req.GetInstanceName(), req.GetDigestFunction()).ToProto()
 			casRNProto, marshalErr := proto.Marshal(casRN)
@@ -357,6 +361,7 @@ func (s *ActionCacheServerProxy) GetActionResult(ctx context.Context, req *repb.
 			s.cacheActionResultToLocalCAS(ctx, localKey, req, resp)
 		}
 		labels[metrics.CacheHitMissStatus] = metrics.MissStatusLabel
+		labels[metrics.CacheProxyResultSource] = "remote_result"
 	}
 
 	metrics.ActionCacheProxiedReadRequests.With(labels).Inc()
