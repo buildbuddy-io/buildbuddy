@@ -1,7 +1,7 @@
-load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
 load("@bazel_skylib//lib:shell.bzl", "shell")
 load("@bazel_skylib//rules:write_file.bzl", "write_file")
 load("@rules_multirun//:defs.bzl", "multirun")
+load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
 
 # Handles uploading files to GCS.
 #
@@ -57,24 +57,24 @@ def gcs(name, srcs, bucket, gsutil = "gsutil", prefix = "", sha_prefix = "", zip
             "  shift",
             "fi",
             "{gsutil} {util_options} cp {copy_options} \"${{@}}\" \"gs://{bucket}/{prefix}${{SHA_PREFIX}}\"".format(
-                gsutil=gsutil,
-                util_options=util_options,
-                copy_options=copy_options,
-                bucket=bucket,
-                prefix=prefix,
+                gsutil = gsutil,
+                util_options = util_options,
+                copy_options = copy_options,
+                bucket = bucket,
+                prefix = prefix,
             ),
         ],
         is_executable = True,
-        **kwargs,
+        **kwargs
     )
 
     sh_binary(
         name = name + ".push_only",
-        args = [shell.quote("$(locations %s)" % sha_prefix) if sha_prefix != "" else ""] + [ shell.quote("$(locations %s)" % src) for src in srcs ],
-        srcs = [ name + ".push_only.script" ],
+        args = [shell.quote("$(locations %s)" % sha_prefix) if sha_prefix != "" else ""] + [shell.quote("$(locations %s)" % src) for src in srcs],
+        srcs = [name + ".push_only.script"],
         data = srcs + ([sha_prefix] if sha_prefix != "" else []),
         use_bash_launcher = True,
-        **kwargs,
+        **kwargs
     )
 
     # Uploading is the only deployment operation for a GCS bundle, so there
@@ -105,13 +105,13 @@ def gcs(name, srcs, bucket, gsutil = "gsutil", prefix = "", sha_prefix = "", zip
             "echo 'Diff not yet implemented for gcs uploads.'",
         ],
         is_executable = True,
-        **kwargs,
+        **kwargs
     )
 
     sh_binary(
         name = name + ".diff",
-        srcs = [ name + ".diff.script" ],
-        **kwargs,
+        srcs = [name + ".diff.script"],
+        **kwargs
     )
 
     # Generate a .delete rule for deleting.
@@ -126,9 +126,9 @@ def gcs(name, srcs, bucket, gsutil = "gsutil", prefix = "", sha_prefix = "", zip
             "  shift",
             "fi",
             "{gsutil} -m rm -r gs://{bucket}/{prefix}${{SHA_PREFIX}}".format(
-                gsutil=gsutil,
-                bucket=bucket,
-                prefix=prefix,
+                gsutil = gsutil,
+                bucket = bucket,
+                prefix = prefix,
             ),
         ],
         is_executable = True,
@@ -138,8 +138,8 @@ def gcs(name, srcs, bucket, gsutil = "gsutil", prefix = "", sha_prefix = "", zip
     sh_binary(
         name = name + ".delete",
         args = [shell.quote("$(locations %s)" % sha_prefix) if sha_prefix != "" else ""],
-        srcs = [ name + ".delete.script" ],
+        srcs = [name + ".delete.script"],
         data = [sha_prefix] if sha_prefix != "" else [],
         use_bash_launcher = True,
-        **kwargs,
+        **kwargs
     )

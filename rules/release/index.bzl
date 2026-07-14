@@ -35,5 +35,5 @@ def release(name, run, after, enable_actions = True, **kwargs):
                 after + action,
                 run + action,
             ],
-            **kwargs,
+            **kwargs
         )
