@@ -52,6 +52,7 @@ go_test(
     srcs = ["remotebazel_test.go"],
     embed = [":remotebazel"],
     deps = [
+        "//cli/arg",
         "//cli/login",
         "//cli/parser",
         "//cli/parser/test_data",

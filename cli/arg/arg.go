@@ -20,6 +20,9 @@ type BazelArgs struct {
 	// resolved are the Bazel args that are used internally within the bb parser.
 	// --config and --bazelrc flags are expanded, so the parser has a complete view of the args.
 	resolved *parsed.OrderedArgs
+
+	// noResolve indicates that resolved args (i.e. --config and --bazelrc flags expanded) should not be computed.
+	noResolve bool
 }
 
 // Forwarded returns the forwarded args as a canonicalized []string.
@@ -29,6 +32,9 @@ func (a *BazelArgs) Forwarded() []string {
 
 // Resolved returns the resolved args as a canonicalized []string.
 func (a *BazelArgs) Resolved() []string {
+	if a.noResolve {
+		return a.Forwarded()
+	}
 	return a.resolved.Canonicalized().Format()
 }
 
@@ -41,15 +47,13 @@ func NewBazelArgs(args []string) (*BazelArgs, error) {
 	return b, nil
 }
 
-// NewBazelArgsNoResolve creates a BazelArgs from an already-resolved []string
-// without performing config/bazelrc expansion. Both forwarded and resolved are
-// set to the same parsed form of args.
+// NewBazelArgsNoResolve creates a BazelArgs without performing config/bazelrc expansion.
 func NewBazelArgsNoResolve(args []string) (*BazelArgs, error) {
 	parsed, err := parser.ParseArgs(args)
 	if err != nil {
 		return nil, err
 	}
-	return &BazelArgs{forwarded: parsed, resolved: cloneOrderedArgs(parsed)}, nil
+	return &BazelArgs{forwarded: parsed, noResolve: true}, nil
 }
 
 func cloneOrderedArgs(args *parsed.OrderedArgs) *parsed.OrderedArgs {
@@ -64,6 +68,9 @@ func (a *BazelArgs) Set(args []string) error {
 		return err
 	}
 	a.forwarded = forwarded
+	if a.noResolve {
+		return nil
+	}
 	return a.resolve()
 }
 
@@ -74,6 +81,9 @@ func (a *BazelArgs) Append(arg string) error {
 		return err
 	}
 	a.forwarded = newFwd
+	if a.noResolve {
+		return nil
+	}
 
 	if requiresResolve(arg) {
 		return a.resolve()
@@ -96,6 +106,9 @@ func (a *BazelArgs) AppendStartupOption(name, value string) error {
 	if err := a.forwarded.Append(opt); err != nil {
 		return err
 	}
+	if a.noResolve {
+		return nil
+	}
 
 	if requiresResolve(name) {
 		return a.resolve()
@@ -113,6 +126,9 @@ func (a *BazelArgs) Prepend(arg string) error {
 		return err
 	}
 	a.forwarded = newFwd
+	if a.noResolve {
+		return nil
+	}
 
 	if requiresResolve(arg) {
 		return a.resolve()
@@ -160,6 +176,10 @@ func (a *BazelArgs) Has(flagName string) bool {
 // resolve is expensive because it re-parses all rc files and expands configs. It is only necessary
 // when requiresResolve returns true for a flag.
 func (a *BazelArgs) resolve() error {
+	if a.noResolve {
+		return nil
+	}
+
 	// Clone to avoid mutation of a.forwarded by ResolveArgs.
 	clone := cloneOrderedArgs(a.forwarded)
 	resolved, err := parser.ResolveArgs(clone)
@@ -192,6 +212,9 @@ func (a *BazelArgs) StripBBFlag(flagName string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	if a.noResolve {
+		return flagVal, nil
+	}
 	a.resolved.RemoveCommandOptions(flagName)
 	return flagVal, nil
 }
@@ -206,6 +229,9 @@ func (a *BazelArgs) StripBBBoolFlag(flagName string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
+	if a.noResolve {
+		return set, nil
+	}
 	a.resolved.RemoveCommandOptions(flagName)
 	return set, nil
 }
@@ -213,7 +239,10 @@ func (a *BazelArgs) StripBBBoolFlag(flagName string) (bool, error) {
 // StripBBStartupOptions removes CLI-only startup options and returns the removed options.
 // TODO(#7389): If we support setting CLI flags via config, make sure we support reading them correctly.
 func (a *BazelArgs) StripBBStartupOptions(optionNames ...string) []*parsed.IndexedOption {
-	a.forwarded.RemoveStartupOptions(optionNames...)
+	forwardedRemoved := a.forwarded.RemoveStartupOptions(optionNames...)
+	if a.noResolve {
+		return forwardedRemoved
+	}
 	removed := a.resolved.RemoveStartupOptions(optionNames...)
 	return removed
 }
@@ -221,6 +250,9 @@ func (a *BazelArgs) StripBBStartupOptions(optionNames ...string) []*parsed.Index
 // GetRemoteHeaderVal returns the value of a --remote_header flag matching the
 // given key, reading from the resolved args.
 func (a *BazelArgs) GetRemoteHeaderVal(key string) string {
+	if a.noResolve {
+		return parser.GetRemoteHeaderVal(a.forwarded, key)
+	}
 	return parser.GetRemoteHeaderVal(a.resolved, key)
 }
 
@@ -235,6 +267,9 @@ func (a *BazelArgs) Pop(flagName string) (string, error) {
 			return "", err
 		}
 		a.forwarded = newFwd
+		if a.noResolve {
+			return value, nil
+		}
 
 		if requiresResolve(flagName) {
 			return value, a.resolve()
