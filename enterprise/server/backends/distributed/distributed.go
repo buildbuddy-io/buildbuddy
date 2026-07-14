@@ -439,10 +439,10 @@ func (c *Cache) lookasideKey(ctx context.Context, r *rspb.ResourceName) (key str
 }
 
 const (
-	rightsizeLookasideEnabledFlag  = "cache_proxy.rightsize_lookaside_entries"
-	rightsizeLookasideRatioFlag    = "cache_proxy.rightsize_lookaside_min_slack_ratio"
-	defaultRightsizeLookasideRatio = 1.5
-	rightsizeConfigRefreshInterval = 30 * time.Second
+	rightsizeLookasideEnabledExperiment = "cache.distributed_cache.rightsize_lookaside_entries"
+	rightsizeLookasideRatioExperiment   = "cache.distributed_cache.rightsize_lookaside_min_slack_ratio"
+	defaultRightsizeLookasideRatio      = 1.5
+	rightsizeConfigRefreshInterval      = 30 * time.Second
 )
 
 type lookasideRightsizeConfig struct {
@@ -464,8 +464,8 @@ func (c *Cache) refreshLookasideRightsizeConfig() {
 	enabled, ratio := true, float64(defaultRightsizeLookasideRatio)
 	if fp := c.env.GetExperimentFlagProvider(); fp != nil {
 		ctx := context.Background()
-		enabled = fp.Boolean(ctx, rightsizeLookasideEnabledFlag, enabled)
-		ratio = fp.Float64(ctx, rightsizeLookasideRatioFlag, ratio)
+		enabled = fp.Boolean(ctx, rightsizeLookasideEnabledExperiment, enabled)
+		ratio = fp.Float64(ctx, rightsizeLookasideRatioExperiment, ratio)
 	}
 	c.lookasideRightsizeConfig.Store(&lookasideRightsizeConfig{enabled: enabled, ratio: ratio})
 }
