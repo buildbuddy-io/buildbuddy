@@ -44,9 +44,15 @@ var (
 type GCSBlobStore struct {
 	gcsClient    *storage.Client
 	bucketHandle *storage.BucketHandle
+	bucket       string
 	projectID    string
 	compress     bool
 	metricLabel  string
+}
+
+// Bucket returns the name of the GCS bucket this store writes to.
+func (g *GCSBlobStore) Bucket() string {
+	return g.bucket
 }
 
 func UseGCSBlobStore() bool {
@@ -90,6 +96,7 @@ func NewGCSBlobStore(ctx context.Context, bucket, credsFile, creds, projectID st
 	}
 	g := &GCSBlobStore{
 		gcsClient:   gcsClient,
+		bucket:      bucket,
 		projectID:   projectID,
 		compress:    enableCompression,
 		metricLabel: "gcs/" + bucket,

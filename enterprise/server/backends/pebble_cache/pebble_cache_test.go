@@ -2871,6 +2871,87 @@ func TestGCSAtimeUpdateThreshold(t *testing.T) {
 	require.Equal(t, 1, mockGCS.UpdateCustomTimeCallCount())
 }
 
+func TestGCSBlobStorageSharding(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
+	clock := clockwork.NewFakeClock()
+	ctx := getAnonContext(t, te)
+
+	var minGCSFileSize int64 = 1
+	var gcsTTLDays int64 = 1
+
+	// A default bucket plus two sharded buckets.
+	defaultGCS := mockgcs.NewWithBucket(clock, "default-bucket")
+	shard0 := mockgcs.NewWithBucket(clock, "shard-0")
+	shard1 := mockgcs.NewWithBucket(clock, "shard-1")
+	shardedStores := []filestore.PebbleGCSStorage{shard0, shard1}
+	for _, s := range shardedStores {
+		require.NoError(t, s.SetBucketCustomTimeTTL(ctx, gcsTTLDays))
+	}
+	require.NoError(t, defaultGCS.SetBucketCustomTimeTTL(ctx, gcsTTLDays))
+
+	// Shard roughly half of the writes (by digest hash parity), leaving the
+	// rest in the default bucket. This mirrors a partial rollout: reads must
+	// resolve correctly whether an object landed in the default or a shard.
+	shardDecider := func(ctx context.Context, digestHash string) bool {
+		return digestHash[len(digestHash)-1]%2 == 0
+	}
+
+	fileStorer := filestore.New(
+		filestore.WithGCSBlobstore(defaultGCS, "app-name"),
+		filestore.WithShardedGCSBlobstores(shardedStores, shardDecider),
+	)
+	options := &pebble_cache.Options{
+		RootDirectory:          testfs.MakeTempDir(t),
+		MaxSizeBytes:           int64(1_000_000), // 1MB
+		Clock:                  clock,
+		FileStorer:             fileStorer,
+		MaxInlineFileSizeBytes: 1,
+		MinGCSFileSizeBytes:    &minGCSFileSize,
+		GCSTTLDays:             &gcsTTLDays,
+	}
+	pc, err := pebble_cache.NewPebbleCache(te, options)
+	require.NoError(t, err)
+	require.NoError(t, pc.Start())
+	defer pc.Stop()
+
+	sampleData := make(map[*rspb.ResourceName][]byte)
+	for i := 0; i < 20; i++ {
+		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+		sampleData[rn] = buf
+	}
+
+	var written []*rspb.ResourceName
+	for rn, buf := range sampleData {
+		require.NoError(t, pc.Set(ctx, rn, buf))
+		written = append(written, rn)
+	}
+
+	// Every object should be stored exactly once, split across the default and
+	// the sharded buckets. With 20 random digests both sides are populated.
+	total := defaultGCS.BlobCount() + shard0.BlobCount() + shard1.BlobCount()
+	require.Equal(t, len(sampleData), total)
+	require.NotZero(t, defaultGCS.BlobCount(), "expected some objects in the default bucket")
+	require.NotZero(t, shard0.BlobCount()+shard1.BlobCount(), "expected some objects in the sharded buckets")
+
+	// Reads must resolve to the recorded bucket regardless of where an object
+	// landed.
+	for rn, buf := range sampleData {
+		got, err := pc.Get(ctx, rn)
+		require.NoError(t, err, rn)
+		require.Equal(t, buf, got)
+	}
+
+	// The custom-time TTL applies to sharded buckets too: everything expires
+	// once the TTL passes.
+	clock.Advance(25 * time.Hour)
+	for _, rn := range written {
+		exists, err := pc.Contains(ctx, rn)
+		require.NoError(t, err)
+		assert.False(t, exists, rn)
+	}
+}
+
 func pointer[T any](value T) *T {
 	return &value
 }

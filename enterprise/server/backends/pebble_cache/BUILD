@@ -7,6 +7,7 @@ go_library(
     srcs = ["pebble_cache.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pebble_cache",
     deps = [
+        "//enterprise/server/experiments",
         "//enterprise/server/filestore",
         "//enterprise/server/raft/keys",
         "//enterprise/server/util/gcsutil",

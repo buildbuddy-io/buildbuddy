@@ -17,6 +17,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/filestore"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/gcsutil"
@@ -106,7 +107,14 @@ var (
 	gcsProjectID            = flag.String("cache.pebble.gcs.project_id", "", "The Google Cloud project ID of the project owning the above credentials and GCS bucket.")
 	gcsAppName              = flag.String("cache.pebble.gcs.app_name", "", "The app name, under which blobstore data will be stored.")
 	gcsAtimeUpdateThreshold = flag.Duration("cache.pebble.gcs.atime_update_threshold", 0, "Don't update a GCS object's custom time (its atime) if it was updated more recently than this (0 updates on every atime update).")
+	shardedGCSBuckets       = flag.Slice("cache.pebble.gcs.sharded_buckets", []string{}, "An optional list of additional GCS buckets to shard writes across (by digest hash). Sharding is gated by the sharded_buckets_enabled experiment; empty disables it.", flag.Internal)
 )
+
+// shardedBucketsExperimentName gates whether a pebble GCS write is sharded
+// across cache.pebble.gcs.sharded_buckets instead of going to the default
+// bucket. The rollout percentage is controlled in flagd, keyed on the digest
+// hash, so it can be ramped up gradually (0 -> 1% -> 10% -> ...).
+const shardedBucketsExperimentName = "cache.pebble.gcs.sharded_buckets_enabled"
 
 var (
 	// Default values for Options
@@ -208,6 +216,10 @@ type Options struct {
 	GCSAppName          string
 	GCSTTLDays          *int64
 	MinGCSFileSizeBytes *int64
+	// GCSShardedBuckets is an optional list of additional GCS buckets that
+	// writes may be sharded across (by digest hash), gated by the
+	// sharded_buckets_enabled experiment. Empty disables sharding.
+	GCSShardedBuckets []string
 	// GCSAtimeUpdateThreshold suppresses a GCS object's custom time (atime)
 	// refresh if it was updated more recently than this. 0 updates on every
 	// atime update.
@@ -382,6 +394,7 @@ func Register(env *real_environment.RealEnv) error {
 		GCSAppName:                  *gcsAppName,
 		GCSTTLDays:                  gcsTTLDays,
 		MinGCSFileSizeBytes:         minGCSFileSizeBytesFlag,
+		GCSShardedBuckets:           *shardedGCSBuckets,
 		GCSAtimeUpdateThreshold:     gcsAtimeUpdateThreshold,
 		EnableAutoRatchet:           *enableAutoRatchet,
 	}
@@ -581,6 +594,20 @@ func defaultPebbleOptions(mc *pebble.MetricsCollector, pcOpts *Options) *pebble.
 }
 
 // NewPebbleCache creates a new cache from the provided env and opts.
+// gcsShardDecider returns a filestore.ShardDeciderFunc backed by the given
+// experiment flag provider. A write is opted into the sharded GCS buckets based
+// on the sharded_buckets_enabled experiment, keyed on the digest hash so the
+// rollout is deterministic per digest. Returns nil (sharding disabled) when no
+// experiment provider is configured.
+func gcsShardDecider(efp interfaces.ExperimentFlagProvider) filestore.ShardDeciderFunc {
+	if efp == nil {
+		return nil
+	}
+	return func(ctx context.Context, digestHash string) bool {
+		return efp.Boolean(ctx, shardedBucketsExperimentName, false, experiments.WithContext("digest_hash", digestHash))
+	}
+}
+
 func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 	SetOptionDefaults(opts)
 	if err := validateOpts(opts); err != nil {
@@ -645,6 +672,27 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 			filestoreOpts = append(filestoreOpts, filestore.WithGCSBlobstore(gcsBlobstore, opts.GCSAppName))
 			log.Infof("Pebble Cache: storing files larger than %d bytes in GCS (bucket: %q)", *opts.MinGCSFileSizeBytes, opts.GCSBucket)
 			log.Infof("Pebble Cache: GCS TTL is set to %d days", *opts.GCSTTLDays)
+
+			// Optionally, shard writes across additional buckets. This is gated
+			// per-digest by the sharded_buckets_enabled experiment so it can be
+			// ramped up gradually. Each object records which bucket it landed
+			// in (see filestore), so reads stay correct at any rollout %.
+			if len(opts.GCSShardedBuckets) > 0 {
+				shardedBlobstores := make([]filestore.PebbleGCSStorage, 0, len(opts.GCSShardedBuckets))
+				for _, bucket := range opts.GCSShardedBuckets {
+					shardedBlobstore, err := gcs.NewGCSBlobStore(ctx, bucket, "", opts.GCSCredentials, opts.GCSProjectID, false /*=enableCompression*/)
+					if err != nil {
+						return nil, err
+					}
+					if err := shardedBlobstore.SetBucketCustomTimeTTL(ctx, *opts.GCSTTLDays); err != nil {
+						return nil, err
+					}
+					shardedBlobstores = append(shardedBlobstores, shardedBlobstore)
+				}
+				shardDecider := gcsShardDecider(env.GetExperimentFlagProvider())
+				filestoreOpts = append(filestoreOpts, filestore.WithShardedGCSBlobstores(shardedBlobstores, shardDecider))
+				log.Infof("Pebble Cache: sharding GCS writes across buckets: %v", opts.GCSShardedBuckets)
+			}
 		}
 
 		// For temporary files stored on disk, write them to a dedicated
