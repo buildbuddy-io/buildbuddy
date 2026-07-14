@@ -2303,6 +2303,83 @@ actions:
 	require.Contains(t, string(b), "java.lang.OutOfMemoryError")
 }
 
+func TestArtifactUploads_JavaLogOnBESUploadError(t *testing.T) {
+	workspaceSimulateBESUploadError := map[string]string{
+		"BUILD": `
+load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
+sh_binary(name = "write_java_log", srcs = ["write_java_log.sh"])
+`,
+		"write_java_log.sh": `
+output_base="$1"
+echo "BES upload timed out" >> "$output_base/java.log"
+exit 38
+`,
+		"buildbuddy.yaml": `
+actions:
+  - name: "Test"
+    triggers:
+      pull_request: { branches: [ master ] }
+      push: { branches: [ master ] }
+    steps:
+      - run: |
+          output_base=$(bazel info output_base)
+          bazel run :write_java_log "$output_base"
+`,
+	}
+
+	wsPath := testfs.MakeTempDir(t)
+	repoPath, headCommitSHA := makeGitRepo(t, workspaceSimulateBESUploadError)
+
+	runnerFlags := []string{
+		"--workflow_id=test-workflow",
+		"--action_name=Test",
+		"--trigger_event=push",
+		"--pushed_repo_url=file://" + repoPath,
+		"--pushed_branch=master",
+		"--commit_sha=" + headCommitSHA,
+		"--target_repo_url=file://" + repoPath,
+		"--target_branch=master",
+	}
+	app := buildbuddy.Run(t)
+	runnerFlags = append(runnerFlags, app.BESBazelFlags()...)
+	runnerFlags = append(runnerFlags, "--cache_backend="+app.GRPCAddress())
+
+	result := invokeRunner(t, runnerFlags, []string{}, wsPath)
+	require.Equal(t, 38, result.ExitCode, "bazel should have exited with code 38 due to a BES upload failure")
+
+	runnerInvocation := getRunnerInvocation(t, app, result)
+	var javaLog *bespb.File
+	for _, tg := range runnerInvocation.GetTargetGroups() {
+		for _, target := range tg.GetTargets() {
+			for _, file := range target.GetFiles() {
+				if file.GetName() == "java.log" {
+					javaLog = file
+				}
+			}
+		}
+	}
+	require.NotNil(t, javaLog)
+	require.NotEmpty(t, javaLog.GetUri())
+
+	downloadURL := fmt.Sprintf(
+		"%s/file/download?invocation_id=%s&bytestream_url=%s",
+		app.HTTPURL(),
+		url.QueryEscape(runnerInvocation.GetInvocationId()),
+		url.QueryEscape(javaLog.GetUri()))
+	res, err := http.Get(downloadURL)
+	require.NoError(t, err)
+	defer res.Body.Close()
+
+	if res.StatusCode != 200 {
+		b, _ := io.ReadAll(res.Body)
+		require.FailNowf(t, res.Status, "response body: %s", string(b))
+	}
+
+	b, err := io.ReadAll(res.Body)
+	require.NoError(t, err)
+	require.Contains(t, string(b), "BES upload timed out")
+}
+
 func TestTimeout(t *testing.T) {
 	repoPath, _ := makeGitRepo(t, workspaceContentsWithRunScript)
 
