@@ -104,6 +104,14 @@ func (m *mockGCS) DeleteBlob(ctx context.Context, blobName string) error {
 	return nil
 }
 
+// DeleteAllBlobs removes every blob in the mock bucket.
+func (m *mockGCS) DeleteAllBlobs(ctx context.Context) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.items = make(map[string]*timestampedBlob)
+	return nil
+}
+
 func (m *mockGCS) UpdateCustomTime(ctx context.Context, blobName string, t time.Time) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()

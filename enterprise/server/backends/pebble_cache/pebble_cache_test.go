@@ -3048,83 +3048,26 @@ func TestAtimeUpdater(t *testing.T) {
 	require.Eventually(t, calledFunc, time.Minute, 100*time.Millisecond)
 }
 
-type recordingGCS struct {
-	mu        sync.Mutex
-	storage   filestore.PebbleGCSStorage
-	blobNames []string
+type faultyGCS struct {
+	filestore.PebbleGCSStorage
+	mu      sync.Mutex
+	readErr error
 }
 
-func (g *recordingGCS) SetStorage(storage filestore.PebbleGCSStorage) {
-	g.mu.Lock()
-	g.storage = storage
-	g.mu.Unlock()
-}
-
-func (g *recordingGCS) Storage() filestore.PebbleGCSStorage {
+func (g *faultyGCS) SetReadError(err error) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	return g.storage
+	g.readErr = err
 }
 
-func (g *recordingGCS) SetBucketCustomTimeTTL(ctx context.Context, ageInDays int64) error {
-	return g.Storage().SetBucketCustomTimeTTL(ctx, ageInDays)
-}
-
-func (g *recordingGCS) Reader(ctx context.Context, blobName string, offset, limit int64) (io.ReadCloser, error) {
-	return g.Storage().Reader(ctx, blobName, offset, limit)
-}
-
-func (g *recordingGCS) ConditionalWriter(ctx context.Context, blobName string, overwriteExisting bool, customTime time.Time, estimatedSize int64) (interfaces.CommittedWriteCloser, error) {
-	w, err := g.Storage().ConditionalWriter(ctx, blobName, overwriteExisting, customTime, estimatedSize)
+func (g *faultyGCS) Reader(ctx context.Context, blobName string, offset, limit int64) (io.ReadCloser, error) {
+	g.mu.Lock()
+	err := g.readErr
+	g.mu.Unlock()
 	if err != nil {
 		return nil, err
 	}
-	return &recordingGCSWriter{CommittedWriteCloser: w, gcs: g, blobName: blobName}, nil
-}
-
-func (g *recordingGCS) DeleteBlob(ctx context.Context, blobName string) error {
-	return g.Storage().DeleteBlob(ctx, blobName)
-}
-
-func (g *recordingGCS) UpdateCustomTime(ctx context.Context, blobName string, t time.Time) error {
-	return g.Storage().UpdateCustomTime(ctx, blobName, t)
-}
-
-func (g *recordingGCS) DeleteRecordedBlobs(ctx context.Context) error {
-	g.mu.Lock()
-	names := append([]string(nil), g.blobNames...)
-	g.mu.Unlock()
-	for _, name := range names {
-		if err := g.DeleteBlob(ctx, name); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-type recordingGCSWriter struct {
-	interfaces.CommittedWriteCloser
-	gcs      *recordingGCS
-	blobName string
-}
-
-func (w *recordingGCSWriter) Commit() error {
-	if err := w.CommittedWriteCloser.Commit(); err != nil {
-		return err
-	}
-	w.gcs.mu.Lock()
-	w.gcs.blobNames = append(w.gcs.blobNames, w.blobName)
-	w.gcs.mu.Unlock()
-	return nil
-}
-
-type readFailingGCS struct {
-	filestore.PebbleGCSStorage
-	err error
-}
-
-func (g *readFailingGCS) Reader(ctx context.Context, blobName string, offset, limit int64) (io.ReadCloser, error) {
-	return nil, g.err
+	return g.PebbleGCSStorage.Reader(ctx, blobName, offset, limit)
 }
 
 type commitFailingGCS struct {
@@ -3319,14 +3262,17 @@ func TestPebbleGCSBlobMissingAfterDelete(t *testing.T) {
 
 func TestPebbleGCSBackingObjectDeleted(t *testing.T) {
 	clock := clockwork.NewFakeClock()
-	gcs := &recordingGCS{storage: mockgcs.New(clock)}
+	gcs := mockgcs.New(clock)
 	te, c := newGCSBackedContractCache(t, clock, gcs)
 	ctx := getAnonContext(t, te)
 	rn, data := testdigest.RandomCASResourceBuf(t, 100)
 
 	require.NoError(t, c.Set(ctx, rn, data))
-	require.NoError(t, gcs.DeleteRecordedBlobs(ctx))
+	require.NoError(t, gcs.DeleteAllBlobs(ctx))
 
+	// Metadata reads are answered from the local index, which still has the
+	// entry even though the backing blob is gone.
+	expectMetadataPresent(t, ctx, c, rn)
 	// The first content miss repairs the local index, so metadata reads miss after it.
 	expectContentNotFound(t, ctx, c, rn)
 	expectMetadataMissing(t, ctx, c, rn)
@@ -3334,16 +3280,13 @@ func TestPebbleGCSBackingObjectDeleted(t *testing.T) {
 
 func TestPebbleGCSBackingReadUnavailable(t *testing.T) {
 	clock := clockwork.NewFakeClock()
-	gcs := &recordingGCS{storage: mockgcs.New(clock)}
+	gcs := &faultyGCS{PebbleGCSStorage: mockgcs.New(clock)}
 	te, c := newGCSBackedContractCache(t, clock, gcs)
 	ctx := getAnonContext(t, te)
 	rn, data := testdigest.RandomCASResourceBuf(t, 100)
 
 	require.NoError(t, c.Set(ctx, rn, data))
-	gcs.SetStorage(&readFailingGCS{
-		PebbleGCSStorage: gcs.Storage(),
-		err:              status.UnavailableError("gcs read unavailable"),
-	})
+	gcs.SetReadError(status.UnavailableError("gcs read unavailable"))
 
 	expectMetadataPresent(t, ctx, c, rn)
 	expectContentError(t, ctx, c, rn, "gcs read unavailable")
