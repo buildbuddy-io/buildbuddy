@@ -94,5 +94,6 @@ go_test(
         "@com_github_stretchr_testify//require",
         "@org_golang_google_protobuf//testing/protocmp",
         "@org_golang_google_protobuf//types/known/durationpb",
+        "@org_golang_google_protobuf//types/known/timestamppb",
     ],
 )

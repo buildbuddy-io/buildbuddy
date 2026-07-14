@@ -2810,11 +2810,7 @@ func (s *SchedulerServer) getRegisteredExecutionNodesFromRedis(ctx context.Conte
 }
 
 // getNewestExecutorVersion returns the maximum semantic version among live
-// registrations across all executor pools, or nil if none parses as semver.
-// The result is cached in-process for executorNewestVersionCacheTTL; the
-// mutex is held across the scan so concurrent GetExecutionNodes calls don't
-// scan Redis in parallel — a slightly stale answer is fine for an upgrade
-// prompt.
+// registrations in the shared executor pool group's pools.
 func (s *SchedulerServer) getNewestExecutorVersion(ctx context.Context) *semver.Version {
 	s.versionMu.Lock()
 	defer s.versionMu.Unlock()
@@ -2822,43 +2818,35 @@ func (s *SchedulerServer) getNewestExecutorVersion(ctx context.Context) *semver.
 		return s.newestVersion
 	}
 
+	poolKeys, err := s.rdb.SMembers(ctx, s.redisKeyForExecutorPools(*sharedExecutorPoolGroupID)).Result()
+	if err != nil {
+		log.CtxWarningf(ctx, "could not list shared executor pools for newest version: %s", err)
+		// Don't cache the result of a failed read.
+		return nil
+	}
 	var newest *semver.Version
-	var cursor uint64
-	for {
-		// Scan all pools regardless of group/os/arch; see redisPoolKey.
-		keys, next, err := s.rdb.Scan(ctx, cursor, "executorPool/*", 100).Result()
+	for _, key := range poolKeys {
+		executors, err := s.rdb.HGetAll(ctx, key).Result()
 		if err != nil {
-			log.CtxWarningf(ctx, "could not scan executor registrations for newest version: %s", err)
-			// Don't cache the (possibly partial) result of a failed scan.
+			log.CtxWarningf(ctx, "could not read executor registrations at %q: %s", key, err)
 			return nil
 		}
-		for _, key := range keys {
-			executors, err := s.rdb.HGetAll(ctx, key).Result()
+		for _, data := range executors {
+			node := &scpb.RegisteredExecutionNode{}
+			if err := proto.Unmarshal([]byte(data), node); err != nil {
+				continue
+			}
+			if time.Since(node.GetLastPingTime().AsTime()) > executorMaxRegistrationStaleness {
+				continue
+			}
+			// Skip "unknown" and other unparseable versions.
+			v, err := semver.NewVersion(node.GetRegistration().GetVersion())
 			if err != nil {
-				log.CtxWarningf(ctx, "could not read executor registrations at %q: %s", key, err)
-				return nil
+				continue
 			}
-			for _, data := range executors {
-				node := &scpb.RegisteredExecutionNode{}
-				if err := proto.Unmarshal([]byte(data), node); err != nil {
-					continue
-				}
-				if time.Since(node.GetLastPingTime().AsTime()) > executorMaxRegistrationStaleness {
-					continue
-				}
-				// Skip "unknown" and other unparseable versions.
-				v, err := semver.NewVersion(node.GetRegistration().GetVersion())
-				if err != nil {
-					continue
-				}
-				if newest == nil || v.GreaterThan(newest) {
-					newest = v
-				}
+			if newest == nil || v.GreaterThan(newest) {
+				newest = v
 			}
-		}
-		cursor = next
-		if cursor == 0 {
-			break
 		}
 	}
 

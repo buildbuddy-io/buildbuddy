@@ -61,6 +61,7 @@ const (
 var (
 	upgradePromptMaxLags     = flag.Map("cache_proxy.upgrade_prompt_max_lags", map[string]string{}, "Map from upgrade prompt urgency (LOW, MEDIUM, HIGH, or CRITICAL) to the maximum version lag (a semver-shaped diff, e.g. \"0.10.0\" tolerates at most 10 minor versions) a cache proxy may fall behind the newest registered version before GetCacheProxies prompts an upgrade at that urgency.")
 	upgradePromptMinVersions = flag.Map("cache_proxy.upgrade_prompt_min_versions", map[string]string{}, "Map from upgrade prompt urgency (LOW, MEDIUM, HIGH, or CRITICAL) to the minimum version (semver) below which GetCacheProxies prompts an upgrade at that urgency.")
+	sharedPoolGroupID        = flag.String("cache_proxy.shared_pool_group_id", "", "Group ID that owns the shared proxies.")
 )
 
 type CacheProxyRegistryServer struct {
@@ -245,53 +246,39 @@ func (s *CacheProxyRegistryServer) removeProxy(ctx context.Context, groupID, pro
 }
 
 // getNewestVersion returns the maximum semantic version among live
-// registrations across all groups, or nil if none parses as semver. The
-// result is cached in-process for newestVersionCacheTTL; the mutex is held
-// across the scan so concurrent GetCacheProxies calls don't scan Redis in
-// parallel — a slightly stale answer is fine for an upgrade prompt.
+// registrations in the shared pool group.
 func (s *CacheProxyRegistryServer) getNewestVersion(ctx context.Context) *semver.Version {
+	if *sharedPoolGroupID == "" {
+		return nil
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.clock.Now().Before(s.newestVersionExpiry) {
 		return s.newestVersion
 	}
 
+	entries, err := s.rdb.HGetAll(ctx, redisKeyForCacheProxies(*sharedPoolGroupID)).Result()
+	if err != nil {
+		log.CtxWarningf(ctx, "could not read cache proxy registrations for newest version: %s", err)
+		// Don't cache the result of a failed read.
+		return nil
+	}
 	var newest *semver.Version
-	var cursor uint64
-	for {
-		keys, next, err := s.rdb.Scan(ctx, cursor, redisKeyForCacheProxies("*"), 100).Result()
+	for _, data := range entries {
+		reg := &cppb.RegisteredCacheProxy{}
+		if err := proto.Unmarshal([]byte(data), reg); err != nil {
+			continue
+		}
+		if s.clock.Since(reg.GetLastPingTime().AsTime()) > maxRegistrationStaleness {
+			continue
+		}
+		// Skip "unknown" and other unparseable versions.
+		v, err := semver.NewVersion(reg.GetRegistration().GetVersion())
 		if err != nil {
-			log.CtxWarningf(ctx, "could not scan cache proxy registrations for newest version: %s", err)
-			// Don't cache the (possibly partial) result of a failed scan.
-			return nil
+			continue
 		}
-		for _, key := range keys {
-			entries, err := s.rdb.HGetAll(ctx, key).Result()
-			if err != nil {
-				log.CtxWarningf(ctx, "could not read cache proxy registrations at %q: %s", key, err)
-				return nil
-			}
-			for _, data := range entries {
-				reg := &cppb.RegisteredCacheProxy{}
-				if err := proto.Unmarshal([]byte(data), reg); err != nil {
-					continue
-				}
-				if s.clock.Since(reg.GetLastPingTime().AsTime()) > maxRegistrationStaleness {
-					continue
-				}
-				// Skip "unknown" and other unparseable versions.
-				v, err := semver.NewVersion(reg.GetRegistration().GetVersion())
-				if err != nil {
-					continue
-				}
-				if newest == nil || v.GreaterThan(newest) {
-					newest = v
-				}
-			}
-		}
-		cursor = next
-		if cursor == 0 {
-			break
+		if newest == nil || v.GreaterThan(newest) {
+			newest = v
 		}
 	}
 

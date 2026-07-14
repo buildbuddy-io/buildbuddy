@@ -33,6 +33,9 @@ import (
 
 const (
 	testGroupID = "GR1"
+	// The group whose proxies are operated by BuildBuddy; the newest version
+	// among its registrations sets the bar for upgrade prompts.
+	testSharedPoolGroupID = "GR-SHARED"
 )
 
 // newServer wires up a registry server backed by a real Redis and the
@@ -45,6 +48,7 @@ func newServer(t *testing.T, users map[string]interfaces.UserInfo) (*CacheProxyR
 		RedisTarget: redisTarget,
 	})
 	env.SetAuthenticator(testauth.NewTestAuthenticator(t, users))
+	flags.Set(t, "cache_proxy.shared_pool_group_id", testSharedPoolGroupID)
 
 	s, err := NewCacheProxyRegistryServer(env, testDetector())
 	require.NoError(t, err)
@@ -181,9 +185,9 @@ func TestGetCacheProxies_UpgradePrompt(t *testing.T) {
 	user := userWithCapabilities("U1", testGroupID, cappb.Capability_REGISTER_CACHE_PROXY)
 	s, _ := newServer(t, map[string]interfaces.UserInfo{"CP_KEY": user})
 
-	// The newest version is registered under a *different* group; the prompt
-	// compares against the newest version across the whole installation.
-	require.NoError(t, s.insertOrUpdateProxy(context.Background(), "GR-OTHER", &cppb.CacheProxyNode{
+	// The newest version is registered by the shared executor pool group
+	// (BuildBuddy's own proxies); the prompt compares against it.
+	require.NoError(t, s.insertOrUpdateProxy(context.Background(), testSharedPoolGroupID, &cppb.CacheProxyNode{
 		Host: "host-new", ProxyId: "id-new", Version: "v2.153.0",
 	}, nil))
 	require.NoError(t, s.insertOrUpdateProxy(context.Background(), testGroupID, &cppb.CacheProxyNode{
@@ -206,11 +210,32 @@ func TestGetCacheProxies_UpgradePrompt_WithinAllowance(t *testing.T) {
 	user := userWithCapabilities("U1", testGroupID, cappb.Capability_REGISTER_CACHE_PROXY)
 	s, _ := newServer(t, map[string]interfaces.UserInfo{"CP_KEY": user})
 
-	require.NoError(t, s.insertOrUpdateProxy(context.Background(), "GR-OTHER", &cppb.CacheProxyNode{
+	require.NoError(t, s.insertOrUpdateProxy(context.Background(), testSharedPoolGroupID, &cppb.CacheProxyNode{
 		Host: "host-new", ProxyId: "id-new", Version: "v2.153.0",
 	}, nil))
 	require.NoError(t, s.insertOrUpdateProxy(context.Background(), testGroupID, &cppb.CacheProxyNode{
 		Host: "host-old", ProxyId: "id-old", Version: "v2.152.0",
+	}, nil))
+
+	ctx := claims.AuthContextWithJWT(context.Background(), user.(*claims.Claims), nil)
+	resp, err := s.GetCacheProxies(ctx, &cppb.GetCacheProxiesRequest{
+		RequestContext: &ctxpb.RequestContext{GroupId: testGroupID},
+	})
+	require.NoError(t, err)
+	assert.Nil(t, resp.GetUpgradePrompt())
+}
+
+func TestGetCacheProxies_UpgradePrompt_IgnoresOtherGroups(t *testing.T) {
+	user := userWithCapabilities("U1", testGroupID, cappb.Capability_REGISTER_CACHE_PROXY)
+	s, _ := newServer(t, map[string]interfaces.UserInfo{"CP_KEY": user})
+
+	// A newer version registered outside the shared executor pool group
+	// shouldn't set the bar.
+	require.NoError(t, s.insertOrUpdateProxy(context.Background(), "GR-OTHER", &cppb.CacheProxyNode{
+		Host: "host-new", ProxyId: "id-new", Version: "v2.153.0",
+	}, nil))
+	require.NoError(t, s.insertOrUpdateProxy(context.Background(), testGroupID, &cppb.CacheProxyNode{
+		Host: "host-old", ProxyId: "id-old", Version: "v2.140.0",
 	}, nil))
 
 	ctx := claims.AuthContextWithJWT(context.Background(), user.(*claims.Claims), nil)
@@ -227,7 +252,7 @@ func TestGetCacheProxies_UpgradePrompt_SkipsUnparseableVersions(t *testing.T) {
 
 	// Dev builds report "unknown"; they should neither count as the newest
 	// version nor trigger the prompt themselves.
-	require.NoError(t, s.insertOrUpdateProxy(context.Background(), "GR-OTHER", &cppb.CacheProxyNode{
+	require.NoError(t, s.insertOrUpdateProxy(context.Background(), testSharedPoolGroupID, &cppb.CacheProxyNode{
 		Host: "host-dev", ProxyId: "id-dev", Version: "unknown",
 	}, nil))
 	require.NoError(t, s.insertOrUpdateProxy(context.Background(), testGroupID, &cppb.CacheProxyNode{
@@ -249,12 +274,12 @@ func TestGetCacheProxies_UpgradePrompt_IgnoresStaleRegistrations(t *testing.T) {
 	// A long-gone proxy with a very new version shouldn't set the bar.
 	stale := &cppb.RegisteredCacheProxy{
 		Registration: &cppb.CacheProxyNode{Host: "host-new", ProxyId: "id-new", Version: "v2.199.0"},
-		GroupId:      "GR-OTHER",
+		GroupId:      testSharedPoolGroupID,
 		LastPingTime: timestamppb.New(time.Now().Add(-2 * maxRegistrationStaleness)),
 	}
 	b, err := proto.Marshal(stale)
 	require.NoError(t, err)
-	require.NoError(t, s.rdb.HSet(context.Background(), redisKeyForCacheProxies("GR-OTHER"), "id-new", b).Err())
+	require.NoError(t, s.rdb.HSet(context.Background(), redisKeyForCacheProxies(testSharedPoolGroupID), "id-new", b).Err())
 	require.NoError(t, s.insertOrUpdateProxy(context.Background(), testGroupID, &cppb.CacheProxyNode{
 		Host: "host-old", ProxyId: "id-old", Version: "v2.150.0",
 	}, nil))

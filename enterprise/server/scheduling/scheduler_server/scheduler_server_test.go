@@ -41,6 +41,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/testing/protocmp"
 	"google.golang.org/protobuf/types/known/durationpb"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -1561,4 +1562,33 @@ func TestGetExecutionNodes_UpgradePrompt_WithinAllowance(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, rsp.GetExecutor(), 2)
 	require.Nil(t, rsp.GetUpgradePrompt())
+}
+
+// With user-owned executors enabled, only registrations in the shared
+// executor pool group ("sharedGroupID", set by getEnv) set the
+// newest-version bar.
+func TestGetNewestExecutorVersion_ScopedToSharedPoolGroup(t *testing.T) {
+	clock := clockwork.NewFakeClock()
+	env, ctx := getEnv(t, &schedulerOpts{options: Options{Clock: clock, UpgradeDetector: testUpgradeDetector()}, userOwnedEnabled: true}, "user1")
+	s := env.GetSchedulerService().(*SchedulerServer)
+
+	register := func(groupID, version string) {
+		reg := &scpb.RegisteredExecutionNode{
+			Registration: &scpb.ExecutionNode{ExecutorId: "id-" + groupID, Version: version},
+			GroupId:      groupID,
+			LastPingTime: timestamppb.Now(),
+		}
+		b, err := proto.Marshal(reg)
+		require.NoError(t, err)
+		poolKey := "executorPool/" + groupID + "-linux-amd64-p"
+		require.NoError(t, s.rdb.HSet(ctx, poolKey, reg.GetRegistration().GetExecutorId(), b).Err())
+		require.NoError(t, s.rdb.SAdd(ctx, "executorPools/"+groupID, poolKey).Err())
+	}
+	// A newer version outside the shared pool group shouldn't set the bar.
+	register("GR-OTHER", "v2.199.0")
+	register("sharedGroupID", "v2.153.0")
+
+	v := s.getNewestExecutorVersion(ctx)
+	require.NotNil(t, v)
+	require.Equal(t, "2.153.0", v.String())
 }
