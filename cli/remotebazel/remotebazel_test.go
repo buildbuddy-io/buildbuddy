@@ -244,6 +244,24 @@ func TestParseRemoteCliFlags(t *testing.T) {
 				"os": "val2",
 			},
 		},
+		{
+			name: "explicitly passing `bazel` should error",
+			inputArgs: []string{
+				"bazel",
+				"build",
+				"//...",
+			},
+			expectedError: true,
+		},
+		{
+			name: "unexpected token before bazel command should error",
+			inputArgs: []string{
+				"random",
+				"build",
+				"//...",
+			},
+			expectedError: true,
+		},
 	}
 	for _, tc := range testCases {
 		actualOutput, err := parseRemoteCliFlags(tc.inputArgs)

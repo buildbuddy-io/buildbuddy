@@ -1519,7 +1519,14 @@ func parseRemoteCliFlags(args []string) ([]string, error) {
 		if err == nil {
 			// flagset.Args() contains the list of any unparsed arguments
 			// Keep parsing them in a loop until we process all the args
-			unparsedArgs = RemoteFlagset.Args()
+			remainingArgs := RemoteFlagset.Args()
+
+			// If the flag parser didn't consume any arguments (which can happen if there's an unexpected syntax error),
+			// return an error so there's not an infinite loop.
+			if len(remainingArgs) == len(unparsedArgs) {
+				return nil, status.InvalidArgumentErrorf("unexpected argument %q before bazel command; use `bb remote <bazel command> ...` (for example, `bb remote build //...`)", remainingArgs[0])
+			}
+			unparsedArgs = remainingArgs
 		} else {
 			// Parsing undefined flags could happen if there are bazel startup flags set
 			// Remove them from the list of unparsed arguments and keep parsing
