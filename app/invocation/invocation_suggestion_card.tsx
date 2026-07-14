@@ -238,19 +238,18 @@ const matchers: SuggestionMatcher[] = [
       };
     }
 
-    const isBESUploadFullyAsync = besUploadMode === "fully_async";
-
     return {
       level: SuggestionLevel.ERROR,
       message: (
         <>
           Bazel disconnected from BuildBuddy before it finished uploading the build results. This may have been caused
           by a flaky network connection, Bazel crashing due to an OOM error, or Bazel being killed manually.
-          {isBESUploadFullyAsync && (
+          {isBESUploadAsync && (
             <>
               {" "}
-              Note: Since this invocation was run with <CommonBazelFlag>--bes_upload_mode=fully_async</CommonBazelFlag>,
-              the Bazel server may need to live a bit longer to finish uploading the results.
+              Note: Since this invocation was run with{" "}
+              <CommonBazelFlag>{`--bes_upload_mode=${besUploadMode}`}</CommonBazelFlag>, the Bazel server may need to
+              live a bit longer to finish uploading the results.
             </>
           )}
         </>
@@ -809,7 +808,7 @@ export function SuggestionComponent({ suggestion }: SuggestionComponentProps) {
  * Returns a phrase describing why the invocation looks like a CI build, for
  * use in a suggestion reason, or null if it doesn't look like a CI build.
  */
-function getCIEvidence(model: InvocationModel): React.ReactNode | null {
+function getCIEvidence(model: InvocationModel): React.ReactNode {
   if (model.getRole() === "CI") {
     return (
       <>

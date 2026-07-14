@@ -79,6 +79,38 @@ describe("getSuggestions", () => {
     ).toBe(true);
   });
 
+  it("includes a BES upload mode note for nowait_for_upload_complete disconnected invocations", () => {
+    // Simulate a disconnected non-CI build run with bes_upload_mode set to
+    // nowait_for_upload_complete.
+    const model = new InvocationModel(
+      new invocation.Invocation({
+        invocationStatus: invocation_status.InvocationStatus.DISCONNECTED_INVOCATION_STATUS,
+      })
+    );
+    model.optionsMap.set("bes_upload_mode", "nowait_for_upload_complete");
+
+    const suggestions = getSuggestions({
+      model,
+      buildLogs: "ordinary build logs",
+      user: testUser(),
+    });
+
+    // Expect the generic disconnected card with a note mentioning the async
+    // upload mode flag.
+    expect(suggestions.length).toBe(1);
+    expect(suggestions[0].reason).toBe("Shown because the build finished with a disconnected status.");
+
+    const messageChildren = directReactChildren(suggestions[0].message);
+    expect(messageChildren.some((child) => typeof child === "string" && child.includes("Note:"))).toBe(true);
+    expect(
+      messageChildren.some(
+        (child) =>
+          React.isValidElement<{ children?: string }>(child) &&
+          child.props.children === "--bes_upload_mode=nowait_for_upload_complete"
+      )
+    ).toBe(true);
+  });
+
   it("attributes the disconnect to the async BES upload mode on CI builds", () => {
     // Simulate a disconnected CI build (CI=true) run with a fully async BES
     // upload mode.
