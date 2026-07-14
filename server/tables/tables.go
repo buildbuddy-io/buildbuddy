@@ -183,6 +183,13 @@ type Invocation struct {
 	Tags string
 
 	ParentRunID string `gorm:"index:parent_run_id_index"`
+
+	// Git fetch stats reported by the remote runner (i.e. Workflows or remote
+	// bazel), if any. These are stored only in the OLAP DB; they are excluded
+	// from the primary DB schema and are populated in memory just before
+	// flushing the invocation to the OLAP DB.
+	GitFetchTotalBytes   int64 `gorm:"-"`
+	GitFetchDurationUsec int64 `gorm:"-"`
 }
 
 func (i *Invocation) TableName() string {

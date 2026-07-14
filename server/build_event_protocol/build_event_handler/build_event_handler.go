@@ -249,6 +249,11 @@ type recordStatsTask struct {
 	persist                  *PersistArtifacts
 	kytheSSTableResourceName *rspb.ResourceName
 	invocationStatus         inspb.InvocationStatus
+	// Git fetch stats reported by the remote runner, if any. These are stored
+	// only in the OLAP DB, so they are carried here rather than read back from
+	// the primary DB at flush time.
+	gitFetchTotalBytes   int64
+	gitFetchDurationUsec int64
 }
 
 // statsRecorder listens for finalized invocations and copies cache stats from
@@ -312,6 +317,8 @@ func (r *statsRecorder) Enqueue(ctx context.Context, beValues *accumulator.BEVal
 		invocationStatus:         invocation.GetInvocationStatus(),
 		persist:                  persist,
 		kytheSSTableResourceName: beValues.KytheSSTableResourceName(),
+		gitFetchTotalBytes:       beValues.GitFetchTotalBytes(),
+		gitFetchDurationUsec:     beValues.GitFetchDuration().Microseconds(),
 	}
 	select {
 	case r.tasks <- req:
@@ -342,14 +349,18 @@ func (r *statsRecorder) lookupInvocation(ctx context.Context, ij *invocationInfo
 	return r.env.GetInvocationDB().LookupInvocation(ctx, ij.id)
 }
 
-func (r *statsRecorder) flushInvocationStatsToOLAPDB(ctx context.Context, ij *invocationInfo) error {
+func (r *statsRecorder) flushInvocationStatsToOLAPDB(ctx context.Context, task *recordStatsTask) error {
 	if r.env.GetOLAPDBHandle() == nil || !*writeToOLAPDBEnabled {
 		return nil
 	}
-	inv, err := r.lookupInvocation(ctx, ij)
+	inv, err := r.lookupInvocation(ctx, task.invocationInfo)
 	if err != nil {
-		return status.InternalErrorf("failed to look up invocation for invocation id %q: %s", ij.id, err)
+		return status.InternalErrorf("failed to look up invocation for invocation id %q: %s", task.invocationInfo.id, err)
 	}
+	// Git fetch stats are stored only in the OLAP DB, so they are carried on
+	// the task instead of being read back from the primary DB.
+	inv.GitFetchTotalBytes = task.gitFetchTotalBytes
+	inv.GitFetchDurationUsec = task.gitFetchDurationUsec
 
 	err = r.env.GetOLAPDBHandle().FlushInvocationStats(ctx, inv)
 	if err != nil {
@@ -471,7 +482,7 @@ func (r *statsRecorder) handleTask(ctx context.Context, task *recordStatsTask) {
 
 	if task.invocationStatus == inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS {
 		// only flush complete invocation to clickhouse.
-		err = r.flushInvocationStatsToOLAPDB(ctx, task.invocationInfo)
+		err = r.flushInvocationStatsToOLAPDB(ctx, task)
 		if err != nil {
 			log.CtxErrorf(ctx, "Failed to flush stats to clickhouse: %s", err)
 		}

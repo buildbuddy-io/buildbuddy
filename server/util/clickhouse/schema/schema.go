@@ -136,6 +136,11 @@ type Invocation struct {
 	RunID                             string
 	ParentRunID                       string
 	RunStatus                         int64
+
+	// Git fetch stats reported by the remote runner (i.e. Workflows or remote
+	// bazel), if any.
+	GitFetchTotalBytes   int64
+	GitFetchDurationUsec int64
 }
 
 func (i *Invocation) ExcludedFields() []string {
@@ -803,5 +808,7 @@ func ToInvocationFromPrimaryDB(ti *tables.Invocation) *Invocation {
 		RunID:                             ti.RunID,
 		ParentRunID:                       ti.ParentRunID,
 		RunStatus:                         ti.RunStatus,
+		GitFetchTotalBytes:                ti.GitFetchTotalBytes,
+		GitFetchDurationUsec:              ti.GitFetchDurationUsec,
 	}
 }

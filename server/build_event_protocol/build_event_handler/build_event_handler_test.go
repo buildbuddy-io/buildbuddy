@@ -16,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testolapdb"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testusage"
 	"github.com/buildbuddy-io/buildbuddy/server/usage/sku"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
@@ -28,6 +29,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/encoding/prototext"
 	"google.golang.org/protobuf/types/known/anypb"
+	"google.golang.org/protobuf/types/known/durationpb"
 
 	bspb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	bepb "github.com/buildbuddy-io/buildbuddy/proto/build_events"
@@ -276,6 +278,20 @@ func finishedEvent() *anypb.Any {
 		Id: &bspb.BuildEventId{Id: &bspb.BuildEventId_BuildFinished{}},
 	})
 	return finishedAny
+}
+
+func gitFetchCompletedEvent(totalBytes int64, duration time.Duration) *anypb.Any {
+	gitFetchAny := &anypb.Any{}
+	gitFetchAny.MarshalFrom(&bspb.BuildEvent{
+		Payload: &bspb.BuildEvent_GitFetchCompleted{
+			GitFetchCompleted: &bspb.GitFetchCompleted{
+				TotalBytes: totalBytes,
+				Duration:   durationpb.New(duration),
+			},
+		},
+		Id: &bspb.BuildEventId{Id: &bspb.BuildEventId_GitFetchCompleted{}},
+	})
+	return gitFetchAny
 }
 
 func assertAPIKeyRedacted(t *testing.T, invocation *inpb.Invocation, apiKey string) {
@@ -935,6 +951,57 @@ func TestFinishedFinalize(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, "abc123", invocation.CommitSha)
 	assert.Equal(t, inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS, invocation.InvocationStatus)
+}
+
+func TestGitFetchStatsFlushedToOLAPDB(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers("USER1", "GROUP1"))
+	te.SetAuthenticator(auth)
+	olapDB := testolapdb.NewHandle()
+	te.SetOLAPDBHandle(olapDB)
+	ctx := context.Background()
+	testUUID, err := uuid.NewRandom()
+	require.NoError(t, err)
+	testInvocationID := testUUID.String()
+
+	handler := build_event_handler.NewBuildEventHandler(te)
+	channel, err := handler.OpenChannel(ctx, testInvocationID)
+	require.NoError(t, err)
+	defer channel.Close()
+
+	// Send a started event announcing a workspace status event.
+	request := streamRequest(startedEvent("--remote_header='"+authutil.APIKeyHeader+"=USER1'", &bspb.BuildEventId_WorkspaceStatus{}), testInvocationID, 1)
+	err = channel.HandleEvent(request)
+	require.NoError(t, err)
+
+	// Send the workspace status event to complete the metadata.
+	request = streamRequest(workspaceStatusEvent("COMMIT_SHA", "abc123"), testInvocationID, 2)
+	err = channel.HandleEvent(request)
+	require.NoError(t, err)
+
+	// Send a GitFetchCompleted event reporting git fetch stats, as published
+	// by the remote runner after setting up the git repo.
+	request = streamRequest(gitFetchCompletedEvent(9_000_000, 3*time.Second), testInvocationID, 3)
+	err = channel.HandleEvent(request)
+	require.NoError(t, err)
+
+	// Complete and finalize the invocation, which triggers the flush to the
+	// OLAP DB.
+	request = streamRequest(finishedEvent(), testInvocationID, 4)
+	err = channel.HandleEvent(request)
+	require.NoError(t, err)
+	err = channel.FinalizeInvocation(testInvocationID)
+	require.NoError(t, err)
+
+	// The stats recorder flushes asynchronously; wait for the invocation to
+	// show up in the OLAP DB and expect the git fetch stats to be set on it.
+	var inv *tables.Invocation
+	require.Eventually(t, func() bool {
+		inv = olapDB.GetFlushedInvocation(testInvocationID)
+		return inv != nil
+	}, 30*time.Second, 50*time.Millisecond)
+	assert.Equal(t, int64(9_000_000), inv.GitFetchTotalBytes)
+	assert.Equal(t, (3 * time.Second).Microseconds(), inv.GitFetchDurationUsec)
 }
 
 func TestUnfinishedFinalizeWithCanceledContext(t *testing.T) {

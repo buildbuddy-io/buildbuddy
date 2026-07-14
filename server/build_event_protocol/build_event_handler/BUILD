@@ -81,6 +81,7 @@ go_test(
         "//server/tables",
         "//server/testutil/testauth",
         "//server/testutil/testenv",
+        "//server/testutil/testolapdb",
         "//server/testutil/testusage",
         "//server/usage/sku",
         "//server/util/authutil",
@@ -94,5 +95,6 @@ go_test(
         "@org_golang_google_protobuf//encoding/prototext",
         "@org_golang_google_protobuf//testing/protocmp",
         "@org_golang_google_protobuf//types/known/anypb",
+        "@org_golang_google_protobuf//types/known/durationpb",
     ],
 )
