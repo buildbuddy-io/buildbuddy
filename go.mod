@@ -25,7 +25,6 @@ tool github.com/otiai10/copy
 tool golang.org/x/telemetry/counter
 
 replace (
-	github.com/buildkite/terminal-to-html/v3 => github.com/buildbuddy-io/terminal-to-html/v3 v3.16.8-19
 	github.com/lni/dragonboat/v4 => github.com/buildbuddy-io/dragonboat/v4 v4.0.2
 	github.com/lni/goutils v1.4.0 => github.com/buildbuddy-io/goutils v1.4.1
 	github.com/lni/vfs => github.com/buildbuddy-io/vfs v0.2.3
@@ -70,7 +69,6 @@ require (
 	github.com/bradfitz/gomemcache v0.0.0-20230611145640-acc696258285
 	github.com/buildbuddy-io/fastcdc2020 v0.0.2
 	github.com/buildbuddy-io/tensorflow-proto v0.0.0-20220908151343-929b41ab4dc6
-	github.com/buildkite/terminal-to-html/v3 v3.0.0-00010101000000-000000000000
 	github.com/cavaliergopher/cpio v1.0.1
 	github.com/cespare/xxhash/v2 v2.3.0
 	github.com/charmbracelet/bubbles v1.0.0
@@ -182,7 +180,7 @@ require (
 	golang.org/x/net v0.54.0
 	golang.org/x/oauth2 v0.36.0
 	golang.org/x/sync v0.21.0
-	golang.org/x/sys v0.45.0
+	golang.org/x/sys v0.46.0
 	golang.org/x/term v0.43.0
 	golang.org/x/text v0.38.0
 	golang.org/x/time v0.15.0
@@ -208,6 +206,8 @@ require (
 	kythe.io v0.0.72
 	tags.cncf.io/container-device-interface v1.1.0
 )
+
+require github.com/buildkite/terminal-to-html/v3 v3.17.1
 
 require (
 	bitbucket.org/creachadair/stringset v0.0.11 // indirect
