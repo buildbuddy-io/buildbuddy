@@ -39,6 +39,13 @@ func NewServer(maxSizeBytes int64, fs filestore.Store) (*Server, error) {
 func (rc *Server) evict(key string, md *sgpb.FileMetadata, reason lru.EvictionReason) {
 	log.Infof("Evicted %+v (REASON: %s)", md, reason)
 
+	if reason == lru.ConflictEviction {
+		// Don't delete the blob if it was evicted due to a conflict, since an
+		// in-flight read may still be using it. This does leave orphaned blobs,
+		// but it's fine for tests.
+		return
+	}
+
 	if inlineMetadata := md.GetStorageMetadata().GetInlineMetadata(); inlineMetadata != nil {
 		return
 	}

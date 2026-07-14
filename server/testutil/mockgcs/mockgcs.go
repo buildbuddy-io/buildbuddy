@@ -68,10 +68,10 @@ func (m *mockGCS) Reader(ctx context.Context, blobName string, offset, limit int
 	defer m.mu.Unlock()
 	blob, ok := m.items[blobName]
 	if !ok {
-		return nil, status.NotFoundError("mock gcs blob not found")
+		return nil, status.NotFoundErrorf("mock gcs blob not found: %s", blobName)
 	}
 	if m.expired(blobName) {
-		return nil, status.InternalError("mock gcs blob expired")
+		return nil, status.InternalErrorf("mock gcs blob expired: %s", blobName)
 	}
 	data := blob.data[offset:]
 	if limit > 0 && limit < int64(len(data)) {
@@ -119,10 +119,10 @@ func (m *mockGCS) UpdateCustomTime(ctx context.Context, blobName string, t time.
 	m.updateCustomTimeCallCount++
 	blob, ok := m.items[blobName]
 	if !ok {
-		return status.NotFoundError("mock gcs blob not found")
+		return status.NotFoundErrorf("mock gcs blob not found: %s", blobName)
 	}
 	if m.expired(blobName) {
-		return status.NotFoundError("mock gcs blob expired")
+		return status.NotFoundErrorf("mock gcs blob expired: %s", blobName)
 	}
 	if t.Before(blob.customTime) {
 		return status.FailedPreconditionError("custom time can only move forward")
