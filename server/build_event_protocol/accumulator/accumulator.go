@@ -86,6 +86,8 @@ type BEValues struct {
 	outputFilesMap            map[string]*build_event_stream.File
 	kytheSSTableResourceName  *rspb.ResourceName
 	profileName               string
+	gitFetchTotalBytes        int64
+	gitFetchDuration          time.Duration
 
 	failedTestOutputURIs []*url.URL
 	passedTestOutputURIs []*url.URL
@@ -163,6 +165,10 @@ func (v *BEValues) AddEvent(event *build_event_stream.BuildEvent) error {
 		v.populateWorkspaceInfoFromBuildMetadata(p.BuildMetadata)
 	case *build_event_stream.BuildEvent_WorkflowConfigured:
 		v.handleWorkflowConfigured(p.WorkflowConfigured)
+	case *build_event_stream.BuildEvent_GitFetchCompleted:
+		// The remote runner reports cumulative totals, so the last event wins.
+		v.gitFetchTotalBytes = p.GitFetchCompleted.GetTotalBytes()
+		v.gitFetchDuration = p.GitFetchCompleted.GetDuration().AsDuration()
 	case *build_event_stream.BuildEvent_Finished:
 		v.sawFinishedEvent = true
 	case *build_event_stream.BuildEvent_BuildToolLogs:
@@ -232,6 +238,18 @@ func (v *BEValues) OutputFiles() map[string]*build_event_stream.File {
 
 func (v *BEValues) KytheSSTableResourceName() *rspb.ResourceName {
 	return v.kytheSSTableResourceName
+}
+
+// GitFetchTotalBytes returns the total number of bytes fetched by git while
+// a remote runner set up the git repository, or 0 if not reported.
+func (v *BEValues) GitFetchTotalBytes() int64 {
+	return v.gitFetchTotalBytes
+}
+
+// GitFetchDuration returns the total time a remote runner spent running git
+// fetch commands, or 0 if not reported.
+func (v *BEValues) GitFetchDuration() time.Duration {
+	return v.gitFetchDuration
 }
 
 func (v *BEValues) DisableCommitStatusReporting() bool {

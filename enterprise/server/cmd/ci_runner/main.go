@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/base64"
@@ -17,6 +18,7 @@ import (
 	"regexp"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -271,6 +273,13 @@ type workspace struct {
 	// An error that occurred while setting up the workspace, which should be
 	// reported for all action logs instead of actually executing the action.
 	setupError error
+
+	// Total bytes fetched by git fetch commands run during setup, parsed from
+	// git trace2 event logs.
+	gitFetchTotalBytes int64
+
+	// Total time spent running git fetch commands during setup.
+	gitFetchDuration time.Duration
 
 	// The start time of the setup phase.
 	startTime time.Time
@@ -1089,8 +1098,24 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 		return err
 	}
 	if !*skipAutomaticCheckout {
-		if err := ws.setup(ctx); err != nil {
-			return status.WrapError(err, "failed to set up git repo")
+		setupErr := ws.setup(ctx)
+		// Report git fetch stats even if setup failed, since the time spent
+		// fetching may help diagnose the failure.
+		gitFetchEvent := &bespb.BuildEvent{
+			Id: &bespb.BuildEventId{Id: &bespb.BuildEventId_GitFetchCompleted{GitFetchCompleted: &bespb.BuildEventId_GitFetchCompletedId{}}},
+			Payload: &bespb.BuildEvent_GitFetchCompleted{GitFetchCompleted: &bespb.GitFetchCompleted{
+				TotalBytes: ws.gitFetchTotalBytes,
+				Duration:   durationpb.New(ws.gitFetchDuration),
+			}},
+		}
+		publishErr := ar.reporter.Publish(gitFetchEvent)
+		// Return the setup error before handling any publish error, so that a
+		// broken build event stream doesn't mask a real setup failure.
+		if setupErr != nil {
+			return status.WrapError(setupErr, "failed to set up git repo")
+		}
+		if publishErr != nil {
+			return nil
 		}
 	}
 	action, err := getActionToRun()
@@ -2239,7 +2264,10 @@ func (ws *workspace) fetch(ctx context.Context, remoteURL string, refs []string,
 			return status.UnknownErrorf("Command `git remote add %q <url>` failed.", remoteName)
 		}
 	}
-	fetchArgs := []string{"fetch", "--force"}
+	// Force progress reporting (rather than relying on stderr being a
+	// terminal), since git only logs fetched byte totals to the trace2 event
+	// log when progress meters are active.
+	fetchArgs := []string{"fetch", "--force", "--progress"}
 	for _, filter := range *gitFetchFilters {
 		fetchArgs = append(fetchArgs, "--filter="+filter)
 	}
@@ -2260,10 +2288,79 @@ func (ws *workspace) fetch(ctx context.Context, remoteURL string, refs []string,
 	}
 	fetchArgs = append(fetchArgs, remoteName)
 	fetchArgs = append(fetchArgs, refs...)
-	if _, err := git(ctx, ws.log, fetchArgs...); err != nil {
-		return status.WrapError(err, err.Output)
+
+	// Have git log trace2 events to a file under .git/info, from which the
+	// exact number of fetched bytes is parsed once the fetch completes. The
+	// log is deleted after parsing.
+	fetchEnv := map[string]string{}
+	// GIT_TRACE2 requires an abspath.
+	trace2Path, err := filepath.Abs(filepath.Join(".git", "info", "fetch_trace2.jsonl"))
+	if err != nil {
+		backendLog.Warningf("Could not resolve the git trace2 event log path; git fetch stats will not be collected: %s", err)
+	} else {
+		// Remove any leftover log (e.g. if a previous run was interrupted
+		// mid-fetch), since git appends to the log file.
+		_ = os.Remove(trace2Path)
+		fetchEnv["GIT_TRACE2_EVENT"] = trace2Path
+		// Progress data events can be nested inside other trace2 regions;
+		// raise the nesting limit (default 2) so they aren't dropped.
+		fetchEnv["GIT_TRACE2_EVENT_NESTING"] = "5"
+	}
+
+	fetchStart := time.Now()
+	_, fetchErr := gitWithEnv(ctx, ws.log, fetchEnv, fetchArgs...)
+	ws.gitFetchDuration += time.Since(fetchStart)
+	// Count fetched bytes even if the fetch failed, since a failed fetch may
+	// be retried (e.g. with a different depth) and we want the total to
+	// reflect all data transferred.
+	if fetchEnv["GIT_TRACE2_EVENT"] != "" {
+		if f, err := os.Open(trace2Path); err != nil {
+			backendLog.Warningf("Could not open the git trace2 event log; git fetch stats may be undercounted: %s", err)
+		} else {
+			ws.gitFetchTotalBytes += parseGitFetchedBytes(f)
+			f.Close()
+		}
+		_ = os.Remove(trace2Path)
+	}
+	if fetchErr != nil {
+		return status.WrapError(fetchErr, fetchErr.Output)
 	}
 	return nil
+}
+
+// parseGitFetchedBytes returns the total number of bytes fetched by a git
+// command, parsed from its trace2 event log. Progress meters that display
+// throughput (such as "Receiving objects") log a "total_bytes" data event
+// when they complete. Child processes such as git-index-pack inherit
+// GIT_TRACE2_EVENT and append their events to the same log file. Returns 0
+// if the log contains no such events (e.g. everything was already up to
+// date).
+func parseGitFetchedBytes(trace2EventLog io.Reader) int64 {
+	var total int64
+	scanner := bufio.NewScanner(trace2EventLog)
+	// Trace2 event lines are small (typically well under 1KiB); a line
+	// exceeding this limit would stop the scan and drop the remaining events.
+	scanner.Buffer(make([]byte, 0, 1024*1024), 1024*1024)
+	for scanner.Scan() {
+		var event struct {
+			Event    string `json:"event"`
+			Category string `json:"category"`
+			Key      string `json:"key"`
+			Value    string `json:"value"`
+		}
+		if err := json.Unmarshal(scanner.Bytes(), &event); err != nil {
+			continue
+		}
+		if event.Event != "data" || event.Category != "progress" || event.Key != "total_bytes" {
+			continue
+		}
+		n, err := strconv.ParseInt(event.Value, 10, 64)
+		if err != nil {
+			continue
+		}
+		total += n
+	}
+	return total
 }
 
 // Writes a wrapper script that invokes the ci_runner with the bazel_wrapper subcommand.
@@ -2341,10 +2438,14 @@ func isAlreadyUpToDate(err error) bool {
 }
 
 func git(ctx context.Context, out io.Writer, args ...string) (string, *commandError) {
+	return gitWithEnv(ctx, out, nil /*=env*/, args...)
+}
+
+func gitWithEnv(ctx context.Context, out io.Writer, env map[string]string, args ...string) (string, *commandError) {
 	if err := printCommandLine(out, "git", args...); err != nil {
 		return "", &commandError{err, ""}
 	}
-	return runCommandWithOutput(ctx, "git", args, map[string]string{} /*=env*/, "" /*=dir*/, out)
+	return runCommandWithOutput(ctx, "git", args, env, "" /*=dir*/, out)
 }
 
 func isPushedRefInFork() bool {
