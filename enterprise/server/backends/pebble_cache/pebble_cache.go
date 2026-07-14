@@ -50,6 +50,7 @@ import (
 	"golang.org/x/text/language"
 	"golang.org/x/text/message"
 	"golang.org/x/time/rate"
+	"google.golang.org/protobuf/encoding/protowire"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
@@ -1604,6 +1605,167 @@ func (p *PebbleCache) lookupFileMetadata(ctx context.Context, db pebble.IPebbleD
 	return err
 }
 
+type findMissingMetadata struct {
+	storedSizeBytes       int64
+	lastAccessUsec        int64
+	hasGCSMetadata        bool
+	gcsLastCustomTimeUsec int64
+}
+
+func (p *PebbleCache) lookupFindMissingMetadataAndVersion(ctx context.Context, db pebble.IPebbleDB, key filestore.PebbleKey, md *findMissingMetadata) (filestore.PebbleKeyVersion, error) {
+	var lastErr error
+	for minVersion, version := p.minAndMaxDatabaseVersions(); version >= minVersion; version-- {
+		keyBytes, err := key.Bytes(version)
+		if err != nil {
+			return -1, err
+		}
+		lastErr = getFindMissingMetadata(db, keyBytes, md)
+		if lastErr == nil {
+			return version, nil
+		}
+		*md = findMissingMetadata{}
+	}
+	return -1, lastErr
+}
+
+func (p *PebbleCache) lookupFindMissingMetadata(ctx context.Context, db pebble.IPebbleDB, key filestore.PebbleKey, md *findMissingMetadata) error {
+	_, err := p.lookupFindMissingMetadataAndVersion(ctx, db, key, md)
+	return err
+}
+
+func getFindMissingMetadata(db pebble.IPebbleDB, key []byte, md *findMissingMetadata) error {
+	buf, closer, err := db.Get(key)
+	if err != nil {
+		if err == pebble.ErrNotFound {
+			return status.NotFoundErrorf("key %q not found", key)
+		}
+		return err
+	}
+	defer closer.Close()
+	if len(buf) == 0 {
+		return status.NotFoundErrorf("key %q not found (empty value)", key)
+	}
+	if err := parseFindMissingMetadata(buf, md); err != nil {
+		return status.InternalErrorf("error parsing value for %q: %s", key, err)
+	}
+	return nil
+}
+
+func parseFindMissingMetadata(buf []byte, md *findMissingMetadata) error {
+	for len(buf) > 0 {
+		num, typ, n := protowire.ConsumeTag(buf)
+		if n < 0 {
+			return protowire.ParseError(n)
+		}
+		buf = buf[n:]
+
+		switch num {
+		case 2: // storage_metadata
+			if typ != protowire.BytesType {
+				return fmt.Errorf("storage_metadata: got wire type %v, want %v", typ, protowire.BytesType)
+			}
+			value, n := protowire.ConsumeBytes(buf)
+			if n < 0 {
+				return protowire.ParseError(n)
+			}
+			if err := parseFindMissingStorageMetadata(value, md); err != nil {
+				return err
+			}
+			buf = buf[n:]
+		case 3: // stored_size_bytes
+			if typ != protowire.VarintType {
+				return fmt.Errorf("stored_size_bytes: got wire type %v, want %v", typ, protowire.VarintType)
+			}
+			value, n := protowire.ConsumeVarint(buf)
+			if n < 0 {
+				return protowire.ParseError(n)
+			}
+			md.storedSizeBytes = int64(value)
+			buf = buf[n:]
+		case 4: // last_access_usec
+			if typ != protowire.VarintType {
+				return fmt.Errorf("last_access_usec: got wire type %v, want %v", typ, protowire.VarintType)
+			}
+			value, n := protowire.ConsumeVarint(buf)
+			if n < 0 {
+				return protowire.ParseError(n)
+			}
+			md.lastAccessUsec = int64(value)
+			buf = buf[n:]
+		default:
+			n := protowire.ConsumeFieldValue(num, typ, buf)
+			if n < 0 {
+				return protowire.ParseError(n)
+			}
+			buf = buf[n:]
+		}
+	}
+	return nil
+}
+
+func parseFindMissingStorageMetadata(buf []byte, md *findMissingMetadata) error {
+	for len(buf) > 0 {
+		num, typ, n := protowire.ConsumeTag(buf)
+		if n < 0 {
+			return protowire.ParseError(n)
+		}
+		buf = buf[n:]
+
+		if num == 5 { // gcs_metadata
+			if typ != protowire.BytesType {
+				return fmt.Errorf("gcs_metadata: got wire type %v, want %v", typ, protowire.BytesType)
+			}
+			value, n := protowire.ConsumeBytes(buf)
+			if n < 0 {
+				return protowire.ParseError(n)
+			}
+			md.hasGCSMetadata = true
+			if err := parseFindMissingGCSMetadata(value, md); err != nil {
+				return err
+			}
+			buf = buf[n:]
+			continue
+		}
+
+		n = protowire.ConsumeFieldValue(num, typ, buf)
+		if n < 0 {
+			return protowire.ParseError(n)
+		}
+		buf = buf[n:]
+	}
+	return nil
+}
+
+func parseFindMissingGCSMetadata(buf []byte, md *findMissingMetadata) error {
+	for len(buf) > 0 {
+		num, typ, n := protowire.ConsumeTag(buf)
+		if n < 0 {
+			return protowire.ParseError(n)
+		}
+		buf = buf[n:]
+
+		if num == 2 { // last_custom_time_usec
+			if typ != protowire.VarintType {
+				return fmt.Errorf("last_custom_time_usec: got wire type %v, want %v", typ, protowire.VarintType)
+			}
+			value, n := protowire.ConsumeVarint(buf)
+			if n < 0 {
+				return protowire.ParseError(n)
+			}
+			md.gcsLastCustomTimeUsec = int64(value)
+			buf = buf[n:]
+			continue
+		}
+
+		n = protowire.ConsumeFieldValue(num, typ, buf)
+		if n < 0 {
+			return protowire.ParseError(n)
+		}
+		buf = buf[n:]
+	}
+	return nil
+}
+
 func (p *PebbleCache) handleMetadataMismatch(ctx context.Context, causeErr error, key filestore.PebbleKey, fileMetadata *sgpb.FileMetadata) bool {
 	if !status.IsNotFoundError(causeErr) && !os.IsNotExist(causeErr) {
 		return false
@@ -1711,30 +1873,32 @@ func (p *PebbleCache) findMissing(ctx context.Context, db pebble.IPebbleDB, grou
 	unlockFn := p.locker.RLock(key.LockID())
 	defer unlockFn()
 
-	md := sgpb.FileMetadataFromVTPool()
-	defer md.ReturnToVTPool()
-	err = p.lookupFileMetadata(ctx, db, key, md)
+	md := &findMissingMetadata{}
+	err = p.lookupFindMissingMetadata(ctx, db, key, md)
 	if err != nil {
 		return err
 	}
 
 	// If this object is somehow stored as a zero-length file, pretend it
 	// does not exist.
-	if md.GetStoredSizeBytes() == 0 {
+	if md.storedSizeBytes == 0 {
 		log.Infof("Ignoring zero-length file. Key: %q, md: %+v", key, md)
 		return status.NotFoundError("object not found (zero-length)")
 	}
 	// If this is a GCS object, ensure the custom time is relatively recent
 	// so that we avoid saying something exists when it's been deleted by
 	// a GCS lifecycle rule.
-	if gcsMetadata := md.GetStorageMetadata().GetGcsMetadata(); gcsMetadata != nil {
-		if gcsutil.ObjectIsPastTTL(p.clock, gcsMetadata, p.gcsTTLDays) {
-			return status.NotFoundError("backing object may have expired")
-		}
+	if md.hasGCSMetadata && p.gcsObjectIsPastTTL(md.gcsLastCustomTimeUsec) {
+		return status.NotFoundError("backing object may have expired")
 	}
 
-	p.sendAtimeUpdate(ctx, key, md.GetLastAccessUsec())
+	p.sendAtimeUpdate(ctx, key, md.lastAccessUsec)
 	return nil
+}
+
+func (p *PebbleCache) gcsObjectIsPastTTL(lastCustomTimeUsec int64) bool {
+	buffer := time.Hour
+	return p.clock.Since(time.UnixMicro(lastCustomTimeUsec))+buffer > time.Duration(p.gcsTTLDays*24)*time.Hour
 }
 
 func (p *PebbleCache) Get(ctx context.Context, r *rspb.ResourceName) ([]byte, error) {
