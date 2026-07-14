@@ -333,6 +333,26 @@ func TestAuthorize_BypassAllowed(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestAuthorize_BypassAllowed_MetadataServer(t *testing.T) {
+	env := getEnv(t)
+	enterprise_testenv.AddClientIdentity(t, env, interfaces.ClientIdentityMetadataServer)
+
+	irs := newIPRulesEnforcer(t, env)
+	ctx, userID, groupID := setupAuthenticatedUser(t, env)
+
+	insertRule(t, env, groupID, "1.2.3.4/32", "rule1")
+	setGroupEnforcement(t, env, ctx, groupID, true)
+	ctx = reauthenticate(t, env, userID)
+	ctx = contextWithClientIdentity(t, ctx, env.GetClientIdentityService())
+	ctx = context.WithValue(ctx, clientip.ContextKey, "5.6.7.8")
+
+	// Unlike the cache proxy, the metadata server is trusted without the
+	// metadata bit. It calls the auth service from its own IP to exchange a
+	// JWT, so the client IP is never the end user's.
+	_, err := irs.Authorize(ctx)
+	require.NoError(t, err)
+}
+
 func TestAuthorize_BypassDenied(t *testing.T) {
 	env := getEnv(t)
 	enterprise_testenv.AddClientIdentity(t, env, "some-random-server")

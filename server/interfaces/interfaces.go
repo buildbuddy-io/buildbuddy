@@ -1696,10 +1696,11 @@ type ClientIdentity struct {
 }
 
 const (
-	ClientIdentityExecutor   = "executor"
-	ClientIdentityApp        = "app"
-	ClientIdentityWorkflow   = "workflow"
-	ClientIdentityCacheProxy = "cache-proxy"
+	ClientIdentityExecutor       = "executor"
+	ClientIdentityApp            = "app"
+	ClientIdentityWorkflow       = "workflow"
+	ClientIdentityCacheProxy     = "cache-proxy"
+	ClientIdentityMetadataServer = "metadata-server"
 
 	// ClientIdentityGRPCProxy identifies the gRPC forwarding proxy
 	// (server/util/grpc_forward), which proxies unknown RPCs to a backend and
