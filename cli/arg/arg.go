@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/parser"
+	"github.com/buildbuddy-io/buildbuddy/cli/parser/options"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/parsed"
 )
 
@@ -108,34 +109,33 @@ func (a *BazelArgs) AppendStartupOption(name, value string) error {
 // If the same flag is specified multiple times, Bazel will use the last value. This is useful for adding flags that should
 // be overridden by later flags.
 func (a *BazelArgs) Prepend(arg string) error {
-	newFwd, err := parser.ParseArgs(prepend(a.forwarded.Format(), arg))
+	opt, err := parseSingleOption(arg)
 	if err != nil {
 		return err
 	}
-	a.forwarded = newFwd
-
+	if err := a.forwarded.Prepend(opt); err != nil {
+		return err
+	}
 	if requiresResolve(arg) {
 		return a.resolve()
 	}
-
-	newRes, err := parser.ParseArgs(prepend(a.resolved.Format(), arg))
-	if err != nil {
-		return err
-	}
-	a.resolved = newRes
-	return nil
+	return a.resolved.Prepend(opt)
 }
 
-func prepend(args []string, arg string) []string {
-	_, commandIndex := parser.GetBazelCommandAndIndex(args)
-	if commandIndex == -1 {
-		return append([]string{arg}, args...)
+// parseSingleOption parses a single flag string into an options.Option.
+func parseSingleOption(arg string) (options.Option, error) {
+	parsed, err := parser.ParseArgs([]string{arg})
+	if err != nil {
+		return nil, err
 	}
-
-	out := append([]string{}, args[:commandIndex+1]...)
-	out = append(out, arg)
-	out = append(out, args[commandIndex+1:]...)
-	return out
+	if len(parsed.Args) != 1 {
+		return nil, fmt.Errorf("expected 1 parsed arg for %q, got %d", arg, len(parsed.Args))
+	}
+	opt, ok := parsed.Args[0].(options.Option)
+	if !ok {
+		return nil, fmt.Errorf("%q did not parse as an option", arg)
+	}
+	return opt, nil
 }
 
 // requiresResolve returns true if the arg can change rc/config expansion.
@@ -187,8 +187,7 @@ func (a *BazelArgs) GetAllFlagsWithName(flagName string) []string {
 // TODO(#7389): If we support setting CLI flags via config, make sure we support reading them correctly
 // from the resolved args.
 func (a *BazelArgs) StripBBFlag(flagName string) (string, error) {
-	// GetCLICommandOptionVal removes the flag from a.forwarded in place.
-	flagVal, err := parser.GetCLICommandOptionVal(a.forwarded, flagName)
+	flagVal, err := parsed.RemoveAndAccumulateCommandOption[string](a.forwarded, flagName)
 	if err != nil {
 		return "", err
 	}
@@ -201,8 +200,7 @@ func (a *BazelArgs) StripBBFlag(flagName string) (string, error) {
 // TODO(#7389): If we support setting CLI flags via config, make sure we support reading them correctly
 // from the resolved args.
 func (a *BazelArgs) StripBBBoolFlag(flagName string) (bool, error) {
-	// IsCLICommandOptionSet removes the flag from a.forwarded in place.
-	set, err := parser.IsCLICommandOptionSet(a.forwarded, flagName)
+	set, err := parsed.RemoveAndAccumulateCommandOption[bool](a.forwarded, flagName)
 	if err != nil {
 		return false, err
 	}
