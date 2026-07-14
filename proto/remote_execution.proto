@@ -3080,4 +3080,9 @@ message StoredExecution {
   // after the task finishes. Only populated when
   // executor.workspace.measure_disk_usage is enabled.
   int64 buildroot_disk_usage_bytes = 88;
+
+  // Test metadata sourced from the command environment.
+  string test_size = 89;
+  uint32 test_shard_index = 90;
+  uint32 test_total_shards = 91;
 }
