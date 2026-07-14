@@ -1177,6 +1177,36 @@ func TestFindMissing(t *testing.T) {
 	}
 }
 
+func TestWriterIfNotExists(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
+	ctx := getAnonContext(t, te)
+
+	pc, err := pebble_cache.NewPebbleCache(te, &pebble_cache.Options{
+		RootDirectory: testfs.MakeTempDir(t),
+		MaxSizeBytes:  1_000_000_000,
+	})
+	require.NoError(t, err)
+	require.NoError(t, pc.Start())
+	defer pc.Stop()
+
+	rn, buf := testdigest.RandomCASResourceBuf(t, 1000)
+	wc, err := pc.WriterIfNotExists(ctx, rn)
+	require.NoError(t, err)
+	n, err := wc.Write(buf)
+	require.NoError(t, err)
+	require.Equal(t, len(buf), n)
+	require.NoError(t, wc.Commit())
+	require.NoError(t, wc.Close())
+
+	wc, err = pc.WriterIfNotExists(ctx, rn)
+	require.True(t, status.IsAlreadyExistsError(err), "expected AlreadyExists, got %v", err)
+	require.Nil(t, wc)
+
+	data := readResource(t, ctx, pc, rn, 0, 0)
+	require.Equal(t, buf, data)
+}
+
 func TestNoEarlyEviction(t *testing.T) {
 	te := testenv.GetTestEnv(t)
 	te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
