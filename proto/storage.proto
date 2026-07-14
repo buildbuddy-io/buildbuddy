@@ -2,6 +2,7 @@ syntax = "proto3";
 
 import "proto/resource.proto";
 import "proto/remote_execution.proto";
+import "proto/view.proto";
 import "github.com/planetscale/vtprotobuf/vtproto/ext.proto";
 
 package storage;
@@ -46,9 +47,9 @@ message StorageMetadata {
     // A unix micros value that is the last custom time applied to an object.
     // This is used in conjunction with a bucket LifecycleCondition that
     // deletes objects after DaysSinceCustomTime is exceeded.
-    int64 last_custom_time_usec = 2;
+    int64 last_custom_time_usec = 2 [(view.name) = "FindMissing"];
   }
-  GCSMetadata gcs_metadata = 5;
+  GCSMetadata gcs_metadata = 5 [(view.name) = "FindMissing"];
 
   // Insert other storage types (gcs, etc) here.
   // Upon read, the server will first read this record and then serve the
@@ -62,10 +63,10 @@ message FileMetadata {
   EncryptionMetadata encryption_metadata = 6;
 
   // If data is compressed, this will be the compressed size
-  int64 stored_size_bytes = 3;
+  int64 stored_size_bytes = 3 [(view.name) = "FindMissing"];
 
   // Last access time of the record.
-  int64 last_access_usec = 4;
+  int64 last_access_usec = 4 [(view.name) = "FindMissing"];
 
   // Last modify time of the record
   int64 last_modify_usec = 5;

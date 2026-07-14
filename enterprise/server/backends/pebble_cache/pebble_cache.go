@@ -1711,30 +1711,67 @@ func (p *PebbleCache) findMissing(ctx context.Context, db pebble.IPebbleDB, grou
 	unlockFn := p.locker.RLock(key.LockID())
 	defer unlockFn()
 
-	md := sgpb.FileMetadataFromVTPool()
-	defer md.ReturnToVTPool()
-	err = p.lookupFileMetadata(ctx, db, key, md)
+	buf, closer, err := p.lookupFileMetadataBytes(db, key)
 	if err != nil {
 		return err
+	}
+	defer closer.Close()
+
+	var md sgpb.FileMetadataFindMissingView
+	if err := md.UnmarshalWire(buf); err != nil {
+		return status.InternalErrorf("error parsing value for %q: %s", key, err)
 	}
 
 	// If this object is somehow stored as a zero-length file, pretend it
 	// does not exist.
-	if md.GetStoredSizeBytes() == 0 {
+	if md.StoredSizeBytes == 0 {
 		log.Infof("Ignoring zero-length file. Key: %q, md: %+v", key, md)
 		return status.NotFoundError("object not found (zero-length)")
 	}
 	// If this is a GCS object, ensure the custom time is relatively recent
 	// so that we avoid saying something exists when it's been deleted by
 	// a GCS lifecycle rule.
-	if gcsMetadata := md.GetStorageMetadata().GetGcsMetadata(); gcsMetadata != nil {
-		if gcsutil.ObjectIsPastTTL(p.clock, gcsMetadata, p.gcsTTLDays) {
+	if md.StorageMetadata.HasGcsMetadata {
+		if gcsutil.CustomTimeIsPastTTL(p.clock, md.StorageMetadata.GcsMetadata.LastCustomTimeUsec, p.gcsTTLDays) {
 			return status.NotFoundError("backing object may have expired")
 		}
 	}
 
-	p.sendAtimeUpdate(ctx, key, md.GetLastAccessUsec())
+	p.sendAtimeUpdate(ctx, key, md.LastAccessUsec)
 	return nil
+}
+
+// lookupFileMetadataBytes is lookupFileMetadataAndVersion, except that it
+// returns the serialized FileMetadata value as stored instead of
+// unmarshalling it. The returned buffer is only valid until the returned
+// closer is closed; on success the caller must close it.
+func (p *PebbleCache) lookupFileMetadataBytes(db pebble.IPebbleDB, key filestore.PebbleKey) ([]byte, io.Closer, error) {
+	var lastErr error
+	for minVersion, version := p.minAndMaxDatabaseVersions(); version >= minVersion; version-- {
+		keyBytes, err := key.Bytes(version)
+		if err != nil {
+			return nil, nil, err
+		}
+		buf, closer, err := db.Get(keyBytes)
+		if err != nil {
+			if err == pebble.ErrNotFound {
+				err = status.NotFoundErrorf("key %q not found", keyBytes)
+			}
+			lastErr = err
+			continue
+		}
+		if len(buf) == 0 {
+			closer.Close()
+			lastErr = status.NotFoundErrorf("key %q not found (empty value)", keyBytes)
+			continue
+		}
+		return buf, closer, nil
+	}
+	// Should never happen.
+	if lastErr == nil {
+		return nil, nil, status.NotFoundErrorf("key %q not found (no version available)", key.String())
+	}
+	return nil, nil, lastErr
 }
 
 func (p *PebbleCache) Get(ctx context.Context, r *rspb.ResourceName) ([]byte, error) {
