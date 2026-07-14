@@ -358,6 +358,9 @@ const (
 	// should fall back to the remote cache as the source of truth.
 	CacheProxyRequestType = "proxy_request_type"
 
+	// Source used by a cache proxy action cache read to produce a response.
+	CacheProxyResultSource = "result_source"
+
 	OCIResourceTypeLabel = "oci_resource_type"
 
 	OpLabel = "op"
@@ -3656,11 +3659,12 @@ var (
 		Namespace: bbNamespace,
 		Subsystem: "proxy",
 		Name:      "action_cache_read_requests",
-		Help:      "The number of ActionCache.GetActionResult requests served by a ActionCacheServerProxy by gRPC status and cache hit/miss status.",
+		Help:      "The number of ActionCache.GetActionResult requests served by a ActionCacheServerProxy by gRPC status, cache hit/miss status, request type, and result source.",
 	}, []string{
 		StatusLabel,
 		CacheHitMissStatus,
 		CacheProxyRequestType,
+		CacheProxyResultSource,
 	})
 	ActionCacheProxiedWriteRequests = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
@@ -3676,11 +3680,12 @@ var (
 		Namespace: bbNamespace,
 		Subsystem: "proxy",
 		Name:      "action_cache_read_bytes",
-		Help:      "The number of ActionCache.GetActionResult bytes served by a ActionCacheServerProxy by gRPC status and cache hit/miss status.",
+		Help:      "The number of ActionCache.GetActionResult bytes served by a ActionCacheServerProxy by gRPC status, cache hit/miss status, request type, and result source.",
 	}, []string{
 		StatusLabel,
 		CacheHitMissStatus,
 		CacheProxyRequestType,
+		CacheProxyResultSource,
 	})
 	ActionCacheProxiedWriteBytes = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
