@@ -13,6 +13,7 @@ go_library(
         "//server/remote_cache/digest",
         "//server/util/alert",
         "//server/util/compression",
+        "//server/util/findmissing",
         "//server/util/log",
         "//server/util/proto",
         "//server/util/status",

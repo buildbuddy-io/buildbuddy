@@ -497,7 +497,7 @@ func TestMissingChunkChecker(t *testing.T) {
 		DigestFunction: repb.DigestFunction_SHA256,
 	}
 
-	checker := chunking.NewMissingChunkChecker(trackingCache)
+	checker := chunking.NewMissingChunkChecker(trackingCache, repb.FindMissingBlobsRequest_UNKNOWN)
 
 	missing, err := checker.AnyChunkMissing(ctx, manifestAllPresent)
 	require.NoError(t, err)
@@ -554,7 +554,7 @@ func TestMissingChunkChecker_Concurrent(t *testing.T) {
 		DigestFunction: repb.DigestFunction_SHA256,
 	}
 
-	checker := chunking.NewMissingChunkChecker(cache)
+	checker := chunking.NewMissingChunkChecker(cache, repb.FindMissingBlobsRequest_UNKNOWN)
 	eg, egCtx := errgroup.WithContext(ctx)
 	eg.SetLimit(32)
 	for i := 0; i < 200; i++ {

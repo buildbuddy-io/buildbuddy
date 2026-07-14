@@ -28,6 +28,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/consistent_hash"
+	"github.com/buildbuddy-io/buildbuddy/server/util/findmissing"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/kubediscovery"
@@ -1221,6 +1222,7 @@ func (c *Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName)
 	if len(resources) == 0 {
 		return nil, nil
 	}
+	purpose := findmissing.PurposeFromContext(ctx)
 
 	mu := sync.RWMutex{} // protects(foundMap)
 	hashResources := make(map[string][]*rspb.ResourceName, 0)
@@ -1342,6 +1344,22 @@ func (c *Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName)
 		)
 		for range len(missing) {
 			missMetric.Observe(float64(lookups))
+		}
+	}
+
+	// Record the LOGICAL present/absent counts by purpose (deduplicated across
+	// replica retries), a complementary view to the per-node pebble metric.
+	if len(resources) > 0 {
+		purposeLabel := purpose.String()
+		if present := len(resources) - len(missing); present > 0 {
+			metrics.DistributedCacheFindMissingBlobStatusCount.
+				WithLabelValues(purposeLabel, metrics.PresentStatusLabel).
+				Add(float64(present))
+		}
+		if len(missing) > 0 {
+			metrics.DistributedCacheFindMissingBlobStatusCount.
+				WithLabelValues(purposeLabel, metrics.AbsentStatusLabel).
+				Add(float64(len(missing)))
 		}
 	}
 	return missing, nil

@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
+	"github.com/buildbuddy-io/buildbuddy/server/util/findmissing"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
@@ -71,7 +72,7 @@ func NewActionCacheServer(env environment.Env) (*ActionCacheServer, error) {
 }
 
 func checkFilesExist(ctx context.Context, cache interfaces.Cache, instanceName string, digestFunction repb.DigestFunction_Value, chunkingEnabled bool, efp interfaces.ExperimentFlagProvider, digests []*rspb.ResourceName) error {
-	missing, err := cache.FindMissing(ctx, digests)
+	missing, err := cache.FindMissing(findmissing.ContextWithPurpose(ctx, repb.FindMissingBlobsRequest_AC_VALIDATION), digests)
 	if err != nil {
 		return err
 	}
@@ -87,7 +88,7 @@ func checkFilesExist(ctx context.Context, cache interfaces.Cache, instanceName s
 			return status.NotFoundErrorf("ActionResult output file %q not found in cache", digest.String(d))
 		}
 	}
-	checker := chunking.NewMissingChunkChecker(cache)
+	checker := chunking.NewMissingChunkChecker(cache, repb.FindMissingBlobsRequest_AC_MISSING_CHUNK_VALIDATION)
 	eg, egCtx := errgroup.WithContext(ctx)
 	eg.SetLimit(chunkCheckConcurrency)
 	for _, d := range missing {

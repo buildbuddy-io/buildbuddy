@@ -19,6 +19,7 @@ go_library(
         "//server/util/authutil",
         "//server/util/bazel_request",
         "//server/util/capabilities",
+        "//server/util/findmissing",
         "//server/util/flag",
         "//server/util/log",
         "//server/util/prefix",

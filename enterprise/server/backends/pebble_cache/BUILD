@@ -27,6 +27,7 @@ go_library(
         "//server/util/bytebufferpool",
         "//server/util/compression",
         "//server/util/disk",
+        "//server/util/findmissing",
         "//server/util/flag",
         "//server/util/ioutil",
         "//server/util/lockmap",

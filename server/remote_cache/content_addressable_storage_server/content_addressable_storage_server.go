@@ -26,6 +26,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/cdc"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
+	"github.com/buildbuddy-io/buildbuddy/server/util/findmissing"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -127,7 +128,9 @@ func (s *ContentAddressableStorageServer) FindMissingBlobs(ctx context.Context, 
 		}
 		digestsToLookup = append(digestsToLookup, rn.ToProto())
 	}
-	missing, err := s.cache.FindMissing(ctx, digestsToLookup)
+	// Forward the incoming request's purpose so present/absent metrics are
+	// attributed to the originating code path.
+	missing, err := s.cache.FindMissing(findmissing.ContextWithPurpose(ctx, req.GetPurpose()), digestsToLookup)
 	if err != nil {
 		return nil, err
 	}
@@ -137,7 +140,7 @@ func (s *ContentAddressableStorageServer) FindMissingBlobs(ctx context.Context, 
 	// Otherwise, use the read fallback threshold so old chunked blobs still
 	// count as present, except for the override-only chunk-size migration range.
 	if efp := s.env.GetExperimentFlagProvider(); len(missing) > 0 && !cdc.IsChunked(ctx) && chunking.Enabled(ctx, efp) {
-		checker := chunking.NewMissingChunkChecker(s.cache)
+		checker := chunking.NewMissingChunkChecker(s.cache, repb.FindMissingBlobsRequest_FMB_CHUNK_VALIDATION)
 		chunkedReadFallbackSizeBytes := chunking.MinChunkedReadFallbackSizeBytes(ctx, efp)
 
 		var mu sync.Mutex
@@ -1327,7 +1330,9 @@ func (s *ContentAddressableStorageServer) splitBlob(ctx context.Context, req *re
 		return nil, err
 	}
 
-	if resp, err := s.FindMissingBlobs(ctx, manifest.ToFindMissingBlobsRequest()); err != nil {
+	fmReq := manifest.ToFindMissingBlobsRequest()
+	fmReq.Purpose = repb.FindMissingBlobsRequest_CAS_SPLIT_BLOB
+	if resp, err := s.FindMissingBlobs(ctx, fmReq); err != nil {
 		return nil, err
 	} else if len(resp.GetMissingBlobDigests()) > 0 {
 		return nil, status.NotFoundErrorf("required chunks not found in CAS: %s", chunking.DigestsSummary(resp.GetMissingBlobDigests()))

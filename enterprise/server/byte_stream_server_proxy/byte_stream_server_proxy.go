@@ -27,6 +27,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/cdc"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
+	"github.com/buildbuddy-io/buildbuddy/server/util/findmissing"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lib/set"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
@@ -440,7 +441,7 @@ func (s *ByteStreamServerProxy) localChunkDigests(ctx context.Context, rn *diges
 	for _, chunkRN := range chunkResourceNames {
 		chunkRN.Compressor = rn.GetCompressor()
 	}
-	missing, err := s.localCache.FindMissing(ctx, chunkResourceNames)
+	missing, err := s.localCache.FindMissing(findmissing.ContextWithPurpose(ctx, repb.FindMissingBlobsRequest_CACHE_PROXY_BSS_CDC_READ), chunkResourceNames)
 	if err != nil {
 		recordChunkedReadFastPathAttempt("find_missing_error")
 		return nil, false
@@ -1552,6 +1553,7 @@ func (c *chunkUploader) processFMBGroup(group []pendingChunk) error {
 		InstanceName:   c.instanceName,
 		BlobDigests:    digests,
 		DigestFunction: c.digestFunction,
+		Purpose:        repb.FindMissingBlobsRequest_CACHE_PROXY_BSS_CDC_WRITE,
 	})
 	fmbSpn.End()
 	if err != nil {
