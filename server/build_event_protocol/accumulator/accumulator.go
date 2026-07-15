@@ -22,6 +22,7 @@ import (
 const (
 	workflowIDFieldName                   = "workflowID"
 	actionNameFieldName                   = "actionName"
+	commitStatusLabelFieldName            = "commitStatusLabel"
 	disableCommitStatusReportingFieldName = "disableCommitStatusReporting"
 	disableTargetTrackingFieldName        = "disableTargetTracking"
 
@@ -39,6 +40,7 @@ var (
 	buildMetadataFieldMapping = map[string]string{
 		"DISABLE_COMMIT_STATUS_REPORTING": disableCommitStatusReportingFieldName,
 		"DISABLE_TARGET_TRACKING":         disableTargetTrackingFieldName,
+		"COMMIT_STATUS_LABEL":             commitStatusLabelFieldName,
 	}
 	bytestreamURIPattern = regexp.MustCompile(`^bytestream://.*/blobs/([a-z0-9]{64})/\d+$`)
 )
@@ -62,6 +64,7 @@ type Accumulator interface {
 	DisableTargetTracking() bool
 	WorkflowID() string
 	ActionName() string
+	CommitStatusLabel() string
 	Pattern() string
 
 	BuildFinished() bool
@@ -270,6 +273,10 @@ func (v *BEValues) WorkflowID() string {
 
 func (v *BEValues) ActionName() string {
 	return v.getStringValue(actionNameFieldName)
+}
+
+func (v *BEValues) CommitStatusLabel() string {
+	return v.getStringValue(commitStatusLabelFieldName)
 }
 
 func (v *BEValues) BuildFinished() bool {
