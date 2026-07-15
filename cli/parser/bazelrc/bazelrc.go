@@ -54,17 +54,20 @@ var (
 	// Inheritance hierarchy: https://bazel.build/run/bazelrc#option-defaults
 	// All commands inherit from "common".
 	parentCommand = map[string]string{
-		"test":           "build",
-		"run":            "build",
-		"clean":          "build",
-		"mobile-install": "build",
-		"info":           "build",
-		"print_action":   "build",
-		"config":         "build",
-		"cquery":         "build",
-		"aquery":         "build",
+		"aquery":             "build",
+		"canonicalize-flags": "build",
+		"clean":              "build",
+		"config":             "build",
+		"info":               "build",
+		"license":            "build",
+		"mobile-install":     "build",
+		"print_action":       "build",
+		"run":                "build",
+		"test":               "build",
 
 		"coverage": "test",
+		"cquery":   "test",
+		"fetch":    "test",
 		"vendor":   "test",
 	}
 
