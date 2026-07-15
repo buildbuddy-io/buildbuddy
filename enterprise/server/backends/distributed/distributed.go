@@ -471,14 +471,14 @@ func (c *Cache) refreshLookasideRightsizeConfig() {
 }
 
 func (c *Cache) watchLookasideRightsizeConfig(shutDownChan chan struct{}) {
-	c.refreshLookasideRightsizeConfig()
-
-	var changes chan struct{}
-	if fp := c.env.GetExperimentFlagProvider(); fp != nil {
-		changes = make(chan struct{}, 1)
-		unsubscribe := fp.Subscribe(changes)
-		defer unsubscribe()
+	fp := c.env.GetExperimentFlagProvider()
+	if fp == nil {
+		return
 	}
+
+	changes := make(chan struct{}, 1)
+	unsubscribe := fp.Subscribe(changes)
+	defer unsubscribe()
 
 	ticker := time.NewTicker(rightsizeConfigRefreshInterval)
 	defer ticker.Stop()
