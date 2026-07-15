@@ -347,12 +347,13 @@ func (c *Proxy) Write(stream dcpb.DistributedCache_WriteServer) error {
 	var bytesWritten int64
 	var writeCloser interfaces.CommittedWriteCloser
 	var req *dcpb.WriteRequest
+	var req *dcpb.WriteRequest
 	for {
 		if req == nil {
 			req = dcpb.WriteRequestFromVTPool()
 			defer req.ReturnToVTPool()
 		} else {
-			// VT unmarshal doesn't reset, so we need to reset manually.
+			// VT unmarshall doesn't reset, so we need to reset manually.
 			req.ResetVT()
 		}
 		err := stream.RecvMsg(req)
