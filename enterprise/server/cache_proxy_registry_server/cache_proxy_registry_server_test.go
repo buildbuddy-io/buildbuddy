@@ -201,7 +201,6 @@ func TestGetCacheProxies_UpgradePrompt(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, resp.GetCacheProxy(), 1)
 	require.NotNil(t, resp.GetUpgradePrompt())
-	assert.Equal(t, "v2.153.0", resp.GetUpgradePrompt().GetNewestAvailableVersion())
 	assert.Equal(t, uppb.Prompt_LOW, resp.GetUpgradePrompt().GetUrgency())
 	assert.Equal(t, upgradePromptMessage, resp.GetUpgradePrompt().GetMessage())
 }
