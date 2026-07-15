@@ -7,6 +7,7 @@ import Breadcrumbs from "../../../app/components/breadcrumbs/breadcrumbs";
 import LinkButton from "../../../app/components/button/link_button";
 import Link, { TextLink } from "../../../app/components/link/link";
 import Select, { Option } from "../../../app/components/select/select";
+import UpgradePrompt, { mostUrgent } from "../../../app/components/upgrade/upgrade";
 import router from "../../../app/router/router";
 import rpcService from "../../../app/service/rpc_service";
 import { BuildBuddyError } from "../../../app/util/errors";
@@ -163,6 +164,7 @@ class ExecutorsList extends React.Component<ExecutorsListProps> {
 
     return (
       <>
+        <UpgradePrompt prompt={mostUrgent(this.props.regions.map((r) => r.response.upgradePrompt))} />
         <div className="executor-cards">
           {keys
             .map((key) => executorsByPool.get(key))

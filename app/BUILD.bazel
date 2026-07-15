@@ -78,6 +78,7 @@ genrule(
         "//app/components/checkbox:checkbox.css",
         "//app/components/spinner:spinner.css",
         "//app/components/tooltip:tooltip.css",
+        "//app/components/upgrade:upgrade.css",
         "//app/profile:profile.css",
     ],
     outs = ["style.css"],

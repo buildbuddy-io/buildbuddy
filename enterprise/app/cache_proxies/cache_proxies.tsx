@@ -4,6 +4,7 @@ import { Subscription } from "rxjs";
 import { User } from "../../../app/auth/auth_service";
 import Breadcrumbs from "../../../app/components/breadcrumbs/breadcrumbs";
 import LinkButton from "../../../app/components/button/link_button";
+import UpgradePrompt, { mostUrgent } from "../../../app/components/upgrade/upgrade";
 import router from "../../../app/router/router";
 import rpcService from "../../../app/service/rpc_service";
 import { BuildBuddyError } from "../../../app/util/errors";
@@ -336,6 +337,7 @@ export default class CacheProxiesComponent extends React.Component<Props, State>
                 </div>
                 {activeTab === "status" && (
                   <>
+                    <UpgradePrompt prompt={mostUrgent(this.state.regions.map((r) => r.response.upgradePrompt))} />
                     {!hasProxies && (
                       <div className="empty-state">
                         <h1>No cache proxies are registered.</h1>

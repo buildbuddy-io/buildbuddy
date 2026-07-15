@@ -118,3 +118,8 @@
   max-width: initial;
   display: inline-flex;
 }
+
+.executors-page .upgrade-prompt-banner {
+  margin: 16px 0;
+  max-width: initial;
+}

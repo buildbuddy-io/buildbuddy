@@ -16,6 +16,7 @@ ts_library(
         "//app/auth:auth_service",
         "//app/components/breadcrumbs",
         "//app/components/button:link_button",
+        "//app/components/upgrade",
         "//app/router",
         "//app/service:rpc_service",
         "//app/util:errors",
