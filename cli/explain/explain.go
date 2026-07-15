@@ -30,9 +30,9 @@ import (
 
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	bbpb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
+	bspb "github.com/buildbuddy-io/buildbuddy/proto/bytestream"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	gocmp "github.com/google/go-cmp/cmp"
-	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
 const (

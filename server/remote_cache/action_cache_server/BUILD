@@ -36,6 +36,7 @@ go_test(
     srcs = ["action_cache_server_test.go"],
     deps = [
         ":action_cache_server",
+        "//proto:bytestream_go_proto",
         "//proto:cache_go_proto",
         "//proto:capability_go_proto",
         "//proto:remote_execution_go_proto",
@@ -64,7 +65,6 @@ go_test(
         "@com_github_prometheus_client_golang//prometheus/testutil",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
-        "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_genproto_googleapis_rpc//status",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//codes",

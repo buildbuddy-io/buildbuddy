@@ -48,11 +48,11 @@ import (
 	"google.golang.org/grpc/metadata"
 
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
+	bspb "github.com/buildbuddy-io/buildbuddy/proto/bytestream"
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 	enpb "github.com/buildbuddy-io/buildbuddy/proto/encryption"
 	iprpb "github.com/buildbuddy-io/buildbuddy/proto/iprules"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
 func enableIPRules(t *testing.T, client bbspb.BuildBuddyServiceClient, ctx context.Context, groupID, clientIP string) {

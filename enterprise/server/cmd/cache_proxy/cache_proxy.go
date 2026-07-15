@@ -60,12 +60,12 @@ import (
 	_ "github.com/buildbuddy-io/buildbuddy/server/util/kuberesolver" // registers kube:// resolver.
 	_ "google.golang.org/grpc/xds"                                   // registers xds:// resolver.
 
+	bspb "github.com/buildbuddy-io/buildbuddy/proto/bytestream"
 	cspb "github.com/buildbuddy-io/buildbuddy/proto/cache_service"
 	ofpb "github.com/buildbuddy-io/buildbuddy/proto/oci_fetcher"
 	rapb "github.com/buildbuddy-io/buildbuddy/proto/remote_asset"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	http_interceptors "github.com/buildbuddy-io/buildbuddy/server/http/interceptors"
-	bspb "google.golang.org/genproto/googleapis/bytestream"
 	channelzservice "google.golang.org/grpc/channelz/service"
 	"google.golang.org/grpc/stats"
 )

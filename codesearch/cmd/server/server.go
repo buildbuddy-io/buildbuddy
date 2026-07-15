@@ -21,8 +21,8 @@ import (
 
 	"google.golang.org/grpc"
 
+	bspb "github.com/buildbuddy-io/buildbuddy/proto/bytestream"
 	csspb "github.com/buildbuddy-io/buildbuddy/proto/codesearch_service"
-	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
 var (

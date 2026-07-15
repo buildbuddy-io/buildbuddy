@@ -16,6 +16,7 @@ go_library(
         "//cli/util/download",
         "//proto:build_event_stream_go_proto",
         "//proto:buildbuddy_service_go_proto",
+        "//proto:bytestream_go_proto",
         "//proto:eventlog_go_proto",
         "//proto:invocation_go_proto",
         "//proto:invocation_status_go_proto",
@@ -23,7 +24,6 @@ go_library(
         "//proto/api/v1:common_go_proto",
         "//server/util/grpc_client",
         "//server/util/status",
-        "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_grpc//metadata",
     ],
 )

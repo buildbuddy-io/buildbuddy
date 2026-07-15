@@ -16,8 +16,8 @@ import (
 
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
+	bspb "github.com/buildbuddy-io/buildbuddy/proto/bytestream"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
-	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
 type InvocationFileSelector func(inv *inpb.Invocation) *bespb.File

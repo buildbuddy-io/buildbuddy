@@ -6,13 +6,13 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/tools/probers/bazelcache",
     visibility = ["//visibility:private"],
     deps = [
+        "//proto:bytestream_go_proto",
         "//proto:remote_execution_go_proto",
         "//server/remote_cache/cachetools",
         "//server/remote_cache/digest",
         "//server/util/compression",
         "//server/util/grpc_client",
         "//server/util/log",
-        "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_grpc//metadata",
     ],
 )

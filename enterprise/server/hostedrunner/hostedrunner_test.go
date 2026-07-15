@@ -32,11 +32,11 @@ import (
 
 	workflow "github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/service"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
+	bspb "github.com/buildbuddy-io/buildbuddy/proto/bytestream"
 	gitpb "github.com/buildbuddy-io/buildbuddy/proto/git"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
-	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
 func getEnv(t *testing.T) (*testenv.TestEnv, context.Context) {

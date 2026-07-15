@@ -49,10 +49,10 @@ import (
 
 	workflow "github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/service"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
+	bspb "github.com/buildbuddy-io/buildbuddy/proto/bytestream"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	wfpb "github.com/buildbuddy-io/buildbuddy/proto/workflow"
-	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
 const (
