@@ -388,10 +388,9 @@ func (c *Proxy) Write(stream dcpb.DistributedCache_WriteServer) error {
 				return err
 			}
 			if req.GetHandoffPeer() != "" && c.hintedHandoffCallback != nil {
-				// Because the hinted handoff callback might hold on to the
-				// handoff peer in a queue, and we're pooling WriteRequest
-				// protos, clone the string.
-				c.hintedHandoffCallback(ctx, strings.Clone(req.GetHandoffPeer()), rn)
+				// Because the hinted handoff callback might hold on to `rn` in
+				// a queue, and we're pooling WriteRequest protos, clone it.
+				c.hintedHandoffCallback(ctx, req.GetHandoffPeer(), rn.CloneVT())
 			}
 			c.log.Debugf("Write(%q) succeeded (user prefix: %s)", ResourceIsolationString(rn), up)
 			return stream.SendAndClose(&dcpb.WriteResponse{
