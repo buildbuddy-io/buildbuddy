@@ -18,6 +18,12 @@
 
 .api-keys .api-keys-list {
   padding: 8px 0;
+  /* Tracks: label | capabilities | value | edit | delete. Rows are subgrids
+   * so columns stay aligned across keys; tracks whose cells aren't rendered
+   * collapse to zero width. */
+  display: grid;
+  grid-template-columns: minmax(224px, max-content) repeat(4, max-content);
+  overflow-x: auto;
 }
 
 .api-keys .api-key-created-banner-content {
@@ -37,66 +43,32 @@
 }
 
 .api-keys .api-key-list-item {
-  display: flex;
-  align-items: baseline;
-  min-height: 40px;
-}
-
-.api-keys .api-key-list-item button {
-  flex-shrink: 0;
-}
-
-.api-keys .api-key-label,
-.api-keys .api-key-capabilities {
-  display: flex;
-  align-self: stretch;
+  display: grid;
+  grid-template-columns: subgrid;
+  grid-column: 1 / -1;
   align-items: center;
+  min-height: 40px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #eee;
 }
 
 .api-keys .api-key-label {
   font-weight: 600;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow-x: hidden;
 }
 
 .api-keys .api-key-capabilities {
   white-space: nowrap;
-  overflow-x: hidden;
-  width: 0;
-  max-width: 192px;
-  flex-basis: 192px;
-  flex-shrink: 0;
 }
 
 .api-keys .untitled-key {
   color: #757575;
 }
 
-.api-keys .api-key-label,
-.api-keys .api-key-value {
-  width: 0;
-  display: flex;
-}
-
-.api-keys .api-key-label {
-  flex-basis: 224px;
-  flex-grow: 1;
-  flex-shrink: 1;
-}
-
 .api-keys .api-key-value {
   box-sizing: border-box;
-  width: fit-content;
-  flex-shrink: 0;
-}
-
-.api-keys .api-key-label > span {
-  flex-grow: 1;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  text-align: left;
-  overflow-x: hidden;
-}
-
-.api-keys .api-key-value {
   font-family: monospace;
   font-size: 12px;
   background: var(--color-bg-code);
@@ -134,12 +106,6 @@
 
 .api-keys .api-key-label svg {
   margin-right: 0px;
-}
-
-.api-keys .api-key-list-item {
-  padding-bottom: 8px;
-  border-bottom: 1px solid #eee;
-  max-width: 816px;
 }
 
 .api-keys .api-key-list-item > :not(:last-child) {
@@ -203,4 +169,8 @@
   color: var(--color-banner-info-text);
   padding: 16px;
   border-radius: 8px;
+  /* Span all list columns and wrap instead of widening the grid. */
+  grid-column: 1 / -1;
+  max-width: 800px;
+  box-sizing: border-box;
 }

@@ -107,6 +107,7 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
 
     const activeTabId = this.getActiveTabId();
     const apiKeyValueReadbackEnabled = capabilities.config.apiKeyValueReadbackEnabled !== false;
+    const autosizeContent = activeTabId === TabId.OrgApiKeys || activeTabId === TabId.PersonalApiKeys;
 
     return (
       <div className="settings">
@@ -198,7 +199,7 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
                 )}
               </div>
             </div>
-            <div className="settings-content">
+            <div className={`settings-content ${autosizeContent ? "settings-content-autosize" : ""}`}>
               {activeTabId === "personal/preferences" && (
                 <>
                   <div className="settings-option-title">Dense mode</div>
