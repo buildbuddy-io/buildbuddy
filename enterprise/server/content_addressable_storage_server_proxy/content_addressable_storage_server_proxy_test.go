@@ -15,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/byte_stream_server_proxy"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/proxy_util"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
@@ -23,11 +24,13 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/cdc"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/jonboulle/clockwork"
 	"github.com/open-feature/go-sdk/openfeature"
 	"github.com/open-feature/go-sdk/openfeature/memprovider"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -367,6 +370,48 @@ func TestFindMissingBlobs_Caching(t *testing.T) {
 	// Empty requests are served without a remote call.
 	findMissing(ctx, proxy, []*repb.Digest{}, []*repb.Digest{}, t)
 	require.Equal(t, int32(6), requestCount.Load())
+}
+
+func TestFindMissingBlobs_CachingSeparatesChunksAndBlobs(t *testing.T) {
+	flags.Set(t, "cache_proxy.find_missing_blobs_cache_ttl", 30*time.Second)
+	ctx := testContext()
+	conn, requestCount, _ := runRemoteCASS(ctx, testenv.GetTestEnv(t), t)
+	proxyEnv := testenv.GetTestEnv(t)
+	proxyEnv.SetAuthenticator(testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1")))
+	proxyEnv.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(conn))
+	require.NoError(t, atime_updater.Register(proxyEnv))
+	proxyConn := runCASProxy(ctx, conn, proxyEnv, t)
+	proxy := repb.NewContentAddressableStorageClient(proxyConn)
+
+	fooDigestProto := digestProto(fooDigest, 3)
+	barDigestProto := digestProto(barDigest, 3)
+	remote := repb.NewContentAddressableStorageClient(conn)
+	update(ctx, remote, map[*repb.Digest]string{fooDigestProto: "foo", barDigestProto: "bar"}, t)
+	requestCount.Store(0)
+
+	blobCtx := metadata.AppendToOutgoingContext(ctx, authutil.APIKeyHeader, "US1")
+	chunkCtx := cdc.ContextWithChunked(blobCtx)
+
+	findMissing(blobCtx, proxy, []*repb.Digest{fooDigestProto}, []*repb.Digest{}, t)
+	require.Equal(t, int32(1), requestCount.Load())
+	findMissing(blobCtx, proxy, []*repb.Digest{fooDigestProto}, []*repb.Digest{}, t)
+	require.Equal(t, int32(1), requestCount.Load())
+
+	// A whole-blob cache entry cannot satisfy a chunk lookup.
+	findMissing(chunkCtx, proxy, []*repb.Digest{fooDigestProto}, []*repb.Digest{}, t)
+	require.Equal(t, int32(2), requestCount.Load())
+	findMissing(chunkCtx, proxy, []*repb.Digest{fooDigestProto}, []*repb.Digest{}, t)
+	require.Equal(t, int32(2), requestCount.Load())
+
+	findMissing(chunkCtx, proxy, []*repb.Digest{barDigestProto}, []*repb.Digest{}, t)
+	require.Equal(t, int32(3), requestCount.Load())
+
+	// A whole-blob lookup falls back to the chunk cache.
+	chunkFallbackCounter := findMissingBlobsCacheLookups(metrics.HitStatusLabel, false, "chunk_cache")
+	chunkFallbackHitsBefore := testutil.ToFloat64(chunkFallbackCounter)
+	findMissing(blobCtx, proxy, []*repb.Digest{barDigestProto}, []*repb.Digest{}, t)
+	require.Equal(t, int32(3), requestCount.Load())
+	require.Equal(t, 1.0, testutil.ToFloat64(chunkFallbackCounter)-chunkFallbackHitsBefore)
 }
 
 func TestFindMissingBlobs_BypassCache(t *testing.T) {

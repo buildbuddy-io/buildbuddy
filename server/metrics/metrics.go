@@ -373,7 +373,7 @@ const (
 	// should fall back to the remote cache as the source of truth.
 	CacheProxyRequestType = "proxy_request_type"
 
-	// Source used by a cache proxy action cache read to produce a response.
+	// Source used by a cache proxy request to produce a response.
 	CacheProxyResultSource = "result_source"
 
 	OCIResourceTypeLabel = "oci_resource_type"
@@ -4246,10 +4246,11 @@ var (
 		Namespace: bbNamespace,
 		Subsystem: "proxy",
 		Name:      "find_missing_blobs_cache_lookups",
-		Help:      "The number of digests looked up in the Cache Proxy's local FindMissingBlobs cache, by lookup status and whether the digests are CDC chunks. 'hit': served from the local cache. 'miss': the remote reported the digest present, so the lookup could have been a hit. 'uncacheable': the remote reported the digest missing; absence is never cached, so these lookups always require a remote check.",
+		Help:      "The number of digests looked up in the Cache Proxy's local FindMissingBlobs cache, by lookup status, whether the digests are CDC chunks, and result source. 'hit': served from the local cache. 'miss': the remote reported the digest present, so the lookup could have been a hit. 'uncacheable': the remote reported the digest missing; absence is never cached, so these lookups always require a remote check.",
 	}, []string{
 		CacheHitMissStatus,
 		ChunkedLabel,
+		CacheProxyResultSource,
 	})
 
 	RemoteAtimeUpdates = promauto.NewCounterVec(prometheus.CounterOpts{
