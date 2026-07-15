@@ -31,6 +31,7 @@ var (
 		"build":              {},
 		"canonicalize-flags": {},
 		"clean":              {},
+		"config":             {},
 		"coverage":           {},
 		"cquery":             {},
 		"dump":               {},
@@ -46,6 +47,7 @@ var (
 		"shutdown":           {},
 		"sync":               {},
 		"test":               {},
+		"vendor":             {},
 		"version":            {},
 	}
 
@@ -63,6 +65,7 @@ var (
 		"aquery":         "build",
 
 		"coverage": "test",
+		"vendor":   "test",
 	}
 
 	unconditionalCommandPhases = set.Set[string]{
