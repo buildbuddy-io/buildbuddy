@@ -219,3 +219,81 @@ func newRemoteRunnerTask(repoURL, apiKey, repoToken string) *repb.ExecutionTask 
 		},
 	}
 }
+
+func TestGitFetchLowSpeedRetryFlags(t *testing.T) {
+	tests := []struct {
+		name          string
+		experiment    map[string]any
+		expectedFlags []string
+	}{
+		{
+			// With no experiment configured, no flags should be returned, so
+			// the ci_runner falls back to its flag defaults (retries disabled).
+			name:          "not configured",
+			experiment:    nil,
+			expectedFlags: nil,
+		},
+		{
+			// A fully specified config should produce all three fetch flags.
+			name:          "all fields set",
+			experiment:    map[string]any{"retries": 2, "duration": "45s", "rate": 2048},
+			expectedFlags: []string{"--git_fetch_low_speed_retries=2", "--git_fetch_low_speed_limit=2048", "--git_fetch_low_speed_time=45s"},
+		},
+		{
+			// If only retries is set, the rate and duration should be left to
+			// the ci_runner's flag defaults.
+			name:          "only retries set",
+			experiment:    map[string]any{"retries": 1},
+			expectedFlags: []string{"--git_fetch_low_speed_retries=1"},
+		},
+		{
+			// A duration the ci_runner would fail to parse should disable the
+			// experiment entirely rather than produce partial flags.
+			name:          "invalid duration",
+			experiment:    map[string]any{"retries": 1, "duration": "not-a-duration"},
+			expectedFlags: nil,
+		},
+		{
+			// A zero duration disables Git's low-speed check, so it should be
+			// omitted to let the ci_runner use its default duration.
+			name:          "zero duration",
+			experiment:    map[string]any{"retries": 1, "duration": "0s"},
+			expectedFlags: []string{"--git_fetch_low_speed_retries=1"},
+		},
+		{
+			// A negative duration is not meaningful, so it should be omitted to
+			// let the ci_runner use its default duration.
+			name:          "negative duration",
+			experiment:    map[string]any{"retries": 1, "duration": "-1s"},
+			expectedFlags: []string{"--git_fetch_low_speed_retries=1"},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			env := enterprise_testenv.New(t)
+			configureLowSpeedRetryExperiment(t, env, tc.experiment)
+			flags := GitFetchLowSpeedRetryFlags(t.Context(), env.GetExperimentFlagProvider())
+			require.Equal(t, tc.expectedFlags, flags)
+		})
+	}
+}
+
+func configureLowSpeedRetryExperiment(t *testing.T, env *testenv.TestEnv, config map[string]any) {
+	memFlags := map[string]memprovider.InMemoryFlag{}
+	if config != nil {
+		memFlags[LowSpeedRetryConfigExperimentName] = memprovider.InMemoryFlag{
+			State:          memprovider.Enabled,
+			DefaultVariant: "on",
+			Variants: map[string]any{
+				"on": config,
+			},
+		}
+	}
+	testProvider := memprovider.NewInMemoryProvider(memFlags)
+	require.NoError(t, openfeature.SetProviderAndWait(testProvider))
+
+	fp, err := experiments.NewFlagProvider("test")
+	require.NoError(t, err)
+	env.SetExperimentFlagProvider(fp)
+}

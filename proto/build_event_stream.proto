@@ -1682,6 +1682,9 @@ message GitFetchCompleted {
 
   // Total time spent running git fetch commands.
   google.protobuf.Duration duration = 2;
+
+  // Total number of git fetch retries after low-speed aborts.
+  int64 retry_count = 3;
 }
 
 // Message describing a build event. Events will have an identifier that

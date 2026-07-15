@@ -190,6 +190,7 @@ type Invocation struct {
 	// flushing the invocation to the OLAP DB.
 	GitFetchTotalBytes   int64 `gorm:"-"`
 	GitFetchDurationUsec int64 `gorm:"-"`
+	GitFetchRetryCount   int64 `gorm:"-"`
 }
 
 func (i *Invocation) TableName() string {

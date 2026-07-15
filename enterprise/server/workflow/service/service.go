@@ -1205,6 +1205,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 	if workflowAction.GitFetchDepth != nil {
 		args = append(args, fmt.Sprintf("--git_fetch_depth=%d", *workflowAction.GitFetchDepth))
 	}
+	args = append(args, ci_runner_util.GitFetchLowSpeedRetryFlags(ctx, ws.env.GetExperimentFlagProvider(), experiments.WithContext("workflow_action_name", workflowAction.Name))...)
 	for _, path := range workflowAction.GitCleanExclude {
 		args = append(args, "--git_clean_exclude="+path)
 	}

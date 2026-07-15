@@ -79,5 +79,10 @@ go_test(
     name = "ci_runner_test",
     srcs = ["main_test.go"],
     embed = [":ci_runner_lib"],
-    deps = ["@com_github_stretchr_testify//assert"],
+    deps = [
+        "//server/testutil/testgit",
+        "//server/util/testing/flags",
+        "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
+    ],
 )

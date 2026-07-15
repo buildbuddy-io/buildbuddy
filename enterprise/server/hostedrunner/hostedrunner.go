@@ -235,6 +235,7 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 		if bazelCommandOverride != "" {
 			args = append(args, "--bazel_command="+bazelCommandOverride)
 		}
+		args = append(args, ci_runner_util.GitFetchLowSpeedRetryFlags(ctx, efp, experiments.WithContext("workflow_action_name", "remote_bazel"))...)
 	}
 	args = append(args, req.GetRunnerFlags()...)
 
