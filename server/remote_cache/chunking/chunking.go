@@ -36,11 +36,12 @@ var (
 	chunkedManifestSalt             = flag.String("cache.chunking.ac_key_salt", "", "If set, salt the AC key with this value.")
 	avgChunkSizeBytes               = flag.Int64("cache.avg_chunk_size_bytes", 512*1024, "This is the average size of a chunk. Only blobs larger (non-inclusive) than 4x this value will be chunked. The maximum chunk size will be 4x this value, and the minimum will be 1/4 this value (default 512KB).")
 	minChunkedReadFallbackSizeBytes = flag.Int64("cache.min_chunked_read_fallback_size_bytes", 2*1024*1024, "Only blobs larger (non-inclusive) than this value will use the server-side chunked read fallback after a normal blob lookup misses.")
+	checkLegacyManifests            = flag.Bool("cache.chunking.check_legacy_manifests", true, "If true, fall back to loading v3 manifests when a v4 manifest is not found.")
 )
 
 const (
-	chunkedManifestPrefix        = "_bb_chunked_manifest_v3_/"
-	chunkOutputFilePrefix        = "chunk_"
+	legacyManifestPrefix         = "_bb_chunked_manifest_v3_/"
+	chunkedManifestPrefix        = "_cdcv4/"
 	sharedValidationMarkerDomain = "cas-validation-marker-v1"
 
 	// Default max blob size eligible for chunked writes. Values <= 0 mean no maximum.
@@ -288,16 +289,17 @@ func NewChunker(ctx context.Context, averageSize int, writeChunkFn WriteFunc) (*
 }
 
 type Manifest struct {
-	BlobDigest     *repb.Digest
-	ChunkDigests   []*repb.Digest
-	InstanceName   string
-	DigestFunction repb.DigestFunction_Value
+	BlobDigest       *repb.Digest
+	ChunkDigests     []*repb.Digest
+	InstanceName     string
+	DigestFunction   repb.DigestFunction_Value
+	ChunkingFunction repb.ChunkingFunction_Value
 }
 
 func (cm *Manifest) ToSplitBlobResponse() *repb.SplitBlobResponse {
 	return &repb.SplitBlobResponse{
 		ChunkDigests:     cm.ChunkDigests,
-		ChunkingFunction: repb.ChunkingFunction_FAST_CDC_2020,
+		ChunkingFunction: effectiveChunkingFunction(cm.ChunkingFunction),
 	}
 }
 
@@ -315,7 +317,7 @@ func (cm *Manifest) ToSpliceBlobRequest() *repb.SpliceBlobRequest {
 		ChunkDigests:     cm.ChunkDigests,
 		InstanceName:     cm.InstanceName,
 		DigestFunction:   cm.DigestFunction,
-		ChunkingFunction: repb.ChunkingFunction_FAST_CDC_2020,
+		ChunkingFunction: effectiveChunkingFunction(cm.ChunkingFunction),
 	}
 }
 
@@ -328,9 +330,10 @@ func (cm *Manifest) ChunkResourceNames() []*rspb.ResourceName {
 }
 
 // Store saves the chunked manifest to the cache as an AC entry, keyed by the
-// blob digest. It validates that all chunks exist and their combined hash
-// matches the blob digest.
-func (cm *Manifest) Store(ctx context.Context, cache interfaces.Cache) error {
+// blob digest and namespaced by the chunking function and threshold. It
+// validates that all chunks exist and their combined hash matches the blob
+// digest.
+func (cm *Manifest) Store(ctx context.Context, cache interfaces.Cache, efp interfaces.ExperimentFlagProvider) error {
 	if len(cm.ChunkDigests) == 0 {
 		return status.InvalidArgumentError("chunked manifest must have at least one chunk")
 	}
@@ -355,26 +358,25 @@ func (cm *Manifest) Store(ctx context.Context, cache interfaces.Cache) error {
 		return err
 	}
 
-	return cm.store(ctx, cache)
+	return cm.store(ctx, cache, efp)
 }
 
 // StoreWithoutVerification saves the chunked manifest to the cache without
 // checking that all chunks exist or that their combined hash matches the blob
 // digest.
-func (cm *Manifest) StoreWithoutVerification(ctx context.Context, cache interfaces.Cache) error {
+func (cm *Manifest) StoreWithoutVerification(ctx context.Context, cache interfaces.Cache, efp interfaces.ExperimentFlagProvider) error {
 	if len(cm.ChunkDigests) == 0 {
 		return status.InvalidArgumentError("chunked manifest must have at least one chunk")
 	}
-	return cm.store(ctx, cache)
+	return cm.store(ctx, cache, efp)
 }
 
-func (cm *Manifest) store(ctx context.Context, cache interfaces.Cache) error {
+func (cm *Manifest) store(ctx context.Context, cache interfaces.Cache, efp interfaces.ExperimentFlagProvider) error {
 	ar := &repb.ActionResult{
 		OutputFiles: make([]*repb.OutputFile, 0, len(cm.ChunkDigests)),
 	}
-	for i, chunkDigest := range cm.ChunkDigests {
+	for _, chunkDigest := range cm.ChunkDigests {
 		ar.OutputFiles = append(ar.OutputFiles, &repb.OutputFile{
-			Path:   chunkOutputFilePrefix + strconv.Itoa(i),
 			Digest: chunkDigest,
 		})
 	}
@@ -384,7 +386,7 @@ func (cm *Manifest) store(ctx context.Context, cache interfaces.Cache) error {
 		return status.InternalErrorf("marshal chunked manifest to ActionResult: %w", err)
 	}
 
-	acRNProto, err := acResourceName(cm.BlobDigest, cm.InstanceName, cm.DigestFunction)
+	acRNProto, _, err := acResourceName(cm.BlobDigest, cm.InstanceName, cm.DigestFunction, cm.ChunkingFunction, MaxChunkSizeBytes(ctx, efp))
 	if err != nil {
 		return err
 	}
@@ -398,21 +400,38 @@ func (cm *Manifest) store(ctx context.Context, cache interfaces.Cache) error {
 	return nil
 }
 
-// LoadManifest retrieves a chunked manifest from the cache. It does NOT validate existence of the chunks.
-func LoadManifest(ctx context.Context, cache interfaces.Cache, blobDigest *repb.Digest, instanceName string, digestFunction repb.DigestFunction_Value) (*Manifest, error) {
-	rn, err := acResourceName(blobDigest, instanceName, digestFunction)
+// LoadManifest retrieves a v4 chunked manifest, falling back to the unchanged
+// v3 key. It does NOT validate existence of the chunks.
+func LoadManifest(ctx context.Context, cache interfaces.Cache, blobDigest *repb.Digest, instanceName string, digestFunction repb.DigestFunction_Value, chunkingFunction repb.ChunkingFunction_Value, efp interfaces.ExperimentFlagProvider) (*Manifest, error) {
+	chunkingFunctions := chunkingFunctionsForLookup(chunkingFunction)
+	for i, cf := range chunkingFunctions {
+		rn, manifestPrefix, err := acResourceName(blobDigest, instanceName, digestFunction, cf, MaxChunkSizeBytes(ctx, efp))
+		if err != nil {
+			return nil, err
+		}
+		manifest, err := loadManifestFrom(ctx, cache, blobDigest, instanceName, digestFunction, cf, rn)
+		if err == nil {
+			metrics.ChunkedManifestLoadCount.WithLabelValues(manifestPrefix).Inc()
+			return manifest, nil
+		}
+		if !status.IsNotFoundError(err) || (i == len(chunkingFunctions)-1 && !*checkLegacyManifests) {
+			return nil, err
+		}
+	}
+
+	rn, err := legacyACResourceName(blobDigest, instanceName, digestFunction)
 	if err != nil {
 		return nil, err
 	}
-	manifest, err := loadManifestFrom(ctx, cache, blobDigest, instanceName, digestFunction, rn)
+	manifest, err := loadManifestFrom(ctx, cache, blobDigest, instanceName, digestFunction, repb.ChunkingFunction_FAST_CDC_2020, rn)
 	if err != nil {
 		return nil, err
 	}
-	metrics.ChunkedManifestLoadCount.WithLabelValues(chunkedManifestPrefix).Inc()
+	metrics.ChunkedManifestLoadCount.WithLabelValues(legacyManifestPrefix).Inc()
 	return manifest, nil
 }
 
-func loadManifestFrom(ctx context.Context, cache interfaces.Cache, blobDigest *repb.Digest, instanceName string, digestFunction repb.DigestFunction_Value, acRNProto *rspb.ResourceName) (*Manifest, error) {
+func loadManifestFrom(ctx context.Context, cache interfaces.Cache, blobDigest *repb.Digest, instanceName string, digestFunction repb.DigestFunction_Value, chunkingFunction repb.ChunkingFunction_Value, acRNProto *rspb.ResourceName) (*Manifest, error) {
 	arBytes, err := cache.Get(ctx, acRNProto)
 	if err != nil {
 		if status.IsInternalError(err) {
@@ -436,10 +455,11 @@ func loadManifestFrom(ctx context.Context, cache interfaces.Cache, blobDigest *r
 	}
 
 	return &Manifest{
-		BlobDigest:     blobDigest,
-		ChunkDigests:   chunkDigests,
-		InstanceName:   instanceName,
-		DigestFunction: digestFunction,
+		BlobDigest:       blobDigest,
+		ChunkDigests:     chunkDigests,
+		InstanceName:     instanceName,
+		DigestFunction:   digestFunction,
+		ChunkingFunction: chunkingFunction,
 	}, nil
 }
 
@@ -608,8 +628,21 @@ func sharedValidationResourceName(cm *Manifest) (*rspb.ResourceName, []byte, err
 	return digest.NewCASResourceName(d, "", cm.DigestFunction).ToProto(), content, nil
 }
 
-func acResourceName(blobDigest *repb.Digest, instanceName string, digestFunction repb.DigestFunction_Value) (*rspb.ResourceName, error) {
-	acInstanceName := chunkedManifestPrefix + instanceName
+func acResourceName(blobDigest *repb.Digest, instanceName string, digestFunction repb.DigestFunction_Value, chunkingFunction repb.ChunkingFunction_Value, chunkingThresholdBytes int64) (*rspb.ResourceName, string, error) {
+	manifestPrefix, err := v4ManifestPrefix(chunkingFunction, chunkingThresholdBytes)
+	if err != nil {
+		return nil, "", err
+	}
+	acRN, err := acResourceNameWithPrefix(manifestPrefix, blobDigest, instanceName, digestFunction)
+	return acRN, manifestPrefix, err
+}
+
+func legacyACResourceName(blobDigest *repb.Digest, instanceName string, digestFunction repb.DigestFunction_Value) (*rspb.ResourceName, error) {
+	return acResourceNameWithPrefix(legacyManifestPrefix, blobDigest, instanceName, digestFunction)
+}
+
+func acResourceNameWithPrefix(manifestPrefix string, blobDigest *repb.Digest, instanceName string, digestFunction repb.DigestFunction_Value) (*rspb.ResourceName, error) {
+	acInstanceName := manifestPrefix + instanceName
 	acDigest := &repb.Digest{
 		Hash:      blobDigest.GetHash(),
 		SizeBytes: blobToManifestSize(blobDigest.GetSizeBytes()),
@@ -633,6 +666,34 @@ func acResourceName(blobDigest *repb.Digest, instanceName string, digestFunction
 		return nil, err
 	}
 	return acRN.ToProto(), nil
+}
+
+func v4ManifestPrefix(chunkingFunction repb.ChunkingFunction_Value, chunkingThresholdBytes int64) (string, error) {
+	cf := effectiveChunkingFunction(chunkingFunction)
+	if cf != repb.ChunkingFunction_FAST_CDC_2020 && cf != repb.ChunkingFunction_REP_MAX_CDC {
+		return "", status.InvalidArgumentErrorf("unsupported chunking function %v", chunkingFunction)
+	}
+	if chunkingThresholdBytes <= 0 {
+		return "", status.InvalidArgumentErrorf("invalid chunking threshold %d", chunkingThresholdBytes)
+	}
+	return fmt.Sprintf("%s%d/%d/", chunkedManifestPrefix, cf, chunkingThresholdBytes), nil
+}
+
+func effectiveChunkingFunction(chunkingFunction repb.ChunkingFunction_Value) repb.ChunkingFunction_Value {
+	if chunkingFunction == repb.ChunkingFunction_UNKNOWN {
+		return repb.ChunkingFunction_FAST_CDC_2020
+	}
+	return chunkingFunction
+}
+
+func chunkingFunctionsForLookup(chunkingFunction repb.ChunkingFunction_Value) []repb.ChunkingFunction_Value {
+	if chunkingFunction == repb.ChunkingFunction_UNKNOWN {
+		return []repb.ChunkingFunction_Value{
+			repb.ChunkingFunction_FAST_CDC_2020,
+			repb.ChunkingFunction_REP_MAX_CDC,
+		}
+	}
+	return []repb.ChunkingFunction_Value{chunkingFunction}
 }
 
 // blobToManifestSize estimates manifest size from blob size by dividing by 4096.

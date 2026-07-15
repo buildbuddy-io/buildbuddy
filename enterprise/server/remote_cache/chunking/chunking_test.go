@@ -107,7 +107,7 @@ func TestStore_SharedValidationMarkerSkipsRehashForIdenticalManifest(t *testing.
 		InstanceName:   "instance-a",
 		DigestFunction: repb.DigestFunction_BLAKE3,
 	}
-	require.NoError(t, firstManifest.Store(ctx, cache))
+	require.NoError(t, firstManifest.Store(ctx, cache, nil))
 	require.Equal(t, len(chunkDigests), cache.getMultiCalls, "first store should hash all chunks")
 
 	cache.getMultiCalls = 0
@@ -117,6 +117,6 @@ func TestStore_SharedValidationMarkerSkipsRehashForIdenticalManifest(t *testing.
 		InstanceName:   "instance-b",
 		DigestFunction: repb.DigestFunction_BLAKE3,
 	}
-	require.NoError(t, secondManifest.Store(ctx, cache))
+	require.NoError(t, secondManifest.Store(ctx, cache, nil))
 	assert.Equal(t, 0, cache.getMultiCalls, "second store should reuse shared validation marker and open no readers")
 }

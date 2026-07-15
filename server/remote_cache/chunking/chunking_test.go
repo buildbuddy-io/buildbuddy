@@ -16,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
+	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/assert"
@@ -247,12 +248,12 @@ func TestStoreAndLoad(t *testing.T) {
 			badDigest, err := digest.Compute(bytes.NewReader([]byte("bad")), repb.DigestFunction_SHA256)
 			require.NoError(t, err)
 			cm.BlobDigest = badDigest
-			require.Error(t, cm.Store(ctx, cache))
+			require.Error(t, cm.Store(ctx, cache, nil))
 			cm.BlobDigest = blobDigest
 
-			require.NoError(t, cm.Store(ctx, cache))
+			require.NoError(t, cm.Store(ctx, cache, nil))
 
-			loaded, err := chunking.LoadManifest(ctx, cache, blobDigest, "", repb.DigestFunction_SHA256)
+			loaded, err := chunking.LoadManifest(ctx, cache, blobDigest, "", repb.DigestFunction_SHA256, repb.ChunkingFunction_UNKNOWN, nil)
 			require.NoError(t, err)
 			assert.Equal(t, cm.BlobDigest.GetHash(), loaded.BlobDigest.GetHash())
 			assert.Equal(t, cm.BlobDigest.GetSizeBytes(), loaded.BlobDigest.GetSizeBytes())
@@ -263,6 +264,104 @@ func TestStoreAndLoad(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestManifestV4KeyNamespaceAndFormat(t *testing.T) {
+	flags.Set(t, "cache.avg_chunk_size_bytes", 512*1024)
+	flags.Set(t, "cache.chunking.ac_key_salt", "")
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+	require.NoError(t, err)
+	cache := &recordingSetCache{Cache: te.GetCache()}
+
+	blobRN, _ := testdigest.RandomCASResourceBuf(t, 10*1024*1024)
+	chunkRN, _ := testdigest.RandomCASResourceBuf(t, 1024)
+	manifest := &chunking.Manifest{
+		BlobDigest:       blobRN.GetDigest(),
+		ChunkDigests:     []*repb.Digest{chunkRN.GetDigest()},
+		InstanceName:     "instance",
+		DigestFunction:   repb.DigestFunction_SHA256,
+		ChunkingFunction: repb.ChunkingFunction_FAST_CDC_2020,
+	}
+
+	require.NoError(t, manifest.StoreWithoutVerification(ctx, cache, nil))
+	require.Equal(t, "_cdcv4/1/2097152/instance", cache.lastResource.GetInstanceName())
+
+	ar := &repb.ActionResult{}
+	require.NoError(t, proto.Unmarshal(cache.lastData, ar))
+	require.Len(t, ar.GetOutputFiles(), 1)
+	require.Empty(t, ar.GetOutputFiles()[0].GetPath())
+
+	manifest.ChunkingFunction = repb.ChunkingFunction_REP_MAX_CDC
+	require.NoError(t, manifest.StoreWithoutVerification(ctx, cache, nil))
+	require.Equal(t, "_cdcv4/2/2097152/instance", cache.lastResource.GetInstanceName())
+
+	override := booleanFlagProvider{intValues: map[string]int64{"cache.avg_chunk_size_override": 1024 * 1024}}
+	manifest.ChunkingFunction = repb.ChunkingFunction_FAST_CDC_2020
+	require.NoError(t, manifest.StoreWithoutVerification(ctx, cache, override))
+	require.Equal(t, "_cdcv4/1/4194304/instance", cache.lastResource.GetInstanceName())
+
+	for _, tc := range []struct {
+		chunkingFunction repb.ChunkingFunction_Value
+		efp              interfaces.ExperimentFlagProvider
+	}{
+		{chunkingFunction: repb.ChunkingFunction_FAST_CDC_2020},
+		{chunkingFunction: repb.ChunkingFunction_REP_MAX_CDC},
+		{chunkingFunction: repb.ChunkingFunction_FAST_CDC_2020, efp: override},
+	} {
+		loaded, err := chunking.LoadManifest(ctx, cache, blobRN.GetDigest(), "instance", repb.DigestFunction_SHA256, tc.chunkingFunction, tc.efp)
+		require.NoError(t, err)
+		require.Equal(t, tc.chunkingFunction, loaded.ChunkingFunction)
+	}
+}
+
+func TestLoadManifestFallsBackToUnchangedV3Key(t *testing.T) {
+	flags.Set(t, "cache.avg_chunk_size_bytes", 512*1024)
+	flags.Set(t, "cache.chunking.ac_key_salt", "")
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+	require.NoError(t, err)
+	cache := te.GetCache()
+
+	blobRN, _ := testdigest.RandomCASResourceBuf(t, 10*1024*1024)
+	chunk1RN, _ := testdigest.RandomCASResourceBuf(t, 100)
+	chunk2RN, _ := testdigest.RandomCASResourceBuf(t, 200)
+	manifestBytes, err := proto.Marshal(&repb.ActionResult{
+		OutputFiles: []*repb.OutputFile{
+			{Path: "chunk_0", Digest: chunk1RN.GetDigest()},
+			{Path: "chunk_1", Digest: chunk2RN.GetDigest()},
+		},
+	})
+	require.NoError(t, err)
+	v3Digest := &repb.Digest{
+		Hash:      blobRN.GetDigest().GetHash(),
+		SizeBytes: blobRN.GetDigest().GetSizeBytes()>>12 + 1,
+	}
+	v3RN := digest.NewACResourceName(v3Digest, "_bb_chunked_manifest_v3_/instance", repb.DigestFunction_SHA256)
+	require.NoError(t, cache.Set(ctx, v3RN.ToProto(), manifestBytes))
+
+	loaded, err := chunking.LoadManifest(ctx, cache, blobRN.GetDigest(), "instance", repb.DigestFunction_SHA256, repb.ChunkingFunction_REP_MAX_CDC, nil)
+	require.NoError(t, err)
+	require.Equal(t, repb.ChunkingFunction_FAST_CDC_2020, loaded.ChunkingFunction)
+	require.Equal(t, []*repb.Digest{chunk1RN.GetDigest(), chunk2RN.GetDigest()}, loaded.ChunkDigests)
+
+	flags.Set(t, "cache.chunking.check_legacy_manifests", false)
+	_, err = chunking.LoadManifest(ctx, cache, blobRN.GetDigest(), "instance", repb.DigestFunction_SHA256, repb.ChunkingFunction_REP_MAX_CDC, nil)
+	require.True(t, status.IsNotFoundError(err))
+}
+
+type recordingSetCache struct {
+	interfaces.Cache
+	lastResource *rspb.ResourceName
+	lastData     []byte
+}
+
+func (c *recordingSetCache) Set(ctx context.Context, r *rspb.ResourceName, data []byte) error {
+	c.lastResource = r
+	c.lastData = bytes.Clone(data)
+	return c.Cache.Set(ctx, r, data)
 }
 
 func TestStore_MissingChunk(t *testing.T) {
@@ -307,7 +406,7 @@ func TestStore_MissingChunk(t *testing.T) {
 		DigestFunction: repb.DigestFunction_SHA256,
 	}
 
-	err = cm.Store(ctx, cache)
+	err = cm.Store(ctx, cache, nil)
 	require.True(t, status.IsInvalidArgumentError(err), "got: %v", err)
 }
 
@@ -320,7 +419,7 @@ func TestLoadWithoutManifest_BlobMissing(t *testing.T) {
 
 	blobRN, _ := testdigest.RandomCASResourceBuf(t, 500)
 
-	_, err = chunking.LoadManifest(ctx, cache, blobRN.GetDigest(), "", repb.DigestFunction_SHA256)
+	_, err = chunking.LoadManifest(ctx, cache, blobRN.GetDigest(), "", repb.DigestFunction_SHA256, repb.ChunkingFunction_UNKNOWN, nil)
 	require.Error(t, err)
 	require.True(t, status.IsNotFoundError(err))
 }
@@ -340,7 +439,7 @@ func TestLoadWithoutManifest_SaltedHashNotLeaked(t *testing.T) {
 	saltedDigest, err := digest.Compute(bytes.NewReader([]byte(salt+":"+blobDigest.GetHash())), repb.DigestFunction_SHA256)
 	require.NoError(t, err)
 
-	_, err = chunking.LoadManifest(ctx, te.GetCache(), blobDigest, "", repb.DigestFunction_SHA256)
+	_, err = chunking.LoadManifest(ctx, te.GetCache(), blobDigest, "", repb.DigestFunction_SHA256, repb.ChunkingFunction_UNKNOWN, nil)
 
 	require.Error(t, err)
 	require.True(t, status.IsNotFoundError(err))
@@ -377,7 +476,7 @@ func TestStore_ErrGroupContextCancellation(t *testing.T) {
 	}
 
 	wrapper.checkContextOnSet = true
-	err = cm.Store(ctx, wrapper)
+	err = cm.Store(ctx, wrapper, nil)
 	require.NoError(t, err, "Store should not fail due to errgroup context cancellation")
 	require.True(t, wrapper.setWasCalled, "cache.Set should have been called")
 }
@@ -422,7 +521,7 @@ func TestStore_SharedValidationMarkerIsManifestSpecific(t *testing.T) {
 		InstanceName:   "instance-a",
 		DigestFunction: repb.DigestFunction_SHA256,
 	}
-	require.NoError(t, validManifest.Store(ctx, cache))
+	require.NoError(t, validManifest.Store(ctx, cache, nil))
 
 	invalidManifest := &chunking.Manifest{
 		BlobDigest:     blobDigest,
@@ -431,7 +530,7 @@ func TestStore_SharedValidationMarkerIsManifestSpecific(t *testing.T) {
 		DigestFunction: repb.DigestFunction_SHA256,
 	}
 
-	err = invalidManifest.Store(ctx, cache)
+	err = invalidManifest.Store(ctx, cache, nil)
 	require.Error(t, err)
 	require.True(t, status.IsInvalidArgumentError(err), "expected invalid argument error, got: %v", err)
 
@@ -694,7 +793,7 @@ func BenchmarkStore(b *testing.B) {
 
 			b.ReportAllocs()
 			for b.Loop() {
-				if err := cm.Store(ctx, cache); err != nil {
+				if err := cm.Store(ctx, cache, nil); err != nil {
 					b.Fatal(err)
 				}
 			}

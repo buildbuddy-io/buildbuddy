@@ -975,12 +975,50 @@ func TestSpliceAndSplitBlob(t *testing.T) {
 	splitResp, err := casClient.SplitBlob(ctx, splitReq)
 	require.NoError(t, err)
 	require.Equal(t, len(chunkDigests), len(splitResp.ChunkDigests))
+	require.Equal(t, repb.ChunkingFunction_FAST_CDC_2020, splitResp.GetChunkingFunction())
 
 	for i, expectedDigest := range chunkDigests {
 		actualDigest := splitResp.ChunkDigests[i]
 		assert.Equal(t, expectedDigest.Hash, actualDigest.Hash)
 		assert.Equal(t, expectedDigest.SizeBytes, actualDigest.SizeBytes)
 	}
+
+	mergedChunk := append(bytes.Clone(chunks[0]), chunks[1]...)
+	mergedChunkDigest, err := digest.Compute(bytes.NewReader(mergedChunk), repb.DigestFunction_BLAKE3)
+	require.NoError(t, err)
+	_, err = casClient.BatchUpdateBlobs(ctx, &repb.BatchUpdateBlobsRequest{
+		Requests: []*repb.BatchUpdateBlobsRequest_Request{{
+			Digest: mergedChunkDigest,
+			Data:   mergedChunk,
+		}},
+		DigestFunction: repb.DigestFunction_BLAKE3,
+	})
+	require.NoError(t, err)
+	repMaxChunkDigests := append([]*repb.Digest{mergedChunkDigest}, chunkDigests[2:]...)
+	_, err = casClient.SpliceBlob(ctx, &repb.SpliceBlobRequest{
+		BlobDigest:       blobDigest,
+		ChunkDigests:     repMaxChunkDigests,
+		DigestFunction:   repb.DigestFunction_BLAKE3,
+		ChunkingFunction: repb.ChunkingFunction_REP_MAX_CDC,
+	})
+	require.NoError(t, err)
+
+	splitResp, err = casClient.SplitBlob(ctx, &repb.SplitBlobRequest{
+		BlobDigest:       blobDigest,
+		DigestFunction:   repb.DigestFunction_BLAKE3,
+		ChunkingFunction: repb.ChunkingFunction_REP_MAX_CDC,
+	})
+	require.NoError(t, err)
+	require.Equal(t, repb.ChunkingFunction_REP_MAX_CDC, splitResp.GetChunkingFunction())
+	require.Equal(t, repMaxChunkDigests, splitResp.GetChunkDigests())
+
+	splitResp, err = casClient.SplitBlob(ctx, &repb.SplitBlobRequest{
+		BlobDigest:       blobDigest,
+		DigestFunction:   repb.DigestFunction_BLAKE3,
+		ChunkingFunction: repb.ChunkingFunction_FAST_CDC_2020,
+	})
+	require.NoError(t, err)
+	require.Equal(t, chunkDigests, splitResp.GetChunkDigests())
 }
 
 func TestSplitBlobNotFound(t *testing.T) {
@@ -1126,7 +1164,7 @@ func TestFindMissingBlobsWithChunkedBlob(t *testing.T) {
 		InstanceName:   "",
 		DigestFunction: repb.DigestFunction_SHA256,
 	}
-	require.NoError(t, manifest.Store(ctx, cache))
+	require.NoError(t, manifest.Store(ctx, cache, te.GetExperimentFlagProvider()))
 
 	regularBlob := []byte("small")
 	regularDigest, err := digest.Compute(bytes.NewReader(regularBlob), repb.DigestFunction_SHA256)
@@ -1195,7 +1233,7 @@ func TestFindMissingBlobsUsesReadFallbackThreshold(t *testing.T) {
 		InstanceName:   "",
 		DigestFunction: repb.DigestFunction_SHA256,
 	}
-	require.NoError(t, manifest.Store(ctx, cache))
+	require.NoError(t, manifest.Store(ctx, cache, te.GetExperimentFlagProvider()))
 
 	rsp, err := casClient.FindMissingBlobs(ctx, &repb.FindMissingBlobsRequest{
 		BlobDigests: []*repb.Digest{blobDigest},
@@ -1259,7 +1297,7 @@ func TestFindMissingBlobsDiscardsLegacyChunkedBlobForAvgChunkSizeOverride(t *tes
 		InstanceName:   "",
 		DigestFunction: repb.DigestFunction_SHA256,
 	}
-	require.NoError(t, manifest.Store(ctx, cache))
+	require.NoError(t, manifest.Store(ctx, cache, te.GetExperimentFlagProvider()))
 
 	rsp, err := casClient.FindMissingBlobs(ctx, &repb.FindMissingBlobsRequest{
 		BlobDigests: []*repb.Digest{blobDigest},
@@ -1341,7 +1379,7 @@ func TestBatchReadBlobsWithChunkedBlob(t *testing.T) {
 				InstanceName:   "",
 				DigestFunction: repb.DigestFunction_SHA256,
 			}
-			require.NoError(t, manifest.Store(ctx, cache))
+			require.NoError(t, manifest.Store(ctx, cache, te.GetExperimentFlagProvider()))
 
 			wantByDigest := map[string][]byte{
 				regularDigest.GetHash():     regularBlob,
@@ -1408,7 +1446,7 @@ func TestBatchReadBlobsWithMismatchedChunkedManifest(t *testing.T) {
 		InstanceName:   "",
 		DigestFunction: repb.DigestFunction_SHA256,
 	}
-	require.NoError(t, manifest.StoreWithoutVerification(ctx, cache))
+	require.NoError(t, manifest.StoreWithoutVerification(ctx, cache, te.GetExperimentFlagProvider()))
 
 	readResp, err := casClient.BatchReadBlobs(ctx, &repb.BatchReadBlobsRequest{
 		Digests: []*repb.Digest{corruptDigest},
