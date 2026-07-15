@@ -216,6 +216,8 @@ func (c *lru[V]) unlink(idx int32) {
 	}
 }
 
+// pushFront inserts node idx at the front of the lru (most recently used).
+// node must not be in the list already.
 func (c *lru[V]) pushFront(idx int32) {
 	n := &c.nodes[idx]
 	n.prev = noIndex
@@ -228,6 +230,8 @@ func (c *lru[V]) pushFront(idx int32) {
 	c.head = idx
 }
 
+// pushBack inserts node idx at the back of the lru (least recently used).
+// node must not be in the list already.
 func (c *lru[V]) pushBack(idx int32) {
 	n := &c.nodes[idx]
 	n.next = noIndex
