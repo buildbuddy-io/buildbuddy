@@ -16,6 +16,7 @@ package cache_proxy_registry_server
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"slices"
 	"strings"
@@ -55,7 +56,7 @@ const (
 	newestVersionCacheTTL = 5 * time.Minute
 
 	// Message attached to upgrade prompts returned by GetCacheProxies.
-	upgradePromptMessage = "One or more of your cache proxies is running an outdated version."
+	upgradePromptMessage = "One or more of your cache proxies are running an outdated version. The newest available version is %s."
 )
 
 var (
@@ -295,11 +296,16 @@ func (s *CacheProxyRegistryServer) upgradePrompt(ctx context.Context, proxies []
 	if s.detector == nil || len(proxies) == 0 {
 		return nil
 	}
+	newestVersion := s.getNewestVersion(ctx)
+	newestVersionString := "unknown"
+	if newestVersion != nil {
+		newestVersionString = newestVersion.String()
+	}
 	versions := make([]string, 0, len(proxies))
 	for _, p := range proxies {
 		versions = append(versions, p.GetNode().GetVersion())
 	}
-	return s.detector.Detect(s.getNewestVersion(ctx), versions, upgradePromptMessage)
+	return s.detector.Detect(newestVersion, versions, fmt.Sprintf(upgradePromptMessage, newestVersionString))
 }
 
 func (s *CacheProxyRegistryServer) GetCacheProxies(ctx context.Context, req *cppb.GetCacheProxiesRequest) (*cppb.GetCacheProxiesResponse, error) {

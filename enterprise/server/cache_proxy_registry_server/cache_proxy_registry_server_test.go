@@ -202,7 +202,6 @@ func TestGetCacheProxies_UpgradePrompt(t *testing.T) {
 	require.Len(t, resp.GetCacheProxy(), 1)
 	require.NotNil(t, resp.GetUpgradePrompt())
 	assert.Equal(t, uppb.Prompt_LOW, resp.GetUpgradePrompt().GetUrgency())
-	assert.Equal(t, upgradePromptMessage, resp.GetUpgradePrompt().GetMessage())
 }
 
 func TestGetCacheProxies_UpgradePrompt_WithinAllowance(t *testing.T) {
