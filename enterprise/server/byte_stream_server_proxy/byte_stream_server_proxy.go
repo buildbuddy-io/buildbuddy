@@ -702,13 +702,28 @@ func (s *ByteStreamServerProxy) readLocalOnly(req *bspb.ReadRequest, stream bspb
 	return s.local.Read(req, stream)
 }
 
-func writeRequest(resourceName string, data []byte, offset int64, finishWrite bool) *bspb.WriteRequest {
-	return &bspb.WriteRequest{
-		ResourceName: resourceName,
-		Data:         data,
-		WriteOffset:  offset,
-		FinishWrite:  finishWrite,
+// fillWriteRequest populates req in place. The data is copied because req may
+// be a pooled message that outlives the caller's buffer: pooled messages keep
+// their data buffer across reuse, so aliasing would let a later unmarshal
+// scribble over memory the caller has recycled.
+func fillWriteRequest(req *bspb.WriteRequest, resourceName string, data []byte, offset int64, finishWrite bool) {
+	req.ResourceName = resourceName
+	req.WriteOffset = offset
+	req.FinishWrite = finishWrite
+	req.Data = append(req.Data[:0], data...)
+}
+
+// recvViaRecvMsg derives ByteStream_WriteServer.Recv from RecvMsg for the
+// stream wrappers in this package, whose receive logic lives in RecvMsg (the
+// local ByteStreamServer receives into pooled messages via RecvMsg). Wrappers
+// must override both methods: overriding only one would let calls to the
+// other bypass the wrapper's logic and hit the embedded stream directly.
+func recvViaRecvMsg(stream interface{ RecvMsg(any) error }) (*bspb.WriteRequest, error) {
+	req := &bspb.WriteRequest{}
+	if err := stream.RecvMsg(req); err != nil {
+		return nil, err
 	}
+	return req, nil
 }
 
 type readThroughCacheStream struct {
@@ -726,27 +741,33 @@ type readThroughCacheStream struct {
 	localWriteFinished bool
 }
 
-// Recv turns a ReadResponse from a remote read into a WriteRequest that gets
-// returned to a local write.
-func (r *readThroughCacheStream) Recv() (*bspb.WriteRequest, error) {
+// RecvMsg turns a ReadResponse from a remote read into a WriteRequest that
+// gets returned to a local write.
+func (r *readThroughCacheStream) RecvMsg(m any) error {
+	req := m.(*bspb.WriteRequest)
 	resp, err := r.remote.Recv()
 	if err != nil {
 		r.remoteRecvErr = err
 		if err == io.EOF {
-			return writeRequest(r.uploadRN, nil, r.localWriteOffset, true), nil
+			fillWriteRequest(req, r.uploadRN, nil, r.localWriteOffset, true)
+			return nil
 		}
-		return nil, err
+		return err
 	}
 
 	if err := r.client.Send(resp); err != nil {
 		// If the client isn't listening any more, quit here and don't write to
 		// local
 		r.clientSendErr = err
-		return nil, err
+		return err
 	}
-	req := writeRequest(r.uploadRN, resp.GetData(), r.localWriteOffset, false)
+	fillWriteRequest(req, r.uploadRN, resp.GetData(), r.localWriteOffset, false)
 	r.localWriteOffset += int64(len(resp.GetData()))
-	return req, nil
+	return nil
+}
+
+func (r *readThroughCacheStream) Recv() (*bspb.WriteRequest, error) {
+	return recvViaRecvMsg(r)
 }
 
 func (r *readThroughCacheStream) SendAndClose(resp *bspb.WriteResponse) error {
@@ -879,13 +900,18 @@ type meteredServerSideClientStream struct {
 	bspb.ByteStream_WriteServer
 }
 
-func (s *meteredServerSideClientStream) Recv() (*bspb.WriteRequest, error) {
-	message, err := s.ByteStream_WriteServer.Recv()
-	if err == nil {
-		s.detectCompressor(message)
+func (s *meteredServerSideClientStream) RecvMsg(m any) error {
+	if err := s.ByteStream_WriteServer.RecvMsg(m); err != nil {
+		return err
 	}
+	message := m.(*bspb.WriteRequest)
+	s.detectCompressor(message)
 	s.bytes += int64(len(message.GetData()))
-	return message, err
+	return nil
+}
+
+func (s *meteredServerSideClientStream) Recv() (*bspb.WriteRequest, error) {
+	return recvViaRecvMsg(s)
 }
 
 func (s *meteredServerSideClientStream) detectCompressor(msg *bspb.WriteRequest) {
@@ -1005,12 +1031,14 @@ type forwardingWriteStream struct {
 	skipValidation  bool
 }
 
-func (s *forwardingWriteStream) Recv() (*bspb.WriteRequest, error) {
-	req, err := s.ByteStream_WriteServer.Recv()
-	if err != nil {
+func (s *forwardingWriteStream) RecvMsg(m any) error {
+	if err := s.ByteStream_WriteServer.RecvMsg(m); err != nil {
 		s.recvErr = err
-		return nil, err
+		return err
 	}
+	req := m.(*bspb.WriteRequest)
+	// Send marshals req before returning, so it is safe for the caller to
+	// reuse req afterwards.
 	s.remoteSendErr = s.remote.Send(req)
 	if s.remoteSendErr != nil {
 		// Tell the local server to abandon the request since the remote request
@@ -1018,7 +1046,7 @@ func (s *forwardingWriteStream) Recv() (*bspb.WriteRequest, error) {
 		// finishes early (with EOF). This might take longer, but we would have
 		// the blob locally. For now, we rely on the fact that if someone needs
 		// this blob, we'll then read it from remote and write it locally.
-		return nil, io.EOF
+		return io.EOF
 	}
 	if req.GetFinishWrite() {
 		s.finishWriteSent = true
@@ -1027,11 +1055,15 @@ func (s *forwardingWriteStream) Recv() (*bspb.WriteRequest, error) {
 			// final request to the local server; the local server commits after
 			// processing this request.
 			if err := s.closeRemote(); err != nil {
-				return nil, err
+				return err
 			}
 		}
 	}
-	return req, nil
+	return nil
+}
+
+func (s *forwardingWriteStream) Recv() (*bspb.WriteRequest, error) {
+	return recvViaRecvMsg(s)
 }
 
 func (s *forwardingWriteStream) closeRemote() error {
@@ -1191,12 +1223,18 @@ type replayableWriteStream struct {
 	replayedFirst bool
 }
 
-func (s *replayableWriteStream) Recv() (*bspb.WriteRequest, error) {
+func (s *replayableWriteStream) RecvMsg(m any) error {
 	if !s.replayedFirst {
 		s.replayedFirst = true
-		return s.firstReq, nil
+		first := s.firstReq
+		fillWriteRequest(m.(*bspb.WriteRequest), first.GetResourceName(), first.GetData(), first.GetWriteOffset(), first.GetFinishWrite())
+		return nil
 	}
-	return s.ByteStream_WriteServer.Recv()
+	return s.ByteStream_WriteServer.RecvMsg(m)
+}
+
+func (s *replayableWriteStream) Recv() (*bspb.WriteRequest, error) {
+	return recvViaRecvMsg(s)
 }
 
 func (s *ByteStreamServerProxy) writeChunkingEnabled(ctx context.Context) bool {
@@ -1678,17 +1716,17 @@ type rawWriteStream struct {
 	dataSent     bool
 }
 
-func (s *rawWriteStream) Recv() (*bspb.WriteRequest, error) {
+func (s *rawWriteStream) RecvMsg(m any) error {
 	if s.dataSent {
-		return nil, io.EOF
+		return io.EOF
 	}
 	s.dataSent = true
-	return &bspb.WriteRequest{
-		ResourceName: s.resourceName,
-		Data:         s.data,
-		WriteOffset:  0,
-		FinishWrite:  true,
-	}, nil
+	fillWriteRequest(m.(*bspb.WriteRequest), s.resourceName, s.data, 0, true)
+	return nil
+}
+
+func (s *rawWriteStream) Recv() (*bspb.WriteRequest, error) {
+	return recvViaRecvMsg(s)
 }
 
 func (s *rawWriteStream) SendAndClose(resp *bspb.WriteResponse) error {

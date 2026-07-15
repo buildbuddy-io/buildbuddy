@@ -75,7 +75,19 @@ func (s *testWriteStream) SendHeader(metadata.MD) error { return nil }
 func (s *testWriteStream) SetTrailer(metadata.MD)       {}
 func (s *testWriteStream) Context() context.Context     { return s.ctx }
 func (s *testWriteStream) SendMsg(any) error            { return nil }
-func (s *testWriteStream) RecvMsg(any) error            { return nil }
+
+func (s *testWriteStream) RecvMsg(m any) error {
+	req, err := s.Recv()
+	if err != nil {
+		return err
+	}
+	out := m.(*bspb.WriteRequest)
+	out.ResourceName = req.GetResourceName()
+	out.WriteOffset = req.GetWriteOffset()
+	out.FinishWrite = req.GetFinishWrite()
+	out.Data = append(out.Data[:0], req.GetData()...)
+	return nil
+}
 
 func runByteStreamServer(ctx context.Context, t *testing.T, env *testenv.TestEnv) *grpc.ClientConn {
 	byteStreamServer, err := NewByteStreamServer(env)
