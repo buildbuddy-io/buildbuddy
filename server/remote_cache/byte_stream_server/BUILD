@@ -38,7 +38,6 @@ go_library(
         "//server/util/useragent",
         "@com_github_prometheus_client_golang//prometheus",
         "@io_opentelemetry_go_otel//attribute",
-        "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//peer",
     ],
 )
