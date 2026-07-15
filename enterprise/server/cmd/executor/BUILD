@@ -74,9 +74,9 @@ go_library(
         "@org_golang_google_protobuf//types/known/timestamppb",
     ] + select({
         "@io_bazel_rules_go//go/platform:linux": [
+            "//enterprise/server/oci/ociconv",
             "//enterprise/server/remote_execution/cgroup",
             "//enterprise/server/remote_execution/vbd",
-            "//enterprise/server/util/ociconv",
             "//server/util/networking",
         ],
         "//conditions:default": [],
