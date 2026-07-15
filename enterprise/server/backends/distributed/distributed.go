@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pubsub"
@@ -105,24 +106,26 @@ func (o *hintedHandoffOrder) String() string {
 
 // TODO(go/b/6456): use memory cache instead of LRU for lookaside cache
 type Cache struct {
-	authenticator        interfaces.Authenticator
-	local                interfaces.Cache
-	log                  log.Logger
-	lookaside            lru.LRU[lookasideCacheEntry]
-	peerZones            map[string]string
-	hintedHandoffsMu     *sync.RWMutex
-	hintedHandoffsByPeer map[string]chan *hintedHandoffOrder
-	distributedProxy     *distributed_client.Proxy
-	consistentHash       *consistent_hash.ConsistentHash
-	extraConsistentHash  *consistent_hash.ConsistentHash
-	heartbeatChannel     *heartbeat.Channel
-	kubeDiscoveryChannel *kubediscovery.PeerWatcher
-	heartbeatMu          *sync.RWMutex
-	shutdownMu           *sync.RWMutex
-	shutDownChan         chan struct{}
-	finishedShutdown     bool
-	opts                 Options
-	zone                 string
+	authenticator            interfaces.Authenticator
+	env                      environment.Env
+	local                    interfaces.Cache
+	log                      log.Logger
+	lookaside                lru.LRU[lookasideCacheEntry]
+	lookasideRightsizeConfig atomic.Pointer[lookasideRightsizeConfig]
+	peerZones                map[string]string
+	hintedHandoffsMu         *sync.RWMutex
+	hintedHandoffsByPeer     map[string]chan *hintedHandoffOrder
+	distributedProxy         *distributed_client.Proxy
+	consistentHash           *consistent_hash.ConsistentHash
+	extraConsistentHash      *consistent_hash.ConsistentHash
+	heartbeatChannel         *heartbeat.Channel
+	kubeDiscoveryChannel     *kubediscovery.PeerWatcher
+	heartbeatMu              *sync.RWMutex
+	shutdownMu               *sync.RWMutex
+	shutDownChan             chan struct{}
+	finishedShutdown         bool
+	opts                     Options
+	zone                     string
 }
 
 func Register(env *real_environment.RealEnv) error {
@@ -218,6 +221,7 @@ func NewDistributedCache(env environment.Env, c interfaces.Cache, opts Options, 
 	}
 	dc := &Cache{
 		authenticator:       env.GetAuthenticator(),
+		env:                 env,
 		local:               c,
 		log:                 log.NamedSubLogger(fmt.Sprintf("Coordinator(%s)", opts.ListenAddr)),
 		opts:                opts,
@@ -234,6 +238,7 @@ func NewDistributedCache(env environment.Env, c interfaces.Cache, opts Options, 
 		hintedHandoffsMu:     &sync.RWMutex{},
 		hintedHandoffsByPeer: make(map[string]chan *hintedHandoffOrder, 0),
 	}
+	dc.lookasideRightsizeConfig.Store(&lookasideRightsizeConfig{enabled: true, ratio: defaultRightsizeLookasideRatio})
 
 	if opts.LookasideCacheSizeBytes > 0 {
 		l, err := lru.New[lookasideCacheEntry](&lru.Config[lookasideCacheEntry]{
@@ -434,6 +439,62 @@ func (c *Cache) lookasideKey(ctx context.Context, r *rspb.ResourceName) (key str
 	return "", false
 }
 
+const (
+	rightsizeLookasideEnabledExperiment = "cache.distributed_cache.rightsize_lookaside_entries"
+	rightsizeLookasideRatioExperiment   = "cache.distributed_cache.rightsize_lookaside_min_slack_ratio"
+	defaultRightsizeLookasideRatio      = 1.5
+	rightsizeConfigRefreshInterval      = 30 * time.Second
+)
+
+type lookasideRightsizeConfig struct {
+	enabled bool
+	ratio   float64
+}
+
+// rightsizeLookasideData returns a right-sized copy of data when its backing
+// array is meaningfully larger than its length, otherwise data unchanged.
+func (c *Cache) rightsizeLookasideData(data []byte) []byte {
+	cfg := c.lookasideRightsizeConfig.Load()
+	if cfg != nil && cfg.enabled && float64(cap(data)) > float64(len(data))*cfg.ratio {
+		return bytes.Clone(data)
+	}
+	return data
+}
+
+func (c *Cache) refreshLookasideRightsizeConfig() {
+	enabled, ratio := true, float64(defaultRightsizeLookasideRatio)
+	if fp := c.env.GetExperimentFlagProvider(); fp != nil {
+		ctx := context.Background()
+		enabled = fp.Boolean(ctx, rightsizeLookasideEnabledExperiment, enabled)
+		ratio = fp.Float64(ctx, rightsizeLookasideRatioExperiment, ratio)
+	}
+	c.lookasideRightsizeConfig.Store(&lookasideRightsizeConfig{enabled: enabled, ratio: ratio})
+}
+
+func (c *Cache) watchLookasideRightsizeConfig(shutDownChan chan struct{}) {
+	fp := c.env.GetExperimentFlagProvider()
+	if fp == nil {
+		return
+	}
+
+	changes := make(chan struct{}, 1)
+	unsubscribe := fp.Subscribe(changes)
+	defer unsubscribe()
+
+	ticker := time.NewTicker(rightsizeConfigRefreshInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-shutDownChan:
+			return
+		case <-changes:
+			c.refreshLookasideRightsizeConfig()
+		case <-ticker.C:
+			c.refreshLookasideRightsizeConfig()
+		}
+	}
+}
+
 func (c *Cache) addLookasideEntry(ctx context.Context, r *rspb.ResourceName, data []byte) {
 	if !c.lookasideCacheEnabled() {
 		return
@@ -454,6 +515,9 @@ func (c *Cache) addLookasideEntry(ctx context.Context, r *rspb.ResourceName, dat
 }
 
 func (c *Cache) setLookasideEntry(lookasideKey string, data []byte) {
+	// Right-size the slice before we store it so we don't retain oversized
+	// buffers.
+	data = c.rightsizeLookasideData(data)
 	entry := lookasideCacheEntry{
 		createdAtMillis: time.Now().UnixMilli(),
 		data:            data,
@@ -634,6 +698,7 @@ func (c *Cache) StartListening() error {
 	}
 	c.shutDownChan = make(chan struct{})
 	go c.heartbeatPeers(c.shutDownChan)
+	go c.watchLookasideRightsizeConfig(c.shutDownChan)
 	if c.heartbeatChannel != nil {
 		c.heartbeatChannel.StartAdvertising()
 	}
