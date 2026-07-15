@@ -50,6 +50,7 @@ go_test(
     deps = [
         ":content_addressable_storage_server",
         "//enterprise/server/experiments",
+        "//proto:bytestream_go_proto",
         "//proto:cache_go_proto",
         "//proto:capability_go_proto",
         "//proto:remote_execution_go_proto",
@@ -79,7 +80,6 @@ go_test(
         "@com_github_open_feature_go_sdk//openfeature/memprovider",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
-        "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_genproto_googleapis_rpc//errdetails",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//codes",

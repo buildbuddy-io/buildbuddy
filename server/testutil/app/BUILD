@@ -8,6 +8,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//proto:buildbuddy_service_go_proto",
+        "//proto:bytestream_go_proto",
         "//proto:publish_build_event_go_proto",
         "//server/testutil/testfs",
         "//server/testutil/testport",
@@ -16,7 +17,6 @@ go_library(
         "@io_bazel_rules_go//go/runfiles",
         "@io_gorm_driver_sqlite//:sqlite",
         "@io_gorm_gorm//:gorm",
-        "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_grpc//:grpc",
     ],
 )

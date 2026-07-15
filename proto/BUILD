@@ -149,6 +149,14 @@ proto_library(
 )
 
 proto_library(
+    name = "bytestream_proto",
+    srcs = ["bytestream.proto"],
+    deps = [
+        "@com_github_planetscale_vtprotobuf//include/github.com/planetscale/vtprotobuf/vtproto:vtproto_proto",
+    ],
+)
+
+proto_library(
     name = "cache_proto",
     srcs = [
         "cache.proto",
@@ -773,11 +781,11 @@ proto_library(
     name = "remote_execution_log_proto",
     srcs = ["remote_execution_log.proto"],
     deps = [
+        ":bytestream_proto",
         ":remote_execution_proto",
         "@com_google_protobuf//:duration_proto",
         "@com_google_protobuf//:timestamp_proto",
         "@googleapis//google/api:annotations_proto",
-        "@googleapis//google/bytestream:bytestream_proto",
         "@googleapis//google/longrunning:operations_proto",
         "@googleapis//google/rpc:status_proto",
     ],
@@ -1699,6 +1707,16 @@ go_proto_library(
 )
 
 go_proto_library(
+    name = "bytestream_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/bytestream",
+    mode = "messages_and_services",
+    proto = ":bytestream_proto",
+    deps = [
+        "@com_github_planetscale_vtprotobuf//include/github.com/planetscale/vtprotobuf/vtproto:vtproto_go_proto",
+    ],
+)
+
+go_proto_library(
     name = "distributed_cache_go_proto",
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/distributed_cache",
     mode = "messages_and_services",
@@ -1729,10 +1747,10 @@ go_proto_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/remote_execution_log",
     proto = ":remote_execution_log_proto",
     deps = [
+        ":bytestream_go_proto",
         ":remote_execution_go_proto",
         "@com_google_cloud_go_longrunning//autogen/longrunningpb",
         "@org_golang_google_genproto_googleapis_api//annotations",
-        "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_genproto_googleapis_rpc//status",
     ],
 )

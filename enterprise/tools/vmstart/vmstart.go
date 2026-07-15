@@ -35,10 +35,10 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/encoding/prototext"
 
+	bspb "github.com/buildbuddy-io/buildbuddy/proto/bytestream"
 	fcpb "github.com/buildbuddy-io/buildbuddy/proto/firecracker"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	vmfspb "github.com/buildbuddy-io/buildbuddy/proto/vmvfs"
-	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
 var (

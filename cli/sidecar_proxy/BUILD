@@ -7,6 +7,7 @@ go_library(
     srcs = ["sidecar_proxy.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/sidecar_proxy",
     deps = [
+        "//proto:bytestream_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:semver_go_proto",
         "//server/environment",
@@ -21,7 +22,6 @@ go_library(
         "//server/util/log",
         "//server/util/proto",
         "//server/util/status",
-        "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//metadata",
         "@org_golang_google_grpc//test/bufconn",
@@ -35,6 +35,7 @@ go_test(
     srcs = ["sidecar_proxy_test.go"],
     deps = [
         ":sidecar_proxy",
+        "//proto:bytestream_go_proto",
         "//proto:remote_execution_go_proto",
         "//server/real_environment",
         "//server/remote_cache/action_cache_server",
@@ -51,7 +52,6 @@ go_test(
         "//server/util/proto",
         "//server/util/testing/flags",
         "@com_github_stretchr_testify//require",
-        "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//metadata",
         "@org_golang_google_grpc//test/bufconn",

@@ -20,10 +20,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"golang.org/x/sync/errgroup"
 
+	bspb "github.com/buildbuddy-io/buildbuddy/proto/bytestream"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	cli_bundle "github.com/buildbuddy-io/buildbuddy/server/util/bb"
-	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
 const ExecutableName = "buildbuddy_ci_runner"

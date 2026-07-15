@@ -54,13 +54,13 @@ import (
 	"gopkg.in/yaml.v2"
 
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
+	bspb "github.com/buildbuddy-io/buildbuddy/proto/bytestream"
 	clpb "github.com/buildbuddy-io/buildbuddy/proto/command_line"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
 	gitutil "github.com/buildbuddy-io/buildbuddy/server/util/git"
 	backendLog "github.com/buildbuddy-io/buildbuddy/server/util/log"
-	bspb "google.golang.org/genproto/googleapis/bytestream"
 	gstatus "google.golang.org/grpc/status"
 )
 

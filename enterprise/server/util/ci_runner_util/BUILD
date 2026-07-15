@@ -10,6 +10,7 @@ go_library(
         "//enterprise/server/cmd/ci_runner/bundle",
         "//enterprise/server/experiments",
         "//enterprise/server/util/ci_runner_env",
+        "//proto:bytestream_go_proto",
         "//proto:group_go_proto",
         "//proto:remote_execution_go_proto",
         "//server/environment",
@@ -20,7 +21,6 @@ go_library(
         "//server/util/log",
         "//server/util/platform",
         "//server/util/status",
-        "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_x_sync//errgroup",
     ],
 )

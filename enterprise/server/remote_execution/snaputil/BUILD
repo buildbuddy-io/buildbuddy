@@ -8,6 +8,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil",
     deps = [
         "//enterprise/server/util/proxy_util",
+        "//proto:bytestream_go_proto",
         "//proto:remote_execution_go_proto",
         "//server/interfaces",
         "//server/metrics",
@@ -17,7 +18,6 @@ go_library(
         "//server/util/random",
         "//server/util/status",
         "@com_github_prometheus_client_golang//prometheus",
-        "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
     ],
 )
 

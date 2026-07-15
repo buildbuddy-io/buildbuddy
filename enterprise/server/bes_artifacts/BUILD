@@ -9,13 +9,13 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//proto:build_event_stream_go_proto",
+        "//proto:bytestream_go_proto",
         "//proto:remote_execution_go_proto",
         "//server/build_event_publisher",
         "//server/remote_cache/cachetools",
         "//server/remote_cache/digest",
         "//server/util/grpc_client",
         "//server/util/status",
-        "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_x_sync//errgroup",
     ],
 )

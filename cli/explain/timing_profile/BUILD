@@ -16,11 +16,11 @@ go_library(
         "//cli/util/download",
         "//proto:build_event_stream_go_proto",
         "//proto:buildbuddy_service_go_proto",
+        "//proto:bytestream_go_proto",
         "//proto:invocation_go_proto",
         "//server/util/grpc_client",
         "//server/util/trace_events",
         "//server/util/uuid",
-        "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
     ],
 )
 

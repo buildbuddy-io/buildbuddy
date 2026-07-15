@@ -17,8 +17,8 @@ import (
 	"gorm.io/gorm"
 
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
+	bspb "github.com/buildbuddy-io/buildbuddy/proto/bytestream"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
-	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
 // App is a handle on a BuildBuddy server scoped to a test case, which provides

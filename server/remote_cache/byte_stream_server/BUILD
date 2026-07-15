@@ -6,6 +6,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server",
     visibility = ["//visibility:public"],
     deps = [
+        "//proto:bytestream_go_proto",
         "//proto:capability_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:resource_go_proto",
@@ -34,7 +35,6 @@ go_library(
         "//server/util/usageutil",
         "@com_github_prometheus_client_golang//prometheus",
         "@io_opentelemetry_go_otel//attribute",
-        "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_grpc//peer",
     ],
 )
@@ -46,6 +46,7 @@ go_test(
     embed = [":byte_stream_server"],
     deps = [
         "//enterprise/server/experiments",
+        "//proto:bytestream_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:resource_go_proto",
         "//server/backends/memory_metrics_collector",
@@ -70,7 +71,6 @@ go_test(
         "@com_github_open_feature_go_sdk//openfeature/memprovider",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
-        "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_genproto_googleapis_rpc//errdetails",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//codes",

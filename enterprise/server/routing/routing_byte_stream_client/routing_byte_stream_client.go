@@ -20,7 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
 
-	bspb "google.golang.org/genproto/googleapis/bytestream"
+	bspb "github.com/buildbuddy-io/buildbuddy/proto/bytestream"
 	gstatus "google.golang.org/grpc/status"
 )
 

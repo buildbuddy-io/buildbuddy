@@ -18,7 +18,7 @@ package remote_logging;
 
 import "proto/remote_execution.proto";
 import "google/protobuf/timestamp.proto";
-import "google/bytestream/bytestream.proto";
+import "proto/bytestream.proto";
 import "google/longrunning/operations.proto";
 import "google/rpc/status.proto";
 

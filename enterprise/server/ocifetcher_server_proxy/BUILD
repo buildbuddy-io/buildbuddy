@@ -9,6 +9,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//enterprise/server/oci/ocicache",
+        "//proto:bytestream_go_proto",
         "//proto:oci_fetcher_go_proto",
         "//proto:remote_execution_go_proto",
         "//server/environment",
@@ -20,7 +21,6 @@ go_library(
         "//third_party/singleflight",
         "@com_github_google_go_containerregistry//pkg/name",
         "@com_github_google_go_containerregistry//pkg/v1:pkg",
-        "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
     ],
 )
 
@@ -33,6 +33,7 @@ go_test(
         "//enterprise/server/oci/ocifetcher",
         "//enterprise/server/testutil/enterprise_testenv",
         "//enterprise/server/testutil/testregistry",
+        "//proto:bytestream_go_proto",
         "//proto:capability_go_proto",
         "//proto:oci_fetcher_go_proto",
         "//proto:registry_go_proto",
@@ -48,7 +49,6 @@ go_test(
         "@com_github_google_go_cmp//cmp",
         "@com_github_google_go_containerregistry//pkg/v1:pkg",
         "@com_github_stretchr_testify//require",
-        "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_protobuf//proto",
         "@org_golang_google_protobuf//testing/protocmp",
