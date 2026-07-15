@@ -582,8 +582,10 @@ func TestGitConfig_FetchURL(t *testing.T) {
 func TestGeneratingPatches(t *testing.T) {
 	// Setup the "remote" repo
 	remoteRepoPath, _ := testgit.MakeTempRepo(t, map[string]string{
-		"hello.txt": "echo HI",
-		"b.bin":     "",
+		"hello.txt":  "echo HI",
+		"b.bin":      "",
+		".bazelrc":   "try-import %workspace%/user.bazelrc\n",
+		".gitignore": "user.bazelrc\n",
 	})
 
 	// Setup a "local" repo
@@ -606,12 +608,15 @@ func TestGeneratingPatches(t *testing.T) {
 
 		# Generate a binary diff on an untracked file
 		echo -ne '\x00\x01\x02\x03\x04' > b2.bin
+
+		# Generate a diff for an ignored user-specific bazelrc
+		echo "build --remote_header=x-user-config=1" > user.bazelrc
 `)
 
 	config, err := Config()
 	require.NoError(t, err)
 
-	require.Equal(t, 4, len(config.Patches))
+	require.Equal(t, 5, len(config.Patches))
 	for _, patchBytes := range config.Patches {
 		p := string(patchBytes)
 		if strings.Contains(p, "hello.txt") {
@@ -622,6 +627,8 @@ func TestGeneratingPatches(t *testing.T) {
 			require.Contains(t, p, "GIT binary patch")
 		} else if strings.Contains(p, "b2.bin") {
 			require.Contains(t, p, "GIT binary patch")
+		} else if strings.Contains(p, "user.bazelrc") {
+			require.Contains(t, p, "x-user-config=1")
 		} else {
 			require.FailNowf(t, "unexpected patch %s", p)
 		}

@@ -591,18 +591,32 @@ func generatePatches(baseCommit string) ([][]byte, error) {
 		}
 	}
 
-	// Generate patches for non-tracked files
+	// Generate patches for non-tracked files. Include ignored user.bazelrc files
+	// since they are commonly imported by the workspace .bazelrc and need to be
+	// available on the remote runner.
 	untrackedFiles, err := runGit("ls-files", "--others", "--exclude-standard")
 	if err != nil {
 		return nil, status.WrapError(err, "get untracked files")
 	}
-	untrackedFiles = strings.Trim(untrackedFiles, "\n")
-	if untrackedFiles != "" {
-		for uf := range strings.SplitSeq(untrackedFiles, "\n") {
-			if strings.HasPrefix(uf, BuildBuddyArtifactDir+"/") {
+	ignoredUserBazelrcFiles, err := runGit(
+		"ls-files", "--others", "--ignored", "--exclude-standard", "--", ":(glob)**/user.bazelrc")
+	if err != nil {
+		return nil, status.WrapError(err, "get ignored user.bazelrc files")
+	}
+	filesToPatch := strings.Trim(untrackedFiles, "\n")
+	ignoredUserBazelrcFiles = strings.Trim(ignoredUserBazelrcFiles, "\n")
+	if ignoredUserBazelrcFiles != "" {
+		if filesToPatch != "" {
+			filesToPatch += "\n"
+		}
+		filesToPatch += ignoredUserBazelrcFiles
+	}
+	if filesToPatch != "" {
+		for path := range strings.SplitSeq(filesToPatch, "\n") {
+			if strings.HasPrefix(path, BuildBuddyArtifactDir+"/") {
 				continue
 			}
-			patch, err := diffUntrackedFile(uf)
+			patch, err := diffUntrackedFile(path)
 			if err != nil {
 				return nil, status.WrapError(err, "diff untracked file")
 			}
