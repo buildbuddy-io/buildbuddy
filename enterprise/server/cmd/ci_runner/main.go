@@ -134,9 +134,10 @@ const (
 	// Bazel exit codes
 	// https://github.com/bazelbuild/bazel/blob/master/src/main/java/com/google/devtools/build/lib/util/ExitCode.java
 
-	bazelOOMErrorExitCode                = 33
-	bazelLocalEnvironmentalErrorExitCode = 36
-	bazelInternalErrorExitCode           = 37
+	bazelOOMErrorExitCode                              = 33
+	bazelLocalEnvironmentalErrorExitCode               = 36
+	bazelInternalErrorExitCode                         = 37
+	bazelTransientBuildEventServiceUploadErrorExitCode = 38
 
 	// ANSI codes for cases where the aurora equivalent is not supported by our UI
 	// (ex: aurora's "grayscale" mode results in some ANSI codes that we don't currently
@@ -1266,6 +1267,14 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 				if err := os.Link(heapDumpPath, filepath.Join(artifactsDir, "heapdump.hprof")); err != nil {
 					ar.reporter.Printf("%sfailed to preserve heapdump.hprof: %s%s\n", ansiGray, err, ansiReset)
 				}
+			}
+		}
+		if exitCode == bazelTransientBuildEventServiceUploadErrorExitCode {
+			javaLogPath := filepath.Join(ar.rootDir, outputBaseDirName, "java.log")
+			// java.log is normally a symlink to a file that the Bazel server keeps
+			// open, so copy it rather than hard-linking it like the crash outputs.
+			if err := disk.CopyViaTmpSibling(javaLogPath, filepath.Join(artifactsDir, "java.log")); err != nil {
+				ar.reporter.Printf("%sfailed to preserve java.log: %s%s\n", ansiGray, err, ansiReset)
 			}
 		}
 
