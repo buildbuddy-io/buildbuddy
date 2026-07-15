@@ -126,11 +126,20 @@ func ParseWebhookData(event interface{}) (*interfaces.WebhookData, error) {
 		ref := event.GetRef()
 		if after, ok := strings.CutPrefix(ref, "refs/tags/"); ok {
 			tag := after
+			// For all tag pushes, head_commit is the commit the tag points
+			// to. Prefer it over the "after" SHA: for lightweight tags the
+			// two are identical, but for annotated tags "after" identifies
+			// the tag object rather than a commit, and can't be used to
+			// report commit statuses.
+			sha := event.GetHeadCommit().GetID()
+			if sha == "" {
+				sha = event.GetAfter()
+			}
 			return &interfaces.WebhookData{
 				EventName:               webhook_data.EventName.Push,
 				PushedRepoURL:           event.GetRepo().GetCloneURL(),
 				PushedTag:               tag,
-				SHA:                     event.GetAfter(),
+				SHA:                     sha,
 				TargetRepoURL:           event.GetRepo().GetCloneURL(),
 				TargetRepoDefaultBranch: event.GetRepo().GetDefaultBranch(),
 				IsTargetRepoPublic:      !event.GetRepo().GetPrivate(),

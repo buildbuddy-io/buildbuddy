@@ -60,6 +60,23 @@ func TestParseRequest_ValidTagPushEvent_Success(t *testing.T) {
 	}, data)
 }
 
+func TestParseRequest_ValidAnnotatedTagPushEvent_UsesDereferencedCommitSHA(t *testing.T) {
+	env := testenv.GetTestEnv(t)
+	req := webhookRequest(t, "push", test_data.PushAnnotatedTagEvent)
+
+	data, err := github.NewProvider(env).ParseWebhookData(req)
+
+	assert.NoError(t, err)
+	assert.Equal(t, &interfaces.WebhookData{
+		EventName:               "push",
+		PushedRepoURL:           "https://github.com/test/hello_bb_ci.git",
+		PushedTag:               "v1.1.0",
+		SHA:                     "258044d28288d5f6f1c5928b0e22580296fec666",
+		TargetRepoURL:           "https://github.com/test/hello_bb_ci.git",
+		TargetRepoDefaultBranch: "main",
+	}, data)
+}
+
 func TestParseRequest_TagDeletionEvent_ReturnsNil(t *testing.T) {
 	env := testenv.GetTestEnv(t)
 	req := webhookRequest(t, "push", test_data.DeleteTagEvent)
