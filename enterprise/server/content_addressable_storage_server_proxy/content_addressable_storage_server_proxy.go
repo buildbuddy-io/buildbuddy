@@ -213,15 +213,15 @@ func (s *CASServerProxy) FindMissingBlobs(ctx context.Context, req *repb.FindMis
 		log.Warningf("Error authenticating user, skipping FindMissingBlobs cache: %v", err)
 		return s.remote.FindMissingBlobs(ctx, req)
 	}
-	cacheKeys := map[string]string{}
+	cacheKeys := map[digest.Key]string{}
 	for _, d := range req.GetBlobDigests() {
-		cacheKeys[digestKey(d)] = s.findMissingBlobsCacheKey(groupID, req, d)
+		cacheKeys[digest.NewKey(d)] = findMissingBlobsCacheKey(groupID, req, d)
 	}
 
 	// Consult the local FindMissingBlobs cache first to remove some digests.
 	misses := make([]*repb.Digest, 0, len(req.GetBlobDigests()))
 	for _, d := range req.GetBlobDigests() {
-		if !s.findMissingCache.Contains(cacheKeys[digestKey(d)]) {
+		if !s.findMissingCache.Contains(cacheKeys[digest.NewKey(d)]) {
 			misses = append(misses, d)
 		}
 	}
@@ -249,10 +249,10 @@ func (s *CASServerProxy) FindMissingBlobs(ctx context.Context, req *repb.FindMis
 	// the set because the remote reports what's missing, not what's present.
 	missing := make(map[string]struct{}, len(rsp.GetMissingBlobDigests()))
 	for _, d := range rsp.GetMissingBlobDigests() {
-		missing[cacheKeys[digestKey(d)]] = struct{}{}
+		missing[cacheKeys[digest.NewKey(d)]] = struct{}{}
 	}
 	for _, d := range remoteReq.GetBlobDigests() {
-		key := cacheKeys[digestKey(d)]
+		key := cacheKeys[digest.NewKey(d)]
 		if _, ok := missing[key]; !ok {
 			s.findMissingCache.Add(key, struct{}{})
 		}
@@ -265,8 +265,8 @@ func digestKey(d *repb.Digest) string {
 	return d.GetHash() + "/" + strconv.FormatInt(d.GetSizeBytes(), 10)
 }
 
-func (s *CASServerProxy) findMissingBlobsCacheKey(groupID string, req *repb.FindMissingBlobsRequest, d *repb.Digest) string {
-	return groupID + "/" + digest.NewCASResourceName(d, req.GetInstanceName(), req.GetDigestFunction()).DownloadString()
+func findMissingBlobsCacheKey(groupID string, req *repb.FindMissingBlobsRequest, d *repb.Digest) string {
+	return groupID + "/" + digest.CASDownloadString(d, req.GetInstanceName(), req.GetDigestFunction())
 }
 
 func (s *CASServerProxy) BatchUpdateBlobs(ctx context.Context, req *repb.BatchUpdateBlobsRequest) (*repb.BatchUpdateBlobsResponse, error) {

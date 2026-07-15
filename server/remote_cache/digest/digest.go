@@ -231,7 +231,7 @@ type CASResourceName struct {
 	ResourceName
 }
 
-// CASDownloadString is like UploadString, but without forcing the caller to
+// CASDownloadString is like DownloadString, but without forcing the caller to
 // clone the ResourceName proto by calling ResourceNameFromProto first. Returns
 // an error if the cache type is not CAS.
 func CASDownloadString(r *rspb.ResourceName) (string, error) {

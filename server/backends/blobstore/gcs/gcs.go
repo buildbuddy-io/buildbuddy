@@ -38,6 +38,8 @@ var (
 	gcsProjectID       = flag.String("storage.gcs.project_id", "", "The Google Cloud project ID of the project owning the above credentials and GCS bucket.")
 	useGRPC            = flag.Bool("storage.gcs.use_grpc", true, "Whether to use the gRPC client for GCS", flag.Internal)
 	grpcPoolSize       = flag.Int("storage.gcs.grpc_pool_size", 2, "The number of gRPC connections to open to GCS. Only used when `use_grpc=true`", flag.Internal)
+
+	gcsWriteMaxAttempts = flag.Int("storage.gcs.write_max_attempts", 4, "Max attempts (including the first) for a ConditionalWriter object write before giving up. Retries transient server errors like INTERNAL. Set to 1 to disable retries.", flag.Internal)
 )
 
 // GCSBlobStore implements the blobstore API on top of the google cloud storage API.
@@ -288,11 +290,30 @@ func (g *GCSBlobStore) ConditionalWriter(ctx context.Context, blobName string, o
 	ctx, cancel := context.WithCancel(ctx)
 	start := time.Now()
 
+	obj := g.bucketHandle.Object(blobName)
 	var ow *storage.Writer
 	if overwriteExisting {
-		ow = g.bucketHandle.Object(blobName).NewWriter(ctx)
+		// An overwrite carries no precondition, so the GCS client considers it
+		// non-idempotent and, under the default RetryIdempotent policy, will not
+		// retry it even on a retryable server error like INTERNAL. Our blob names
+		// are content-addressed (and salted unique per write), so replaying an
+		// identical upload is safe: opt into RetryAlways so transient errors are
+		// retried. On the gRPC client the write is already buffered (>=256KiB
+		// regardless of ChunkSize), so this adds no memory; it only flips the
+		// policy gate that was blocking the retry. WithMaxAttempts bounds the
+		// attempts so writes fail fast during a GCS outage instead of piling up.
+		// (On the HTTP client, retries additionally require ChunkSize > 0.)
+		obj = obj.Retryer(
+			storage.WithPolicy(storage.RetryAlways),
+			storage.WithMaxAttempts(*gcsWriteMaxAttempts),
+		)
+		ow = obj.NewWriter(ctx)
 	} else {
-		ow = g.bucketHandle.Object(blobName).If(storage.Conditions{DoesNotExist: true}).NewWriter(ctx)
+		// The DoesNotExist precondition already makes this write idempotent, so
+		// the default policy retries transient errors on its own; just bound the
+		// number of attempts.
+		obj = obj.Retryer(storage.WithMaxAttempts(*gcsWriteMaxAttempts))
+		ow = obj.If(storage.Conditions{DoesNotExist: true}).NewWriter(ctx)
 	}
 
 	if estimatedSize < googleapi.DefaultUploadChunkSize {

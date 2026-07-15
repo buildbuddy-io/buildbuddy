@@ -232,6 +232,7 @@ func (pu *partitionUsage) sendDeleteRequests(ctx context.Context, keys []*sender
 		return
 	}
 	start := pu.clock.Now()
+	// TODO fix metric
 	defer metrics.RaftBatchDeleteDurationUsec.Observe(float64(pu.clock.Since(start).Microseconds()))
 
 	// Eviction delete is replay-safe: a duplicate retry after the entry is gone
