@@ -45,6 +45,15 @@ func (m *mockGCS) UpdateCustomTimeCallCount() int {
 	return m.updateCustomTimeCallCount
 }
 
+// ObjectCount returns the number of blobs currently stored. Because blob
+// names carry a random salt, a duplicate write creates a new object, so
+// tests can use this to detect writes that should have been deduped.
+func (m *mockGCS) ObjectCount() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return len(m.items)
+}
+
 func (m *mockGCS) expired(blobName string) bool {
 	if blob, ok := m.items[blobName]; ok {
 		if m.ageInDays > 0 {

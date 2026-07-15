@@ -554,6 +554,22 @@ func (c *Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName)
 	defer spn.End()
 	setMultiResourceTraceAttributes(spn, resources)
 
+	present, err := c.findPresent(ctx, resources)
+	if err != nil {
+		return nil, err
+	}
+	missing := make([]*repb.Digest, 0)
+	for i, p := range present {
+		if !p {
+			missing = append(missing, resources[i].GetDigest())
+		}
+	}
+	return missing, nil
+}
+
+// findPresent returns a slice aligned with resources, where element i reports
+// whether resources[i] is present in the cache.
+func (c *Cache) findPresent(ctx context.Context, resources []*rspb.ResourceName) ([]bool, error) {
 	encryption, err := c.activeEncryption(ctx)
 	if err != nil {
 		return nil, err
@@ -573,13 +589,62 @@ func (c *Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName)
 	if err != nil {
 		return nil, err
 	}
-	missing := make([]*repb.Digest, 0)
+	present := make([]bool, len(resources))
 	for i, findRsp := range rsp.GetFindResponses() {
-		if !findRsp.GetPresent() {
-			missing = append(missing, resources[i].GetDigest())
+		present[i] = findRsp.GetPresent()
+	}
+	return present, nil
+}
+
+// casAlreadyExists reports whether r is a CAS entry already in the cache, so
+// the write can be skipped. Only CAS is deduped (AC is mutable). A lookup
+// error is treated as "not present" so we fall back to writing. A hit relies
+// on the find refreshing the blob's GCS custom time, since the deduped write no
+// longer re-uploads.
+func (c *Cache) casAlreadyExists(ctx context.Context, r *rspb.ResourceName) bool {
+	if r.GetCacheType() != rspb.CacheType_CAS {
+		return false
+	}
+	present, err := c.findPresent(ctx, []*rspb.ResourceName{r})
+	if err != nil {
+		return false
+	}
+	return len(present) == 1 && present[0]
+}
+
+// dedupeCASWrites drops already-present CAS entries from kvs, returning what
+// still needs writing. AC is always kept. A lookup error keeps everything so a
+// dedupe failure never drops a write.
+func (c *Cache) dedupeCASWrites(ctx context.Context, kvs map[*rspb.ResourceName][]byte) map[*rspb.ResourceName][]byte {
+	casResources := make([]*rspb.ResourceName, 0, len(kvs))
+	for r := range kvs {
+		if r.GetCacheType() == rspb.CacheType_CAS {
+			casResources = append(casResources, r)
 		}
 	}
-	return missing, nil
+	if len(casResources) == 0 {
+		return kvs
+	}
+	present, err := c.findPresent(ctx, casResources)
+	if err != nil {
+		return kvs
+	}
+	presentSet := make(map[*rspb.ResourceName]bool)
+	for i, p := range present {
+		if p {
+			presentSet[casResources[i]] = true
+		}
+	}
+	if len(presentSet) == 0 {
+		return kvs
+	}
+	filtered := make(map[*rspb.ResourceName][]byte, len(kvs)-len(presentSet))
+	for r, data := range kvs {
+		if !presentSet[r] {
+			filtered[r] = data
+		}
+	}
+	return filtered
 }
 
 func (c *Cache) Get(ctx context.Context, r *rspb.ResourceName) (res []byte, resultErr error) {
@@ -702,6 +767,9 @@ func (c *Cache) Set(ctx context.Context, r *rspb.ResourceName, data []byte) (res
 	start := c.opts.Clock.Now()
 	defer c.recordMetrics("Set", resultErr, start)
 
+	if c.casAlreadyExists(ctx, r) {
+		return nil
+	}
 	wc, err := c.writerWithImmediateCommit(ctx, r, int64(len(data)))
 	if err != nil {
 		return err
@@ -716,6 +784,13 @@ func (c *Cache) Set(ctx context.Context, r *rspb.ResourceName, data []byte) (res
 func (c *Cache) SetMulti(ctx context.Context, kvs map[*rspb.ResourceName][]byte) (resultErr error) {
 	start := c.opts.Clock.Now()
 	defer c.recordMetrics("SetMulti", resultErr, start)
+
+	// Skip already-present CAS entries with one batched find, avoiding a
+	// re-upload to GCS and a metadata rewrite.
+	kvs = c.dedupeCASWrites(ctx, kvs)
+	if len(kvs) == 0 {
+		return nil
+	}
 
 	eg, egctx := errgroup.WithContext(ctx)
 	eg.SetLimit(c.opts.MaxWriteGoroutines)
@@ -892,6 +967,12 @@ func (c *Cache) Reader(ctx context.Context, r *rspb.ResourceName, uncompressedOf
 }
 
 func (c *Cache) Writer(ctx context.Context, r *rspb.ResourceName) (cwc interfaces.CommittedWriteCloser, resultErr error) {
+	// If a CAS blob already exists, return a writer that drops the bytes
+	// instead of re-uploading; the streamed data is identical, so committing
+	// is a no-op.
+	if c.casAlreadyExists(ctx, r) {
+		return ioutil.DiscardWriteCloser(), nil
+	}
 	return c.writerWithImmediateCommit(ctx, r, r.GetDigest().GetSizeBytes())
 }
 

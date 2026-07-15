@@ -655,12 +655,25 @@ func (rc *Server) Find(ctx context.Context, req *mdpb.FindRequest) (*mdpb.FindRe
 				return nil, err
 			}
 			present := findRsp.GetPresent()
+			gcsMetadata := findRsp.GetGcsMetadata()
+			// A metadata record can outlive its GCS blob, which is
+			// reclaimed by a lifecycle rule on custom time. Treat a blob
+			// that is past its TTL as absent so that Find agrees with the
+			// read path (see metacache reader()) and write-dedupe never
+			// skips a write for a blob that has already expired.
+			//
+			// gcsTTLDays == 0 means "no expiry"; ObjectIsPastTTL would
+			// otherwise report every blob as expired for a 0-day TTL, so
+			// only apply the check when a TTL is configured.
+			if present && gcsMetadata != nil && rc.gcsTTLDays > 0 && gcsutil.ObjectIsPastTTL(rc.clock, gcsMetadata, rc.gcsTTLDays) {
+				present = false
+			}
 			res.found[k.Meta.(*sgpb.FileRecord)] = present
 			if present {
 				res.atimeUpdates = append(res.atimeUpdates, atimeUpdateData{
 					key:            k.Key,
 					lastAccessUsec: findRsp.GetLastAccessUsec(),
-					gcsMetadata:    findRsp.GetGcsMetadata(),
+					gcsMetadata:    gcsMetadata,
 				})
 			}
 		}

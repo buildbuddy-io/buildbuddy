@@ -45,7 +45,18 @@ func getAnonContext(t testing.TB, env environment.Env) context.Context {
 	return ctx
 }
 
+// gcsObjectCounter observes the number of blobs stored in the mock GCS, so
+// tests can detect duplicate writes that should have been deduped.
+type gcsObjectCounter interface {
+	ObjectCount() int
+}
+
 func runMetacache(t testing.TB, te *real_environment.RealEnv, clock clockwork.Clock, partialOpts metacache.Options) *metacache.Cache {
+	bc, _ := runMetacacheWithGCS(t, te, clock, partialOpts)
+	return bc
+}
+
+func runMetacacheWithGCS(t testing.TB, te *real_environment.RealEnv, clock clockwork.Clock, partialOpts metacache.Options) (*metacache.Cache, gcsObjectCounter) {
 	t.Helper()
 
 	if partialOpts.GCSTTLDays == 0 {
@@ -77,7 +88,7 @@ func runMetacache(t testing.TB, te *real_environment.RealEnv, clock clockwork.Cl
 
 	bc, err := metacache.New(te, opts)
 	require.NoError(t, err)
-	return bc
+	return bc, mockGCS
 }
 
 func TestReadWrite(t *testing.T) {
@@ -154,6 +165,115 @@ func TestGetSet(t *testing.T) {
 		})
 	}
 
+}
+
+// dedupOptions returns metacache options with an inline threshold low enough
+// that blobs of a couple KB land in GCS, so the dedup tests can observe the
+// GCS object count.
+func dedupOptions(name string) metacache.Options {
+	return metacache.Options{
+		Name:                        name,
+		MaxInlineFileSizeBytes:      1000,
+		MinBytesAutoZstdCompression: 100,
+		GCSTTLDays:                  1,
+	}
+}
+
+func TestSetDeduplicatesExistingCAS(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
+	ctx := getAnonContext(t, te)
+	clock := clockwork.NewFakeClock()
+
+	bc, gcs := runMetacacheWithGCS(t, te, clock, dedupOptions("TestSetDeduplicatesExistingCAS"))
+
+	rn, buf := testdigest.RandomCASResourceBuf(t, 2000)
+
+	require.NoError(t, bc.Set(ctx, rn, buf))
+	require.Equal(t, 1, gcs.ObjectCount())
+
+	// Setting the same CAS blob again must be deduped: no second GCS object.
+	require.NoError(t, bc.Set(ctx, rn, buf))
+	require.Equal(t, 1, gcs.ObjectCount())
+
+	got, err := bc.Get(ctx, rn)
+	require.NoError(t, err)
+	require.Equal(t, buf, got)
+}
+
+func TestWriterDeduplicatesExistingCAS(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
+	ctx := getAnonContext(t, te)
+	clock := clockwork.NewFakeClock()
+
+	bc, gcs := runMetacacheWithGCS(t, te, clock, dedupOptions("TestWriterDeduplicatesExistingCAS"))
+
+	rn, buf := testdigest.RandomCASResourceBuf(t, 2000)
+	require.NoError(t, bc.Set(ctx, rn, buf))
+	require.Equal(t, 1, gcs.ObjectCount())
+
+	// Writing the same CAS blob via Writer() must be deduped: the bytes are
+	// dropped and no second GCS object is created.
+	wc, err := bc.Writer(ctx, rn)
+	require.NoError(t, err)
+	_, err = wc.Write(buf)
+	require.NoError(t, err)
+	require.NoError(t, wc.Commit())
+	require.NoError(t, wc.Close())
+	require.Equal(t, 1, gcs.ObjectCount())
+
+	got, err := bc.Get(ctx, rn)
+	require.NoError(t, err)
+	require.Equal(t, buf, got)
+}
+
+func TestSetMultiDeduplicatesExistingCAS(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
+	ctx := getAnonContext(t, te)
+	clock := clockwork.NewFakeClock()
+
+	bc, gcs := runMetacacheWithGCS(t, te, clock, dedupOptions("TestSetMultiDeduplicatesExistingCAS"))
+
+	rnA, bufA := testdigest.RandomCASResourceBuf(t, 2000)
+	require.NoError(t, bc.Set(ctx, rnA, bufA))
+	require.Equal(t, 1, gcs.ObjectCount())
+
+	// A is already present and must be skipped; only B should be written.
+	rnB, bufB := testdigest.RandomCASResourceBuf(t, 2000)
+	require.NoError(t, bc.SetMulti(ctx, map[*rspb.ResourceName][]byte{
+		rnA: bufA,
+		rnB: bufB,
+	}))
+	require.Equal(t, 2, gcs.ObjectCount())
+
+	gotB, err := bc.Get(ctx, rnB)
+	require.NoError(t, err)
+	require.Equal(t, bufB, gotB)
+}
+
+func TestACWritesAreNotDeduplicated(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
+	ctx := getAnonContext(t, te)
+	clock := clockwork.NewFakeClock()
+
+	bc, _ := runMetacacheWithGCS(t, te, clock, dedupOptions("TestACWritesAreNotDeduplicated"))
+
+	rn, buf1 := testdigest.RandomACResourceBuf(t, 2000)
+	require.NoError(t, bc.Set(ctx, rn, buf1))
+
+	// AC entries are mutable: a second Set with different data must overwrite,
+	// not be deduped away.
+	buf2 := make([]byte, len(buf1))
+	_, err := rand.Read(buf2)
+	require.NoError(t, err)
+	require.NoError(t, bc.Set(ctx, rn, buf2))
+
+	got, err := bc.Get(ctx, rn)
+	require.NoError(t, err)
+	require.Equal(t, buf2, got)
 }
 
 func TestFindMissing(t *testing.T) {
