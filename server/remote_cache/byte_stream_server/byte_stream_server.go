@@ -35,13 +35,14 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/useragent"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel/attribute"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/peer"
 
+	bspb "github.com/buildbuddy-io/buildbuddy/proto/bytestream"
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	remote_cache_config "github.com/buildbuddy-io/buildbuddy/server/remote_cache/config"
-	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
 const defaultChunkedReadMaxInFlight = 32
@@ -806,8 +807,27 @@ func (w *writeHandler) Close() error {
 func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
 	ctx := stream.Context()
 	var streamState *writeHandler
+	// For real gRPC streams, receive into a pooled WriteRequest so the data
+	// buffer is reused across messages instead of reallocated per chunk. Only
+	// do this for streams created by the gRPC handler: in-process callers
+	// (e.g. ByteStreamServerProxy) pass wrapped streams whose custom Recv
+	// logic RecvMsg would bypass.
+	var pooledReq *bspb.WriteRequest
+	if _, ok := stream.(*grpc.GenericServerStream[bspb.WriteRequest, bspb.WriteResponse]); ok {
+		pooledReq = bspb.WriteRequestFromVTPool()
+		defer pooledReq.ReturnToVTPool()
+	}
 	for {
-		req, err := stream.Recv()
+		var req *bspb.WriteRequest
+		var err error
+		if pooledReq != nil {
+			// VT unmarshall doesn't reset, so we need to reset manually.
+			pooledReq.ResetVT()
+			req = pooledReq
+			err = stream.RecvMsg(req)
+		} else {
+			req, err = stream.Recv()
+		}
 		if err == io.EOF {
 			return nil
 		}
