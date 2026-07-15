@@ -126,6 +126,10 @@ func (a *fakeAccumulator) ActionName() string {
 	return ""
 }
 
+func (a *fakeAccumulator) CommitStatusLabel() string {
+	return ""
+}
+
 func (a *fakeAccumulator) MetadataIsLoaded() bool {
 	return true
 }
