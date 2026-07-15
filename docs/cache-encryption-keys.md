@@ -1,4 +1,11 @@
----
+replicas: 6
+resources:
+  limits:
+    cpu: "8"
+    memory: "32Gi"
+  requests:
+    cpu: "7"
+    memory: "30Gi"---
 id: cache-encryption-keys
 title: Customer-managed Encryption Keys
 sidebar_label: Customer-managed Encryption Keys
