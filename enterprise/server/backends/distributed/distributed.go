@@ -246,8 +246,9 @@ func NewDistributedCache(env environment.Env, c interfaces.Cache, opts Options, 
 				// []byte size + 8 bytes for the int64 timestamp.
 				return int64(len(v.data) + 8)
 			},
-			ThreadSafe: true,
-			TTL:        *lookasideCacheTTL,
+			ThreadSafe:    true,
+			TTL:           *lookasideCacheTTL,
+			UpdateInPlace: true,
 		})
 		if err != nil {
 			return nil, err
@@ -454,14 +455,14 @@ func (c *Cache) addLookasideEntry(ctx context.Context, r *rspb.ResourceName, dat
 }
 
 func (c *Cache) setLookasideEntry(lookasideKey string, data []byte) {
+	ownedData := make([]byte, len(data))
+	copy(ownedData, data)
 	entry := lookasideCacheEntry{
 		createdAtMillis: time.Now().UnixMilli(),
-		data:            data,
+		data:            ownedData,
 	}
 
-	if !c.lookaside.Contains(lookasideKey) {
-		c.lookaside.Add(lookasideKey, entry)
-	}
+	c.lookaside.Add(lookasideKey, entry)
 	c.log.Debugf("Set %q in lookaside cache", lookasideKey)
 }
 
