@@ -117,7 +117,6 @@ func TestDetect(t *testing.T) {
 	// skipped.
 	prompt := d.Detect(newest, []string{"v2.153.0", "unknown", "v2.132.0"}, message)
 	require.NotNil(t, prompt)
-	assert.Equal(t, "v2.153.0", prompt.GetNewestAvailableVersion())
 	assert.Equal(t, uppb.Prompt_MEDIUM, prompt.GetUrgency())
 	assert.Equal(t, message, prompt.GetMessage())
 

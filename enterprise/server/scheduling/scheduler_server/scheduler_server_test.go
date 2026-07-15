@@ -1533,7 +1533,6 @@ func TestGetExecutionNodes_UpgradePrompt(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, rsp.GetExecutor(), 2)
 	require.NotNil(t, rsp.GetUpgradePrompt())
-	require.Equal(t, "v2.153.0", rsp.GetUpgradePrompt().GetNewestAvailableVersion())
 	require.Equal(t, uppb.Prompt_LOW, rsp.GetUpgradePrompt().GetUrgency())
 	require.Equal(t, upgradePromptMessage, rsp.GetUpgradePrompt().GetMessage())
 }

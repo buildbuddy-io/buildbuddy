@@ -112,9 +112,8 @@ func (d *Detector) Detect(newest *semver.Version, versions []string, message str
 		return nil
 	}
 	return &uppb.Prompt{
-		NewestAvailableVersion: newest.Original(),
-		Urgency:                urgency,
-		Message:                message,
+		Urgency: urgency,
+		Message: message,
 	}
 }
 

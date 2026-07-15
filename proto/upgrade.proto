@@ -12,8 +12,7 @@ message Prompt {
     CRITICAL = 4;
   }
   Urgency urgency = 1;
-  string newest_available_version = 2;
 
   // The message that should be displayed in the UI upgrade prompt.
-  string message = 3;
+  string message = 2;
 }
