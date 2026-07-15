@@ -49,7 +49,7 @@ go_library(
         "//enterprise/server/util/cpuset",
         "//enterprise/server/util/ext4",
         "//enterprise/server/util/oci",
-        "//enterprise/server/util/ociconv",
+        "//enterprise/server/oci/ociconv",
         "//enterprise/server/util/vfs_server",
         "//enterprise/server/util/vsock",
         "//enterprise/vmsupport:bundle",
