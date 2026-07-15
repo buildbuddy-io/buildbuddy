@@ -25,6 +25,7 @@ message ReadResponse {
 
 // Next Tag: 9
 message WriteRequest {
+  option (vtproto.mempool) = true;
   reserved 1, 2, 6;
   bool finish_write = 3;
 

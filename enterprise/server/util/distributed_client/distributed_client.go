@@ -337,12 +337,6 @@ func (c *Proxy) Read(req *dcpb.ReadRequest, stream dcpb.DistributedCache_ReadSer
 	return nil
 }
 
-func (c *Proxy) callHintedHandoffCB(ctx context.Context, peer string, r *rspb.ResourceName) {
-	if c.hintedHandoffCallback != nil {
-		c.hintedHandoffCallback(ctx, peer, r)
-	}
-}
-
 func (c *Proxy) Write(stream dcpb.DistributedCache_WriteServer) error {
 	ctx, err := c.readWriteContext(stream.Context())
 	if err != nil {
@@ -352,8 +346,16 @@ func (c *Proxy) Write(stream dcpb.DistributedCache_WriteServer) error {
 
 	var bytesWritten int64
 	var writeCloser interfaces.CommittedWriteCloser
+	var req *dcpb.WriteRequest
 	for {
-		req, err := stream.Recv()
+		if req == nil {
+			req = dcpb.WriteRequestFromVTPool()
+			defer req.ReturnToVTPool()
+		} else {
+			// VT unmarshal doesn't reset, so we need to reset manually.
+			req.ResetVT()
+		}
+		err := stream.RecvMsg(req)
 		if err == io.EOF {
 			break
 		}
@@ -376,17 +378,19 @@ func (c *Proxy) Write(stream dcpb.DistributedCache_WriteServer) error {
 			defer wc.Close()
 			writeCloser = wc
 		}
-		n, err := writeCloser.Write(req.Data)
+		n, err := writeCloser.Write(req.GetData())
 		if err != nil {
 			return err
 		}
 		bytesWritten += int64(n)
-		if req.FinishWrite {
+		if req.GetFinishWrite() {
 			if err := writeCloser.Commit(); err != nil {
 				return err
 			}
-			if req.GetHandoffPeer() != "" {
-				c.callHintedHandoffCB(ctx, req.GetHandoffPeer(), rn)
+			if req.GetHandoffPeer() != "" && c.hintedHandoffCallback != nil {
+				// Because the hinted handoff callback might hold on to `rn` in
+				// a queue, and we're pooling WriteRequest protos, clone it.
+				c.hintedHandoffCallback(ctx, req.GetHandoffPeer(), rn.CloneVT())
 			}
 			c.log.Debugf("Write(%q) succeeded (user prefix: %s)", ResourceIsolationString(rn), up)
 			return stream.SendAndClose(&dcpb.WriteResponse{
