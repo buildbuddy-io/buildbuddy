@@ -58,6 +58,7 @@
     "uuid": "^14.0.0",
     "varint": "^6.0.0"
   },
+  "packageManager": "pnpm@11.8.0",
   "devEngines": {
     "packageManager": {
       "name": "pnpm",
