@@ -70,7 +70,7 @@ def gcs(name, srcs, bucket, gsutil = "gsutil", prefix = "", sha_prefix = "", zip
 
     sh_binary(
         name = name + ".push_only",
-        args = [shell.quote("$(locations %s)" % sha_prefix) if sha_prefix != "" else ""] + [shell.quote("$(locations %s)" % src) for src in srcs],
+        args = ["../$(rlocationpaths %s)" % sha_prefix if sha_prefix != "" else ""] + ["../$(rlocationpaths %s)" % src for src in srcs],
         srcs = [name + ".push_only.script"],
         data = srcs + ([sha_prefix] if sha_prefix != "" else []),
         use_bash_launcher = True,
@@ -137,7 +137,7 @@ def gcs(name, srcs, bucket, gsutil = "gsutil", prefix = "", sha_prefix = "", zip
 
     sh_binary(
         name = name + ".delete",
-        args = [shell.quote("$(locations %s)" % sha_prefix) if sha_prefix != "" else ""],
+        args = ["../$(rlocationpaths %s)" % sha_prefix if sha_prefix != "" else ""],
         srcs = [name + ".delete.script"],
         data = [sha_prefix] if sha_prefix != "" else [],
         use_bash_launcher = True,
