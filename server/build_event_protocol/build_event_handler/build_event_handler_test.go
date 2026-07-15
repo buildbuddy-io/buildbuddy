@@ -1699,9 +1699,11 @@ func TestBuildStatusReporting(t *testing.T) {
 	for _, test := range []struct {
 		name           string
 		metadataEvents []*bspb.BuildEvent
+		statusContext  string
 	}{
 		{
-			name: "BuildMetadataThenWorkspaceStatus",
+			name:          "BuildMetadataThenWorkspaceStatus",
+			statusContext: "bazel build //...",
 			metadataEvents: []*bspb.BuildEvent{
 				&bspb.BuildEvent{
 					Id: &bspb.BuildEventId{Id: &bspb.BuildEventId_Pattern{Pattern: &bspb.BuildEventId_PatternExpandedId{
@@ -1727,7 +1729,8 @@ func TestBuildStatusReporting(t *testing.T) {
 			},
 		},
 		{
-			name: "WorkspaceStatusThenBuildMetadata",
+			name:          "WorkspaceStatusThenBuildMetadataWithCommitStatusLabel",
+			statusContext: "Build and test",
 			metadataEvents: []*bspb.BuildEvent{
 				&bspb.BuildEvent{
 					Id: &bspb.BuildEventId{Id: &bspb.BuildEventId_Pattern{Pattern: &bspb.BuildEventId_PatternExpandedId{
@@ -1747,7 +1750,10 @@ func TestBuildStatusReporting(t *testing.T) {
 					Id: &bspb.BuildEventId{Id: &bspb.BuildEventId_BuildMetadata{}},
 					Payload: &bspb.BuildEvent_BuildMetadata{BuildMetadata: &bspb.BuildMetadata{
 						// Status reporting is only enabled for CI builds.
-						Metadata: map[string]string{"ROLE": "CI"},
+						Metadata: map[string]string{
+							"ROLE":                "CI",
+							"COMMIT_STATUS_LABEL": "Build and test",
+						},
 					}},
 				},
 			},
@@ -1828,7 +1834,7 @@ func TestBuildStatusReporting(t *testing.T) {
 						TargetURL:   pointer("http://localhost:8080/invocation/" + seq.InvocationID),
 						State:       pointer("pending"),
 						Description: pointer("Running..."),
-						Context:     pointer("bazel build //..."),
+						Context:     pointer(test.statusContext),
 					},
 				},
 			}, client.ConsumeStatuses())
@@ -1853,7 +1859,7 @@ func TestBuildStatusReporting(t *testing.T) {
 						TargetURL:   pointer("http://localhost:8080/invocation/" + seq.InvocationID),
 						State:       pointer("success"),
 						Description: pointer("Success"),
-						Context:     pointer("bazel build //..."),
+						Context:     pointer(test.statusContext),
 					},
 				},
 			}, client.ConsumeStatuses())
