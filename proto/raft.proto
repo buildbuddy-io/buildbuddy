@@ -735,12 +735,17 @@ message DeleteRequest {
 }
 message DeleteResponse {}
 
-// State-idempotent (atime only moves forward; a second apply with
-// the same value re-writes the same bytes) and response-idempotent
-// (both branches return an empty response). Safe on splittable keys.
+// State-idempotent (atime and last custom time only move forward; a
+// second apply with the same values re-writes the same bytes) and
+// response-idempotent (both branches return an empty response). Safe on
+// splittable keys.
 message UpdateAtimeRequest {
   bytes key = 1;
   int64 access_time_usec = 2;
+  // The custom time now set on the backing GCS object. Only set when the
+  // sender successfully refreshed that object's custom time; 0 leaves the
+  // recorded value untouched.
+  int64 last_custom_time_usec = 3;
 }
 message UpdateAtimeResponse {}
 

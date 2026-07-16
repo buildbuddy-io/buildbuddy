@@ -99,7 +99,8 @@ type Server struct {
 
 	clock clockwork.Clock
 
-	gcsTTLDays int64
+	gcsTTLDays              int64
+	gcsAtimeUpdateThreshold time.Duration
 }
 
 func clearPrevCache(dir string, currentSubDir string) error {
@@ -205,6 +206,9 @@ func NewFromFlags(env *real_environment.RealEnv) (*Server, error) {
 	if gcsConfig.TTLDays != nil {
 		opts = append(opts, WithGCSTTLDays(*gcsConfig.TTLDays))
 	}
+	if gcsConfig.AtimeUpdateThreshold != nil {
+		opts = append(opts, WithGCSAtimeUpdateThreshold(*gcsConfig.AtimeUpdateThreshold))
+	}
 
 	raftAddr := fmt.Sprintf("%s:%d", *hostName, *httpPort)
 	grpcAddr := fmt.Sprintf("%s:%d", *hostName, *gRPCPort)
@@ -230,6 +234,12 @@ type Option func(*Server)
 func WithGCSTTLDays(days int64) Option {
 	return func(s *Server) {
 		s.gcsTTLDays = days
+	}
+}
+
+func WithGCSAtimeUpdateThreshold(d time.Duration) Option {
+	return func(s *Server) {
+		s.gcsAtimeUpdateThreshold = d
 	}
 }
 
@@ -388,6 +398,13 @@ type atimeUpdateData struct {
 	gcsMetadata    *sgpb.StorageMetadata_GCSMetadata
 }
 
+// atimeUpdateMeta is the per-key payload batched into an UpdateAtimeRequest.
+type atimeUpdateMeta struct {
+	accessTimeUsec int64
+	// Non-zero only if this update refreshed the GCS object's custom time.
+	lastCustomTimeUsec int64
+}
+
 func (rc *Server) sendAccessTimeUpdate(a atimeUpdateData) {
 	atime := time.UnixMicro(a.lastAccessUsec)
 	if rc.clock.Since(atime) < *atimeUpdateThreshold {
@@ -414,19 +431,30 @@ func (rc *Server) sendAccessTimeUpdate(a atimeUpdateData) {
 	}
 }
 
-func (rc *Server) maybeUpdateGCSAtime(ctx context.Context, gcsMetadata *sgpb.StorageMetadata_GCSMetadata) error {
+// maybeUpdateGCSAtime refreshes the backing GCS object's custom time and
+// returns the new value to record, or 0 if it was not refreshed. Refreshes are
+// billed and contend on the object, and the custom time is only a TTL backstop,
+// so they are throttled to once per gcsAtimeUpdateThreshold.
+func (rc *Server) maybeUpdateGCSAtime(ctx context.Context, gcsMetadata *sgpb.StorageMetadata_GCSMetadata) (int64, error) {
 	if gcsMetadata == nil {
-		return nil
+		return 0, nil
 	}
 	if gcsutil.ObjectIsPastTTL(rc.clock, gcsMetadata, rc.gcsTTLDays) {
-		return nil
+		return 0, nil
 	}
 	// Note: we are not using the atime that was provided in the atime udpate
 	// task. This is fine because we just want to make sure the gcs file that were
 	// recently accessed are not deleted through GCS lifecycle management. Also,
 	// we want to prevent atime from moving backwards by a lot.
 	newAtime := rc.clock.Now()
-	return rc.fileStorer.UpdateBlobAtime(ctx, gcsMetadata, newAtime)
+	lastCustomTime := time.UnixMicro(gcsMetadata.GetLastCustomTimeUsec())
+	if newAtime.Sub(lastCustomTime) < rc.gcsAtimeUpdateThreshold {
+		return 0, nil
+	}
+	if err := rc.fileStorer.UpdateBlobAtime(ctx, gcsMetadata, newAtime); err != nil {
+		return 0, err
+	}
+	return newAtime.UnixMicro(), nil
 }
 
 func (rc *Server) processAccessTimeUpdates(ctx context.Context, quitChan chan struct{}, atimeWriteBatchSize int) error {
@@ -437,12 +465,20 @@ func (rc *Server) processAccessTimeUpdates(ctx context.Context, quitChan chan st
 	defer cancel()
 
 	flush := func() {
+		// Re-arm on every path: the timer is one-shot, so returning early
+		// without resetting it stops the periodic flush for good.
+		defer timer.Reset(atimeFlushPeriod)
+
 		if len(keys) == 0 {
 			return
 		}
 
 		start := rc.clock.Now()
-		defer metrics.RaftBatchAtimeUpdateDurationUsec.Observe(float64(rc.clock.Since(start).Microseconds()))
+		// In a closure: deferred call args evaluate at defer time, so observing
+		// Since(start) directly would always record ~0.
+		defer func() {
+			metrics.RaftBatchAtimeUpdateDurationUsec.Observe(float64(rc.clock.Since(start).Microseconds()))
+		}()
 
 		// UpdateAtime is safe to send through RunMultiKey: retries may be
 		// re-executed on current state rather than replaying the original
@@ -450,9 +486,11 @@ func (rc *Server) processAccessTimeUpdates(ctx context.Context, quitChan chan st
 		_, err := rc.sender().RunMultiKey(ctx, keys, func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header, keys []*sender.KeyMeta) (any, error) {
 			batch := rbuilder.NewBatchBuilder()
 			for _, k := range keys {
+				m := k.Meta.(atimeUpdateMeta)
 				batch.Add(&rfpb.UpdateAtimeRequest{
-					Key:            k.Key,
-					AccessTimeUsec: k.Meta.(int64),
+					Key:                k.Key,
+					AccessTimeUsec:     m.accessTimeUsec,
+					LastCustomTimeUsec: m.lastCustomTimeUsec,
 				})
 			}
 			batchProto, err := batch.ToProto()
@@ -469,8 +507,6 @@ func (rc *Server) processAccessTimeUpdates(ctx context.Context, quitChan chan st
 			return
 		}
 		keys = nil
-
-		timer.Reset(atimeFlushPeriod)
 	}
 
 	for {
@@ -482,18 +518,24 @@ func (rc *Server) processAccessTimeUpdates(ctx context.Context, quitChan chan st
 				continue
 			}
 			key := accessTimeUpdate.key
-			err := rc.maybeUpdateGCSAtime(ctx, accessTimeUpdate.gcsMetadata)
-			metrics.RaftAtimeUpdateGCSCount.With(prometheus.Labels{
-				metrics.StatusHumanReadableLabel: status.MetricsLabel(err),
-			}).Inc()
+			customTimeUsec, err := rc.maybeUpdateGCSAtime(ctx, accessTimeUpdate.gcsMetadata)
+			if err != nil || customTimeUsec > 0 {
+				// Only count updates that actually made a GCS call.
+				metrics.RaftAtimeUpdateGCSCount.With(prometheus.Labels{
+					metrics.StatusHumanReadableLabel: status.MetricsLabel(err),
+				}).Inc()
+			}
 			if err != nil {
 				log.Errorf("Error updating GCS custom time (%q): %s", key, err)
 				// Don't update the atime on raft if gcs atime update fails. This is to prevent the situation where the gcs file is deleted but the metadata still exist.
 				continue
 			}
 			keys = append(keys, &sender.KeyMeta{
-				Key:  key,
-				Meta: rc.clock.Now().UnixMicro(),
+				Key: key,
+				Meta: atimeUpdateMeta{
+					accessTimeUsec:     rc.clock.Now().UnixMicro(),
+					lastCustomTimeUsec: customTimeUsec,
+				},
 			})
 			if len(keys) >= atimeWriteBatchSize {
 				flush()

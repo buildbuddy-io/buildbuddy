@@ -2166,3 +2166,119 @@ func TestUpdateATime(t *testing.T) {
 		require.Equal(t, newerATime, gotMd.GetLastAccessUsec(), "atime should be updated when new atime is newer")
 	}
 }
+
+func TestUpdateATimeGCSCustomTime(t *testing.T) {
+	repl := testutil.NewTestingReplica(t, 1, 1)
+	require.NotNil(t, repl)
+	t.Cleanup(func() {
+		err := repl.Close()
+		require.NoError(t, err)
+	})
+
+	stopc := make(chan struct{})
+	lastAppliedIndex, err := repl.Open(stopc)
+	require.NoError(t, err)
+	require.Equal(t, uint64(0), lastAppliedIndex)
+	em := newEntryMaker(t)
+	writeDefaultRangeDescriptor(t, em, repl.Replica)
+
+	r, _ := testdigest.RandomCASResourceBuf(t, 1000)
+	fileRecord := &sgpb.FileRecord{
+		Isolation: &sgpb.Isolation{
+			CacheType:   rspb.CacheType_CAS,
+			PartitionId: "default",
+			GroupId:     interfaces.AuthAnonymousUser,
+		},
+		Digest:         r.GetDigest(),
+		DigestFunction: repb.DigestFunction_SHA256,
+	}
+
+	initialCustomTime := int64(1_000_000)
+	md := &sgpb.FileMetadata{
+		FileRecord: fileRecord,
+		StorageMetadata: &sgpb.StorageMetadata{
+			GcsMetadata: &sgpb.StorageMetadata_GCSMetadata{
+				BlobName:           "test-blob",
+				LastCustomTimeUsec: initialCustomTime,
+			},
+		},
+		LastAccessUsec: int64(1_000_000),
+	}
+
+	fs := filestore.New()
+	key, err := fs.PebbleKey(fileRecord)
+	require.NoError(t, err)
+	fileMetadataKey, err := key.Bytes(filestore.Version5)
+	require.NoError(t, err)
+	val, err := proto.Marshal(md)
+	require.NoError(t, err)
+
+	entry := em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
+		Kv: &rfpb.KV{
+			Key:   fileMetadataKey,
+			Value: val,
+		},
+	}))
+	writeRsp, err := repl.Update([]dbsm.Entry{entry})
+	require.NoError(t, err)
+	require.Equal(t, 1, len(writeRsp))
+
+	updateATime := func(t *testing.T, req *rfpb.UpdateAtimeRequest) *sgpb.FileMetadata {
+		t.Helper()
+		entry := em.makeEntry(rbuilder.NewBatchBuilder().Add(req))
+		updateRsp, err := repl.Update([]dbsm.Entry{entry})
+		require.NoError(t, err)
+		require.Equal(t, 1, len(updateRsp))
+		require.NoError(t, rbuilder.NewBatchResponse(updateRsp[0].Result.Data).AnyError())
+
+		rsp, err := directRead(t, repl, fileMetadataKey)
+		require.NoError(t, err)
+		gotMd := &sgpb.FileMetadata{}
+		require.NoError(t, proto.Unmarshal(rsp.GetKv().GetValue(), gotMd))
+		return gotMd
+	}
+
+	// An update that did not refresh the object's custom time leaves the
+	// recorded custom time alone.
+	{
+		gotMd := updateATime(t, &rfpb.UpdateAtimeRequest{
+			Key:            fileMetadataKey,
+			AccessTimeUsec: int64(2_000_000),
+		})
+		require.Equal(t, int64(2_000_000), gotMd.GetLastAccessUsec())
+		require.Equal(t, initialCustomTime, gotMd.GetStorageMetadata().GetGcsMetadata().GetLastCustomTimeUsec(), "custom time should be untouched when the request does not set one")
+	}
+
+	// A refreshed custom time is recorded.
+	newCustomTime := int64(3_000_000)
+	{
+		gotMd := updateATime(t, &rfpb.UpdateAtimeRequest{
+			Key:                fileMetadataKey,
+			AccessTimeUsec:     int64(3_000_000),
+			LastCustomTimeUsec: newCustomTime,
+		})
+		require.Equal(t, newCustomTime, gotMd.GetStorageMetadata().GetGcsMetadata().GetLastCustomTimeUsec(), "refreshed custom time should be recorded")
+	}
+
+	// The custom time only moves forward, so a replayed or reordered update
+	// cannot make a live object look older than it is.
+	{
+		gotMd := updateATime(t, &rfpb.UpdateAtimeRequest{
+			Key:                fileMetadataKey,
+			AccessTimeUsec:     int64(4_000_000),
+			LastCustomTimeUsec: int64(2_000_000),
+		})
+		require.Equal(t, newCustomTime, gotMd.GetStorageMetadata().GetGcsMetadata().GetLastCustomTimeUsec(), "custom time should not move backwards")
+	}
+
+	// A stale atime does not block recording a newer custom time.
+	{
+		gotMd := updateATime(t, &rfpb.UpdateAtimeRequest{
+			Key:                fileMetadataKey,
+			AccessTimeUsec:     int64(1),
+			LastCustomTimeUsec: int64(5_000_000),
+		})
+		require.Equal(t, int64(4_000_000), gotMd.GetLastAccessUsec(), "atime should not move backwards")
+		require.Equal(t, int64(5_000_000), gotMd.GetStorageMetadata().GetGcsMetadata().GetLastCustomTimeUsec(), "custom time should be recorded even when the atime is stale")
+	}
+}

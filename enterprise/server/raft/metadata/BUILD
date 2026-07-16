@@ -47,14 +47,15 @@ go_test(
     name = "metadata_test",
     srcs = [
         "metadata_benchmark_test.go",
+        "metadata_gcs_atime_test.go",
         "metadata_test.go",
     ],
+    embed = [":metadata"],
     exec_properties = {
         "test.EstimatedComputeUnits": "8",
         "test.workload-isolation-type": "firecracker",
     },
     deps = [
-        ":metadata",
         "//enterprise/server/filestore",
         "//enterprise/server/raft/config",
         "//enterprise/server/raft/constants",
@@ -64,6 +65,7 @@ go_test(
         "//server/gossip",
         "//server/interfaces",
         "//server/remote_cache/digest",
+        "//server/testutil/mockgcs",
         "//server/testutil/testauth",
         "//server/testutil/testdigest",
         "//server/testutil/testenv",
