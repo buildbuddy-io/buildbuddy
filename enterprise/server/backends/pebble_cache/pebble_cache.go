@@ -964,7 +964,7 @@ func (c *PresenceCache) IsEnabled() bool {
 func (c *PresenceCache) SetConfig(cfg PresenceCacheConfig) {
 	ttl, err := time.ParseDuration(cfg.TTL)
 	if err != nil {
-		log.Warningf("[%s] FindMissing presence cache: ignoring config with invalid ttl %q: %s", c.cacheName, cfg.TTL, err)
+		alert.UnexpectedEvent("presence_cache_config_invalid_ttl", "[%s] FindMissing presence cache: ignoring config with invalid ttl %q: %s", c.cacheName, cfg.TTL, err)
 		return
 	}
 	if cfg.MaxEntries > 0 {
@@ -973,7 +973,7 @@ func (c *PresenceCache) SetConfig(cfg PresenceCacheConfig) {
 			log.Infof("[%s] FindMissing presence cache enabled (max_entries=%d, ttl=%s)", c.cacheName, cfg.MaxEntries, ttl)
 		}
 		if err := c.lru.SetMaxSize(cfg.MaxEntries); err != nil {
-			log.Warningf("[%s] FindMissing presence cache: ignoring invalid max_entries=%d: %s", c.cacheName, cfg.MaxEntries, err)
+			alert.UnexpectedEvent("presence_cache_config_invalid_max_size", "[%s] FindMissing presence cache: ignoring invalid max_entries=%d: %s", c.cacheName, cfg.MaxEntries, err)
 		}
 		if ttl != c.ttl {
 			if err := c.lru.SetTTL(ttl); err != nil {
