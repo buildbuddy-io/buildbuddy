@@ -1441,12 +1441,16 @@ func collectRunfiles(runfilesDir string) (map[digest.Key]string, map[string]stri
 			if err != nil {
 				return err
 			}
-			fi, err := os.Stat(t)
+			targetPath := t
+			if !filepath.IsAbs(targetPath) {
+				targetPath = filepath.Join(filepath.Dir(path), targetPath)
+			}
+			fi, err := os.Stat(targetPath)
 			if err != nil {
 				return err
 			}
 			if fi.IsDir() {
-				dirsToUpload[path] = t
+				dirsToUpload[path] = targetPath
 				return nil
 			}
 		}
