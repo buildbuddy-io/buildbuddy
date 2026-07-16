@@ -72,7 +72,6 @@ capabilities.register("BuildBuddy Enterprise", true, [
   Path.settingsPath,
   Path.trendsPath,
   Path.targetsPath,
-  Path.targetDataPath,
   Path.executorsPath,
   Path.cacheProxiesPath,
   Path.tapPath,
@@ -237,8 +236,12 @@ export default class EnterpriseRootComponent extends React.Component {
       this.state.user;
     let orgAccessDenied = this.state.user && this.state.path === Path.orgAccessDeniedPath;
     let trends = this.state.user && this.state.path.startsWith("/trends");
-    let targets = this.state.user && this.state.path.startsWith("/targets");
-    let targetData = this.state.user && this.state.path.startsWith("/targetdata");
+    // The targets list and the per-target detail page share the "/targets/"
+    // prefix; the detail page is distinguished by the presence of a "target"
+    // query param (e.g. "/targets/?target=//foo:bar").
+    let targetData =
+      this.state.user && this.state.path.startsWith("/targets") && Boolean(this.state.search.get("target"));
+    let targets = this.state.user && this.state.path.startsWith("/targets") && !targetData;
     let usage = this.state.user && this.state.path.startsWith("/usage/");
     let auditLogs = this.state.user && this.state.path.startsWith("/audit-logs/");
     let executors = this.state.user && this.state.path.startsWith("/executors");
