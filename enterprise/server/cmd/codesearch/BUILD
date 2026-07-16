@@ -4,10 +4,12 @@ load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_push")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 
+package(default_visibility = ["//enterprise:__subpackages__"])
+
 go_library(
     name = "server_lib",
     srcs = ["server.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/codesearch/cmd/server",
+    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/cmd/codesearch",
     visibility = ["//visibility:private"],
     deps = [
         "//codesearch/server",
