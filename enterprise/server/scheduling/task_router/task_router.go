@@ -38,6 +38,10 @@ const (
 	// probes per task (for load balancing purposes).
 	defaultPreferredNodeLimit = 1
 
+	// The preferred node limit for non-default affinity-key experiments. This
+	// leaves one of the three probes available for load balancing.
+	experimentPreferredNodeLimit = 2
+
 	// The preferred node limit for ci_runner tasks.
 	// This is set higher than the default limit since we strongly prefer
 	// these tasks to hit a node with a warm bazel workspace, but it is
@@ -513,7 +517,13 @@ func (*affinityRouter) Applies(_ context.Context, params routingParams) bool {
 	return getAffinityRoutingHint(params) != ""
 }
 
-func (*affinityRouter) preferredNodeLimit(_ routingParams) int {
+func (*affinityRouter) preferredNodeLimit(params routingParams) int {
+	// Keep the whole experiment cohort at two preferred nodes, including
+	// actions that fall back to a first-output hint when target metadata is
+	// unavailable.
+	if params.affinityRouterKey != affinityRouterKeyFirstOutput {
+		return experimentPreferredNodeLimit
+	}
 	return defaultPreferredNodeLimit
 }
 
