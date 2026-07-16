@@ -1,11 +1,29 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 )
+
+func TestCollectRunfiles_RelativeDirectorySymlink(t *testing.T) {
+	rootDir := t.TempDir()
+	targetDir := filepath.Join(rootDir, "target")
+	assert.NoError(t, os.Mkdir(targetDir, 0755))
+
+	runfilesDir := filepath.Join(rootDir, "binary.runfiles")
+	assert.NoError(t, os.Mkdir(runfilesDir, 0755))
+	linkPath := filepath.Join(runfilesDir, "relative-directory")
+	linkTarget, err := filepath.Rel(filepath.Dir(linkPath), targetDir)
+	assert.NoError(t, err)
+	assert.NoError(t, os.Symlink(linkTarget, linkPath))
+
+	_, _, err = collectRunfiles(runfilesDir)
+	assert.ErrorContains(t, err, "no such file or directory")
+}
 
 func TestParseGitFetchedBytes(t *testing.T) {
 	for _, tc := range []struct {
