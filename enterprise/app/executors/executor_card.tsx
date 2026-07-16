@@ -96,12 +96,6 @@ export default class ExecutorCardComponent extends React.Component<Props> {
                 <div>{this.props.node.xcodeVersions.join(", ")}</div>
               </div>
             )}
-            {this.props.node.xcodeSdks && this.props.node.xcodeSdks.length > 0 && (
-              <div className="executor-section">
-                <div className="executor-section-title">Xcode SDKs:</div>
-                <div>{this.props.node.xcodeSdks.join(", ")}</div>
-              </div>
-            )}
             {this.props.node.supportedIsolationTypes && this.props.node.supportedIsolationTypes.length > 0 && (
               <div className="executor-section">
                 <div className="executor-section-title">Isolation Types:</div>

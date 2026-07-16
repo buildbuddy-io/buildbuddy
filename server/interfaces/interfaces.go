@@ -1444,11 +1444,6 @@ type XcodeLocator interface {
 	// Xcode installed on this host. E.g.: ["16.2.0.16C503", "16.0.0.16A242"]
 	Versions() []string
 
-	// Returns a slice containing the most specific version specifier for each
-	// Xcode SDK installed on this host. E.g.:
-	// ["iPhoneOS18.2", "iPhoneSimulator18.2"]
-	SDKs() []string
-
 	// Finds the Xcode matching the given Xcode version selector. Returns the
 	// developer directory for that Xcode and the SDK root for the given SDK.
 	PathsForVersionAndSDK(xcodeVersion string, sdk string) (string, string, error)

@@ -96,40 +96,6 @@ func (x *xcodeLocator) Versions() []string {
 	return slices.Sorted(maps.Keys(xcodes))
 }
 
-func (x *xcodeLocator) SDKs() []string {
-	allSDKs := map[string]struct{}{}
-	for _, xcode := range x.versions {
-		if xcode.version == defaultXcodeVersion {
-			continue
-		}
-		for sdk := range xcode.sdks {
-			allSDKs[sdk] = struct{}{}
-		}
-	}
-
-	// Determine the most specific version of each SDK and return that one.
-	sdks := []string{}
-	for sdk := range allSDKs {
-		add := true
-		for otherSDK := range allSDKs {
-			if sdk == otherSDK {
-				continue
-			}
-			if strings.HasPrefix(otherSDK, sdk) {
-				add = false
-				break
-			}
-		}
-
-		if add {
-			sdks = append(sdks, sdk)
-		}
-	}
-
-	slices.Sort(sdks)
-	return sdks
-}
-
 // Finds the Xcode that matches the given Xcode version.
 // Returns the developer directory for that Xcode and the SDK root for the given SDK.
 func (x *xcodeLocator) PathsForVersionAndSDK(xcodeVersion string, sdk string) (string, string, error) {

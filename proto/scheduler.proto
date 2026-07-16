@@ -592,8 +592,8 @@ message ExecutionNode {
   // The Xcode versions installed on this executor.
   repeated string xcode_versions = 16;
 
-  // The Xcode SDKs installed on this executor.
-  repeated string xcode_sdks = 17;
+  reserved 17;
+  reserved "xcode_sdks";
 
   // Whether the executor supports proactive task cancellation, which allows
   // cancelling queued requests for tasks that have already been completed by
