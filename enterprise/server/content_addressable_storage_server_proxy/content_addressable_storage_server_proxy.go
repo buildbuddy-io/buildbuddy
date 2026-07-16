@@ -53,7 +53,14 @@ type CASServerProxy struct {
 	//    remote-return path (local cache didn't have the digest, remote cache
 	//    did).
 	// TODO(go/b/7780): fix those issues.
-	findMissingCache lru.LRU[struct{}]
+	findMissingCache                  lru.LRU[struct{}]
+	findMissingCacheCountersByChunked map[bool]findMissingCacheCounters
+}
+
+type findMissingCacheCounters struct {
+	hits        prometheus.Counter
+	misses      prometheus.Counter
+	uncacheable prometheus.Counter
 }
 
 func Register(env *real_environment.RealEnv) error {
@@ -97,6 +104,14 @@ func New(env environment.Env) (*CASServerProxy, error) {
 			return nil, status.InvalidArgumentErrorf("Error initializing FindMissingBlobs cache: %s", err)
 		}
 		proxy.findMissingCache = cache
+		proxy.findMissingCacheCountersByChunked = make(map[bool]findMissingCacheCounters, 2)
+		for _, chunked := range []bool{false, true} {
+			proxy.findMissingCacheCountersByChunked[chunked] = findMissingCacheCounters{
+				hits:        findMissingBlobsCacheLookups(metrics.HitStatusLabel, chunked),
+				misses:      findMissingBlobsCacheLookups(metrics.MissStatusLabel, chunked),
+				uncacheable: findMissingBlobsCacheLookups(metrics.UncacheableStatusLabel, chunked),
+			}
+		}
 	}
 	return &proxy, nil
 }
@@ -222,8 +237,8 @@ func (s *CASServerProxy) FindMissingBlobs(ctx context.Context, req *repb.FindMis
 	}
 
 	hits := len(req.GetBlobDigests()) - len(misses)
-	chunked := cdc.IsChunked(ctx)
-	findMissingBlobsCacheLookups(metrics.HitStatusLabel, chunked).Add(float64(hits))
+	counters := s.findMissingCacheCountersByChunked[cdc.IsChunked(ctx)]
+	counters.hits.Add(float64(hits))
 
 	// All digests were found in the FindMissingBlobs cache, return.
 	if len(misses) == 0 {
@@ -254,8 +269,8 @@ func (s *CASServerProxy) FindMissingBlobs(ctx context.Context, req *repb.FindMis
 			s.findMissingCache.Add(key, struct{}{})
 		}
 	}
-	findMissingBlobsCacheLookups(metrics.MissStatusLabel, chunked).Add(float64(presentRemotely))
-	findMissingBlobsCacheLookups(metrics.UncacheableStatusLabel, chunked).Add(float64(len(remoteReq.GetBlobDigests()) - presentRemotely))
+	counters.misses.Add(float64(presentRemotely))
+	counters.uncacheable.Add(float64(len(remoteReq.GetBlobDigests()) - presentRemotely))
 	return rsp, nil
 }
 
