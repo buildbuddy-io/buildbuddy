@@ -100,7 +100,6 @@ var (
 		"/settings/",
 		"/tests/",
 		"/targets/",
-		"/targetdata/",
 		"/trends/",
 		"/usage/",
 		"/workflows/",
