@@ -369,6 +369,41 @@ func TestFindMissingBlobs_Caching(t *testing.T) {
 	require.Equal(t, int32(6), requestCount.Load())
 }
 
+func TestFindMissingBlobs_BypassCache(t *testing.T) {
+	flags.Set(t, "cache_proxy.find_missing_blobs_cache_ttl", 30*time.Second)
+	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
+		"cache_proxy.bypass_find_missing_cache": {
+			State:          memprovider.Enabled,
+			DefaultVariant: "true",
+			Variants: map[string]any{
+				"true": true,
+			},
+		},
+	})
+	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
+	fp, err := experiments.NewFlagProvider(t.Name())
+	require.NoError(t, err)
+
+	ctx := testContext()
+	conn, requestCount, _ := runRemoteCASS(ctx, testenv.GetTestEnv(t), t)
+	proxyEnv := testenv.GetTestEnv(t)
+	proxyEnv.SetAuthenticator(testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1")))
+	proxyEnv.SetExperimentFlagProvider(fp)
+	proxyEnv.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(conn))
+	require.NoError(t, atime_updater.Register(proxyEnv))
+	proxyConn := runCASProxy(ctx, conn, proxyEnv, t)
+	proxy := repb.NewContentAddressableStorageClient(proxyConn)
+	ctx = metadata.AppendToOutgoingContext(ctx, authutil.APIKeyHeader, "US1")
+
+	barDigestProto := digestProto(barDigest, 3)
+	update(ctx, proxy, map[*repb.Digest]string{barDigestProto: "bar"}, t)
+	requestCount.Store(0)
+
+	findMissing(ctx, proxy, []*repb.Digest{barDigestProto}, []*repb.Digest{}, t)
+	findMissing(ctx, proxy, []*repb.Digest{barDigestProto}, []*repb.Digest{}, t)
+	require.Equal(t, int32(2), requestCount.Load())
+}
+
 func TestFindMissingBlobs_CachingIsolatedByGroup(t *testing.T) {
 	flags.Set(t, "cache_proxy.find_missing_blobs_cache_ttl", 30*time.Second)
 	ctx := testContext()
