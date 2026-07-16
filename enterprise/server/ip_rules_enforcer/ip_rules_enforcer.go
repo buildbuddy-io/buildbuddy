@@ -580,7 +580,8 @@ func bypassIPRules(ctx context.Context, client *interfaces.ClientIdentity) bool 
 	if client.Client == interfaces.ClientIdentityExecutor ||
 		client.Client == interfaces.ClientIdentityApp ||
 		client.Client == interfaces.ClientIdentityWorkflow ||
-		client.Client == interfaces.ClientIdentityMetadataServer {
+		client.Client == interfaces.ClientIdentityMetadataServer ||
+		client.Client == interfaces.ClientIdentityCodeSearchServer {
 		return true
 	}
 
