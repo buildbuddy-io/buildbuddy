@@ -342,7 +342,7 @@ func (c *lru[V]) PushBack(key string, value V) bool {
 	if c.currentSize+size > c.maxSize {
 		return false
 	}
-	c.insert(key, value, size, false /*=back*/)
+	c.insert(key, value, size, false /*=front*/)
 	return true
 }
 
