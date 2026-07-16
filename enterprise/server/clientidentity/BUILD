@@ -6,6 +6,7 @@ go_library(
     name = "clientidentity",
     srcs = ["clientidentity.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity",
+    visibility = ["//visibility:public"],
     deps = [
         "//server/interfaces",
         "//server/real_environment",
