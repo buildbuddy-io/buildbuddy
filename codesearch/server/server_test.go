@@ -1056,3 +1056,217 @@ func TestIncrementalIndexIgnoresUnparsableGoMod(t *testing.T) {
 	assert.Equal(t, "github.com/example/repo", storedModulePath(t, ctx, server, repo),
 		"an unparsable go.mod must not wipe the stored module path")
 }
+
+// navLogPkg declares Print in the util/log package; navMain references it
+// across packages (log.Print) and references a same-package func (greet).
+const navLogPkg = `package log
+
+func Print() {}
+`
+
+const navMain = `package main
+
+import "github.com/example/repo/util/log"
+
+func main() {
+	log.Print()
+	greet()
+}
+
+func greet() {}
+`
+
+func TestTreeSitterNav(t *testing.T) {
+	ctx := t.Context()
+	server := mustMakeServer(t)
+	repo := "github.com/buildbuddy-io/buildbuddy"
+	seedRepoMetadata(t, ctx, server, repo, "old", "github.com/example/repo")
+
+	_, err := server.Index(ctx, &inpb.IndexRequest{
+		GitRepo:             &gitpb.GitRepo{RepoUrl: repo},
+		ReplacementStrategy: inpb.ReplacementStrategy_INCREMENTAL,
+		Update: &inpb.IncrementalUpdate{Commits: []*inpb.Commit{{
+			Sha: "new", ParentSha: "old",
+			AddsAndUpdates: []*inpb.File{
+				{Filepath: "util/log/log.go", Content: []byte(navLogPkg)},
+				{Filepath: "app/main.go", Content: []byte(navMain)},
+			},
+		}}},
+	})
+	require.NoError(t, err)
+
+	// Decorations for app/main.go: both the cross-package selector
+	// (log.Print, line 6) and the same-package reference (greet(), line 7)
+	// are clickable. The frontend mints a tree-sitter:// file ticket; the
+	// returned target tickets are opaque and carry the scheme forward.
+	dec, err := server.tsNavDecorations(ctx, &xrefpb.DecorationsRequest{
+		Location: &xrefpb.Location{Ticket: "tree-sitter://buildbuddy?path=app/main.go"},
+	})
+	require.NoError(t, err)
+	refByLine := map[int32]*xrefpb.DecorationsReply_Reference{}
+	for _, r := range dec.GetReference() {
+		assert.Equal(t, "/kythe/edge/ref", r.GetKind())
+		refByLine[r.GetSpan().GetStart().GetLineNumber()] = r
+	}
+	require.Contains(t, refByLine, int32(6), "cross-package selector log.Print should be decorated")
+	require.Contains(t, refByLine, int32(7), "same-package reference greet() should be decorated")
+
+	// Clicking the cross-package selector resolves to util/log/log.go:3.
+	resolve := func(ticket string) *xrefpb.Anchor {
+		t.Helper()
+		xr, err := server.tsNavCrossReferences(ctx, &xrefpb.CrossReferencesRequest{Ticket: []string{ticket}})
+		require.NoError(t, err)
+		set := xr.GetCrossReferences()[ticket]
+		require.NotNil(t, set, "no definition for %s", ticket)
+		require.Len(t, set.GetDefinition(), 1)
+		return set.GetDefinition()[0].GetAnchor()
+	}
+
+	logDef := resolve(refByLine[6].GetTargetTicket())
+	assert.Equal(t, "tree-sitter://buildbuddy?path=util/log/log.go", logDef.GetParent())
+	assert.Equal(t, int32(3), logDef.GetSpan().GetStart().GetLineNumber())
+
+	// And the same-package reference resolves to greet's declaration (main.go:10).
+	greetDef := resolve(refByLine[7].GetTargetTicket())
+	assert.Equal(t, "tree-sitter://buildbuddy?path=app/main.go", greetDef.GetParent())
+	assert.Equal(t, int32(10), greetDef.GetSpan().GetStart().GetLineNumber())
+
+	// A ticket codenav didn't mint (a real kythe ticket) resolves to nothing.
+	xr, err := server.tsNavCrossReferences(ctx, &xrefpb.CrossReferencesRequest{
+		Ticket: []string{"kythe://buildbuddy?path=app/main.go"},
+	})
+	require.NoError(t, err)
+	assert.Empty(t, xr.GetCrossReferences())
+
+	// Hover (documentation) on the log.Print ticket: kind facts + definition.
+	logTicket := refByLine[6].GetTargetTicket()
+	docs, err := server.tsNavDocumentation(ctx, &spb.ExtendedDocumentationRequest{Ticket: logTicket})
+	require.NoError(t, err)
+	assert.Equal(t, "function", string(docs.GetNodeInfo().GetFacts()["/kythe/node/kind"]))
+	assert.Equal(t, "tree-sitter://buildbuddy?path=util/log/log.go", docs.GetDefinition().GetAnchor().GetParent())
+	assert.Equal(t, "func Print()", docs.GetDefinition().GetAnchor().GetSnippet())
+
+	// References panel on log.Print: definition in util/log/log.go, and the
+	// use site in app/main.go (line 6).
+	xrefs, err := server.tsNavExtendedXrefs(ctx, &spb.ExtendedXrefsRequest{Tickets: []string{logTicket}})
+	require.NoError(t, err)
+	require.Len(t, xrefs.GetDefinitions(), 1)
+	assert.Equal(t, "tree-sitter://buildbuddy?path=util/log/log.go", xrefs.GetDefinitions()[0].GetAnchor().GetParent())
+
+	refLines := map[string]int32{}
+	for _, ra := range xrefs.GetReferences() {
+		path := ra.GetAnchor().GetParent()
+		refLines[path] = ra.GetAnchor().GetSpan().GetStart().GetLineNumber()
+	}
+	assert.Equal(t, int32(6), refLines["tree-sitter://buildbuddy?path=app/main.go"],
+		"the log.Print use in main.go should be a reference")
+	assert.Empty(t, xrefs.GetOverrides())
+	assert.Empty(t, xrefs.GetGeneratedBy())
+}
+
+// navTSLog declares Print in src/util/log.ts; navTSApp imports it (aliased +
+// namespace) and references a same-module function.
+const navTSLog = `// Print writes the default greeting.
+export function Print(): void {}
+`
+
+const navTSApp = `import { Print as P } from "./util/log";
+import * as log from "./util/log";
+
+export function greet(): void {
+  P();
+  log.Print();
+  helper();
+}
+
+function helper(): void {}
+`
+
+func TestTreeSitterNavTypeScript(t *testing.T) {
+	ctx := t.Context()
+	server := mustMakeServer(t)
+	repo := "github.com/buildbuddy-io/buildbuddy"
+	// TS identity is path-based; no module path needed.
+	seedRepoMetadata(t, ctx, server, repo, "old", "")
+
+	_, err := server.Index(ctx, &inpb.IndexRequest{
+		GitRepo:             &gitpb.GitRepo{RepoUrl: repo},
+		ReplacementStrategy: inpb.ReplacementStrategy_INCREMENTAL,
+		Update: &inpb.IncrementalUpdate{Commits: []*inpb.Commit{{
+			Sha: "new", ParentSha: "old",
+			AddsAndUpdates: []*inpb.File{
+				{Filepath: "src/util/log.ts", Content: []byte(navTSLog)},
+				{Filepath: "src/app.ts", Content: []byte(navTSApp)},
+			},
+		}}},
+	})
+	require.NoError(t, err)
+
+	// Decorations for src/app.ts: the aliased import P (line 5), the namespace
+	// member log.Print (line 6), and the same-module helper (line 7).
+	dec, err := server.tsNavDecorations(ctx, &xrefpb.DecorationsRequest{
+		Location: &xrefpb.Location{Ticket: "tree-sitter://buildbuddy?path=src/app.ts"},
+	})
+	require.NoError(t, err)
+	refByLine := map[int32]*xrefpb.DecorationsReply_Reference{}
+	for _, r := range dec.GetReference() {
+		refByLine[r.GetSpan().GetStart().GetLineNumber()] = r
+	}
+	require.Contains(t, refByLine, int32(5), "aliased import P() should be decorated")
+	require.Contains(t, refByLine, int32(6), "namespace member log.Print should be decorated")
+	require.Contains(t, refByLine, int32(7), "same-module helper() should be decorated")
+
+	// The aliased P and the namespace log.Print resolve to the same symbol.
+	logTicket := "tree-sitter://symbol?pkg=ts%3Asrc%2Futil%2Flog&sym=Print"
+	assert.Equal(t, logTicket, refByLine[5].GetTargetTicket())
+	assert.Equal(t, logTicket, refByLine[6].GetTargetTicket())
+
+	// Clicking it resolves to the declaration in src/util/log.ts:2.
+	xr, err := server.tsNavCrossReferences(ctx, &xrefpb.CrossReferencesRequest{Ticket: []string{logTicket}})
+	require.NoError(t, err)
+	set := xr.GetCrossReferences()[logTicket]
+	require.NotNil(t, set)
+	require.Len(t, set.GetDefinition(), 1)
+	assert.Equal(t, "tree-sitter://buildbuddy?path=src/util/log.ts", set.GetDefinition()[0].GetAnchor().GetParent())
+	assert.Equal(t, int32(2), set.GetDefinition()[0].GetAnchor().GetSpan().GetStart().GetLineNumber())
+
+	// Hover shows the function signature + doc.
+	docs, err := server.tsNavDocumentation(ctx, &spb.ExtendedDocumentationRequest{Ticket: logTicket})
+	require.NoError(t, err)
+	assert.Equal(t, "function", string(docs.GetNodeInfo().GetFacts()["/kythe/node/kind"]))
+	assert.Equal(t, "function Print(): void", docs.GetDefinition().GetAnchor().GetSnippet())
+	assert.Equal(t, "Print writes the default greeting.", docs.GetDocstring())
+
+	// References panel: both uses in app.ts (lines 5 and 6).
+	xrefs, err := server.tsNavExtendedXrefs(ctx, &spb.ExtendedXrefsRequest{Tickets: []string{logTicket}})
+	require.NoError(t, err)
+	require.Len(t, xrefs.GetDefinitions(), 1)
+	refLines := map[int32]bool{}
+	for _, ra := range xrefs.GetReferences() {
+		assert.Equal(t, "tree-sitter://buildbuddy?path=src/app.ts", ra.GetAnchor().GetParent())
+		refLines[ra.GetAnchor().GetSpan().GetStart().GetLineNumber()] = true
+	}
+	assert.True(t, refLines[5] && refLines[6], "both P() and log.Print() uses should be references; got %v", refLines)
+}
+
+func TestNavRoutingByScheme(t *testing.T) {
+	tsDec := &xrefpb.DecorationsRequest{Location: &xrefpb.Location{Ticket: "tree-sitter://buildbuddy?path=a.go"}}
+	kytheDec := &xrefpb.DecorationsRequest{Location: &xrefpb.Location{Ticket: "kythe://buildbuddy?path=a.go"}}
+	assert.True(t, decorationsUsesTreeSitter(tsDec))
+	assert.False(t, decorationsUsesTreeSitter(kytheDec))
+
+	tsXref := &xrefpb.CrossReferencesRequest{Ticket: []string{"tree-sitter://symbol?pkg=go%3Ax&sym=Y"}}
+	kytheXref := &xrefpb.CrossReferencesRequest{Ticket: []string{"kythe://test?path=a"}}
+	assert.True(t, crossReferencesUsesTreeSitter(tsXref))
+	assert.False(t, crossReferencesUsesTreeSitter(kytheXref))
+
+	tsDocs := &spb.ExtendedDocumentationRequest{Ticket: "tree-sitter://symbol?pkg=go%3Ax&sym=Y"}
+	kytheDocs := &spb.ExtendedDocumentationRequest{Ticket: "kythe://test?path=a"}
+	assert.True(t, docsUsesTreeSitter(tsDocs))
+	assert.False(t, docsUsesTreeSitter(kytheDocs))
+
+	tsExt := &spb.ExtendedXrefsRequest{Tickets: []string{"tree-sitter://symbol?pkg=go%3Ax&sym=Y"}}
+	kytheExt := &spb.ExtendedXrefsRequest{Tickets: []string{"kythe://test?path=a"}}
+	assert.True(t, extendedXrefsUsesTreeSitter(tsExt))
+	assert.False(t, extendedXrefsUsesTreeSitter(kytheExt))
+}
