@@ -2,7 +2,10 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "server",
-    srcs = ["server.go"],
+    srcs = [
+        "nav.go",
+        "server.go",
+    ],
     importpath = "github.com/buildbuddy-io/buildbuddy/codesearch/server",
     visibility = ["//visibility:public"],
     deps = [
@@ -10,6 +13,7 @@ go_library(
         "//codesearch/github",
         "//codesearch/index",
         "//codesearch/kythestorage",
+        "//codesearch/navindex",
         "//codesearch/performance",
         "//codesearch/query",
         "//codesearch/schema",
@@ -22,6 +26,7 @@ go_library(
         "//server/remote_cache/digest",
         "//server/util/background",
         "//server/util/disk",
+        "//server/util/flag",
         "//server/util/flagutil/yaml",
         "//server/util/git",
         "//server/util/lockmap",
@@ -39,6 +44,7 @@ go_library(
         "@io_kythe//kythe/go/serving/xrefs",
         "@io_kythe//kythe/go/storage/keyvalue",
         "@io_kythe//kythe/go/storage/table",
+        "@io_kythe//kythe/proto:common_go_proto",
         "@io_kythe//kythe/proto:graph_go_proto",
         "@io_kythe//kythe/proto:xref_go_proto",
         "@org_golang_x_sync//errgroup",

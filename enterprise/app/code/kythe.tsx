@@ -624,7 +624,11 @@ export async function fetchDecorations(filename: string) {
     return;
   }
 
-  let ticket = "kythe://buildbuddy?path=" + filename;
+  // The ticket scheme selects the nav backend on the server: tree-sitter://
+  // is served from tree-sitter annotations, kythe:// from kythe. Symbol
+  // tickets returned in the decorations carry the scheme forward, so the
+  // subsequent CrossReferences (go-to-definition) call routes the same way.
+  let ticket = "tree-sitter://buildbuddy?path=" + filename;
   const req = new search.KytheRequest({
     decorationsRequest: new kythe.proto.DecorationsRequest({
       location: new kythe.proto.Location({

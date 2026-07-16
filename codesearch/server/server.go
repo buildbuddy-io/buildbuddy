@@ -806,25 +806,41 @@ func (css *codesearchServer) KytheProxy(ctx context.Context, req *srpb.KytheRequ
 		}
 		err = nodesErr
 	case *srpb.KytheRequest_DecorationsRequest:
-		decorationsReply, decorationsErr := css.xs.Decorations(ctx, req.GetDecorationsRequest())
+		decorations := css.xs.Decorations
+		if decorationsUsesTreeSitter(req.GetDecorationsRequest()) {
+			decorations = css.tsNavDecorations
+		}
+		decorationsReply, decorationsErr := decorations(ctx, req.GetDecorationsRequest())
 		rsp.Value = &srpb.KytheResponse_DecorationsReply{
 			DecorationsReply: decorationsReply,
 		}
 		err = decorationsErr
 	case *srpb.KytheRequest_CrossReferencesRequest:
-		crossReferencesReply, crossReferencesErr := css.xs.CrossReferences(ctx, req.GetCrossReferencesRequest())
+		crossReferences := css.xs.CrossReferences
+		if crossReferencesUsesTreeSitter(req.GetCrossReferencesRequest()) {
+			crossReferences = css.tsNavCrossReferences
+		}
+		crossReferencesReply, crossReferencesErr := crossReferences(ctx, req.GetCrossReferencesRequest())
 		rsp.Value = &srpb.KytheResponse_CrossReferencesReply{
 			CrossReferencesReply: crossReferencesReply,
 		}
 		err = crossReferencesErr
 	case *srpb.KytheRequest_ExtendedXrefsRequest:
-		xrefsReply, xrefsErr := css.extendedXrefs(ctx, req.GetExtendedXrefsRequest())
+		extendedXrefs := css.extendedXrefs
+		if extendedXrefsUsesTreeSitter(req.GetExtendedXrefsRequest()) {
+			extendedXrefs = css.tsNavExtendedXrefs
+		}
+		xrefsReply, xrefsErr := extendedXrefs(ctx, req.GetExtendedXrefsRequest())
 		rsp.Value = &srpb.KytheResponse_ExtendedXrefsReply{
 			ExtendedXrefsReply: xrefsReply,
 		}
 		err = xrefsErr
 	case *srpb.KytheRequest_DocsRequest:
-		docsReply, docsErr := css.documentation(ctx, req.GetDocsRequest())
+		documentation := css.documentation
+		if docsUsesTreeSitter(req.GetDocsRequest()) {
+			documentation = css.tsNavDocumentation
+		}
+		docsReply, docsErr := documentation(ctx, req.GetDocsRequest())
 		rsp.Value = &srpb.KytheResponse_DocsReply{
 			DocsReply: docsReply,
 		}
