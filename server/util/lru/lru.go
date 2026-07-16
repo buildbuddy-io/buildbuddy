@@ -127,9 +127,8 @@ const noIndex int32 = -1
 
 // node is one entry, stored by value in the lru's backing slice. The intrusive
 // doubly-linked recency list is expressed with int32 indices (prev/next) rather
-// than pointers, so the whole cache is a single slice + map for the GC to trace
-// -- not N pointer-linked heap objects. expiresAt folds the TTL in (vs a
-// separate per-entry wrapper carrying a time.Time).
+// than pointers, so the whole cache is a single slice + map for the GC to
+// trace.
 type node[V any] struct {
 	key        string
 	value      V
