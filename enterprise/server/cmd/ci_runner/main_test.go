@@ -21,8 +21,10 @@ func TestCollectRunfiles_RelativeDirectorySymlink(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NoError(t, os.Symlink(linkTarget, linkPath))
 
-	_, _, err = collectRunfiles(runfilesDir)
-	assert.ErrorContains(t, err, "no such file or directory")
+	files, dirs, err := collectRunfiles(runfilesDir)
+	assert.NoError(t, err)
+	assert.Empty(t, files)
+	assert.Equal(t, map[string]string{linkPath: targetDir}, dirs)
 }
 
 func TestParseGitFetchedBytes(t *testing.T) {
