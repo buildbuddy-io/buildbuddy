@@ -275,10 +275,11 @@ func (c *lru[V]) removeIndex(idx int32, reason EvictionReason) {
 	n := &c.nodes[idx]
 	delete(c.items, n.key)
 	c.currentSize -= n.size
+	key, value := n.key, n.value
 	*n = node[V]{} // release key/value references before recycling the slot.
 	c.free = append(c.free, idx)
 	if c.onEvict != nil {
-		c.onEvict(n.key, n.value, reason)
+		c.onEvict(key, value, reason)
 	}
 }
 
