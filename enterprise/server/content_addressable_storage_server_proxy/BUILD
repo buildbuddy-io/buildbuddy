@@ -17,6 +17,7 @@ go_library(
         "//server/real_environment",
         "//server/remote_cache/digest",
         "//server/util/authutil",
+        "//server/util/cdc",
         "//server/util/log",
         "//server/util/lru",
         "//server/util/proto",

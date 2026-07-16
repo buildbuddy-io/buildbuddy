@@ -4237,9 +4237,10 @@ var (
 		Namespace: bbNamespace,
 		Subsystem: "proxy",
 		Name:      "find_missing_blobs_cache_lookups",
-		Help:      "The number of digests looked up in the Cache Proxy's local FindMissingBlobs cache by cache hit/miss status.",
+		Help:      "The number of digests looked up in the Cache Proxy's local FindMissingBlobs cache, by lookup status and whether the digests are CDC chunks. 'hit': served from the local cache. 'miss': the remote reported the digest present, so the lookup could have been a hit. 'uncacheable': the remote reported the digest missing; absence is never cached, so these lookups always require a remote check.",
 	}, []string{
 		CacheHitMissStatus,
+		ChunkedLabel,
 	})
 
 	RemoteAtimeUpdates = promauto.NewCounterVec(prometheus.CounterOpts{
