@@ -40,6 +40,10 @@ const (
 	// Invocation status: `success`, `failure`, `disconnected`, or `unknown`.
 	InvocationStatusLabel = "invocation_status"
 
+	// Whether live invocation log chunks were written to the key-value store
+	// with suffix-only writes: `true` or `false` (experiment arm).
+	LogSuffixWritesEnabledLabel = "suffix_writes_enabled"
+
 	// Cache type: `action` for action cache, `cas` for content-addressable storage.
 	CacheTypeLabel = "cache_type"
 
@@ -519,6 +523,15 @@ var (
 	//   /
 	// sum(rate(buildbuddy_invocation_count[5m]))
 	// ```
+
+	InvocationLogLiveChunkWrittenBytes = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "invocation",
+		Name:      "log_live_chunk_written_bytes",
+		Help:      "Total number of bytes written to the key-value store for live (in-progress) invocation log tail chunks.",
+	}, []string{
+		LogSuffixWritesEnabledLabel,
+	})
 
 	InvocationDurationUs = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: bbNamespace,

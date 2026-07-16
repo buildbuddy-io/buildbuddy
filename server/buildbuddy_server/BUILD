@@ -62,6 +62,7 @@ go_library(
         "//server/tables",
         "//server/target",
         "//server/util/authutil",
+        "//server/util/bazel_request",
         "//server/util/canary",
         "//server/util/capabilities",
         "//server/util/claims",

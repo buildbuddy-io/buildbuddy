@@ -93,6 +93,8 @@ func (c *Chunkstore) DeleteBlob(ctx context.Context, blobName string) error {
 }
 
 func ChunkIndexAsStringId(index uint16) string {
+	// NOTE: this 4-digit hex format is persisted both in Redis and GCS and
+	// cannot be changed without a careful migration.
 	return fmt.Sprintf("%04x", index)
 }
 

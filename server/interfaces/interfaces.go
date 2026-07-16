@@ -1371,6 +1371,18 @@ type MetricsCollector interface {
 type KeyValStore interface {
 	Set(ctx context.Context, key string, val []byte) error
 	Get(ctx context.Context, key string) ([]byte, error)
+
+	// ReplaceSuffix replaces the value stored at the given key from offset
+	// onward with data, truncating the value to offset+len(data), if the
+	// stored value currently has length expectedLength (missing keys are
+	// treated as having length 0). Otherwise (for example, if the key was
+	// evicted), nothing is written and a FailedPrecondition error is
+	// returned; the caller can recover by writing the full value with Set.
+	// offset must be between 0 and expectedLength; passing offset ==
+	// expectedLength appends data to the value. Keys are expected to have a
+	// single writer at a time, so implementations need not guard against
+	// concurrent writes to the same key.
+	ReplaceSuffix(ctx context.Context, key string, expectedLength, offset int64, data []byte) error
 }
 
 // A RepoDownloader allows testing a git-repo to see if it's downloadable.

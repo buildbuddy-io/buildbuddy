@@ -37,6 +37,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
+	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/paging"
@@ -63,6 +64,7 @@ import (
 	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 	pgpb "github.com/buildbuddy-io/buildbuddy/proto/pagination"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	sipb "github.com/buildbuddy-io/buildbuddy/proto/stored_invocation"
 	api_common "github.com/buildbuddy-io/buildbuddy/server/api/common"
@@ -1206,12 +1208,16 @@ func (e *EventChannel) authenticateEvent(bazelBuildEvent *build_event_stream.Bui
 }
 
 func (e *EventChannel) InitializeLogWriter(iid string) error {
+	// Attach the invocation ID to the context so experiments evaluated by the
+	// log writer can target and bucket by invocation.
+	ctx := bazel_request.OverrideRequestMetadata(e.ctx, &repb.RequestMetadata{ToolInvocationId: iid})
 	var err error
 	e.logWriter, err = eventlog.NewEventLogWriter(
-		e.ctx,
+		ctx,
 		e.env.GetBlobstore(),
 		e.env.GetKeyValStore(),
 		e.env.GetPubSub(),
+		e.env.GetExperimentFlagProvider(),
 		eventlog.GetEventLogPubSubChannel(iid),
 		eventlog.GetEventLogPathFromInvocationIdAndAttempt(iid, e.attempt),
 		e.requestedTerminalColumns,
