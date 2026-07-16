@@ -126,11 +126,14 @@ func ParseWebhookData(event interface{}) (*interfaces.WebhookData, error) {
 		ref := event.GetRef()
 		if after, ok := strings.CutPrefix(ref, "refs/tags/"); ok {
 			tag := after
-			// For all tag pushes, head_commit is the commit the tag points
-			// to. Prefer it over the "after" SHA: for lightweight tags the
-			// two are identical, but for annotated tags "after" identifies
-			// the tag object rather than a commit, and can't be used to
-			// report commit statuses.
+			// For tag pushes, prefer head_commit, which identifies the commit the tag
+			// resolves to. For lightweight tags it is the same as "after". For annotated
+			// tags, "after" identifies the tag object while head_commit.ID identifies
+			// the underlying commit. A commit SHA is needed for commit status reporting
+			// and commit-based repository API calls.
+			//
+			// GitHub documents that head_commit is populated for tag pushes. However, the
+			// field is nullable, so defensively fall back to "after".
 			sha := event.GetHeadCommit().GetID()
 			if sha == "" {
 				sha = event.GetAfter()
