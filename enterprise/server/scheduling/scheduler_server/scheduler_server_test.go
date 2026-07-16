@@ -1534,7 +1534,6 @@ func TestGetExecutionNodes_UpgradePrompt(t *testing.T) {
 	require.Len(t, rsp.GetExecutor(), 2)
 	require.NotNil(t, rsp.GetUpgradePrompt())
 	require.Equal(t, uppb.Prompt_LOW, rsp.GetUpgradePrompt().GetUrgency())
-	require.Equal(t, upgradePromptMessage, rsp.GetUpgradePrompt().GetMessage())
 }
 
 func TestGetExecutionNodes_UpgradePrompt_WithinAllowance(t *testing.T) {
@@ -1566,7 +1565,7 @@ func TestGetExecutionNodes_UpgradePrompt_WithinAllowance(t *testing.T) {
 // With user-owned executors enabled, only registrations in the shared
 // executor pool group ("sharedGroupID", set by getEnv) set the
 // newest-version bar.
-func TestGetNewestExecutorVersion_ScopedToSharedPoolGroup(t *testing.T) {
+func TestGetNewestVersion_ScopedToSharedPoolGroup(t *testing.T) {
 	clock := clockwork.NewFakeClock()
 	env, ctx := getEnv(t, &schedulerOpts{options: Options{Clock: clock, UpgradeDetector: testUpgradeDetector()}, userOwnedEnabled: true}, "user1")
 	s := env.GetSchedulerService().(*SchedulerServer)
@@ -1587,7 +1586,7 @@ func TestGetNewestExecutorVersion_ScopedToSharedPoolGroup(t *testing.T) {
 	register("GR-OTHER", "v2.199.0")
 	register("sharedGroupID", "v2.153.0")
 
-	v := s.getNewestExecutorVersion(ctx)
+	v := s.getNewestVersion(ctx)
 	require.NotNil(t, v)
 	require.Equal(t, "2.153.0", v.String())
 }

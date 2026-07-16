@@ -95,7 +95,7 @@ const (
 	executorNewestVersionCacheTTL = 5 * time.Minute
 
 	// Message attached to upgrade prompts returned by GetExecutionNodes.
-	upgradePromptMessage = "One or more of your executors is running an outdated version."
+	upgradePromptMessage = "One or more of your executors are running an outdated version. The newest available version is %s."
 
 	// The maximum number of times a task may be re-enqueued.
 	maxTaskAttemptCount = 5
@@ -2809,9 +2809,9 @@ func (s *SchedulerServer) getRegisteredExecutionNodesFromRedis(ctx context.Conte
 	return registeredNodes, nil
 }
 
-// getNewestExecutorVersion returns the maximum semantic version among live
+// getNewestVersion returns the maximum semantic version among live
 // registrations in the shared executor pool group's pools.
-func (s *SchedulerServer) getNewestExecutorVersion(ctx context.Context) *semver.Version {
+func (s *SchedulerServer) getNewestVersion(ctx context.Context) *semver.Version {
 	s.versionMu.Lock()
 	defer s.versionMu.Unlock()
 	if s.clock.Now().Before(s.newestVersionExpiry) {
@@ -2863,11 +2863,16 @@ func (s *SchedulerServer) upgradePrompt(ctx context.Context, executors []*scpb.G
 	if s.detector == nil || len(executors) == 0 {
 		return nil
 	}
+	newestVersion := s.getNewestVersion(ctx)
+	newestVersionString := "unknown"
+	if newestVersion != nil {
+		newestVersionString = newestVersion.String()
+	}
 	versions := make([]string, 0, len(executors))
 	for _, e := range executors {
 		versions = append(versions, e.GetNode().GetVersion())
 	}
-	return s.detector.Detect(s.getNewestExecutorVersion(ctx), versions, upgradePromptMessage)
+	return s.detector.Detect(newestVersion, versions, fmt.Sprintf(upgradePromptMessage, newestVersionString))
 }
 
 func (s *SchedulerServer) GetExecutionNodes(ctx context.Context, req *scpb.GetExecutionNodesRequest) (*scpb.GetExecutionNodesResponse, error) {
