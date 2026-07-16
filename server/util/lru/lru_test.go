@@ -353,6 +353,48 @@ func TestSetMaxSize(t *testing.T) {
 	})
 }
 
+func TestSetTTL(t *testing.T) {
+	for _, threadSafe := range []bool{false, true} {
+		t.Run(fmt.Sprintf("ThreadSafe=%v", threadSafe), func(t *testing.T) {
+			clock := clockwork.NewFakeClock()
+			l, err := lru.New[int](&lru.Config[int]{
+				MaxSize:    10,
+				SizeFn:     func(int) int64 { return 1 },
+				TTL:        time.Hour,
+				Clock:      clock,
+				ThreadSafe: threadSafe,
+			})
+			require.NoError(t, err)
+
+			require.True(t, l.Add("a", 1))
+
+			// New entries pick up the new TTL; existing entries keep the expiry
+			// they were inserted with.
+			require.NoError(t, l.SetTTL(time.Minute))
+			require.True(t, l.Add("b", 2))
+			clock.Advance(2 * time.Minute)
+			require.True(t, l.Contains("a"), "a keeps its original 1h expiry")
+			require.False(t, l.Contains("b"), "b expires under the new 1m TTL")
+
+			// Zero disables expiry -- for new entries, and (since the expiry
+			// check is TTL-gated) effectively for existing ones too.
+			require.NoError(t, l.SetTTL(0))
+			require.True(t, l.Add("c", 3))
+			clock.Advance(24 * time.Hour)
+			require.True(t, l.Contains("c"))
+			require.True(t, l.Contains("a"), "no expiry while the TTL is off")
+
+			// Turning the TTL back on treats entries with no recorded expiry
+			// ("c") as already expired, as documented.
+			require.NoError(t, l.SetTTL(time.Minute))
+			require.False(t, l.Contains("c"))
+
+			// Negative TTL is rejected.
+			require.ErrorContains(t, l.SetTTL(-1), "must be non-negative")
+		})
+	}
+}
+
 func TestPurge(t *testing.T) {
 	testConfigs(t, func(t *testing.T, config *lru.Config[int]) {
 		evictions := []eviction{}
