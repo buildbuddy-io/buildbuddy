@@ -402,7 +402,7 @@ export default class ExecutorsComponent extends React.Component<Props, State> {
         {activeTab === "status" && (
           <>
             {allNodes.some((node) => !node.isDefault) && (
-              <Banner type="warning">
+              <Banner type="warning" className="self-hosted-executors-banner">
                 <div>
                   Self-hosted executors are not the default for this organization. To change this, enable "Default to
                   self-hosted executors" in your organization settings.

@@ -93,7 +93,7 @@
   margin-top: 16px;
 }
 
-.executors-page .banner {
+.executors-page .self-hosted-executors-banner {
   margin-top: 32px;
   margin-bottom: 32px;
   max-width: 600px;
@@ -113,13 +113,6 @@
 }
 
 .executors-page .pool-size-warning {
-  margin: 0;
   margin-top: 16px;
-  max-width: initial;
   display: inline-flex;
-}
-
-.executors-page .upgrade-prompt-banner {
-  margin: 16px 0;
-  max-width: initial;
 }
