@@ -15,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/cdc"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
@@ -52,9 +53,14 @@ type CASServerProxy struct {
 	//    remote-return path (local cache didn't have the digest, remote cache
 	//    did).
 	// TODO(go/b/7780): fix those issues.
-	findMissingCache       lru.LRU[struct{}]
-	findMissingCacheHits   prometheus.Counter
-	findMissingCacheMisses prometheus.Counter
+	findMissingCache                  lru.LRU[struct{}]
+	findMissingCacheCountersByChunked map[bool]findMissingCacheCounters
+}
+
+type findMissingCacheCounters struct {
+	hits        prometheus.Counter
+	misses      prometheus.Counter
+	uncacheable prometheus.Counter
 }
 
 func Register(env *real_environment.RealEnv) error {
@@ -98,10 +104,14 @@ func New(env environment.Env) (*CASServerProxy, error) {
 			return nil, status.InvalidArgumentErrorf("Error initializing FindMissingBlobs cache: %s", err)
 		}
 		proxy.findMissingCache = cache
-		proxy.findMissingCacheHits = metrics.FindMissingBlobsCacheLookups.With(
-			prometheus.Labels{metrics.CacheHitMissStatus: metrics.HitStatusLabel})
-		proxy.findMissingCacheMisses = metrics.FindMissingBlobsCacheLookups.With(
-			prometheus.Labels{metrics.CacheHitMissStatus: metrics.MissStatusLabel})
+		proxy.findMissingCacheCountersByChunked = make(map[bool]findMissingCacheCounters, 2)
+		for _, chunked := range []bool{false, true} {
+			proxy.findMissingCacheCountersByChunked[chunked] = findMissingCacheCounters{
+				hits:        findMissingBlobsCacheLookups(metrics.HitStatusLabel, chunked),
+				misses:      findMissingBlobsCacheLookups(metrics.MissStatusLabel, chunked),
+				uncacheable: findMissingBlobsCacheLookups(metrics.UncacheableStatusLabel, chunked),
+			}
+		}
 	}
 	return &proxy, nil
 }
@@ -227,8 +237,8 @@ func (s *CASServerProxy) FindMissingBlobs(ctx context.Context, req *repb.FindMis
 	}
 
 	hits := len(req.GetBlobDigests()) - len(misses)
-	s.findMissingCacheHits.Add(float64(hits))
-	s.findMissingCacheMisses.Add(float64(len(misses)))
+	counters := s.findMissingCacheCountersByChunked[cdc.IsChunked(ctx)]
+	counters.hits.Add(float64(hits))
 
 	// All digests were found in the FindMissingBlobs cache, return.
 	if len(misses) == 0 {
@@ -251,13 +261,24 @@ func (s *CASServerProxy) FindMissingBlobs(ctx context.Context, req *repb.FindMis
 	for _, d := range rsp.GetMissingBlobDigests() {
 		missing[cacheKeys[digestKey(d)]] = struct{}{}
 	}
+	presentRemotely := 0
 	for _, d := range remoteReq.GetBlobDigests() {
 		key := cacheKeys[digestKey(d)]
 		if _, ok := missing[key]; !ok {
+			presentRemotely++
 			s.findMissingCache.Add(key, struct{}{})
 		}
 	}
+	counters.misses.Add(float64(presentRemotely))
+	counters.uncacheable.Add(float64(len(remoteReq.GetBlobDigests()) - presentRemotely))
 	return rsp, nil
+}
+
+func findMissingBlobsCacheLookups(status string, chunked bool) prometheus.Counter {
+	return metrics.FindMissingBlobsCacheLookups.With(prometheus.Labels{
+		metrics.CacheHitMissStatus: status,
+		metrics.ChunkedLabel:       strconv.FormatBool(chunked),
+	})
 }
 
 // digestKey identifies a digest within a single FindMissingBlobs request.
