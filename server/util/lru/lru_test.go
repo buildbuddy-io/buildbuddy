@@ -7,8 +7,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testmetrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/jonboulle/clockwork"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/require"
 )
 
@@ -497,4 +500,67 @@ func TestLRUMemoryFootprint(t *testing.T) {
 	require.Less(t, objectsPerEntry, 0.5, "expected ~0 heap objects per entry")
 	runtime.KeepAlive(l)
 	runtime.KeepAlive(keys)
+}
+
+func TestMetrics(t *testing.T) {
+	metrics.LRULookupCount.Reset()
+	metrics.LRULastEvictionAgeUsec.Reset()
+
+	clock := clockwork.NewFakeClock()
+	l, err := lru.New[int](&lru.Config[int]{
+		Name:    "test",
+		Clock:   clock,
+		TTL:     time.Hour,
+		MaxSize: 10,
+		SizeFn:  func(value int) int64 { return int64(value) },
+	})
+	require.NoError(t, err)
+
+	lookups := func(op, status string) float64 {
+		return testmetrics.CounterValueForLabels(t, metrics.LRULookupCount, prometheus.Labels{
+			metrics.CacheNameLabel:     "test",
+			metrics.LRUOperationLabel:  op,
+			metrics.CacheHitMissStatus: status,
+		})
+	}
+	lastEvictionAge := func(reason lru.EvictionReason) float64 {
+		return testmetrics.GaugeValueForLabels(t, metrics.LRULastEvictionAgeUsec, prometheus.Labels{
+			metrics.CacheNameLabel:         "test",
+			metrics.LRUEvictionReasonLabel: string(reason),
+		})
+	}
+
+	require.True(t, l.Add("a", 5))
+	_, ok := l.Get("a")
+	require.True(t, ok)
+	_, ok = l.Get("x")
+	require.False(t, ok)
+	require.True(t, l.Contains("a"))
+	require.False(t, l.Contains("x"))
+	require.False(t, l.Contains("y"))
+
+	require.Equal(t, float64(1), lookups("get", metrics.HitStatusLabel))
+	require.Equal(t, float64(1), lookups("get", metrics.MissStatusLabel))
+	require.Equal(t, float64(1), lookups("contains", metrics.HitStatusLabel))
+	require.Equal(t, float64(2), lookups("contains", metrics.MissStatusLabel))
+
+	// Manual removal should not record an eviction age.
+	require.True(t, l.Remove("a"))
+	require.Equal(t, float64(0), lastEvictionAge(lru.SizeEviction))
+	require.Equal(t, float64(0), lastEvictionAge(lru.TTLEviction))
+
+	// Size eviction: re-add "a", then push it out with "b" 10 seconds later;
+	// its recorded age should be 10s.
+	require.True(t, l.Add("a", 5))
+	clock.Advance(10 * time.Second)
+	require.True(t, l.Add("b", 6))
+	require.Equal(t, float64((10 * time.Second).Microseconds()), lastEvictionAge(lru.SizeEviction))
+
+	// TTL eviction: "b" expires an hour after it was added; its recorded age
+	// should be 1h. This should also count as a Get miss.
+	clock.Advance(time.Hour)
+	_, ok = l.Get("b")
+	require.False(t, ok)
+	require.Equal(t, float64(2), lookups("get", metrics.MissStatusLabel))
+	require.Equal(t, float64(time.Hour.Microseconds()), lastEvictionAge(lru.TTLEviction))
 }

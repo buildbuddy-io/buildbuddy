@@ -5,8 +5,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/jonboulle/clockwork"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 // LRU implements a Least Recently Used cache.
@@ -84,6 +86,12 @@ type SizeFn[V any] func(value V) int64
 // Config specifies how the LRU cache is to be constructed.
 // MaxSize & SizeFn are required.
 type Config[V any] struct {
+	// If set, enables automatic hit/miss and eviction age metrics.
+	// This value is used to identify this LRU instance in metrics.
+	// Use snake case and don't put any dynamic data into the name.
+	// The name must be unique across LRU instances in the same binary.
+	Name string
+
 	// Optional clock implementation used by implementations that need one. If
 	// not provided a default (real) clock will be used.
 	Clock clockwork.Clock
@@ -134,7 +142,8 @@ type node[V any] struct {
 	value      V
 	prev, next int32
 	size       int64
-	expiresAt  int64 // unix nanos; 0 when TTL is disabled
+	// Unix nanos when the entry was inserted or last updated.
+	addedAt int64
 }
 
 // lru is a fixed-size LRU cache. It is not safe for concurrent use unless
@@ -151,6 +160,41 @@ type lru[V any] struct {
 	updateInPlace bool
 	ttl           time.Duration
 	clock         clockwork.Clock
+	metrics       *lruMetrics // nil when the LRU has no name
+}
+
+type lruMetrics struct {
+	getHit          prometheus.Counter
+	getMiss         prometheus.Counter
+	containsHit     prometheus.Counter
+	containsMiss    prometheus.Counter
+	lastEvictionAge map[EvictionReason]prometheus.Gauge
+}
+
+func newLRUMetrics(name string) *lruMetrics {
+	lookup := func(op, status string) prometheus.Counter {
+		return metrics.LRULookupCount.With(prometheus.Labels{
+			metrics.CacheNameLabel:     name,
+			metrics.LRUOperationLabel:  op,
+			metrics.CacheHitMissStatus: status,
+		})
+	}
+	lastEvictionAge := func(reason EvictionReason) prometheus.Gauge {
+		return metrics.LRULastEvictionAgeUsec.With(prometheus.Labels{
+			metrics.CacheNameLabel:         name,
+			metrics.LRUEvictionReasonLabel: string(reason),
+		})
+	}
+	return &lruMetrics{
+		getHit:       lookup("get", metrics.HitStatusLabel),
+		getMiss:      lookup("get", metrics.MissStatusLabel),
+		containsHit:  lookup("contains", metrics.HitStatusLabel),
+		containsMiss: lookup("contains", metrics.MissStatusLabel),
+		lastEvictionAge: map[EvictionReason]prometheus.Gauge{
+			SizeEviction: lastEvictionAge(SizeEviction),
+			TTLEviction:  lastEvictionAge(TTLEviction),
+		},
+	}
 }
 
 // A thread-safe wrapper around an LRU.
@@ -171,6 +215,10 @@ func New[V any](config *Config[V]) (LRU[V], error) {
 	if clock == nil {
 		clock = clockwork.NewRealClock()
 	}
+	var m *lruMetrics
+	if config.Name != "" {
+		m = newLRUMetrics(config.Name)
+	}
 	var c LRU[V] = &lru[V]{
 		items:         make(map[string]int32),
 		head:          noIndex,
@@ -181,6 +229,7 @@ func New[V any](config *Config[V]) (LRU[V], error) {
 		updateInPlace: config.UpdateInPlace,
 		ttl:           config.TTL,
 		clock:         clock,
+		metrics:       m,
 	}
 	if config.ThreadSafe {
 		c = &threadSafeLRU[V]{inner: c}
@@ -258,9 +307,7 @@ func (c *lru[V]) insert(key string, value V, size int64, front bool) {
 	n.key = key
 	n.value = value
 	n.size = size
-	if c.ttl > 0 {
-		n.expiresAt = c.clock.Now().Add(c.ttl).UnixNano()
-	}
+	n.addedAt = c.clock.Now().UnixNano()
 	if front {
 		c.pushFront(idx)
 	} else {
@@ -273,6 +320,12 @@ func (c *lru[V]) insert(key string, value V, size int64, front bool) {
 func (c *lru[V]) removeIndex(idx int32, reason EvictionReason) {
 	c.unlink(idx)
 	n := &c.nodes[idx]
+	if c.metrics != nil {
+		if g := c.metrics.lastEvictionAge[reason]; g != nil {
+			ageUsec := float64(c.clock.Now().UnixNano()-n.addedAt) / float64(time.Microsecond)
+			g.Set(ageUsec)
+		}
+	}
 	delete(c.items, n.key)
 	c.currentSize -= n.size
 	key, value := n.key, n.value
@@ -284,7 +337,7 @@ func (c *lru[V]) removeIndex(idx int32, reason EvictionReason) {
 }
 
 func (c *lru[V]) expired(idx int32) bool {
-	return c.ttl > 0 && c.clock.Now().UnixNano() >= c.nodes[idx].expiresAt
+	return c.ttl > 0 && c.clock.Now().UnixNano()-c.nodes[idx].addedAt >= int64(c.ttl)
 }
 
 func (c *lru[V]) Add(key string, value V) bool {
@@ -295,9 +348,7 @@ func (c *lru[V]) Add(key string, value V) bool {
 			c.currentSize += size - n.size
 			n.value = value
 			n.size = size
-			if c.ttl > 0 {
-				n.expiresAt = c.clock.Now().Add(c.ttl).UnixNano()
-			}
+			n.addedAt = c.clock.Now().UnixNano()
 			c.moveToFront(idx)
 		} else {
 			// Remove the existing entry (with ConflictEviction) and re-insert.
@@ -331,9 +382,7 @@ func (c *lru[V]) PushBack(key string, value V) bool {
 			n := &c.nodes[idx]
 			n.value = value
 			n.size = size
-			if c.ttl > 0 {
-				n.expiresAt = c.clock.Now().Add(c.ttl).UnixNano()
-			}
+			n.addedAt = c.clock.Now().UnixNano()
 			c.currentSize += sizeDelta
 			return true
 		}
@@ -347,6 +396,30 @@ func (c *lru[V]) PushBack(key string, value V) bool {
 }
 
 func (c *lru[V]) Get(key string) (V, bool) {
+	v, ok := c.get(key)
+	if c.metrics != nil {
+		if ok {
+			c.metrics.getHit.Inc()
+		} else {
+			c.metrics.getMiss.Inc()
+		}
+	}
+	return v, ok
+}
+
+func (c *lru[V]) Contains(key string) bool {
+	_, ok := c.get(key)
+	if c.metrics != nil {
+		if ok {
+			c.metrics.containsHit.Inc()
+		} else {
+			c.metrics.containsMiss.Inc()
+		}
+	}
+	return ok
+}
+
+func (c *lru[V]) get(key string) (V, bool) {
 	if idx, ok := c.items[key]; ok {
 		if c.expired(idx) {
 			c.removeIndex(idx, TTLEviction)
@@ -358,11 +431,6 @@ func (c *lru[V]) Get(key string) (V, bool) {
 	}
 	var zero V
 	return zero, false
-}
-
-func (c *lru[V]) Contains(key string) bool {
-	_, ok := c.Get(key)
-	return ok
 }
 
 func (c *lru[V]) Remove(key string) bool {
@@ -398,7 +466,7 @@ func (c *lru[V]) Keys() []string {
 		now = c.clock.Now().UnixNano()
 	}
 	for idx := c.head; idx != noIndex; idx = c.nodes[idx].next {
-		if c.ttl > 0 && now >= c.nodes[idx].expiresAt {
+		if c.ttl > 0 && now-c.nodes[idx].addedAt >= int64(c.ttl) {
 			// Don't return expired keys.
 			continue
 		}
