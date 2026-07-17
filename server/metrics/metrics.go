@@ -3734,16 +3734,6 @@ var (
 		StatusLabel,
 	})
 
-	PebbleCachePresenceCacheResultCount = promauto.NewCounterVec(prometheus.CounterOpts{
-		Namespace: bbNamespace,
-		Subsystem: "remote_cache",
-		Name:      "pebble_cache_presence_cache_result_count",
-		Help:      "Count of FindMissing presence-cache lookups, by hit/miss status.",
-	}, []string{
-		CacheNameLabel,
-		StatusLabel,
-	})
-
 	PebbleCachePresenceCacheEntryCount = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_cache",

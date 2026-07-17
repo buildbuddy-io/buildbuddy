@@ -921,9 +921,6 @@ type PresenceCache struct {
 	// version is the pebble key version to use since the presence cache
 	// uses the same keys as the pebble DB.
 	version filestore.PebbleKeyVersion
-
-	hits   prometheus.Counter
-	misses prometheus.Counter
 }
 
 type PresenceCacheConfig struct {
@@ -951,8 +948,6 @@ func NewPresenceCache(cacheName string, version filestore.PebbleKeyVersion, cloc
 		cacheName: cacheName,
 		version:   version,
 		ttl:       *presenceCacheTTL,
-		hits:      metrics.PebbleCachePresenceCacheResultCount.WithLabelValues(cacheName, metrics.HitStatusLabel),
-		misses:    metrics.PebbleCachePresenceCacheResultCount.WithLabelValues(cacheName, metrics.MissStatusLabel),
 	}
 	c.enabled.Store(*presenceCacheMaxEntries > 0)
 	return c, nil
@@ -1012,10 +1007,8 @@ func (c *PresenceCache) Contains(pk filestore.PebbleKey) bool {
 		return false
 	}
 	if c.lru.Contains(key) {
-		c.hits.Inc()
 		return true
 	}
-	c.misses.Inc()
 	return false
 }
 
