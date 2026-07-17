@@ -313,7 +313,7 @@ func TestPresenceCache(t *testing.T) {
 	r, buf := testdigest.RandomCASResourceBuf(t, 1000)
 	require.NoError(t, pc.Set(ctx, r, buf))
 
-	hitCtr := metrics.PebbleCachePresenceCacheResultCount.WithLabelValues(cacheName, metrics.HitStatusLabel)
+	hitCtr := metrics.LRULookupCount.WithLabelValues("pebble_cache_"+cacheName+"_presence_cache", "contains", metrics.HitStatusLabel)
 
 	// Only FindMissing populates the presence cache, so the first call after
 	// the write does the real lookup (a miss) and records the digest present.
@@ -467,7 +467,7 @@ func TestPresenceCache_ExperimentConfig(t *testing.T) {
 	// Only FindMissing populates the presence cache: the first call populates,
 	// the second must be served from it -- proving the experiment enabled the
 	// cache at runtime.
-	hitCtr := metrics.PebbleCachePresenceCacheResultCount.WithLabelValues(cacheName, metrics.HitStatusLabel)
+	hitCtr := metrics.LRULookupCount.WithLabelValues("pebble_cache_"+cacheName+"_presence_cache", "contains", metrics.HitStatusLabel)
 	before := testutil.ToFloat64(hitCtr)
 	for range 2 {
 		missing, err := pc.FindMissing(ctx, []*rspb.ResourceName{r})
