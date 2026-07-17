@@ -108,6 +108,15 @@ go_deps.module_override(
     ],
     path = "github.com/nishanths/exhaustive",
 )
+go_deps.module_override(
+    patch_strip = 1,
+    patches = [
+        # go-redis/v8 only recognizes the Redis 5 and 6 COMMAND reply shapes.
+        # Redis 7 and Valkey 7 add three trailing metadata fields.
+        "@com_github_buildbuddy_io_buildbuddy//buildpatches:go_redis_v8_command_info.patch",
+    ],
+    path = "github.com/go-redis/redis/v8",
+)
 
 # Go repos with custom directives
 go_deps.gazelle_override(

@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 package(default_visibility = ["//enterprise:__subpackages__"])
 
@@ -20,5 +20,15 @@ go_library(
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
         "@io_bazel_rules_go//go/runfiles",
+    ],
+)
+
+go_test(
+    name = "testredis_test",
+    srcs = ["testredis_test.go"],
+    embed = [":testredis"],
+    deps = [
+        "@com_github_go_redis_redis_v8//:redis",
+        "@com_github_stretchr_testify//require",
     ],
 )
