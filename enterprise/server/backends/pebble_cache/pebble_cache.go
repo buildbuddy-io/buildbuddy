@@ -15,8 +15,10 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/filestore"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/gcsutil"
@@ -38,6 +40,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lockmap"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
@@ -107,6 +110,10 @@ var (
 	gcsProjectID            = flag.String("cache.pebble.gcs.project_id", "", "The Google Cloud project ID of the project owning the above credentials and GCS bucket.")
 	gcsAppName              = flag.String("cache.pebble.gcs.app_name", "", "The app name, under which blobstore data will be stored.")
 	gcsAtimeUpdateThreshold = flag.Duration("cache.pebble.gcs.atime_update_threshold", 0, "Don't update a GCS object's custom time (its atime) if it was updated more recently than this (0 updates on every atime update).")
+
+	// Presence cache. If the experiment framework is enabled, the experiment values take precedence.
+	presenceCacheMaxEntries = flag.Int64("cache.pebble.presence_cache.max_entries", 0, "A non-zero value enables a digest presence cache to satisfy FindMissing requests. Each entry is about 190 bytes so a 1 million entry cache would take about 190MB of memory.")
+	presenceCacheTTL        = flag.Duration("cache.pebble.presence_cache.ttl", 1*time.Minute, "TTL for the presence cache. Should be configured well below cache.pebble.atime_update_threshold")
 )
 
 var (
@@ -161,6 +168,13 @@ const (
 	SamplerIterRefreshPeriod = 5 * time.Minute
 
 	maxReadBufferSize = 10_000_000
+
+	// PresenceCacheConfigExperiment is the experiment name for configuring
+	// the presence cache. The value is expected to be a JSON object with two
+	// fields:
+	//  - max_entries configures the maximum number of entries in the cache
+	//  - ttl (string in Go duration format) configures the TTL
+	PresenceCacheConfigExperiment = "pebble-presence-cache-config"
 )
 
 type sizeUpdateOp int
@@ -277,6 +291,11 @@ type PebbleCache struct {
 
 	fileStorer filestore.Store
 	bufferPool *bytebufferpool.VariableSizePool
+
+	// Presence cache struct is always created, even if disabled so it can
+	// be adjusted via experiment. The cache methods are no-op when the cache
+	// is disabled.
+	presence *PresenceCache
 
 	minBytesAutoZstdCompression int64
 
@@ -742,6 +761,14 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 	}
 	log.Infof("[%s] Min DB version: %d, Max DB version: %d, Active version: %d", pc.name, pc.minDBVersion, pc.maxDBVersion, pc.activeDatabaseVersion())
 
+	// N.B. The presence cache derives its keys at the active version, so it
+	// must be constructed after the active version is finalized above.
+	presence, err := NewPresenceCache(pc.name, pc.activeDatabaseVersion(), clock)
+	if err != nil {
+		return nil, err
+	}
+	pc.presence = presence
+
 	// Only enable migrators if the data stored in the database lags the
 	// currently active version.
 	if pc.minDBVersion < pc.activeDatabaseVersion() {
@@ -879,6 +906,187 @@ func (p *PebbleCache) minAndMaxDatabaseVersions() (min, max filestore.PebbleKeyV
 
 func (p *PebbleCache) activeDatabaseVersion() filestore.PebbleKeyVersion {
 	return filestore.PebbleKeyVersion(p.activeKeyVersion)
+}
+
+// PresenceCache is a simple LRU to satisfy FindMissingBlobs requests.
+// A hit on this cache avoids an expensive Pebble lookup.
+type PresenceCache struct {
+	// Config settings.
+	enabled atomic.Bool
+	ttl     time.Duration
+
+	lru lru.LRU[struct{}]
+	// cacheName used in log messages
+	cacheName string
+	// version is the pebble key version to use since the presence cache
+	// uses the same keys as the pebble DB.
+	version filestore.PebbleKeyVersion
+}
+
+type PresenceCacheConfig struct {
+	MaxEntries int64  `json:"max_entries"`
+	TTL        string `json:"ttl"`
+}
+
+func NewPresenceCache(cacheName string, version filestore.PebbleKeyVersion, clock clockwork.Clock) (*PresenceCache, error) {
+	// Always create a presence cache struct so that we can adjust it via
+	// an experiment rather than creating it on demand.
+	maxSize := max(*presenceCacheMaxEntries, 1)
+	l, err := lru.New(&lru.Config[struct{}]{
+		Name:       "pebble_cache_" + cacheName + "_presence_cache",
+		MaxSize:    maxSize,
+		TTL:        *presenceCacheTTL,
+		Clock:      clock,
+		ThreadSafe: true,
+		SizeFn:     func(struct{}) int64 { return 1 },
+	})
+	if err != nil {
+		return nil, err
+	}
+	c := &PresenceCache{
+		lru:       l,
+		cacheName: cacheName,
+		version:   version,
+		ttl:       *presenceCacheTTL,
+	}
+	c.enabled.Store(*presenceCacheMaxEntries > 0)
+	return c, nil
+}
+
+func (c *PresenceCache) IsEnabled() bool {
+	return c.enabled.Load()
+}
+
+func (c *PresenceCache) SetConfig(cfg PresenceCacheConfig) {
+	ttl, err := time.ParseDuration(cfg.TTL)
+	if err != nil {
+		alert.UnexpectedEvent("presence_cache_config_invalid_ttl", "[%s] FindMissing presence cache: ignoring config with invalid ttl %q: %s", c.cacheName, cfg.TTL, err)
+		return
+	}
+	if ttl == 0 {
+		alert.UnexpectedEvent("presence_cache_config_zero_ttl", "[%s] FindMissing presence cache: ignoring config with zero ttl", c.cacheName)
+		return
+	}
+	if cfg.MaxEntries > 0 {
+		if !c.enabled.Load() {
+			c.lru.Purge()
+			log.Infof("[%s] FindMissing presence cache enabled (max_entries=%d, ttl=%s)", c.cacheName, cfg.MaxEntries, ttl)
+		}
+		if err := c.lru.SetMaxSize(cfg.MaxEntries); err != nil {
+			alert.UnexpectedEvent("presence_cache_config_invalid_max_size", "[%s] FindMissing presence cache: ignoring invalid max_entries=%d: %s", c.cacheName, cfg.MaxEntries, err)
+		}
+		if ttl != c.ttl {
+			if err := c.lru.SetTTL(ttl); err != nil {
+				log.Warningf("[%s] FindMissing presence cache: ignoring invalid ttl=%s: %s", c.cacheName, ttl, err)
+			} else {
+				// SetTTL does not affect existing entries so flush the cache
+				// entirely on TTL changes.
+				c.lru.Purge()
+				log.Infof("[%s] FindMissing presence cache TTL changed: %s -> %s", c.cacheName, c.ttl, ttl)
+				c.ttl = ttl
+			}
+		}
+		c.enabled.Store(true)
+	} else if c.enabled.Swap(false) {
+		c.lru.Purge()
+		log.Infof("[%s] FindMissing presence cache disabled", c.cacheName)
+	}
+}
+
+func (c *PresenceCache) key(pk filestore.PebbleKey) (string, bool) {
+	if !c.IsEnabled() {
+		return "", false
+	}
+	kb, err := pk.Bytes(c.version)
+	if err != nil {
+		return "", false
+	}
+	return string(kb), true
+}
+
+// Contains reports whether pk is known-present, recording a hit/miss metric.
+func (c *PresenceCache) Contains(pk filestore.PebbleKey) bool {
+	key, ok := c.key(pk)
+	if !ok {
+		return false
+	}
+	if c.lru.Contains(key) {
+		return true
+	}
+	return false
+}
+
+// Add records pk as present. No-op while the cache is disabled.
+func (c *PresenceCache) Add(pk filestore.PebbleKey) {
+	if key, ok := c.key(pk); ok {
+		c.lru.Add(key, struct{}{})
+	}
+}
+
+// Remove invalidates pk. No-op while the cache is disabled.
+func (c *PresenceCache) Remove(pk filestore.PebbleKey) {
+	if key, ok := c.key(pk); ok {
+		c.lru.Remove(key)
+	}
+}
+
+func (c *PresenceCache) NumEntries() int {
+	return c.lru.Len()
+}
+
+func (p *PebbleCache) refreshPresenceCacheConfig(ctx context.Context, efp interfaces.ExperimentFlagProvider) {
+	if efp == nil {
+		return
+	}
+	cfg := PresenceCacheConfig{
+		MaxEntries: *presenceCacheMaxEntries,
+		TTL:        presenceCacheTTL.String(),
+	}
+	if obj := efp.Object(ctx, PresenceCacheConfigExperiment, nil); len(obj) > 0 {
+		if err := experiments.ObjectToStruct(obj, &cfg); err != nil {
+			alert.UnexpectedEvent("presence_cache_invalid_config", "[%s] Ignoring invalid presence-cache experiment config %v: %s", p.name, obj, err)
+			return
+		}
+	}
+	p.presence.SetConfig(cfg)
+}
+
+func (p *PebbleCache) watchPresenceCacheSize(quitChan chan struct{}) {
+	ticker := p.clock.NewTicker(15 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-quitChan:
+			return
+		case <-ticker.Chan():
+			metrics.PebbleCachePresenceCacheEntryCount.WithLabelValues(p.name).Set(float64(p.presence.NumEntries()))
+		}
+	}
+}
+
+// watchPresenceCacheConfig periodically rechecks the experiment state and
+// propagates config changes to the presence cache.
+func (p *PebbleCache) watchPresenceCacheConfig(quitChan chan struct{}) {
+	efp := p.env.GetExperimentFlagProvider()
+	if efp == nil {
+		return
+	}
+	ch := make(chan struct{}, 1)
+	stop := efp.Subscribe(ch)
+	defer stop()
+	ticker := p.clock.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+	ctx := p.env.GetServerContext()
+	for {
+		select {
+		case <-quitChan:
+			return
+		case <-ticker.Chan():
+			p.refreshPresenceCacheConfig(ctx, efp)
+		case <-ch:
+			p.refreshPresenceCacheConfig(ctx, efp)
+		}
+	}
 }
 
 // updateDatabaseVersion updates the min and max versions of the database.
@@ -1726,6 +1934,13 @@ func (p *PebbleCache) findMissing(ctx context.Context, db pebble.IPebbleDB, grou
 	unlockFn := p.locker.RLock(key.LockID())
 	defer unlockFn()
 
+	// Avoid expensive pebble op if key is in the presence cache.
+	// We don't update the atime on hit because we expect the cache TTL to be
+	// configured below the atime update threshold.
+	if p.presence.Contains(key) {
+		return nil
+	}
+
 	buf, closer, err := p.lookupFileMetadataBytes(db, key)
 	if err != nil {
 		return err
@@ -1751,6 +1966,8 @@ func (p *PebbleCache) findMissing(ctx context.Context, db pebble.IPebbleDB, grou
 			return status.NotFoundError("backing object may have expired")
 		}
 	}
+
+	p.presence.Add(key)
 
 	p.sendAtimeUpdate(ctx, key, md.LastAccessUsec)
 	return nil
@@ -1963,6 +2180,7 @@ func (p *PebbleCache) deleteMetadataOnly(ctx context.Context, key filestore.Pebb
 	if err := db.Delete(fileMetadataKey, pebble.NoSync); err != nil {
 		return err
 	}
+	p.presence.Remove(key)
 	p.sendSizeUpdate(fileMetadata.GetFileRecord().GetIsolation().GetPartitionId(), key.CacheType(), deleteSizeOp, fileMetadata, fileMetadataKey)
 	return nil
 }
@@ -1984,6 +2202,7 @@ func (p *PebbleCache) deleteFileAndMetadata(ctx context.Context, key filestore.P
 	if err := db.Delete(keyBytes, pebble.NoSync); err != nil {
 		return err
 	}
+	p.presence.Remove(key)
 
 	storageMetadata := md.GetStorageMetadata()
 	partitionID := md.GetFileRecord().GetIsolation().GetPartitionId()
@@ -3188,6 +3407,16 @@ func (p *PebbleCache) Start() error {
 	}
 	p.eg.Go(func() error {
 		p.refreshMetrics(p.quitChan)
+		return nil
+	})
+	// Load initial experiment state before we start the cache.
+	p.refreshPresenceCacheConfig(p.env.GetServerContext(), p.env.GetExperimentFlagProvider())
+	p.eg.Go(func() error {
+		p.watchPresenceCacheConfig(p.quitChan)
+		return nil
+	})
+	p.eg.Go(func() error {
+		p.watchPresenceCacheSize(p.quitChan)
 		return nil
 	})
 	return nil

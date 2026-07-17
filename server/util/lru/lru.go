@@ -47,6 +47,10 @@ type LRU[V any] interface {
 	// SizeEviction) until the current size fits. New value must be positive.
 	SetMaxSize(maxSize int64) error
 
+	// SetTTL updates the TTL used for evictions.
+	// A zero value stops expiration entirely.
+	SetTTL(ttl time.Duration) error
+
 	// Purge removes all entries from the LRU, invoking the eviction callback for
 	// each (with ManualEviction) and releasing the backing storage. The LRU
 	// remains usable afterwards.
@@ -488,6 +492,14 @@ func (c *lru[V]) SetMaxSize(maxSize int64) error {
 	return nil
 }
 
+func (c *lru[V]) SetTTL(ttl time.Duration) error {
+	if ttl < 0 {
+		return errors.New("TTL must be non-negative")
+	}
+	c.ttl = ttl
+	return nil
+}
+
 func (c *lru[V]) Purge() {
 	if c.onEvict != nil {
 		for idx := c.head; idx != noIndex; idx = c.nodes[idx].next {
@@ -545,6 +557,12 @@ func (c *threadSafeLRU[V]) SetMaxSize(maxSize int64) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.inner.SetMaxSize(maxSize)
+}
+
+func (c *threadSafeLRU[V]) SetTTL(ttl time.Duration) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.inner.SetTTL(ttl)
 }
 
 func (c *threadSafeLRU[V]) Purge() {

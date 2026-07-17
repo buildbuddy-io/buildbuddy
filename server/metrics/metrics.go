@@ -3734,6 +3734,15 @@ var (
 		StatusLabel,
 	})
 
+	PebbleCachePresenceCacheEntryCount = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "pebble_cache_presence_cache_entry_count",
+		Help:      "Number of entries in the cache.",
+	}, []string{
+		CacheNameLabel,
+	})
+
 	// ## Podman metrics
 
 	PodmanColdImagePullLatencyMsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
