@@ -33,12 +33,12 @@ const INCOMPLETE_PROFILE = `
 
 const COMPLETE_PROFILE = INCOMPLETE_PROFILE + "\n  ]\n}";
 
-function readableStreamFromString(value: string): ReadableStream<Uint8Array> {
+function readableStreamFromString(value: string): ReadableStream<Uint8Array<ArrayBuffer>> {
   const encoder = new TextEncoder();
-  const reader: ReadableStreamDefaultReader<Uint8Array> = {
+  const reader: ReadableStreamDefaultReader<Uint8Array<ArrayBuffer>> = {
     read() {
       if (!value) {
-        return Promise.resolve({ done: true });
+        return Promise.resolve({ value: undefined, done: true });
       }
       // Read a small-ish, random length (between 1 and 10 bytes)
       const length = Math.min(value.length, 1 + Math.floor(Math.random() * 10));
@@ -58,10 +58,10 @@ function readableStreamFromString(value: string): ReadableStream<Uint8Array> {
     },
   };
   const stream = {
-    getReader(): ReadableStreamDefaultReader<Uint8Array> {
+    getReader(): ReadableStreamDefaultReader<Uint8Array<ArrayBuffer>> {
       return reader;
     },
-  } as ReadableStream<Uint8Array>;
+  } as ReadableStream<Uint8Array<ArrayBuffer>>;
 
   return stream;
 }
