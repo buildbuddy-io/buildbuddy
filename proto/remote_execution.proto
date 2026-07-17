@@ -1905,8 +1905,8 @@ message FindMissingBlobsRequest {
     EXECUTOR_OUTPUT_UPLOAD = 3;
     // Chunked (bytestream) read/upload manifest + chunk-existence checks.
     BYTESTREAM_CHUNKING = 4;
-    // Cache proxy (bytestream / CAS proxy) local-or-remote existence checks.
-    CACHE_PROXY = 5;
+    // FMB request forwarded from proxy.
+    CACHE_PROXY_CAS_PASSTHROUGH = 5;
     // Remote-asset Fetch: FindMissing used to renew a fetched blob's atime.
     REMOTE_ASSET_FETCH = 6;
     // VM snapshot artifact existence checks (snaploader).
