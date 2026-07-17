@@ -112,7 +112,7 @@ var (
 	gcsAtimeUpdateThreshold = flag.Duration("cache.pebble.gcs.atime_update_threshold", 0, "Don't update a GCS object's custom time (its atime) if it was updated more recently than this (0 updates on every atime update).")
 
 	// Presence cache. If the experiment framework is enabled, the experiment values take precedence.
-	presenceCacheMaxEntries = flag.Int64("cache.pebble.presence_cache.max_entries", 0, "A non-zero value enables a digest presence cache to satisfy FindMissingBlobs requests. Each entry is about 190 bytes so a 1 million entry cache would take about 190MB of memory.")
+	presenceCacheMaxEntries = flag.Int64("cache.pebble.presence_cache.max_entries", 0, "A non-zero value enables a digest presence cache to satisfy FindMissing requests. Each entry is about 190 bytes so a 1 million entry cache would take about 190MB of memory.")
 	presenceCacheTTL        = flag.Duration("cache.pebble.presence_cache.ttl", 1*time.Minute, "TTL for the presence cache. Should be configured well below cache.pebble.atime_update_threshold")
 )
 
@@ -933,7 +933,7 @@ func NewPresenceCache(cacheName string, version filestore.PebbleKeyVersion, cloc
 	// an experiment rather than creating it on demand.
 	maxSize := max(*presenceCacheMaxEntries, 1)
 	l, err := lru.New(&lru.Config[struct{}]{
-		Name:       "pebble_cache_presence_cache",
+		Name:       "pebble_cache_" + cacheName + "_presence_cache",
 		MaxSize:    maxSize,
 		TTL:        *presenceCacheTTL,
 		Clock:      clock,
@@ -961,6 +961,10 @@ func (c *PresenceCache) SetConfig(cfg PresenceCacheConfig) {
 	ttl, err := time.ParseDuration(cfg.TTL)
 	if err != nil {
 		alert.UnexpectedEvent("presence_cache_config_invalid_ttl", "[%s] FindMissing presence cache: ignoring config with invalid ttl %q: %s", c.cacheName, cfg.TTL, err)
+		return
+	}
+	if ttl == 0 {
+		alert.UnexpectedEvent("presence_cache_config_zero_ttl", "[%s] FindMissing presence cache: ignoring config with zero ttl", c.cacheName)
 		return
 	}
 	if cfg.MaxEntries > 0 {
