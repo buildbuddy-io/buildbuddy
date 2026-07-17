@@ -6,8 +6,10 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/util/lru",
     visibility = ["//visibility:public"],
     deps = [
+        "//server/metrics",
         "//server/util/status",
         "@com_github_jonboulle_clockwork//:clockwork",
+        "@com_github_prometheus_client_golang//prometheus",
     ],
 )
 
@@ -17,7 +19,10 @@ go_test(
     srcs = ["lru_test.go"],
     deps = [
         ":lru",
+        "//server/metrics",
+        "//server/testutil/testmetrics",
         "@com_github_jonboulle_clockwork//:clockwork",
+        "@com_github_prometheus_client_golang//prometheus",
         "@com_github_stretchr_testify//require",
     ],
 )

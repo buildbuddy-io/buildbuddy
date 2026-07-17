@@ -311,6 +311,13 @@ const (
 	// One of: "expired" or "size"
 	LookasideCacheEvictionReason = "eviction_reason"
 
+	// LRU cache operation: `get` or `contains`.
+	LRUOperationLabel = "op"
+
+	// The reason an entry was automatically evicted from an LRU cache:
+	// `size` (evicted to make room for newer entries) or `ttl` (expired).
+	LRUEvictionReasonLabel = "eviction_reason"
+
 	// Distributed cache operation name, such as "FindMissing" or "Get".
 	DistributedCacheOperation = "op"
 
@@ -2349,6 +2356,32 @@ var (
 		Help:      "The time spent handling each build event in **microseconds**.",
 	}, []string{
 		StatusLabel,
+	})
+
+	// ### In-memory LRU caches
+	//
+	// These metrics are reported by in-memory LRU caches (see
+	// server/util/lru) that are configured with a name.
+
+	LRULookupCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "lru",
+		Name:      "lookup_count",
+		Help:      "Number of LRU cache lookups (`Get` or `Contains` calls), by operation and hit/miss status.",
+	}, []string{
+		CacheNameLabel,
+		LRUOperationLabel,
+		CacheHitMissStatus,
+	})
+
+	LRULastEvictionAgeUsec = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "lru",
+		Name:      "last_eviction_age_usec",
+		Help:      "Age of the entry most recently automatically evicted from an LRU cache (time since the entry was added or last updated), in **microseconds**.",
+	}, []string{
+		CacheNameLabel,
+		LRUEvictionReasonLabel,
 	})
 
 	// ### Usage tracker
