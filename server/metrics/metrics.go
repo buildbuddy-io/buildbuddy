@@ -315,7 +315,7 @@ const (
 	LRUOperationLabel = "op"
 
 	// The reason an entry was automatically evicted from an LRU cache:
-	// `size` (evicted to make room for newer entries) or `ttl` (expired).
+	// `size` (evicted because LRU reached max size) or `ttl` (expired).
 	LRUEvictionReasonLabel = "eviction_reason"
 
 	// Distributed cache operation name, such as "FindMissing" or "Get".

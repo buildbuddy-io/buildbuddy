@@ -87,7 +87,9 @@ type SizeFn[V any] func(value V) int64
 // MaxSize & SizeFn are required.
 type Config[V any] struct {
 	// If set, enables automatic hit/miss and eviction age metrics.
-	// This value is used to identify this LRU instance. Use snake case.
+	// This value is used to identify this LRU instance in metrics.
+	// Use snake case and don't put any dynamic data into the name.
+	// The name must be unique across LRU instances in the same binary.
 	Name string
 
 	// Optional clock implementation used by implementations that need one. If
