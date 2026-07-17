@@ -38,6 +38,7 @@ var (
 type CASServerProxy struct {
 	supportsEncryption func(context.Context) bool
 	authenticator      interfaces.Authenticator
+	efp                interfaces.ExperimentFlagProvider
 	local              repb.ContentAddressableStorageServer
 	remote             repb.ContentAddressableStorageClient
 	localCache         interfaces.Cache
@@ -85,9 +86,14 @@ func New(env environment.Env) (*CASServerProxy, error) {
 	if remote == nil {
 		return nil, fmt.Errorf("A remote ContentAddressableStorageClient is required to enable the ContentAddressableStorageServerProxy")
 	}
+	efp := env.GetExperimentFlagProvider()
+	if efp == nil {
+		log.Warning("No experiment flag provider configured; ContentAddressableStorageServerProxy experiment flags will not take effect")
+	}
 	proxy := CASServerProxy{
 		supportsEncryption: remote_crypter.SupportsEncryption(env),
 		authenticator:      authenticator,
+		efp:                efp,
 		local:              local,
 		remote:             remote,
 		localCache:         env.GetCache(),
@@ -209,7 +215,7 @@ func (s *CASServerProxy) FindMissingBlobs(ctx context.Context, req *repb.FindMis
 	defer spn.End()
 	tracing.AddStringAttributeToCurrentSpan(ctx, "requested-blobs", strconv.Itoa(len(req.BlobDigests)))
 
-	if s.findMissingCache == nil {
+	if s.findMissingCache == nil || s.efp != nil && s.efp.Boolean(ctx, "cache_proxy.bypass_find_missing_cache", false) {
 		return s.remote.FindMissingBlobs(ctx, req)
 	}
 
