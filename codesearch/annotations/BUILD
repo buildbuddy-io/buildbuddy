@@ -7,6 +7,7 @@ go_library(
         "cpp.go",
         "golang.go",
         "java.go",
+        "nav.go",
         "python.go",
         "rust.go",
         "typescript.go",
@@ -34,12 +35,14 @@ go_test(
     srcs = [
         "annotations_test.go",
         "cpp_test.go",
+        "nav_test.go",
+        "nav_ts_test.go",
         "python_test.go",
         "rust_test.go",
         "typescript_test.go",
     ],
+    embed = [":annotations"],
     deps = [
-        ":annotations",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
     ],
