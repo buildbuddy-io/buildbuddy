@@ -231,7 +231,7 @@ func (s *CASServerProxy) FindMissingBlobs(ctx context.Context, req *repb.FindMis
 		req.Purpose = repb.FindMissingBlobsRequest_CACHE_PROXY_CAS_PASSTHROUGH
 		return s.remote.FindMissingBlobs(ctx, req)
 	}
-	cacheKeys := map[digest.Key]string{}
+	cacheKeys := make(map[digest.Key]string, len(req.GetBlobDigests()))
 	for _, d := range req.GetBlobDigests() {
 		cacheKeys[digest.NewKey(d)] = s.findMissingBlobsCacheKey(groupID, req, d)
 	}
