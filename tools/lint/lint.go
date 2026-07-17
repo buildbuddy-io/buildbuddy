@@ -244,6 +244,31 @@ func runPrettier(ctx context.Context, stdout, stderr io.Writer, fix bool, files 
 }
 
 func runBazelModDeps(ctx context.Context, stdout, stderr io.Writer, fix bool, files []string) error {
+	// When running `bazel run tools/lint`, the bazel invocation wrapping this
+	// tool will update MODULE.bazel.lock on its own, so the linter will
+	// effectively always see the auto-updated MODULE.bazel.lock
+	//
+	// This behavior is maybe a bit surprising, but we can probably live with
+	// it, because the alternative would be to add `common
+	// --lockfile_mode=error` to our .bazelrc which would be inconvenient for
+	// local development.
+	//
+	// When running on CI though, if the auto-update produces a diff, it should
+	// be treated as an error. So we check whether we're running on CI here and
+	// check whether the outer bazel invocation already produced a diff to the
+	// MODULE.bazel.lock file, which indicates that it needs updating.
+	if !fix && os.Getenv("CI") != "" {
+		diff := exec.Command("git", "diff", "--", "MODULE.bazel.lock")
+		c := &ioutil.Counter{}
+		diff.Stdout = io.MultiWriter(c, stdout)
+		diff.Stderr = stderr
+		if err := diff.Run(); err != nil {
+			return fmt.Errorf("diff MODULE.bazel.lock: %w", err)
+		} else if c.Count() > 0 {
+			return fmt.Errorf("MODULE.bazel.lock needs update")
+		}
+	}
+
 	cmd, err := getRunfileToolCommand(ctx, bbCLIRlocationpath)
 	if err != nil {
 		return fmt.Errorf("get bb command: %w", err)
