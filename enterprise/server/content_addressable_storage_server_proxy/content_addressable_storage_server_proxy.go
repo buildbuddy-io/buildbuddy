@@ -231,15 +231,15 @@ func (s *CASServerProxy) FindMissingBlobs(ctx context.Context, req *repb.FindMis
 		req.Purpose = repb.FindMissingBlobsRequest_CACHE_PROXY_CAS_PASSTHROUGH
 		return s.remote.FindMissingBlobs(ctx, req)
 	}
-	cacheKeys := map[string]string{}
+	cacheKeys := make(map[digest.Key]string, len(req.GetBlobDigests()))
 	for _, d := range req.GetBlobDigests() {
-		cacheKeys[digestKey(d)] = s.findMissingBlobsCacheKey(groupID, req, d)
+		cacheKeys[digest.NewKey(d)] = s.findMissingBlobsCacheKey(groupID, req, d)
 	}
 
 	// Consult the local FindMissingBlobs cache first to remove some digests.
 	misses := make([]*repb.Digest, 0, len(req.GetBlobDigests()))
 	for _, d := range req.GetBlobDigests() {
-		if !s.findMissingCache.Contains(cacheKeys[digestKey(d)]) {
+		if !s.findMissingCache.Contains(cacheKeys[digest.NewKey(d)]) {
 			misses = append(misses, d)
 		}
 	}
@@ -268,11 +268,11 @@ func (s *CASServerProxy) FindMissingBlobs(ctx context.Context, req *repb.FindMis
 	// the set because the remote reports what's missing, not what's present.
 	missing := make(map[string]struct{}, len(rsp.GetMissingBlobDigests()))
 	for _, d := range rsp.GetMissingBlobDigests() {
-		missing[cacheKeys[digestKey(d)]] = struct{}{}
+		missing[cacheKeys[digest.NewKey(d)]] = struct{}{}
 	}
 	presentRemotely := 0
 	for _, d := range remoteReq.GetBlobDigests() {
-		key := cacheKeys[digestKey(d)]
+		key := cacheKeys[digest.NewKey(d)]
 		if _, ok := missing[key]; !ok {
 			presentRemotely++
 			s.findMissingCache.Add(key, struct{}{})
@@ -288,11 +288,6 @@ func findMissingBlobsCacheLookups(status string, chunked bool) prometheus.Counte
 		metrics.CacheHitMissStatus: status,
 		metrics.ChunkedLabel:       strconv.FormatBool(chunked),
 	})
-}
-
-// digestKey identifies a digest within a single FindMissingBlobs request.
-func digestKey(d *repb.Digest) string {
-	return d.GetHash() + "/" + strconv.FormatInt(d.GetSizeBytes(), 10)
 }
 
 func (s *CASServerProxy) findMissingBlobsCacheKey(groupID string, req *repb.FindMissingBlobsRequest, d *repb.Digest) string {
