@@ -1,7 +1,7 @@
 package ui
 
 import (
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 )
@@ -59,7 +59,7 @@ func (m rootModel) Init() tea.Cmd {
 
 func (m rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		switch msg.String() {
 		case "ctrl+c":
 			return m, tea.Quit
@@ -128,13 +128,17 @@ func (m rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m rootModel) View() string {
+func (m rootModel) View() tea.View {
+	var content string
 	switch m.state {
 	case viewOrgPicker:
-		return m.orgPicker.View()
+		content = m.orgPicker.View()
 	case viewDetail:
-		return m.detail.View()
+		content = m.detail.View()
 	default:
-		return m.list.View()
+		content = m.list.View()
 	}
+	v := tea.NewView(content)
+	v.AltScreen = true
+	return v
 }

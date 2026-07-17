@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
@@ -92,10 +92,7 @@ func HandleUI(args []string) (int, error) {
 		model = newRootModelWithList(api, f)
 	}
 
-	p := tea.NewProgram(
-		model,
-		tea.WithAltScreen(),
-	)
+	p := tea.NewProgram(model)
 
 	if _, err := p.Run(); err != nil {
 		return -1, fmt.Errorf("error running UI: %w", err)

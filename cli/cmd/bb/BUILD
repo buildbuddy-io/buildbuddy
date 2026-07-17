@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
 
 # NOTE: //tools/lint uses a prebuilt bb binary (//tools/bb) instead of this
 # target. If you make CLI changes that affect `bb fix` or `bb mod deps`,
@@ -118,4 +118,19 @@ go_binary(
     pure = "on",
     tags = ["manual"],
     visibility = ["//visibility:public"],
+)
+
+go_test(
+    name = "bb_test",
+    srcs = ["bb_startup_test.go"],
+    data = [":bb"],
+    embed = [":bb_lib"],
+    x_defs = {
+        "bbRunfilePath": "$(rlocationpath :bb)",
+    },
+    deps = [
+        "//server/testutil/testfs",
+        "@com_github_creack_pty//:pty",
+        "@com_github_stretchr_testify//require",
+    ],
 )
