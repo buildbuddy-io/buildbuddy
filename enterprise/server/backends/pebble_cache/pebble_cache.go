@@ -1032,6 +1032,10 @@ func (c *PresenceCache) Remove(pk filestore.PebbleKey) {
 	}
 }
 
+func (c *PresenceCache) NumEntries() int {
+	return c.lru.Len()
+}
+
 func (p *PebbleCache) refreshPresenceCacheConfig(ctx context.Context, efp interfaces.ExperimentFlagProvider) {
 	if efp == nil {
 		return
@@ -1042,11 +1046,24 @@ func (p *PebbleCache) refreshPresenceCacheConfig(ctx context.Context, efp interf
 	}
 	if obj := efp.Object(ctx, PresenceCacheConfigExperiment, nil); len(obj) > 0 {
 		if err := experiments.ObjectToStruct(obj, &cfg); err != nil {
-			log.Warningf("[%s] Ignoring invalid presence-cache experiment config %v: %s", p.name, obj, err)
+			alert.UnexpectedEvent("presence_cache_invalid_config", "[%s] Ignoring invalid presence-cache experiment config %v: %s", p.name, obj, err)
 			return
 		}
 	}
 	p.presence.SetConfig(cfg)
+}
+
+func (p *PebbleCache) watchPresenceCacheSize(quitChan chan struct{}) {
+	ticker := p.clock.NewTicker(15 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-quitChan:
+			return
+		case <-ticker.Chan():
+			metrics.PebbleCachePresenceCacheEntryCount.WithLabelValues(p.name).Set(float64(p.presence.NumEntries()))
+		}
+	}
 }
 
 // watchPresenceCacheConfig periodically rechecks the experiment state and
@@ -3399,6 +3416,9 @@ func (p *PebbleCache) Start() error {
 	p.eg.Go(func() error {
 		p.watchPresenceCacheConfig(p.quitChan)
 		return nil
+	})
+	p.eg.Go(func() error {
+		p.watchPresenceCacheSize(p.quitChan)
 	})
 	return nil
 }
