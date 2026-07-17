@@ -368,24 +368,20 @@ func TestSetTTL(t *testing.T) {
 
 			require.True(t, l.Add("a", 1))
 
-			// New entries pick up the new TTL; existing entries keep the expiry
-			// they were inserted with.
+			// All entries are subject to new TTL.
 			require.NoError(t, l.SetTTL(time.Minute))
 			require.True(t, l.Add("b", 2))
 			clock.Advance(2 * time.Minute)
-			require.True(t, l.Contains("a"), "a keeps its original 1h expiry")
+			require.False(t, l.Contains("a"), "a expires under the new 1m TTL")
 			require.False(t, l.Contains("b"), "b expires under the new 1m TTL")
 
-			// Zero disables expiry -- for new entries, and (since the expiry
-			// check is TTL-gated) effectively for existing ones too.
+			// Zero disables expiry.
 			require.NoError(t, l.SetTTL(0))
 			require.True(t, l.Add("c", 3))
 			clock.Advance(24 * time.Hour)
 			require.True(t, l.Contains("c"))
-			require.True(t, l.Contains("a"), "no expiry while the TTL is off")
 
-			// Turning the TTL back on treats entries with no recorded expiry
-			// ("c") as already expired, as documented.
+			// Turning the TTL back on applies expiry.
 			require.NoError(t, l.SetTTL(time.Minute))
 			require.False(t, l.Contains("c"))
 
