@@ -254,18 +254,15 @@ func runBazelModDeps(ctx context.Context, stdout, stderr io.Writer, fix bool, fi
 	// local development.
 	//
 	// When running on CI though, if the auto-update produces a diff, it should
-	// be treated as an error. So we check whether we're running on CI here and
-	// check whether the outer bazel invocation already produced a diff to the
-	// MODULE.bazel.lock file, which indicates that it needs updating.
-	if !fix && os.Getenv("CI") != "" {
-		diff := exec.Command("git", "diff", "--", "MODULE.bazel.lock")
-		c := &ioutil.Counter{}
-		diff.Stdout = io.MultiWriter(c, stdout)
-		diff.Stderr = stderr
-		if err := diff.Run(); err != nil {
-			return fmt.Errorf("diff MODULE.bazel.lock: %w", err)
-		} else if c.Count() > 0 {
-			return fmt.Errorf("MODULE.bazel.lock needs update")
+	// be treated as an error. So when running on CI, first revert any diff
+	// that might've been produced by the wrapping bazel invocation, then
+	// run a complete lockfile check below.
+	if !fix && os.Getenv("CI") == "true" {
+		cmd := exec.Command("git", "restore", "MODULE.bazel.lock")
+		cmd.Stdout = stdout
+		cmd.Stderr = stderr
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("git restore MODULE.bazel.lock: %w", err)
 		}
 	}
 
