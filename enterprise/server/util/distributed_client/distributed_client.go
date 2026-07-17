@@ -19,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
+	"github.com/buildbuddy-io/buildbuddy/server/util/findmissing"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
@@ -198,8 +199,9 @@ func (c *Proxy) FindMissing(ctx context.Context, req *dcpb.FindMissingRequest) (
 	if err != nil {
 		return nil, err
 	}
-
-	missing, err := c.cache.FindMissing(ctx, req.GetResources())
+	// Forward the purpose the originating node stamped on the request so the
+	// local cache attributes present/absent metrics to the right code path.
+	missing, err := c.cache.FindMissing(findmissing.ContextWithPurpose(ctx, req.GetPurpose()), req.GetResources())
 	if err != nil {
 		return nil, err
 	}
@@ -335,12 +337,6 @@ func (c *Proxy) Read(req *dcpb.ReadRequest, stream dcpb.DistributedCache_ReadSer
 	return nil
 }
 
-func (c *Proxy) callHintedHandoffCB(ctx context.Context, peer string, r *rspb.ResourceName) {
-	if c.hintedHandoffCallback != nil {
-		c.hintedHandoffCallback(ctx, peer, r)
-	}
-}
-
 func (c *Proxy) Write(stream dcpb.DistributedCache_WriteServer) error {
 	ctx, err := c.readWriteContext(stream.Context())
 	if err != nil {
@@ -350,9 +346,16 @@ func (c *Proxy) Write(stream dcpb.DistributedCache_WriteServer) error {
 
 	var bytesWritten int64
 	var writeCloser interfaces.CommittedWriteCloser
-	handoffPeer := ""
+	var req *dcpb.WriteRequest
 	for {
-		req, err := stream.Recv()
+		if req == nil {
+			req = dcpb.WriteRequestFromVTPool()
+			defer req.ReturnToVTPool()
+		} else {
+			// VT unmarshal doesn't reset, so we need to reset manually.
+			req.ResetVT()
+		}
+		err := stream.RecvMsg(req)
 		if err == io.EOF {
 			break
 		}
@@ -362,7 +365,7 @@ func (c *Proxy) Write(stream dcpb.DistributedCache_WriteServer) error {
 		rn := req.GetResource()
 		if writeCloser == nil {
 			if rn.GetCacheType() == rspb.CacheType_CAS && req.GetCheckAlreadyExists() {
-				missing, err := c.cache.FindMissing(ctx, []*rspb.ResourceName{rn})
+				missing, err := c.cache.FindMissing(findmissing.ContextWithPurpose(ctx, repb.FindMissingBlobsRequest_WRITE_DEDUPE), []*rspb.ResourceName{rn})
 				if err == nil && len(missing) == 0 {
 					return status.AlreadyExistsError("CAS digest already exists")
 				}
@@ -374,20 +377,20 @@ func (c *Proxy) Write(stream dcpb.DistributedCache_WriteServer) error {
 			}
 			defer wc.Close()
 			writeCloser = wc
-			handoffPeer = req.GetHandoffPeer()
 		}
-		n, err := writeCloser.Write(req.Data)
+		n, err := writeCloser.Write(req.GetData())
 		if err != nil {
 			return err
 		}
 		bytesWritten += int64(n)
-		if req.FinishWrite {
+		if req.GetFinishWrite() {
 			if err := writeCloser.Commit(); err != nil {
 				return err
 			}
-			// TODO(vadim): use handoff peer from request once client is including it in the FinishWrite request.
-			if handoffPeer != "" {
-				c.callHintedHandoffCB(ctx, handoffPeer, rn)
+			if req.GetHandoffPeer() != "" && c.hintedHandoffCallback != nil {
+				// Because the hinted handoff callback might hold on to `rn` in
+				// a queue, and we're pooling WriteRequest protos, clone it.
+				c.hintedHandoffCallback(ctx, req.GetHandoffPeer(), rn.CloneVT())
 			}
 			c.log.Debugf("Write(%q) succeeded (user prefix: %s)", ResourceIsolationString(rn), up)
 			return stream.SendAndClose(&dcpb.WriteResponse{
@@ -409,7 +412,7 @@ func (c *Proxy) Heartbeat(ctx context.Context, req *dcpb.HeartbeatRequest) (*dcp
 }
 
 func (c *Proxy) RemoteContains(ctx context.Context, peer string, r *rspb.ResourceName) (bool, error) {
-	missing, err := c.RemoteFindMissing(ctx, peer, []*rspb.ResourceName{r})
+	missing, err := c.RemoteFindMissing(findmissing.ContextWithPurpose(ctx, repb.FindMissingBlobsRequest_CONTAINS), peer, []*rspb.ResourceName{r})
 	if err != nil {
 		return false, err
 	}
@@ -458,6 +461,9 @@ func (c *Proxy) RemoteGetWithMetadata(ctx context.Context, peer string, r *rspb.
 func (c *Proxy) RemoteFindMissing(ctx context.Context, peer string, resources []*rspb.ResourceName) ([]*repb.Digest, error) {
 	req := &dcpb.FindMissingRequest{
 		Resources: resources,
+		// Propagate the originating purpose to the authoritative peer so it can
+		// attribute present/absent metrics to the right code path.
+		Purpose: findmissing.PurposeFromContext(ctx),
 	}
 	client, err := c.getClient(ctx, peer)
 	if err != nil {
@@ -567,7 +573,10 @@ func (c *Proxy) RemoteReader(ctx context.Context, peer string, r *rspb.ResourceN
 type distributedCacheReader struct {
 	stream dcpb.DistributedCache_ReadClient
 	rsp    *dcpb.ReadResponse
-	err    error
+	// offset into rsp.Data so we don't muck with rsp.Data
+	// advancing rsp.Data prevents vtproto from reusing the backing buffer.
+	off int
+	err error
 }
 
 func newDistributedCacheReader(stream dcpb.DistributedCache_ReadClient, expectEOF bool) (*distributedCacheReader, error) {
@@ -590,18 +599,21 @@ func newDistributedCacheReader(stream dcpb.DistributedCache_ReadClient, expectEO
 // moreData fetches the next batch of data if necessary, and returns true if
 // there is more data.
 func (r *distributedCacheReader) moreData() bool {
-	if r.err == nil && len(r.rsp.GetData()) == 0 {
+	if r.err == nil && r.off == len(r.rsp.GetData()) {
 		r.err = r.stream.RecvMsg(r.rsp)
+		if r.err == nil {
+			r.off = 0
+		}
 	}
-	return r.err == nil || len(r.rsp.GetData()) > 0
+	return r.err == nil || r.off < len(r.rsp.GetData())
 }
 
 func (r *distributedCacheReader) Read(out []byte) (int, error) {
 	if !r.moreData() {
 		return 0, r.err
 	}
-	n := copy(out, r.rsp.GetData())
-	r.rsp.Data = r.rsp.Data[n:]
+	n := copy(out, r.rsp.GetData()[r.off:])
+	r.off += n
 	if !r.moreData() {
 		// If there is no more data, allow returning a possible EOF. This lets
 		// the client skip making another Read call just to get EOF.
@@ -613,12 +625,12 @@ func (r *distributedCacheReader) Read(out []byte) (int, error) {
 func (r *distributedCacheReader) WriteTo(w io.Writer) (int64, error) {
 	var total int64
 	for r.moreData() {
-		n, err := w.Write(r.rsp.GetData())
+		n, err := w.Write(r.rsp.GetData()[r.off:])
 		total += int64(n)
 		if err != nil {
 			return total, err
 		}
-		r.rsp.Data = r.rsp.Data[n:]
+		r.off += n
 	}
 	if r.err == io.EOF {
 		return total, nil

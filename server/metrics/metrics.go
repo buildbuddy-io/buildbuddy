@@ -40,6 +40,10 @@ const (
 	// Invocation status: `success`, `failure`, `disconnected`, or `unknown`.
 	InvocationStatusLabel = "invocation_status"
 
+	// Whether live invocation log chunks were written to the key-value store
+	// with suffix-only writes: `true` or `false` (experiment arm).
+	LogSuffixWritesEnabledLabel = "suffix_writes_enabled"
+
 	// Cache type: `action` for action cache, `cas` for content-addressable storage.
 	CacheTypeLabel = "cache_type"
 
@@ -48,6 +52,10 @@ const (
 
 	// Cache name: Custom name to describe the cache, like "pebble-cache".
 	CacheNameLabel = "cache_name"
+
+	// FindMissing purpose: which internal code path originated a FindMissing
+	// lookup (see repb.FindMissingBlobsRequest.Purpose), e.g. "ATIME_UPDATE".
+	PurposeLabel = "purpose"
 
 	// Process exit code of an executed action.
 	ExitCodeLabel = "exit_code"
@@ -358,6 +366,9 @@ const (
 	// should fall back to the remote cache as the source of truth.
 	CacheProxyRequestType = "proxy_request_type"
 
+	// Source used by a cache proxy action cache read to produce a response.
+	CacheProxyResultSource = "result_source"
+
 	OCIResourceTypeLabel = "oci_resource_type"
 
 	OpLabel = "op"
@@ -376,6 +387,11 @@ const (
 	GRPCPoolIDLabel = "pool_id"
 
 	GRPCMethodLabel = "grpc_method"
+
+	// The direction of an HTTP/2 flow-control window relative to the local
+	// endpoint: `remote` (the window for data we send) or `local` (the window
+	// for data we receive).
+	GRPCFlowControlDirectionLabel = "direction"
 
 	// Destination cloud provider inferred from the remote IP range: `aws`,
 	// `gcp`, or `other`.
@@ -404,6 +420,14 @@ const (
 
 	// Signing algorithm used (JWT alg), such as "HS256" or "ES256".
 	SigningMethodLabel = "method"
+
+	// The DNS query (record) type, such as "A", "AAAA", "CNAME", or "MX".
+	// Unrecognized types are bucketed as "OTHER" to bound cardinality, since
+	// the type is client-controlled.
+	DNSRecordTypeLabel = "record_type"
+
+	// The DNS response code, such as "NOERROR", "NXDOMAIN", or "FORMERR".
+	DNSResponseCodeLabel = "rcode"
 )
 
 // Label value constants
@@ -412,6 +436,10 @@ const (
 	MissStatusLabel        = "miss"
 	PartialStatusLabel     = "partial"
 	UncacheableStatusLabel = "uncacheable"
+
+	// FindMissing per-blob outcome: whether a checked blob was present or absent.
+	PresentStatusLabel = "present"
+	AbsentStatusLabel  = "absent"
 
 	LocalOnlyCacheProxyRequestLabel = "local_only"
 	DefaultCacheProxyRequestLabel   = "default"
@@ -425,6 +453,7 @@ const (
 	OCIFetcherRoleWaiter      = "waiter"
 	OCIFetcherStatusOK        = "ok"
 	OCIFetcherStatusError     = "error"
+	OCIFetcherStatusUserError = "user_error"
 	OCIFetcherStatusTimeout   = "timeout"
 	OCIFetcherStatusCanceled  = "canceled"
 
@@ -494,6 +523,15 @@ var (
 	//   /
 	// sum(rate(buildbuddy_invocation_count[5m]))
 	// ```
+
+	InvocationLogLiveChunkWrittenBytes = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "invocation",
+		Name:      "log_live_chunk_written_bytes",
+		Help:      "Total number of bytes written to the key-value store for live (in-progress) invocation log tail chunks.",
+	}, []string{
+		LogSuffixWritesEnabledLabel,
+	})
 
 	InvocationDurationUs = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
@@ -930,6 +968,23 @@ var (
 		CacheHitMissStatus,
 	})
 
+	// DistributedCacheFindMissingBlobStatusCount counts blobs checked by
+	// FindMissing at the distributed-cache layer, by present/absent status and
+	// originating purpose. Unlike pebble_cache_find_missing_blob_status_count
+	// (which is per-node and double-counts a blob that is retried across
+	// replicas), this records the LOGICAL result once per requested digest --
+	// present if found on any replica, absent only if missing everywhere -- so
+	// it reflects the true client-facing present/absent rate per code path.
+	DistributedCacheFindMissingBlobStatusCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "distributed_cache_find_missing_blob_status_count",
+		Help:      "Count of blobs checked by FindMissing at the distributed-cache layer, by logical present/absent status and originating purpose.",
+	}, []string{
+		PurposeLabel,
+		StatusLabel,
+	})
+
 	DistributedCacheBackfillLatencyUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_cache",
@@ -1242,6 +1297,14 @@ var (
 		StatusHumanReadableLabel,
 	})
 
+	RemoteExecutionBuildrootDiskUsageMeasurementDurationUsec = promauto.NewHistogram(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "buildroot_disk_usage_measurement_duration_usec",
+		Help:      "Duration of the buildroot (workspace) disk usage measurement performed after a task finishes, in **microseconds**.",
+		Buckets:   durationUsecBuckets(1*time.Microsecond, 1*time.Minute, 2),
+	})
+
 	RemoteExecutionResourceUsageTimelineMetadataSizeBytes = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_execution",
@@ -1275,6 +1338,14 @@ var (
 		Subsystem: "remote_execution",
 		Name:      "enqueued_task_memory_bytes",
 		Help:      "Memory prediction of enqueued tasks.",
+		Buckets:   exponentialBucketRange(1, 1024*1024*1024*1024 /*1 TB*/, 1.5),
+	})
+
+	RemoteExecutionOOMKillerTargetedTaskMemoryBytes = promauto.NewHistogram(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "oom_killer_targeted_task_memory_bytes",
+		Help:      "Observed task memory in bytes targeted by the executor OOM killer.",
 		Buckets:   exponentialBucketRange(1, 1024*1024*1024*1024 /*1 TB*/, 1.5),
 	})
 
@@ -2849,6 +2920,9 @@ var (
 		Help:      "Number of raft leases on each nodehost.",
 	}, []string{
 		RaftRangeIDLabel,
+		RaftNodeHostIDLabel,
+		PartitionID,
+		ZoneLabel,
 	})
 
 	RaftLeaders = promauto.NewGaugeVec(prometheus.GaugeOpts{
@@ -2858,6 +2932,9 @@ var (
 		Help:      "Number of raft leaders on each nodehost.",
 	}, []string{
 		RaftRangeIDLabel,
+		RaftNodeHostIDLabel,
+		PartitionID,
+		ZoneLabel,
 	})
 
 	RaftBytes = promauto.NewGaugeVec(prometheus.GaugeOpts{
@@ -2867,6 +2944,9 @@ var (
 		Help:      "Size (in bytes) of each range.",
 	}, []string{
 		RaftRangeIDLabel,
+		RaftNodeHostIDLabel,
+		PartitionID,
+		ZoneLabel,
 	})
 
 	RaftProposals = promauto.NewCounterVec(prometheus.CounterOpts{
@@ -2876,6 +2956,21 @@ var (
 		Help:      "The total number of statemachine proposals on each range.",
 	}, []string{
 		RaftRangeIDLabel,
+		RaftNodeHostIDLabel,
+		PartitionID,
+		ZoneLabel,
+	})
+
+	RaftReads = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "raft",
+		Name:      "reads",
+		Help:      "The total number of read requests served for each range.",
+	}, []string{
+		RaftRangeIDLabel,
+		RaftNodeHostIDLabel,
+		PartitionID,
+		ZoneLabel,
 	})
 
 	RaftSplits = promauto.NewCounterVec(prometheus.CounterOpts{
@@ -3539,6 +3634,16 @@ var (
 		CacheHitMissStatus,
 	})
 
+	PebbleCachePebbleTableCacheRequestsCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "pebble_cache_pebble_table_cache_requests_count",
+		Help:      "The number of table cache requests by hit/miss status.",
+	}, []string{
+		CacheNameLabel,
+		CacheHitMissStatus,
+	})
+
 	PebbleCacheWriteStallCount = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_cache",
@@ -3585,6 +3690,17 @@ var (
 		CacheNameLabel,
 	})
 
+	PebbleCacheFindMissingBlobStatusCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "pebble_cache_find_missing_blob_status_count",
+		Help:      "Count of blobs checked by FindMissing on this node, by present/absent status and originating purpose. This is the per-node LOOKUP view: a blob retried across replicas by the distributed cache is counted on each node, so absents are inflated by replication vs the logical rate (see distributed_cache_find_missing_blob_status_count).",
+	}, []string{
+		CacheNameLabel,
+		PurposeLabel,
+		StatusLabel,
+	})
+
 	// ## Podman metrics
 
 	PodmanColdImagePullLatencyMsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
@@ -3602,11 +3718,12 @@ var (
 		Namespace: bbNamespace,
 		Subsystem: "proxy",
 		Name:      "action_cache_read_requests",
-		Help:      "The number of ActionCache.GetActionResult requests served by a ActionCacheServerProxy by gRPC status and cache hit/miss status.",
+		Help:      "The number of ActionCache.GetActionResult requests served by a ActionCacheServerProxy by gRPC status, cache hit/miss status, request type, and result source.",
 	}, []string{
 		StatusLabel,
 		CacheHitMissStatus,
 		CacheProxyRequestType,
+		CacheProxyResultSource,
 	})
 	ActionCacheProxiedWriteRequests = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
@@ -3622,11 +3739,12 @@ var (
 		Namespace: bbNamespace,
 		Subsystem: "proxy",
 		Name:      "action_cache_read_bytes",
-		Help:      "The number of ActionCache.GetActionResult bytes served by a ActionCacheServerProxy by gRPC status and cache hit/miss status.",
+		Help:      "The number of ActionCache.GetActionResult bytes served by a ActionCacheServerProxy by gRPC status, cache hit/miss status, request type, and result source.",
 	}, []string{
 		StatusLabel,
 		CacheHitMissStatus,
 		CacheProxyRequestType,
+		CacheProxyResultSource,
 	})
 	ActionCacheProxiedWriteBytes = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
@@ -4082,6 +4200,15 @@ var (
 		CompressionType,
 	})
 
+	FindMissingBlobsCacheLookups = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "proxy",
+		Name:      "find_missing_blobs_cache_lookups",
+		Help:      "The number of digests looked up in the Cache Proxy's local FindMissingBlobs cache by cache hit/miss status.",
+	}, []string{
+		CacheHitMissStatus,
+	})
+
 	RemoteAtimeUpdates = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "proxy",
@@ -4229,6 +4356,46 @@ var (
 		GRPCMethodLabel,
 		ConnectionIndexLabel,
 	})
+
+	GRPCClientConnectionCount = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "grpc",
+		Name:      "client_connection_count",
+		Help:      "Number of client gRPC connections (channelz sockets) observed per target, sampled from channelz.",
+	}, []string{
+		GRPCTargetLabel,
+	})
+
+	GRPCClientFlowControlBlockedConnections = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "grpc",
+		Name:      "client_flow_control_blocked_connections",
+		Help:      "Number of client gRPC connections whose remote HTTP/2 flow-control (send) window is 0, per target. A nonzero value means connections are send-blocked behind the peer's flow control, which head-of-line-blocks every stream on the connection.",
+	}, []string{
+		GRPCTargetLabel,
+	})
+
+	GRPCClientFlowControlWindowBytes = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "grpc",
+		Name:      "client_flow_control_window_bytes",
+		Help:      "Distribution of HTTP/2 flow-control window sizes across client gRPC connections, sampled periodically from channelz. `direction=remote` is the window for data we send (0 means send-blocked); `direction=local` is the window for data we receive.",
+		Buckets:   []float64{0, 1, 1024, 16384, 65536, 262144, 1048576, 2097152, 4194304, 8388608, 16777216},
+	}, []string{
+		GRPCTargetLabel,
+		GRPCFlowControlDirectionLabel,
+	})
+
+	GRPCClientConnectionOpenStreams = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "grpc",
+		Name:      "client_connection_open_streams",
+		Help:      "Distribution of open HTTP/2 streams across client gRPC connections, sampled periodically from channelz. Values near the peer's max-concurrent-streams limit (commonly 100) indicate connections at capacity.",
+		Buckets:   []float64{0, 1, 5, 10, 25, 50, 75, 90, 95, 100, 110, 150},
+	}, []string{
+		GRPCTargetLabel,
+	})
+
 	GRPCServerEgressBytes = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "grpc",
@@ -4249,6 +4416,50 @@ var (
 		DestinationProviderLabel,
 		DestinationRegionLabel,
 	})
+
+	// ## DNS server metrics
+
+	DNSServerRequestCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "dns",
+		Name:      "server_request_count",
+		Help:      "The total number of DNS queries handled, by record type and response code.",
+	}, []string{
+		DNSRecordTypeLabel,
+		DNSResponseCodeLabel,
+	})
+
+	// #### Examples
+	//
+	// ```promql
+	// # DNS queries per second by record type
+	// sum by (record_type) (rate(buildbuddy_dns_server_request_count[5m]))
+	//
+	// # NXDOMAIN rate
+	// sum(rate(buildbuddy_dns_server_request_count{rcode="NXDOMAIN"}[5m]))
+	//   /
+	// sum(rate(buildbuddy_dns_server_request_count[5m]))
+	// ```
+
+	DNSServerHandlerDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "dns",
+		Name:      "server_handler_duration_usec",
+		Buckets:   durationUsecBuckets(1*time.Microsecond, 1*time.Second, 2),
+		Help:      "Time to handle a DNS query, in **microseconds**, by record type.",
+	}, []string{
+		DNSRecordTypeLabel,
+	})
+
+	// #### Examples
+	//
+	// ```promql
+	// # Median DNS handler latency in the past 5 minutes
+	// histogram_quantile(
+	//   0.5,
+	//   sum(rate(buildbuddy_dns_server_handler_duration_usec_bucket[5m])) by (le)
+	// )
+	// ```
 )
 
 // exponentialBucketRange returns prometheus.ExponentialBuckets specified in

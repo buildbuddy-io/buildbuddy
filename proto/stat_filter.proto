@@ -16,6 +16,7 @@ enum InvocationMetricType {
   CAS_CACHE_UPLOAD_SPEED_INVOCATION_METRIC = 7;
   ACTION_CACHE_MISSES_INVOCATION_METRIC = 8;
   TIME_SAVED_USEC_INVOCATION_METRIC = 9;
+  ACTION_CACHE_HITS_INVOCATION_METRIC = 10;
 }
 
 enum ExecutionMetricType {
@@ -395,6 +396,22 @@ enum FilterType {
       STRING_FILTER_CATEGORY;
     database_column_name:
       "invocation_uuid";
+    supported_objects:
+      [EXECUTION_OBJECTS];
+  }];
+  EXECUTION_OS_FILTER_TYPE = 36 [(filter_type_options) = {
+    category:
+      STRING_FILTER_CATEGORY;
+    database_column_name:
+      "os";
+    supported_objects:
+      [EXECUTION_OBJECTS];
+  }];
+  EXECUTION_ARCH_FILTER_TYPE = 37 [(filter_type_options) = {
+    category:
+      STRING_FILTER_CATEGORY;
+    database_column_name:
+      "arch";
     supported_objects:
       [EXECUTION_OBJECTS];
   }];

@@ -5,6 +5,10 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -77,26 +81,88 @@ func getConnectionPool(dialer dialFn, target string) (*grpc_client.ClientConnPoo
 	return newPool, nil
 }
 
-func director(ctx context.Context, fullMethodName string) (context.Context, grpc.ClientConnInterface, error) {
-	target, err := lookupProxyTarget(fullMethodName)
-	if err != nil {
-		return nil, nil, err
+// ctxWithClientIP forwards the incoming request metadata to the backend,
+// overwriting the client-IP header with the IP this proxy resolved
+// (clientip.Get). When the caller has no client identity of its own, it also
+// attaches a grpc-proxy identity that attests to that IP; a caller that already
+// carries a signed identity (e.g. a workflow) keeps it so the backend still
+// authorizes on it. Any client-supplied client-IP header is stripped first: the
+// proxy is the sole authority for this value, so a caller can't smuggle an
+// allowed IP past the backend's IP-rule checks. All of the caller's other
+// headers are propagated verbatim.
+//
+// This composes across proxy hops without trusting raw headers: each hop's
+// clientIP interceptor only honors an incoming client-IP header when it carries
+// a verified grpc-proxy identity, so clientip.Get already reflects an upstream
+// proxy's attested IP, and we re-attest it here.
+func ctxWithClientIP(ctx context.Context, cis interfaces.ClientIdentityService) (context.Context, error) {
+	// Propagate the caller's incoming metadata to the backend. This is a
+	// blanket copy so that arbitrary headers survive the proxy hop; we then
+	// overwrite only the client-IP and client-identity headers below.
+	md, ok := metadata.FromIncomingContext(ctx)
+	if ok {
+		md = md.Copy()
+	} else {
+		md = metadata.MD{}
 	}
 
-	pool, err := getConnectionPool(dial, target)
-	if err != nil {
-		return nil, nil, err
-	}
+	// Never trust a client-supplied client-IP header; we set it ourselves below.
+	delete(md, clientip.HeaderName)
 
-	if md, ok := metadata.FromIncomingContext(ctx); ok {
-		ctx = metadata.NewOutgoingContext(ctx, md.Copy())
+	clientIP := clientip.Get(ctx)
+	if clientIP == "" {
+		return metadata.NewOutgoingContext(ctx, md), nil
 	}
-	return ctx, pool, nil
+	md.Set(clientip.HeaderName, clientIP)
+
+	// Only attest as grpc-proxy when the caller has no identity of its own.
+	// Internal callers (workflows, executors, the app) forward their own signed
+	// identity, which the backend authorizes on -- e.g. workflows bypass IP
+	// rules by identity. Overwriting it with grpc-proxy would strip that bypass
+	// and get the request checked against the forwarded client IP instead.
+	// External callers have no identity, so we attach the grpc-proxy identity
+	// (cached and refreshed by the client identity service) that attests to the
+	// client IP. Set (not append) so a duplicate identity header can't be
+	// produced.
+	if cis != nil && len(md.Get(authutil.ClientIdentityHeaderName)) == 0 {
+		header, err := cis.CachedIdentityHeader(&interfaces.ClientIdentity{
+			Origin: interfaces.ClientIdentityInternalOrigin,
+			Client: interfaces.ClientIdentityGRPCProxy,
+		})
+		if err != nil {
+			return nil, err
+		}
+		md.Set(authutil.ClientIdentityHeaderName, header)
+	}
+	return metadata.NewOutgoingContext(ctx, md), nil
 }
 
-func GetForwardingServerOption() grpc.ServerOption {
+func newDirector(env environment.Env) proxy.StreamDirector {
+	cis := env.GetClientIdentityService()
+	return func(ctx context.Context, fullMethodName string) (context.Context, grpc.ClientConnInterface, error) {
+		target, err := lookupProxyTarget(fullMethodName)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		pool, err := getConnectionPool(dial, target)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		ctx, err = ctxWithClientIP(ctx, cis)
+		if err != nil {
+			return nil, nil, err
+		}
+		return ctx, pool, nil
+	}
+}
+
+// GetForwardingServerOption returns a gRPC server option that proxies unknown
+// RPCs to the configured app.proxy_targets.
+func GetForwardingServerOption(env environment.Env) grpc.ServerOption {
 	if len(*proxyTargets) == 0 {
 		return nil
 	}
-	return grpc.UnknownServiceHandler(proxy.TransparentHandler(director))
+	return grpc.UnknownServiceHandler(proxy.TransparentHandler(newDirector(env)))
 }

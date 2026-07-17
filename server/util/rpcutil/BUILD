@@ -7,6 +7,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//server/util/alert",
+        "//server/util/flag",
         "//server/util/proto",
         "//server/util/status",
         "//server/util/vtprotocodec",

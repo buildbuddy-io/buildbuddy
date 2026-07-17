@@ -3,7 +3,7 @@ import React from "react";
 export function GithubIcon({ className }: { className?: string } = {}) {
   return (
     <svg
-      className={className}
+      className={`icon ${className || ""}`}
       width="20"
       height="20"
       viewBox="0 0 20 20"

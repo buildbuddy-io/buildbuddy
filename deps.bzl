@@ -449,4 +449,15 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
         executable = True,
     )
 
+    # DB-IP ASN Lite database, embedded into the binary by
+    # //server/util/maxmind for offline IP -> ASN lookups. The file is a
+    # monthly snapshot mirrored from db-ip.com into our GCS bucket; bump the
+    # URL and sha256 to update it.
+    http_file(
+        name = "dbip_asn_lite",
+        downloaded_file_path = "dbip-asn-lite.mmdb.gz",
+        sha256 = "d1ab6302ce614c009c77552d4d826dc7a1628494eda5f8c50fabd81ef225f153",
+        urls = ["https://storage.googleapis.com/buildbuddy-tools/dbip/dbip-asn-lite-2026-06.mmdb.gz"],
+    )
+
 install_static_dependencies_ext = modules.as_extension(install_static_dependencies)

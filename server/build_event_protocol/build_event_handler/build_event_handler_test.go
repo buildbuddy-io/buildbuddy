@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testolapdb"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testusage"
 	"github.com/buildbuddy-io/buildbuddy/server/usage/sku"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
@@ -22,10 +24,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/uuid"
+	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/encoding/prototext"
 	"google.golang.org/protobuf/types/known/anypb"
+	"google.golang.org/protobuf/types/known/durationpb"
 
 	bspb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	bepb "github.com/buildbuddy-io/buildbuddy/proto/build_events"
@@ -274,6 +278,20 @@ func finishedEvent() *anypb.Any {
 		Id: &bspb.BuildEventId{Id: &bspb.BuildEventId_BuildFinished{}},
 	})
 	return finishedAny
+}
+
+func gitFetchCompletedEvent(totalBytes int64, duration time.Duration) *anypb.Any {
+	gitFetchAny := &anypb.Any{}
+	gitFetchAny.MarshalFrom(&bspb.BuildEvent{
+		Payload: &bspb.BuildEvent_GitFetchCompleted{
+			GitFetchCompleted: &bspb.GitFetchCompleted{
+				TotalBytes: totalBytes,
+				Duration:   durationpb.New(duration),
+			},
+		},
+		Id: &bspb.BuildEventId{Id: &bspb.BuildEventId_GitFetchCompleted{}},
+	})
+	return gitFetchAny
 }
 
 func assertAPIKeyRedacted(t *testing.T, invocation *inpb.Invocation, apiKey string) {
@@ -935,6 +953,57 @@ func TestFinishedFinalize(t *testing.T) {
 	assert.Equal(t, inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS, invocation.InvocationStatus)
 }
 
+func TestGitFetchStatsFlushedToOLAPDB(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers("USER1", "GROUP1"))
+	te.SetAuthenticator(auth)
+	olapDB := testolapdb.NewHandle()
+	te.SetOLAPDBHandle(olapDB)
+	ctx := context.Background()
+	testUUID, err := uuid.NewRandom()
+	require.NoError(t, err)
+	testInvocationID := testUUID.String()
+
+	handler := build_event_handler.NewBuildEventHandler(te)
+	channel, err := handler.OpenChannel(ctx, testInvocationID)
+	require.NoError(t, err)
+	defer channel.Close()
+
+	// Send a started event announcing a workspace status event.
+	request := streamRequest(startedEvent("--remote_header='"+authutil.APIKeyHeader+"=USER1'", &bspb.BuildEventId_WorkspaceStatus{}), testInvocationID, 1)
+	err = channel.HandleEvent(request)
+	require.NoError(t, err)
+
+	// Send the workspace status event to complete the metadata.
+	request = streamRequest(workspaceStatusEvent("COMMIT_SHA", "abc123"), testInvocationID, 2)
+	err = channel.HandleEvent(request)
+	require.NoError(t, err)
+
+	// Send a GitFetchCompleted event reporting git fetch stats, as published
+	// by the remote runner after setting up the git repo.
+	request = streamRequest(gitFetchCompletedEvent(9_000_000, 3*time.Second), testInvocationID, 3)
+	err = channel.HandleEvent(request)
+	require.NoError(t, err)
+
+	// Complete and finalize the invocation, which triggers the flush to the
+	// OLAP DB.
+	request = streamRequest(finishedEvent(), testInvocationID, 4)
+	err = channel.HandleEvent(request)
+	require.NoError(t, err)
+	err = channel.FinalizeInvocation(testInvocationID)
+	require.NoError(t, err)
+
+	// The stats recorder flushes asynchronously; wait for the invocation to
+	// show up in the OLAP DB and expect the git fetch stats to be set on it.
+	var inv *tables.Invocation
+	require.Eventually(t, func() bool {
+		inv = olapDB.GetFlushedInvocation(testInvocationID)
+		return inv != nil
+	}, 30*time.Second, 50*time.Millisecond)
+	assert.Equal(t, int64(9_000_000), inv.GitFetchTotalBytes)
+	assert.Equal(t, (3 * time.Second).Microseconds(), inv.GitFetchDurationUsec)
+}
+
 func TestUnfinishedFinalizeWithCanceledContext(t *testing.T) {
 	te := testenv.GetTestEnv(t)
 	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers("USER1", "GROUP1"))
@@ -980,6 +1049,100 @@ func TestUnfinishedFinalizeWithCanceledContext(t *testing.T) {
 	assert.Equal(t, inspb.InvocationStatus_DISCONNECTED_INVOCATION_STATUS, invocation.InvocationStatus)
 }
 
+// failingBlobstore wraps a Blobstore and fails all blob writes when
+// failWrites is set.
+type failingBlobstore struct {
+	interfaces.Blobstore
+	failWrites atomic.Bool
+}
+
+func (b *failingBlobstore) WriteBlob(ctx context.Context, blobName string, data []byte) (int, error) {
+	if b.failWrites.Load() {
+		return 0, fmt.Errorf("blobstore write failed")
+	}
+	return b.Blobstore.WriteBlob(ctx, blobName, data)
+}
+
+func TestUnfinishedFinalizeWithBlobstoreWriteFailure(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers("USER1", "GROUP1"))
+	te.SetAuthenticator(auth)
+	bs := &failingBlobstore{Blobstore: te.GetBlobstore()}
+	te.SetBlobstore(bs)
+	ctx := t.Context()
+	testUUID, err := uuid.NewRandom()
+	require.NoError(t, err)
+	testInvocationID := testUUID.String()
+
+	handler := build_event_handler.NewBuildEventHandler(te)
+	channel, err := handler.OpenChannel(ctx, testInvocationID)
+	require.NoError(t, err)
+	defer channel.Close()
+
+	// Send started event with api key. The event is buffered in the
+	// invocation event stream and not yet flushed to blobstore.
+	request := streamRequest(startedEvent("--remote_header='"+authutil.APIKeyHeader+"=USER1'", &bspb.BuildEventId_WorkspaceStatus{}), testInvocationID, 1)
+	err = channel.HandleEvent(request)
+	assert.NoError(t, err)
+
+	// Make blobstore writes fail, then finalize the invocation without a
+	// finished event, as happens when the client disconnects. Flushing the
+	// buffered events fails, but there is no connected client left to receive
+	// an error and retry, so finalization should proceed anyway.
+	bs.failWrites.Store(true)
+	err = channel.FinalizeInvocation(testInvocationID)
+	require.NoError(t, err)
+
+	// Make sure the invocation was marked disconnected in the DB so that
+	// bazel may retry it.
+	authCtx := auth.AuthContextFromAPIKey(t.Context(), "USER1")
+	ti, err := te.GetInvocationDB().LookupInvocation(authCtx, testInvocationID)
+	require.NoError(t, err)
+	assert.Equal(t, int64(inspb.InvocationStatus_DISCONNECTED_INVOCATION_STATUS), ti.InvocationStatus)
+}
+
+func TestFinishedFinalizeWithBlobstoreWriteFailure(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers("USER1", "GROUP1"))
+	te.SetAuthenticator(auth)
+	bs := &failingBlobstore{Blobstore: te.GetBlobstore()}
+	te.SetBlobstore(bs)
+	ctx := t.Context()
+	testUUID, err := uuid.NewRandom()
+	require.NoError(t, err)
+	testInvocationID := testUUID.String()
+
+	handler := build_event_handler.NewBuildEventHandler(te)
+	channel, err := handler.OpenChannel(ctx, testInvocationID)
+	require.NoError(t, err)
+	defer channel.Close()
+
+	// Send started event with api key. The event is buffered in the
+	// invocation event stream and not yet flushed to blobstore.
+	request := streamRequest(startedEvent("--remote_header='"+authutil.APIKeyHeader+"=USER1'", &bspb.BuildEventId_WorkspaceStatus{}), testInvocationID, 1)
+	err = channel.HandleEvent(request)
+	assert.NoError(t, err)
+
+	// Send finished event, so that the invocation finalizes as complete
+	// rather than disconnected.
+	request = streamRequest(finishedEvent(), testInvocationID, 2)
+	err = channel.HandleEvent(request)
+	assert.NoError(t, err)
+
+	// Make blobstore writes fail, then finalize the invocation. The client is
+	// still connected, so the error from flushing the buffered events should
+	// be returned, which lets the client retry sending the events.
+	bs.failWrites.Store(true)
+	err = channel.FinalizeInvocation(testInvocationID)
+	require.Error(t, err)
+
+	// Make sure the invocation was not finalized in the DB.
+	authCtx := auth.AuthContextFromAPIKey(t.Context(), "USER1")
+	ti, err := te.GetInvocationDB().LookupInvocation(authCtx, testInvocationID)
+	require.NoError(t, err)
+	assert.Equal(t, int64(inspb.InvocationStatus_PARTIAL_INVOCATION_STATUS), ti.InvocationStatus)
+}
+
 func TestUnfinishedFinalize(t *testing.T) {
 	te := testenv.GetTestEnv(t)
 	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers("USER1", "GROUP1"))
@@ -1021,6 +1184,62 @@ func TestUnfinishedFinalize(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, "abc123", invocation.CommitSha)
 	assert.Equal(t, inspb.InvocationStatus_DISCONNECTED_INVOCATION_STATUS, invocation.InvocationStatus)
+}
+
+func TestPeriodicInvocationRowUpdateWhileStreaming(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers("USER1", "GROUP1"))
+	te.SetAuthenticator(auth)
+	clock := clockwork.NewFakeClock()
+	te.SetClock(clock)
+	ctx := context.Background()
+	testUUID, err := uuid.NewRandom()
+	require.NoError(t, err)
+	testInvocationID := testUUID.String()
+
+	// Make DB writes stamp a fixed time so that we can tell when the
+	// invocation row gets written.
+	t0 := time.Unix(1000, 0)
+	te.GetInvocationDB().SetNowFunc(func() time.Time { return t0 })
+
+	handler := build_event_handler.NewBuildEventHandler(te)
+	channel, err := handler.OpenChannel(ctx, testInvocationID)
+	require.NoError(t, err)
+	defer channel.Close()
+
+	// Send started event with api key, which creates the invocation row.
+	request := streamRequest(startedEvent("--remote_header='"+authutil.APIKeyHeader+"=USER1'", &bspb.BuildEventId_WorkspaceStatus{}), testInvocationID, 1)
+	err = channel.HandleEvent(request)
+	require.NoError(t, err)
+
+	authCtx := auth.AuthContextFromAPIKey(context.Background(), "USER1")
+	ti, err := te.GetInvocationDB().LookupInvocation(authCtx, testInvocationID)
+	require.NoError(t, err)
+	require.Equal(t, t0.UnixMicro(), ti.UpdatedAtUsec)
+
+	// Advance the DB clock. An event that arrives before the periodic update
+	// period has elapsed should not update the invocation row.
+	t1 := time.Unix(2000, 0)
+	te.GetInvocationDB().SetNowFunc(func() time.Time { return t1 })
+	request = streamRequest(progressEventWithOutput("hello", ""), testInvocationID, 2)
+	err = channel.HandleEvent(request)
+	require.NoError(t, err)
+
+	ti, err = te.GetInvocationDB().LookupInvocation(authCtx, testInvocationID)
+	require.NoError(t, err)
+	assert.Equal(t, t0.UnixMicro(), ti.UpdatedAtUsec)
+
+	// Advance the stream's clock past half the reconnect window. The next
+	// event should update the invocation row, keeping the invocation
+	// retryable in case it gets disconnected later.
+	clock.Advance(te.GetInvocationDB().GetInvocationReconnectWindow()/2 + time.Second)
+	request = streamRequest(progressEventWithOutput("world", ""), testInvocationID, 3)
+	err = channel.HandleEvent(request)
+	require.NoError(t, err)
+
+	ti, err = te.GetInvocationDB().LookupInvocation(authCtx, testInvocationID)
+	require.NoError(t, err)
+	assert.Equal(t, t1.UnixMicro(), ti.UpdatedAtUsec)
 }
 
 func TestRetryOnComplete(t *testing.T) {
@@ -1480,9 +1699,11 @@ func TestBuildStatusReporting(t *testing.T) {
 	for _, test := range []struct {
 		name           string
 		metadataEvents []*bspb.BuildEvent
+		statusContext  string
 	}{
 		{
-			name: "BuildMetadataThenWorkspaceStatus",
+			name:          "BuildMetadataThenWorkspaceStatus",
+			statusContext: "bazel build //...",
 			metadataEvents: []*bspb.BuildEvent{
 				&bspb.BuildEvent{
 					Id: &bspb.BuildEventId{Id: &bspb.BuildEventId_Pattern{Pattern: &bspb.BuildEventId_PatternExpandedId{
@@ -1508,7 +1729,8 @@ func TestBuildStatusReporting(t *testing.T) {
 			},
 		},
 		{
-			name: "WorkspaceStatusThenBuildMetadata",
+			name:          "WorkspaceStatusThenBuildMetadataWithCommitStatusLabel",
+			statusContext: "Build and test",
 			metadataEvents: []*bspb.BuildEvent{
 				&bspb.BuildEvent{
 					Id: &bspb.BuildEventId{Id: &bspb.BuildEventId_Pattern{Pattern: &bspb.BuildEventId_PatternExpandedId{
@@ -1528,7 +1750,10 @@ func TestBuildStatusReporting(t *testing.T) {
 					Id: &bspb.BuildEventId{Id: &bspb.BuildEventId_BuildMetadata{}},
 					Payload: &bspb.BuildEvent_BuildMetadata{BuildMetadata: &bspb.BuildMetadata{
 						// Status reporting is only enabled for CI builds.
-						Metadata: map[string]string{"ROLE": "CI"},
+						Metadata: map[string]string{
+							"ROLE":                "CI",
+							"COMMIT_STATUS_LABEL": "Build and test",
+						},
 					}},
 				},
 			},
@@ -1609,7 +1834,7 @@ func TestBuildStatusReporting(t *testing.T) {
 						TargetURL:   pointer("http://localhost:8080/invocation/" + seq.InvocationID),
 						State:       pointer("pending"),
 						Description: pointer("Running..."),
-						Context:     pointer("bazel build //..."),
+						Context:     pointer(test.statusContext),
 					},
 				},
 			}, client.ConsumeStatuses())
@@ -1634,7 +1859,7 @@ func TestBuildStatusReporting(t *testing.T) {
 						TargetURL:   pointer("http://localhost:8080/invocation/" + seq.InvocationID),
 						State:       pointer("success"),
 						Description: pointer("Success"),
-						Context:     pointer("bazel build //..."),
+						Context:     pointer(test.statusContext),
 					},
 				},
 			}, client.ConsumeStatuses())

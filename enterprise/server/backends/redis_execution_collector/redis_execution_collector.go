@@ -231,14 +231,6 @@ func (c *collector) GetInProgressExecution(ctx context.Context, executionID stri
 
 // DeleteInProgressExecution deletes the given in-progress execution.
 func (c *collector) DeleteInProgressExecution(ctx context.Context, executionID string) error {
-	// TODO: maybe also proactively delete the reverse invocation links for this
-	// execution, since reverse links are only used to point back to the
-	// in-progress executions for an invocation. Those links will get cleaned up
-	// when the invocation is complete, but cleaning them up here would reduce
-	// the amount of unnecessary data fetched in the invocation page for
-	// executions that have already been completed. For now, this is probably
-	// not a big enough issue to justify the additional reads from redis and
-	// additional complexity.
 	pipe := c.rdb.Pipeline()
 	pipe.Del(ctx, getExecutionUpdatesKey(executionID)).Err()
 	_, err := pipe.Exec(ctx)
@@ -274,10 +266,6 @@ func (c *collector) GetExecutions(ctx context.Context, iid string, start, stop i
 	return res, nil
 }
 
-func (c *collector) DeleteExecutions(ctx context.Context, iid string) error {
-	return c.rdb.Del(ctx, getExecutionKey(iid)).Err()
-}
-
 // ExpireExecutions sets the TTL of executions data. This can be used to clean
 // up executions data after some delay.
 func (c *collector) ExpireExecutions(ctx context.Context, iid string, ttl time.Duration) error {
@@ -288,8 +276,12 @@ func (c *collector) DeleteExecutionInvocationLinks(ctx context.Context, executio
 	return c.rdb.Del(ctx, getExecutionInvocationLinksKey(executionID)).Err()
 }
 
-func (c *collector) DeleteInvocationExecutionLinks(ctx context.Context, invocationID string) error {
-	return c.rdb.Del(ctx, getInvocationExecutionLinksKey(invocationID)).Err()
+func (c *collector) DeleteInvocationExecutionLink(ctx context.Context, link *sipb.StoredInvocationLink) error {
+	b, err := proto.Marshal(link)
+	if err != nil {
+		return err
+	}
+	return c.rdb.SRem(ctx, getInvocationExecutionLinksKey(link.GetInvocationId()), string(b)).Err()
 }
 
 func unmarshalStoredInvocationLinks(serializedResults []string) ([]*sipb.StoredInvocationLink, error) {

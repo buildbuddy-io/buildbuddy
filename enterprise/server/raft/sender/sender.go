@@ -667,6 +667,35 @@ func (s *Sender) RunMultiKey(ctx context.Context, keys []*KeyMeta, fn runMultiKe
 	var rsps []any
 	remainingKeys := keys
 	var lastError error
+	runForRange := func(ctx context.Context, rk *rangeKeys) error {
+		var rangeRsp any
+		i, err := s.tryReplicas(ctx, rk.rd, func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header) error {
+			rsp, err := fn(ctx, c, h, rk.keys)
+			if err != nil {
+				return err
+			}
+			rangeRsp = rsp
+			return nil
+		}, opts.ConsistencyMode)
+		if err != nil {
+			if !status.IsOutOfRangeError(err) {
+				return err
+			}
+			mu.Lock()
+			remainingKeys = append(remainingKeys, rk.keys...)
+			lastError = err
+			mu.Unlock()
+		} else {
+			if i != 0 {
+				replica := rk.rd.GetReplicas()[i]
+				s.rangeCache.SetPreferredReplica(ctx, replica, rk.rd)
+			}
+			mu.Lock()
+			rsps = append(rsps, rangeRsp)
+			mu.Unlock()
+		}
+		return nil
+	}
 	for retrier.Next() {
 		keysByRange, err := s.partitionKeysByRange(ctx, remainingKeys, skipRangeCache)
 		if err != nil {
@@ -676,42 +705,26 @@ func (s *Sender) RunMultiKey(ctx context.Context, keys []*KeyMeta, fn runMultiKe
 		// We'll repopulate remaining keys below.
 		remainingKeys = nil
 
-		eg, egCtx := errgroup.WithContext(ctx)
-		eg.SetLimit(100)
-		for _, rk := range keysByRange {
-			eg.Go(func() error {
-				var rangeRsp any
-				i, err := s.tryReplicas(egCtx, rk.rd, func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header) error {
-					rsp, err := fn(ctx, c, h, rk.keys)
-					if err != nil {
-						return err
-					}
-					rangeRsp = rsp
-					return nil
-				}, opts.ConsistencyMode)
-				if err != nil {
-					if !status.IsOutOfRangeError(err) {
-						return err
-					}
-					mu.Lock()
-					remainingKeys = append(remainingKeys, rk.keys...)
-					lastError = err
-					mu.Unlock()
-				} else {
-					if i != 0 {
-						replica := rk.rd.GetReplicas()[i]
-						s.rangeCache.SetPreferredReplica(ctx, replica, rk.rd)
-					}
-					mu.Lock()
-					rsps = append(rsps, rangeRsp)
-					mu.Unlock()
+		if len(keysByRange) == 1 {
+			// In the common case where we're operating on a single range (and
+			// usually single key), don't add the overhead of starting
+			// goroutines and growing their stack.
+			// This optimization can probably be removed if
+			// https://github.com/golang/go/issues/77893 is fixed.
+			for _, rk := range keysByRange {
+				if err := runForRange(ctx, rk); err != nil {
+					return nil, err
 				}
-				return nil
-			})
-		}
-
-		if err := eg.Wait(); err != nil {
-			return nil, err
+			}
+		} else {
+			eg, egCtx := errgroup.WithContext(ctx)
+			eg.SetLimit(100)
+			for _, rk := range keysByRange {
+				eg.Go(func() error { return runForRange(egCtx, rk) })
+			}
+			if err := eg.Wait(); err != nil {
+				return nil, err
+			}
 		}
 
 		if len(remainingKeys) == 0 {

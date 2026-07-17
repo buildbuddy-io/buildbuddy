@@ -4,14 +4,12 @@ import (
 	"fmt"
 	"io"
 	"net/url"
-	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/webhook_data"
-	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/accumulator"
 	"gopkg.in/yaml.v2"
 
 	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
@@ -25,10 +23,6 @@ const (
 	// FilePath is the path where we can expect to locate the BuildBuddyConfig
 	// YAML contents, relative to the repository root.
 	FilePath = "buildbuddy.yaml"
-
-	// KytheActionName is the name used for an action that generates Kythe annotations
-	// This action is run automatically if codesearch is enabled.
-	KytheActionName = "Generate Kythe Annotations"
 
 	// CSIncrementalUpdateName is the name used for an action that sends an incremental update
 	// to the codesearch indexer. This action is run automatically if codesearch is enabled.
@@ -65,6 +59,13 @@ type Action struct {
 	// By default, if you have multiple workflow runs on the same branch, we'll cancel the old ones.
 	// If AllowConcurrentRuns is set to true, we'll allow multiple runs to continue in parallel.
 	AllowConcurrentRuns *bool `yaml:"allow_concurrent_runs"`
+	// AllowConcurrentRunsOnBranches is a list of branch name patterns that
+	// should be allowed to run concurrently, even when AllowConcurrentRuns=false.
+	// When unset, it defaults to the repo's default branch.
+	// Patterns use the same restricted-glob syntax as trigger `branches` (a
+	// single `*` wildcard, with an optional leading `!` for negation). This has
+	// no effect when AllowConcurrentRuns is true.
+	AllowConcurrentRunsOnBranches []string `yaml:"allow_concurrent_runs_on_branches"`
 
 	// DEPRECATED: Used `Steps` instead
 	DeprecatedBazelCommands []string `yaml:"bazel_commands"`
@@ -79,6 +80,36 @@ func (a *Action) GetTriggers() *Triggers {
 		return &Triggers{}
 	}
 	return a.Triggers
+}
+
+// AllowsConcurrentRunsOnBranch returns whether concurrent Workflows on the given
+// branch should be allowed, instead of being automatically cancelled.
+func (a *Action) AllowsConcurrentRunsOnBranch(branch, defaultBranch string) bool {
+	// By default, we don't allow concurrent runs.
+	// Allow on all branches if explicitly enabled.
+	if a.AllowConcurrentRuns != nil && *a.AllowConcurrentRuns {
+		return true
+	}
+
+	// By default, if no branches are explicitly allow-listed, we allow concurrent runs on the default branch only.
+	allowedBranches := a.AllowConcurrentRunsOnBranches
+	if allowedBranches == nil {
+		// Don't cancel workflows on the default branch.
+		if branch == defaultBranch {
+			return true
+		}
+
+		// If we don't know the default branch, err on the side of not cancelling.
+		if defaultBranch == "" {
+			return true
+		}
+
+		// On all other branches, don't allow concurrent runs.
+		return false
+	}
+
+	// If there are explicitly allow-listed branches, check if the given branch is in the list.
+	return matchesAnyPattern(allowedBranches, branch)
 }
 
 func (a *Action) GetGitFetchFilters() []string {
@@ -117,12 +148,45 @@ var defaultPullRequestTypes = []string{"opened", "synchronize", "reopened", "edi
 
 type PullRequestTrigger struct {
 	Branches []string `yaml:"branches"`
-	// Types optionally restricts the trigger to specific pull_request actions
-	// (e.g. "ready_for_review"). If empty, the default set of actions is used:
-	// opened, synchronize, reopened, and base-branch edits.
+	// Types optionally restricts the trigger to specific pull_request actions.
+	// If empty, the default set (opened, synchronize, reopened, and base-branch
+	// edits) is used.
+	//
+	// Valid types:
+	//   - "opened": the PR was created.
+	//   - "synchronize": a new commit was pushed to the PR branch.
+	//   - "reopened": a closed PR was reopened.
+	//   - "edited": the PR's base branch was changed.
+	//   - "ready_for_review": a draft PR was marked ready for review.
+	//   - "auto_merge_enabled": auto-merge was enabled on the PR.
+	//   - "approved": the PR received an approving review.
 	Types []string `yaml:"types"`
 	// NOTE: If nil, defaults to true.
 	MergeWithBase *bool `yaml:"merge_with_base"`
+	// MergeWithBaseInterval only applies if MergeWithBase is enabled.
+	//
+	// MergeWithBaseInterval controls which base branch commit the PR is merged with.
+	// When unset, the runner merges with the current base branch tip.
+	//
+	// When set, instead of merging with the tip, the runner merges with the
+	// oldest base branch commit after the most recent interval boundary: the
+	// current time floored to a multiple of this interval, in UTC. If there are
+	// no base branch commits after the boundary, the runner merges with the base
+	// branch tip. This keeps the merged result stable once the base advances
+	// within an interval so that repeated runs of the same PR hit a warm Bazel
+	// cache, while still periodically advancing the base branch to catch
+	// integration issues.
+	//
+	// For example, if set to 3h, the base advances at 00:00, 03:00, 06:00, ... UTC,
+	// and all runs within the same 3h window merge with the first base branch
+	// commit after the window boundary.
+	//
+	// If the PR's merge base is already newer than this commit, the merge with
+	// base is skipped.
+	//
+	// Must be at most maxMergeWithBaseInterval; larger values are rejected so that
+	// PRs are not merged with an overly stale base.
+	MergeWithBaseInterval *time.Duration `yaml:"merge_with_base_interval"`
 	// If MergeWithBase is enabled, determines whether the CI runner should manually
 	// merge the pushed and target branches. If this is disabled, the runner
 	// will try to use the merge commit SHA provided by the CI provider as a
@@ -133,6 +197,30 @@ type PullRequestTrigger struct {
 
 func (t *PullRequestTrigger) GetMergeWithBase() bool {
 	return t.MergeWithBase == nil || *t.MergeWithBase
+}
+
+// maxMergeWithBaseInterval is the largest allowed merge with base interval. Larger
+// configured values are rejected so that PRs are not merged with an overly
+// stale base branch commit.
+const maxMergeWithBaseInterval = 3 * time.Hour
+
+// GetMergeWithBaseInterval returns the configured merge with base interval. If
+// MergeWithBase is set and this is nil, merge with the base branch tip.
+//
+// Returns an error if the configured interval is non-positive or larger than
+// maxMergeWithBaseInterval.
+func (t *PullRequestTrigger) GetMergeWithBaseInterval() (*time.Duration, error) {
+	if t.MergeWithBaseInterval == nil {
+		return nil, nil
+	}
+	interval := *t.MergeWithBaseInterval
+	if interval <= 0 {
+		return nil, fmt.Errorf("merge_with_base_interval must be positive, got %s", interval)
+	}
+	if interval > maxMergeWithBaseInterval {
+		return nil, fmt.Errorf("merge_with_base_interval must be at most %s, got %s", maxMergeWithBaseInterval, interval)
+	}
+	return &interval, nil
 }
 
 func (t *PullRequestTrigger) GetForceManualMerge() bool {
@@ -146,7 +234,7 @@ func (t *PullRequestTrigger) matchesAction(action string) bool {
 	if len(t.Types) > 0 {
 		return slices.Contains(t.Types, action)
 	}
-	return action == "" || slices.Contains(defaultPullRequestTypes, action)
+	return action == "" || action == "approved" || slices.Contains(defaultPullRequestTypes, action)
 }
 
 type ScheduleTrigger struct {
@@ -209,196 +297,6 @@ func NewConfig(r io.Reader) (*BuildBuddyConfig, error) {
 		return nil, err
 	}
 	return cfg, nil
-}
-
-const kytheDownloadURL = "https://storage.googleapis.com/buildbuddy-tools/archives/kythe-v0.0.78-buildbuddy.tar.gz"
-
-func checkoutKythe(dirName, downloadURL string) string {
-	buf := fmt.Sprintf(`
-export KYTHE_DIR="$BUILDBUDDY_CI_RUNNER_ROOT_DIR/%s"
-if [ ! -d "$KYTHE_DIR" ]; then
-  mkdir -p "$KYTHE_DIR"
-  curl -sL "%s" | tar -xz -C "$KYTHE_DIR" --strip-components 1
-fi
-
-# Bazel 8+ removed proto_lang_toolchain from native rules.
-# Patch the Kythe BUILD file to load it from rules_proto.
-if ! grep -q 'proto_lang_toolchain.bzl' "$KYTHE_DIR"/BUILD 2>/dev/null; then
-  sed -i '1s|^|load("@rules_proto//proto:proto_lang_toolchain.bzl", "proto_lang_toolchain")\n|' "$KYTHE_DIR"/BUILD
-fi
-
-# Ensure the Kythe MODULE.bazel declares rules_proto as a dependency
-# (needed when the Kythe module is registered via local_path_override).
-if ! grep -q 'rules_proto' "$KYTHE_DIR"/MODULE.bazel 2>/dev/null; then
-  echo -e '\nbazel_dep(name = "rules_proto", version = "7.1.0")' >> "$KYTHE_DIR"/MODULE.bazel
-fi`, dirName, downloadURL)
-	return buf
-}
-
-func kytheBuildTargets(scope string) string {
-	if scope == "full" {
-		return "//..."
-	}
-	if scope == "proto" {
-		return "//proto/..."
-	}
-	return strings.Join([]string{
-		"//app/...",
-		"//server/...",
-		"//enterprise/server/...",
-		"//proto/...",
-		"-//server/util/bazel/...",
-		"-//tools/probers/...",
-		"-//server/testutil/...",
-	}, " ")
-}
-
-func buildWithKythe(dirName, scope string) string {
-	// TODO(jdelfino): This script doesn't pass any extra flags to Bazel, beyond those needed to
-	// enable Kythe. This means the build will fail or be invalid if the normal build workflow
-	// passes any important flags. While passing flags on the command line is discouraged,
-	// we'll need to handle this eventually.
-	bazelConfigFlags := `--config=buildbuddy_bes_backend --config=buildbuddy_bes_results_url`
-	bazelTargets := kytheBuildTargets(scope)
-	return fmt.Sprintf(`
-BZL_MAJOR_VERSION=$(bazel info release | cut -d' ' -f2 | xargs | cut -d'.' -f1)
-
-if [ $BZL_MAJOR_VERSION -lt 7 ]; then
-    BZLMOD_DEFAULT=0
-else
-    BZLMOD_DEFAULT=1
-fi
-
-# starlark-semantics will print out enable_bzlmod if it differs from the default.
-if ! bazel info starlark-semantics | grep -q "enable_bzlmod" ; then
-    BZLMOD_ENABLED=$BZLMOD_DEFAULT
-else
-    BZLMOD_ENABLED=$(( 1 - $BZLMOD_DEFAULT ))
-fi
-
-export KYTHE_DIR="$BUILDBUDDY_CI_RUNNER_ROOT_DIR"/%s
-
-if [ "$BZLMOD_ENABLED" -eq 1 ]; then
-    # with bzlmod enabled, override_repository will not work unless the repository is already defined
-	# inject_repository will work, but was added in Bazel 8, so we need to handle <8 by
-	# manually adding to MODULE.bazel.
-    if [ $BZL_MAJOR_VERSION -lt 8 ]; then
-        echo "Adding kythe repository to MODULE.bazel"
-        echo -e '\nbazel_dep(name = "kythe", version = "0.0.76")' >> MODULE.bazel
-        echo "local_path_override(module_name=\"kythe\", path=\"$KYTHE_DIR\")" >> MODULE.bazel
-	else
-        KYTHE_ARGS="--inject_repository=kythe_release=$KYTHE_DIR"
-	fi
-else
-    # override_repository always works if bzlmod is disabled.
-	KYTHE_ARGS="--override_repository=kythe_release=$KYTHE_DIR"
-fi
-
-# These arguments make the extractors run on java generated code
-KYTHE_ARGS="$KYTHE_ARGS --experimental_extra_action_top_level_only=false --experimental_extra_action_filter=^//"
-
-# extractors.bazelrc sets keep_going; fail fast so the workflow doesn't churn
-# for a long time after obvious errors.
-KYTHE_ARGS="$KYTHE_ARGS --nokeep_going"
-
-# If the kythe archive is extracted under the workspace root, exclude that local
-# package path so //... won't analyze it as a workspace package (we want the
-# injected @kythe_release repository instead).
-if [[ "$KYTHE_DIR" == "$BUILDBUDDY_CI_RUNNER_ROOT_DIR"/* ]]; then
-    kythe_local_pkg="${KYTHE_DIR#"$BUILDBUDDY_CI_RUNNER_ROOT_DIR"/}"
-    KYTHE_ARGS="$KYTHE_ARGS --deleted_packages=$kythe_local_pkg"
-fi
-
-# Bazel 9 defaults config_setting visibility to private, which breaks selects.
-# Also explicitly autoload java rules used by the Kythe BUILD.
-if [ $BZL_MAJOR_VERSION -ge 9 ]; then
-    KYTHE_ARGS="$KYTHE_ARGS --incompatible_config_setting_private_default_visibility=false"
-    KYTHE_ARGS="$KYTHE_ARGS --incompatible_autoload_externally=+cc_common,+CcToolchainConfigInfo,+cc_toolchain,+java_binary,+java_import,+java_library"
-fi
-
-echo "Found Bazel major version: $BZL_MAJOR_VERSION, with enable_bzlmod: $BZLMOD_ENABLED"
-echo "Kythe build scope: %s"
-bazel --bazelrc="$KYTHE_DIR"/extractors.bazelrc build $KYTHE_ARGS %s -- %s`, dirName, scope, bazelConfigFlags, bazelTargets)
-
-}
-
-func prepareKytheOutputs(dirName string) string {
-	buf := fmt.Sprintf(`
-export KYTHE_DIR="$BUILDBUDDY_CI_RUNNER_ROOT_DIR"/%s
-ulimit -n 10240
-
-# Note: intentionally not using xargs -P for parallel indexing, because
-# parallel processes writing binary protobuf entries to a shared pipe can
-# produce interleaved/corrupt output that write_tables cannot decode.
-find -L bazel-out/ -name "*.go.kzip" | xargs -r -n 1 $KYTHE_DIR/indexers/go_indexer -continue | $KYTHE_DIR/tools/dedup_stream >> kythe_entries
-find -L bazel-out/ -name "*.proto.kzip" | xargs -r -I {} $KYTHE_DIR/indexers/proto_indexer -index_file {} | $KYTHE_DIR/tools/dedup_stream >> kythe_entries
-find -L bazel-out -name '*.java.kzip' | xargs -r -n 1 java -jar $KYTHE_DIR/indexers/java_indexer.jar | $KYTHE_DIR/tools/dedup_stream >> kythe_entries
-
-# cxx indexing needs a cache to complete in a "reasonable" amount of time. It still takes a long time
-# and produces very large indices.
-# See https://groups.google.com/g/kythe/c/xKXE3S1JIRI for discussion of these args.
-# TODO(jdelfino): apt update / install are slow - consider either creating a statically linked
-# memcached binary, or installing it in the container image.
-
-cxx_kzips=$(find -L bazel-out/*/extra_actions -name "*.cxx.kzip")
-if [ ! -z "$cxx_kzips" ]; then
-  sudo apt update && sudo apt install -y memcached
-  memcached -p 11211 --listen localhost -m 512 & memcached_pid=$!
-  echo "$cxx_kzips" | xargs -n 1 $KYTHE_DIR/indexers/cxx_indexer \
-    --experimental_alias_template_instantiations \
-	--experimental_dynamic_claim_cache="--SERVER=localhost:11211" \
-	-cache="--SERVER=localhost:11211" \
-	-cache_stats \
-  | $KYTHE_DIR/tools/dedup_stream >> kythe_entries
-  kill $memcached_pid
-fi
-
-"$KYTHE_DIR"/tools/write_tables --entries kythe_entries --out leveldb:kythe_tables
-"$KYTHE_DIR"/tools/export_sstable --input leveldb:kythe_tables --output="$BUILDBUDDY_ARTIFACTS_DIRECTORY"/%s
-
-`, dirName, accumulator.KytheOutputName)
-	return buf
-}
-
-func skipIfNotBazelRepo() string {
-	return `
-# If this is not a Bazel repo, skip Kythe indexing.
-if [ ! -f "WORKSPACE" ] && [ ! -f "WORKSPACE.bazel" ] && [ ! -f "MODULE.bazel" ]; then
-  echo "No WORKSPACE, WORKSPACE.bazel, or MODULE.bazel file found. Skipping Kythe indexing."
-  exit 0
-fi
-`
-}
-
-func KytheIndexingAction(targetRepoDefaultBranch string) *Action {
-	var pushTriggerBranches []string
-	if targetRepoDefaultBranch != "" {
-		pushTriggerBranches = append(pushTriggerBranches, targetRepoDefaultBranch)
-	}
-	kytheDirName := filepath.Base(strings.TrimSuffix(kytheDownloadURL, ".tar.gz"))
-	return &Action{
-		Name: KytheActionName,
-		Triggers: &Triggers{
-			Push: &PushTrigger{Branches: pushTriggerBranches},
-		},
-		ContainerImage: `ubuntu-20.04`,
-		ResourceRequests: ResourceRequests{
-			CPU:    "8",
-			Memory: "16GB",
-			Disk:   "100GB",
-		},
-		Steps: []*rnpb.Step{
-			{
-				Run: skipIfNotBazelRepo() + checkoutKythe(kytheDirName, kytheDownloadURL),
-			},
-			{
-				Run: skipIfNotBazelRepo() + buildWithKythe(kytheDirName, "proto"),
-			},
-			{
-				Run: skipIfNotBazelRepo() + prepareKytheOutputs(kytheDirName),
-			},
-		},
-	}
 }
 
 func sendIncrementalUpdate(apiTarget, repoURL string) string {

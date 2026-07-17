@@ -93,6 +93,8 @@ func (c *Chunkstore) DeleteBlob(ctx context.Context, blobName string) error {
 }
 
 func ChunkIndexAsStringId(index uint16) string {
+	// NOTE: this 4-digit hex format is persisted both in Redis and GCS and
+	// cannot be changed without a careful migration.
 	return fmt.Sprintf("%04x", index)
 }
 
@@ -412,7 +414,8 @@ func (w *ChunkstoreWriter) readFromWriteResultChannel() (int, error) {
 			if result != nil && result.Err != nil {
 				return 0, result.Err
 			}
-			return 0, status.UnavailableErrorf("Error accessing %v: Already closed.", w.blobName)
+			// Return a nil error if already closed, but report 0 bytes written.
+			return 0, nil
 		}
 		w.lastChunkIndex = result.LastChunkIndex
 		if result.Timeout {
@@ -454,9 +457,6 @@ func (w *ChunkstoreWriter) Close(ctx context.Context) error {
 	}
 	w.writeChannel <- &WriteRequest{ctx: ctx, Close: true}
 	_, err := w.readFromWriteResultChannel()
-	if status.IsUnavailableError(err) {
-		return nil
-	}
 	return err
 }
 

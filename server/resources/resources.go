@@ -173,10 +173,26 @@ func Configure(mmapLRUEnabled bool) error {
 	return nil
 }
 
-func GetSysFreeRAMBytes() int64 {
+// GetSysTotalRAMBytes returns the total system memory. Note that in a
+// container this reflects the host, not the container's cgroup.
+func GetSysTotalRAMBytes() (int64, error) {
 	mem := gosigar.Mem{}
-	mem.Get()
-	return int64(mem.ActualFree)
+	if err := mem.Get(); err != nil {
+		return 0, fmt.Errorf("get memory info: %w", err)
+	}
+	return int64(mem.Total), nil
+}
+
+// GetSysFreeRAMBytes returns the system memory available to new workloads,
+// including reclaimable page cache (MemAvailable from /proc/meminfo), not
+// strictly free memory. Note that in a container this reflects the host, not
+// the container's cgroup.
+func GetSysFreeRAMBytes() (int64, error) {
+	mem := gosigar.Mem{}
+	if err := mem.Get(); err != nil {
+		return 0, fmt.Errorf("get memory info: %w", err)
+	}
+	return int64(mem.ActualFree), nil
 }
 
 func GetAllocatedRAMBytes() int64 {

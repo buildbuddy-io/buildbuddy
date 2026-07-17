@@ -195,7 +195,7 @@ func register() {
 		},
 		{
 			Name:    "explain",
-			Help:    "Explains the difference between two compact execution logs.",
+			Help:    "Explains your build using collected profiles and compact execution logs.",
 			Handler: explain.HandleExplain,
 			Flags:   explain.Flags,
 		},

@@ -65,7 +65,9 @@ const (
 
 	// Name of the dir where the remote runner should write bazel run scripts
 	// (used to facilitate building a target remotely and running it locally).
-	runScriptDirName = "bazel-run-scripts"
+	runScriptDirName  = "bazel-run-scripts"
+	runScriptPathFlag = "--script_path=$BUILDBUDDY_CI_RUNNER_ROOT_DIR/" +
+		runScriptDirName + "/run.sh"
 
 	// `git remote` output is expected to look like:
 	// `origin	git@github.com:buildbuddy-io/buildbuddy.git (fetch)`
@@ -89,6 +91,7 @@ var (
 	useSystemGitCredentials = RemoteFlagset.Bool("use_system_git_credentials", false, "Whether to use github auth pre-configured on the remote runner. If false, require https and an access token for git access.")
 	runFromBranch           = RemoteFlagset.String("run_from_branch", "", "A GitHub branch to base the remote run off. If unset, the remote workspace will mirror your local workspace.")
 	runFromCommit           = RemoteFlagset.String("run_from_commit", "", "A GitHub commit SHA to base the remote run off. If unset, the remote workspace will mirror your local workspace.")
+	gitFetchDepth           = RemoteFlagset.Int("git_fetch_depth", -1, "Git fetch depth. Defaults to 'smart' behavior chosen by the remote runner. Can be set to 0 to fetch the full history, or N >= 1 to fetch the last N commits.")
 	// From a shell, pass the JSON in single quotes.
 	// Ex. --run_from_snapshot='{"snapshotId":"XXX","instanceName":""}'
 	runFromSnapshot = RemoteFlagset.String("run_from_snapshot", "", "JSON for a snapshot key that the remote runner should be resumed from. If unset, the snapshot key is determined programatically.")
@@ -612,12 +615,13 @@ func generatePatches(baseCommit string) ([][]byte, error) {
 
 func getTermWidth() int {
 	size, err := unix.IoctlGetWinsize(int(os.Stdout.Fd()), unix.TIOCGWINSZ)
-	if err != nil {
+	if err != nil || size.Col == 0 {
 		return 80
 	}
 	return int(size.Col)
 }
 
+// splitLogBuffer converts a byte buffer from the log API into terminal rows.
 func splitLogBuffer(buf []byte) []string {
 	var lines []string
 
@@ -632,38 +636,100 @@ func splitLogBuffer(buf []byte) []string {
 	return lines
 }
 
+func commonPrefixLineCount(a, b []string) int {
+	n := min(len(a), len(b))
+	for i := 0; i < n; i++ {
+		if a[i] != b[i] {
+			return i
+		}
+	}
+	return n
+}
+
+// liveLogUpdate returns the number of previously printed terminal rows to
+// remove, and the index in the current log buffer to start printing from.
+func liveLogUpdate(previous, current []string) (deleteCount int, printFrom int) {
+	commonPrefixLines := commonPrefixLineCount(previous, current)
+	return len(previous) - commonPrefixLines, commonPrefixLines
+}
+
+type logChunk struct {
+	id       string
+	response *elpb.GetEventLogChunkResponse
+}
+
+func logChunkID(requestedChunkID string, response *elpb.GetEventLogChunkResponse) string {
+	if response.GetLive() {
+		return response.GetNextChunkId()
+	}
+	return requestedChunkID
+}
+
 // streamLogs streams the logs with real-time progress updates. It uses ANSI
 // escape sequences to delete and rewrite outdated progress messages
 func streamLogs(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, invocationID string) error {
+	// Disable printing input to the terminal, which could corrupt the log stream and break log de-duplication.
 	defer resetTerminalStyles()
+	restoreTerminalEcho, err := terminal.DisableEcho(os.Stdin)
+	if err != nil {
+		log.Warnf("Failed to disable terminal echo; typed input may interfere with remote log streaming: %s", err)
+	} else {
+		defer func() {
+			if err := restoreTerminalEcho(); err != nil {
+				log.Warnf("Failed to restore terminal echo: %s", err)
+			}
+		}()
+	}
 
+	// ID of the chunk we're requesting from the server.
 	chunkID := ""
-	moveBack := 0
+	// ID of the live chunk currently drawn on the terminal.
+	liveChunkID := ""
+	// Buffer of lines currently printed to the terminal, kept so redraws do
+	// not reprint log lines that are already on screen.
+	var liveLines []string
 
-	drawChunk := func(chunk *elpb.GetEventLogChunkResponse) {
-		// Are we redrawing the current chunk?
-		if moveBack > 0 {
-			consoleCursorMoveUp(moveBack)
+	drawChunk := func(chunk logChunk) {
+		logLines := splitLogBuffer(chunk.response.GetBuffer())
+		// Index of the log to start printing from. If earlier lines are
+		// already on screen, do not print them again.
+		printFrom := 0
+
+		// Are we redrawing the current live chunk?
+		if liveChunkID == chunk.id {
+			deleteCount := 0
+			deleteCount, printFrom = liveLogUpdate(liveLines, logLines)
+			if deleteCount > 0 {
+				consoleCursorMoveUp(deleteCount)
+				consoleCursorMoveBeginningLine()
+				consoleDeleteLines(deleteCount)
+			}
+		} else if len(liveLines) > 0 {
+			// If we're printing logs from a new chunk, delete volatile log lines
+			// from the previous chunk.
+			consoleCursorMoveUp(len(liveLines))
 			consoleCursorMoveBeginningLine()
-			consoleDeleteLines(moveBack)
+			consoleDeleteLines(len(liveLines))
 		}
 
-		logLines := splitLogBuffer(chunk.GetBuffer())
-		if !chunk.GetLive() {
-			moveBack = 0
+		if !chunk.response.GetLive() {
+			liveChunkID = ""
+			liveLines = nil
 		} else {
-			moveBack = len(logLines)
+			liveChunkID = chunk.id
+			liveLines = logLines
 		}
 
-		for _, l := range logLines {
+		for _, l := range logLines[printFrom:] {
 			_, _ = os.Stdout.Write([]byte(l))
 			_, _ = os.Stdout.Write([]byte("\n"))
 		}
 	}
 
-	var chunks []*elpb.GetEventLogChunkResponse
+	var chunks []logChunk
 	wasLive := false
 	for {
+		requestedChunkID := chunkID
 		l, err := bbClient.GetEventLogChunk(ctx, &elpb.GetEventLogChunkRequest{
 			InvocationId: invocationID,
 			ChunkId:      chunkID,
@@ -673,7 +739,7 @@ func streamLogs(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, inv
 			return status.WrapError(err, "get event log chunk")
 		}
 
-		chunks = append(chunks, l)
+		chunks = append(chunks, logChunk{id: logChunkID(requestedChunkID, l), response: l})
 		// If the current chunk was live but is no longer then delay redraw
 		// until the next chunk is retrieved. The "volatile" part of the
 		// chunk moves to the next chunk when a chunk is finalized. Without
@@ -696,6 +762,13 @@ func streamLogs(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, inv
 			time.Sleep(1 * time.Second)
 		}
 		chunkID = l.GetNextChunkId()
+	}
+
+	// The final chunk's redraw may have been delayed (see above) if it
+	// finalized a previously live chunk. Flush anything still pending so the
+	// last lines of the log are not dropped when the stream ends.
+	for _, chunk := range chunks {
+		drawChunk(chunk)
 	}
 	return nil
 }
@@ -992,6 +1065,11 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 		},
 		RunnerFlags: []string{fmt.Sprintf("--skip_auto_checkout=%v", *skipAutomaticCheckout)},
 	}
+
+	if *gitFetchDepth >= 0 {
+		req.RunnerFlags = append(req.RunnerFlags, fmt.Sprintf("--git_fetch_depth=%d", *gitFetchDepth))
+	}
+
 	req.GetRepoState().Patch = append(req.GetRepoState().Patch, repoConfig.Patches...)
 
 	if *timeout != 0 {
@@ -1313,19 +1391,7 @@ func HandleRemoteBazel(commandLineArgs []string) (int, error) {
 		// If we are running the target locally, remove the exec arguments for now,
 		// and append them when we actually run it
 		if runOutputLocally {
-			// Use shlex.Quote so that the command will be correctly parsed by the shell
-			// command line.
-			quotedArgs := shlex.Quote(bazelArgs...)
-
-			// To support building the target on the remote runner and running it locally,
-			// have Bazel write out a run script using the --script_path flag so we can
-			// extract run options (i.e. args, runfile information) from the generated run script.
-			//
-			// We do not pass this to shlex.Quote, or the env var won't be expanded
-			// correctly.
-			extraFlags := fmt.Sprintf("--script_path=$BUILDBUDDY_CI_RUNNER_ROOT_DIR/%s/run.sh", runScriptDirName)
-
-			cmd = fmt.Sprintf("bazel %s %s", quotedArgs, extraFlags)
+			cmd = fmt.Sprintf("bazel %s", quoteRemoteBazelArgs(bazelArgs))
 			localExecArgs = execArgs
 		} else {
 			cmd = fmt.Sprintf("bazel %s", shlex.Quote(arg.JoinExecutableArgs(bazelArgs, execArgs)...))
@@ -1368,12 +1434,9 @@ func parseArgs(commandLineArgs []string) ([]string, []string, error) {
 	}
 
 	// Because Remote Bazel just forwards the command to a remote runner, it
-	// doesn't need to use the traditional CLI parser, which attempts
-	// to expand --config and --bazelrc flags for an internal view of resolved flags.
+	// doesn't need to expand --config and --bazelrc flags for an internal view of resolved flags.
 	// (Attempting to use the parser would actually fail, because we add --config flags that
 	// are only defined on the remote runners.)
-	// Manually construct a BazelArgs struct because the login code expects it.
-	// TODO: Find a less hacky way to handle this.
 	bazelArgsStruct, err := arg.NewBazelArgsNoResolve(bazelArgs)
 	if err != nil {
 		return nil, nil, fmt.Errorf("parse bazel args: %w", err)
@@ -1381,24 +1444,59 @@ func parseArgs(commandLineArgs []string) ([]string, []string, error) {
 	if err := login.ConfigureAPIKey(bazelArgsStruct); err != nil {
 		return nil, nil, fmt.Errorf("configure api key: %w", err)
 	}
-	bazelArgs = bazelArgsStruct.Resolved()
 
 	// Ensure all bazel remote runs use the remote cache.
 	// The goal is to keep remote workloads close to our servers, so use the same
 	// app backend as the remote runner.
-	bazelArgs = arg.Remove(bazelArgs, "bes_backend")
-	bazelArgs = arg.Remove(bazelArgs, "remote_cache")
-	bazelArgs = append(bazelArgs, "--config=buildbuddy_bes_backend")
-	bazelArgs = append(bazelArgs, "--config=buildbuddy_bes_results_url")
-	bazelArgs = append(bazelArgs, "--config=buildbuddy_remote_cache")
-
-	// If the CLI needs to fetch build outputs, make sure the remote runner uploads them.
-	bazelCmd, _ := parser.GetBazelCommandAndIndex(bazelArgs)
-	if (!*runRemotely && bazelCmd == "run") || bazelCmd == "build" {
-		bazelArgs = append(bazelArgs, "--remote_upload_local_results")
+	if _, err := bazelArgsStruct.Pop("bes_backend"); err != nil {
+		return nil, nil, fmt.Errorf("remove BES backend: %w", err)
+	}
+	if _, err := bazelArgsStruct.Pop("remote_cache"); err != nil {
+		return nil, nil, fmt.Errorf("remove remote cache: %w", err)
+	}
+	extraArgs := []string{
+		"--config=buildbuddy_bes_backend",
+		"--config=buildbuddy_bes_results_url",
+		"--config=buildbuddy_remote_cache",
 	}
 
-	return bazelArgs, execArgs, nil
+	// If the CLI needs to fetch build outputs, make sure the remote runner uploads them.
+	bazelCmd := bazelArgsStruct.GetCommand()
+	if (!*runRemotely && bazelCmd == "run") || bazelCmd == "build" {
+		extraArgs = append(extraArgs, "--remote_upload_local_results")
+	}
+	// To support building the target on the remote runner and running it locally,
+	// have Bazel write out a run script using the --script_path flag so we can
+	// extract run options (i.e. args, runfile information) from the generated run script.
+	if !*runRemotely && bazelCmd == "run" {
+		extraArgs = append(extraArgs, runScriptPathFlag)
+	}
+	for _, extraArg := range extraArgs {
+		if err := bazelArgsStruct.Prepend(extraArg); err != nil {
+			return nil, nil, fmt.Errorf("add remote bazel arg: %w", err)
+		}
+	}
+
+	return bazelArgsStruct.Forwarded(), execArgs, nil
+}
+
+// quoteRemoteBazelArgs quotes Bazel args for the remote shell so that the command will be correctly parsed by the shell
+// command line.
+func quoteRemoteBazelArgs(args []string) string {
+	quoted := make([]string, 0, len(args))
+	for _, arg := range args {
+		// The run script path flag contains an env var that we *want* expanded on the remote runner.
+		// We do not want to use shlex.Quote, which explicitly prevents env var expansion.
+		if path, ok := strings.CutPrefix(arg, "--script_path="); ok {
+			runnerRoot := "$BUILDBUDDY_CI_RUNNER_ROOT_DIR"
+			if relativePath, ok := strings.CutPrefix(path, runnerRoot+"/"); ok {
+				quoted = append(quoted, `--script_path="`+runnerRoot+`"`+shlex.Quote("/"+relativePath))
+				continue
+			}
+		}
+		quoted = append(quoted, shlex.Quote(arg))
+	}
+	return strings.Join(quoted, " ")
 }
 
 // parseRemoteCliFlags parses flags that affect configuration of remote bazel.
@@ -1443,7 +1541,14 @@ func parseRemoteCliFlags(args []string) ([]string, error) {
 		if err == nil {
 			// flagset.Args() contains the list of any unparsed arguments
 			// Keep parsing them in a loop until we process all the args
-			unparsedArgs = RemoteFlagset.Args()
+			remainingArgs := RemoteFlagset.Args()
+
+			// If the flag parser didn't consume any arguments (which can happen if there's an unexpected syntax error),
+			// return an error so there's not an infinite loop.
+			if len(remainingArgs) == len(unparsedArgs) {
+				return nil, status.InvalidArgumentErrorf("unexpected argument %q before bazel command; use `bb remote <bazel command> ...` (for example, `bb remote build //...`)", remainingArgs[0])
+			}
+			unparsedArgs = remainingArgs
 		} else {
 			// Parsing undefined flags could happen if there are bazel startup flags set
 			// Remove them from the list of unparsed arguments and keep parsing

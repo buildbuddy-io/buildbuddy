@@ -1,6 +1,7 @@
 syntax = "proto3";
 
 import "proto/resource.proto";
+import "proto/remote_execution.proto";
 import "github.com/planetscale/vtprotobuf/vtproto/ext.proto";
 
 package distributed_cache;
@@ -24,6 +25,7 @@ message ReadResponse {
 
 // Next Tag: 9
 message WriteRequest {
+  option (vtproto.mempool) = true;
   reserved 1, 2, 6;
   bool finish_write = 3;
 
@@ -52,6 +54,11 @@ message DeleteResponse {}
 message FindMissingRequest {
   reserved 1, 2;
   repeated resource.ResourceName resources = 3;
+
+  // Propagates the originating FindMissing purpose across the distributed-cache
+  // peer protocol so the authoritative node can attribute present/absent
+  // metrics to the right code path. Observability only; does not affect lookup.
+  build.bazel.remote.execution.v2.FindMissingBlobsRequest.Purpose purpose = 4;
 }
 
 message FindMissingResponse {

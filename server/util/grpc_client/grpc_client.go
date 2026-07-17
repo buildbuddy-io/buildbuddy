@@ -38,8 +38,19 @@ const (
 	defaultProtocol = "grpcs://"
 )
 
+const (
+	// connPickRoundRobin cycles through pool connections in order.
+	connPickRoundRobin = "round-robin"
+	// connPickLeastPendingRPCs picks a connection using the power of two random
+	// choices over in-flight RPC counts, steering load away from connections
+	// that are backed up.
+	connPickLeastPendingRPCs = "least-pending-rpcs"
+)
+
 var (
 	poolSize = flag.Int("grpc_client.pool_size", 15, "Number of connections to create to each target.")
+
+	connPickPolicy = flag.String("grpc_client.conn_pick_policy", connPickRoundRobin, "How to pick a pool connection for each RPC. \""+connPickRoundRobin+"\" cycles through connections in order. \""+connPickLeastPendingRPCs+"\" uses the power of two random choices over in-flight RPC counts to steer load away from connections that are backed up (e.g. stalled behind a load balancer's flow-control or max-concurrent-stream limits).")
 
 	idsMu sync.Mutex
 	ids   = map[string]int{}
@@ -49,6 +60,10 @@ type clientConn struct {
 	*grpc.ClientConn
 	index        string
 	wasEverReady atomic.Bool
+	// pending is the number of in-flight RPCs issued on this connection via
+	// the pool's Invoke and NewStream methods. getConn uses it to steer new
+	// RPCs toward less-loaded connections.
+	pending atomic.Int64
 }
 
 type ClientConnPool struct {
@@ -97,7 +112,29 @@ func (p *ClientConnPool) Close() error {
 	return nil
 }
 
+// getConn returns a connection from the pool.
+//
+// Under the "least-pending-rpcs" policy it uses the power of two random
+// choices: it samples two distinct connections and returns whichever has fewer
+// in-flight RPCs. This steers new RPCs away from connections that are backed up
+// (for example, one stalled behind the load balancer's HTTP/2 flow-control or
+// max-concurrent-stream limits) and toward idle ones. Otherwise it falls back
+// to round-robin, cycling through connections in order.
 func (p *ClientConnPool) getConn() *clientConn {
+	n := len(p.conns)
+	if *connPickPolicy == connPickLeastPendingRPCs && n > 1 {
+		// Sample two distinct connections and take the less-loaded one.
+		i := rand.IntN(n)
+		j := rand.IntN(n - 1)
+		if j >= i {
+			j++
+		}
+		a, b := p.conns[i], p.conns[j]
+		if b.pending.Load() < a.pending.Load() {
+			return b
+		}
+		return a
+	}
 	idx := p.idx.Add(1)
 	return p.conns[idx%uint64(len(p.conns))]
 }
@@ -139,7 +176,11 @@ func (p *ClientConnPool) Invoke(ctx context.Context, method string, args any, re
 	conn := p.getConn()
 	gauge := metrics.PendingClientRPCsPerConnection.WithLabelValues(p.targetForLogging, p.id, method, conn.index)
 	gauge.Inc()
-	defer gauge.Dec()
+	conn.pending.Add(1)
+	defer func() {
+		gauge.Dec()
+		conn.pending.Add(-1)
+	}()
 	return conn.Invoke(ctx, method, args, reply, opts...)
 }
 
@@ -156,9 +197,13 @@ func (p *ClientConnPool) NewStream(ctx context.Context, desc *grpc.StreamDesc, m
 	defer cancel()
 	conn := p.getConn()
 	gauge := metrics.PendingClientRPCsPerConnection.WithLabelValues(p.targetForLogging, p.id, method, conn.index)
-	decFn := sync.OnceFunc(func() { gauge.Dec() })
+	decFn := sync.OnceFunc(func() {
+		gauge.Dec()
+		conn.pending.Add(-1)
+	})
 	opts = append(opts, grpc.OnFinish(func(_ error) { decFn() }))
 	gauge.Inc()
+	conn.pending.Add(1)
 	stream, err := conn.NewStream(ctx, desc, method, opts...)
 	if err != nil {
 		decFn()
@@ -380,8 +425,12 @@ func (c *rpcCredentials) RequireTransportSecurity() bool {
 }
 
 func CommonGRPCClientOptions() []grpc.DialOption {
+	otelOpts := []otelgrpc.Option{otelgrpc.WithMeterProvider(rpcutil.MeterProvider())}
+	if *rpcutil.OTELGRPCMessageEventsEnabled {
+		otelOpts = append(otelOpts, otelgrpc.WithMessageEvents(otelgrpc.ReceivedEvents, otelgrpc.SentEvents))
+	}
 	return []grpc.DialOption{
-		grpc.WithStatsHandler(otelgrpc.NewClientHandler(otelgrpc.WithMeterProvider(rpcutil.MeterProvider()), otelgrpc.WithMessageEvents(otelgrpc.ReceivedEvents, otelgrpc.SentEvents))),
+		grpc.WithStatsHandler(otelgrpc.NewClientHandler(otelOpts...)),
 		interceptors.GetUnaryClientInterceptor(),
 		interceptors.GetStreamClientInterceptor(),
 		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(math.MaxInt32)),

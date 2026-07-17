@@ -42,33 +42,37 @@ page.
 
 ### Bazel actions
 
-To opt a specific action into secrets, you can define the remote exec
-property `include-secrets=true`. We recommend doing this per-action to
-avoid exposing secrets to actions that do not need them.
+To allow a target's remotely executed actions to access secrets, use the
+`env-secrets` execution property, which accepts a comma-separated list of
+secrets to pass as environment variables into the action.
+
+It is recommended to set the `env-secrets` execution property per-target, rather
+than globally via `--remote_default_exec_properties` or via execution platforms.
+
+When applicable, it is also recommended to narrow these properties by [execution
+group](https://bazel.build/extending/exec-groups) to further restrict the
+actions within a target that can access the secret. Most commonly, the `test`
+execution group can be used to allow a test to access a secret value, but not
+the action that builds the test.
 
 Example:
 
 ```python title="BUILD"
-foo_library(
+foo_test(
     # ...
     exec_properties = {
-        "include-secrets": "true",
+        # foo_test builds the test (action 1) then runs the test (action 2).
+        # The "test." prefix here only exposes the secrets to the action that
+        # runs the test (action 2).
+        "test.env-secrets": "API_KEY,DB_PASSWORD",
     }
 )
 ```
 
-If you only need a subset of your secrets in a given action, use the
-`env-secrets` property instead. It accepts a comma-separated list of
-secret names and injects only those secrets as environment variables.
-
-```python title="BUILD"
-foo_library(
-    # ...
-    exec_properties = {
-        "env-secrets": "API_KEY,DB_PASSWORD",
-    }
-)
-```
+To make _all_ secrets available in the action environment, the `include-secrets`
+execution property can be set to the string `"true"`. However, it is recommended
+to use `env-secrets` instead, so that the action only receives the secret values
+that it needs.
 
 ### Workflows
 

@@ -1,6 +1,8 @@
 package cgroup
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -127,6 +129,39 @@ func TestSettingsMap(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestReadMemoryMax(t *testing.T) {
+	dir := t.TempDir()
+
+	// A numeric memory.max value should be returned as the limit in bytes.
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "memory.max"), []byte("1073741824\n"), 0644))
+	limit, err := ReadMemoryMax(dir)
+	require.NoError(t, err)
+	require.NotNil(t, limit)
+	require.Equal(t, int64(1073741824), *limit)
+
+	// The special value "max" means the cgroup has no memory limit, which is
+	// reported as nil.
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "memory.max"), []byte("max\n"), 0644))
+	limit, err = ReadMemoryMax(dir)
+	require.NoError(t, err)
+	require.Nil(t, limit)
+}
+
+func TestReadMemoryStatField(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "memory.stat"), []byte("anon 1024\nfile 2048\ninactive_file 512\n"), 0644))
+
+	// The requested field's value should be returned, ignoring other fields.
+	value, err := ReadMemoryStatField(dir, "inactive_file")
+	require.NoError(t, err)
+	require.Equal(t, int64(512), value)
+
+	// Requesting a field that is not present in memory.stat should return an
+	// error.
+	_, err = ReadMemoryStatField(dir, "nonexistent_field")
+	require.Error(t, err)
 }
 
 func TestParsePSI(t *testing.T) {

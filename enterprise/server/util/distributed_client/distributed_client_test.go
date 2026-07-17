@@ -1085,29 +1085,25 @@ func BenchmarkWrite(b *testing.B) {
 	flags.Set(b, "app.log_level", "error")
 	log.Configure()
 
-	digestSizes := []int64{
-		128, 16384, 16_777_216,
-	}
+	digestSizes := []int64{128, 16384, 16_777_216}
+
+	ctx := context.Background()
+	te := getTestEnv(b, emptyUserMap)
+
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+	require.NoError(b, err)
+
+	peer := fmt.Sprintf("localhost:%d", testport.FindFree(b))
+	c := distributed_client.New(te, te.GetCache(), peer)
+	err = c.StartListening()
+	require.NoError(b, err)
+	waitUntilServerIsAlive(peer)
 
 	for _, digestSize := range digestSizes {
 		for chunkSize := digestSize / 4; chunkSize <= digestSize; chunkSize += digestSize / 4 {
 			b.Run(fmt.Sprintf("digest%s_chunk%s", units.BytesSize(float64(digestSize)), units.BytesSize(float64(chunkSize))), func(b *testing.B) {
 				b.ReportAllocs()
-				ctx := context.Background()
-				te := getTestEnv(b, emptyUserMap)
-
-				ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
-				require.NoError(b, err)
-
-				peer := fmt.Sprintf("localhost:%d", testport.FindFree(b))
-				c := distributed_client.New(te, te.GetCache(), peer)
-				err = c.StartListening()
-				require.NoError(b, err)
-
-				waitUntilServerIsAlive(peer)
-
-				b.ResetTimer()
-				for n := 0; n < b.N; n++ {
+				for b.Loop() {
 					b.StopTimer()
 					rn, buf := testdigest.RandomCASResourceBuf(b, digestSize)
 					b.StartTimer()
@@ -1115,6 +1111,12 @@ func BenchmarkWrite(b *testing.B) {
 					require.NoError(b, err)
 					copyChunked(b, wc, buf, chunkSize)
 					require.NoError(b, err)
+					b.StopTimer()
+					// Delete the resource so that background eviction doesn't
+					// affect performance. This also ensures that we don't get
+					// any accidental collisions with existing resources.
+					require.NoError(b, c.RemoteDelete(ctx, peer, rn))
+					b.StartTimer()
 				}
 			})
 		}

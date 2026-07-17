@@ -289,54 +289,6 @@ button {
   margin-left: 0;
 }
 
-svg.icon {
-  /* Default icon color is gray */
-  stroke: var(--color-icon-default);
-  /* By default, icons should not get squished */
-  flex-shrink: 0;
-}
-
-svg.icon.white {
-  stroke: var(--color-white);
-}
-
-svg.icon.gray,
-svg.icon.grey {
-  stroke: var(--color-icon-default);
-}
-
-svg.icon.black {
-  stroke: var(--color-black);
-}
-
-svg.icon.green {
-  stroke: var(--color-light-green-500);
-}
-
-svg.icon.red {
-  stroke: var(--color-red-500);
-}
-
-svg.icon.blue {
-  stroke: var(--color-light-blue-500);
-}
-
-svg.icon.brown {
-  stroke: var(--color-brown-700-alt);
-}
-
-svg.icon.purple {
-  stroke: var(--color-deep-purple-500);
-}
-
-svg.icon.orange {
-  stroke: var(--color-amber-900);
-}
-
-svg.icon.yellow {
-  stroke: var(--color-icon-yellow);
-}
-
 .rotate-90 {
   transform: rotate(90deg);
 }
@@ -571,8 +523,7 @@ a.card:hover {
 }
 
 .history .card-hover .icon {
-  width: 16px;
-  height: 16px;
+  --icon-size: 16px;
 }
 
 .history .card .details:empty {
@@ -1770,7 +1721,7 @@ code .comment {
 
 .dense .card .target-status-icon .icon {
   display: initial;
-  width: 16px;
+  --icon-size: 16px;
   padding-top: 0;
 }
 
@@ -1944,8 +1895,7 @@ code .comment {
 .copy-icon {
   color: var(--color-text-secondary);
   cursor: pointer;
-  height: 0.8em;
-  width: 0.8em;
+  --icon-size: 0.8em;
   margin-left: 0.2em;
 }
 
@@ -1973,7 +1923,6 @@ code .comment {
 
 .target-history-button {
   margin-left: 16px;
-  gap: 8px;
 }
 
 /* Chart styling */

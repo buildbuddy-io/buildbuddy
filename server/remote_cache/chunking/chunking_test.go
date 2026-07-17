@@ -20,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/sync/errgroup"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
@@ -496,7 +497,7 @@ func TestMissingChunkChecker(t *testing.T) {
 		DigestFunction: repb.DigestFunction_SHA256,
 	}
 
-	checker := chunking.NewMissingChunkChecker(trackingCache)
+	checker := chunking.NewMissingChunkChecker(trackingCache, repb.FindMissingBlobsRequest_UNKNOWN)
 
 	missing, err := checker.AnyChunkMissing(ctx, manifestAllPresent)
 	require.NoError(t, err)
@@ -519,6 +520,62 @@ func TestMissingChunkChecker(t *testing.T) {
 	assert.Equal(t, 2, trackingCache.findMissingCalls, "expected no additional FindMissing call")
 }
 
+// TestMissingChunkChecker_Concurrent exercises a single shared checker from
+// many goroutines, mirroring how FindMissingBlobs now resolves the
+// chunked-manifest fallback in parallel. Run under -race
+// (--@io_bazel_rules_go//go/config:race) to catch data races on the shared
+// chunkPresent map.
+func TestMissingChunkChecker_Concurrent(t *testing.T) {
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+	require.NoError(t, err)
+	cache := te.GetCache()
+
+	chunk1RN, chunk1Data := testdigest.RandomCASResourceBuf(t, 100)
+	chunk2RN, chunk2Data := testdigest.RandomCASResourceBuf(t, 150)
+	chunk3RN, _ := testdigest.RandomCASResourceBuf(t, 200) // never stored, so missing
+	require.NoError(t, cache.Set(ctx, chunk1RN, chunk1Data))
+	require.NoError(t, cache.Set(ctx, chunk2RN, chunk2Data))
+
+	blobDigest, err := digest.Compute(bytes.NewReader([]byte("blob")), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+
+	// The two manifests share chunk1 so concurrent calls contend on the same
+	// dedup map entries.
+	manifestAllPresent := &chunking.Manifest{
+		BlobDigest:     blobDigest,
+		ChunkDigests:   []*repb.Digest{chunk1RN.GetDigest(), chunk2RN.GetDigest()},
+		DigestFunction: repb.DigestFunction_SHA256,
+	}
+	manifestWithMissing := &chunking.Manifest{
+		BlobDigest:     blobDigest,
+		ChunkDigests:   []*repb.Digest{chunk1RN.GetDigest(), chunk3RN.GetDigest()},
+		DigestFunction: repb.DigestFunction_SHA256,
+	}
+
+	checker := chunking.NewMissingChunkChecker(cache, repb.FindMissingBlobsRequest_UNKNOWN)
+	eg, egCtx := errgroup.WithContext(ctx)
+	eg.SetLimit(32)
+	for i := 0; i < 200; i++ {
+		manifest, want := manifestAllPresent, false
+		if i%2 == 0 {
+			manifest, want = manifestWithMissing, true
+		}
+		eg.Go(func() error {
+			got, err := checker.AnyChunkMissing(egCtx, manifest)
+			if err != nil {
+				return err
+			}
+			if got != want {
+				return fmt.Errorf("AnyChunkMissing = %v, want %v", got, want)
+			}
+			return nil
+		})
+	}
+	require.NoError(t, eg.Wait())
+}
+
 type findMissingTrackingCache struct {
 	interfaces.Cache
 	findMissingCalls int
@@ -531,7 +588,8 @@ func (c *findMissingTrackingCache) FindMissing(ctx context.Context, resources []
 
 type booleanFlagProvider struct {
 	interfaces.ExperimentFlagProvider
-	values map[string]bool
+	values    map[string]bool
+	intValues map[string]int64
 }
 
 func (p booleanFlagProvider) Boolean(ctx context.Context, flagName string, defaultValue bool, opts ...any) bool {
@@ -543,7 +601,25 @@ func (p booleanFlagProvider) Boolean(ctx context.Context, flagName string, defau
 }
 
 func (p booleanFlagProvider) Int64(ctx context.Context, flagName string, defaultValue int64, opts ...any) int64 {
+	v, ok := p.intValues[flagName]
+	if ok {
+		return v
+	}
 	return defaultValue
+}
+
+func TestShouldDiscardLegacyChunkedBlob(t *testing.T) {
+	flags.Set(t, "cache.avg_chunk_size_bytes", 512*1024)
+	flags.Set(t, "cache.min_chunked_read_fallback_size_bytes", 2*1024*1024)
+
+	ctx := context.Background()
+	efp := booleanFlagProvider{intValues: map[string]int64{"cache.avg_chunk_size_override": 1024 * 1024}}
+	assert.False(t, chunking.ShouldDiscardLegacyChunkedBlob(ctx, nil, 3*1024*1024))
+	assert.False(t, chunking.ShouldDiscardLegacyChunkedBlob(ctx, booleanFlagProvider{}, 3*1024*1024))
+	assert.False(t, chunking.ShouldDiscardLegacyChunkedBlob(ctx, efp, 2*1024*1024))
+	assert.True(t, chunking.ShouldDiscardLegacyChunkedBlob(ctx, efp, 3*1024*1024))
+	assert.True(t, chunking.ShouldDiscardLegacyChunkedBlob(ctx, efp, 4*1024*1024))
+	assert.False(t, chunking.ShouldDiscardLegacyChunkedBlob(ctx, efp, 4*1024*1024+1))
 }
 
 func TestEnabled_FallsBackToExperimentFlag(t *testing.T) {

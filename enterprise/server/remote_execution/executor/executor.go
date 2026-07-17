@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor_auth"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/oom"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -418,7 +419,9 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 	// termination after the termination timeout.
 	gracefullyTerminated := make(chan struct{})
 	if execTimeouts.TerminateAfter < execTimeouts.ForceKillAfter {
-		go func() {
+		// Capture the execution ctx so this goroutine does not race with later
+		// ctx reassignments.
+		go func(ctx context.Context) {
 			select {
 			case <-ctx.Done():
 				return
@@ -429,7 +432,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 					log.CtxWarningf(ctx, "Failed to send graceful termination signal: %s", err)
 				}
 			}
-		}()
+		}(ctx)
 	}
 
 	log.CtxDebugf(ctx, "Executing task.")
@@ -482,8 +485,13 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 	// DeadlineExceeded error.
 	select {
 	case <-gracefullyTerminated:
-		cmdResult.ExitCode = commandutil.NoExitCode
-		cmdResult.Error = status.DeadlineExceededError("deadline exceeded")
+		// incompleteExecutionError above already gave outer context cancellation
+		// priority. If the runner reported executor OOM, keep that specific error
+		// instead of replacing it only because the timeout signal was also sent.
+		if !oom.IsError(cmdResult.Error) {
+			cmdResult.ExitCode = commandutil.NoExitCode
+			cmdResult.Error = status.DeadlineExceededError("deadline exceeded")
+		}
 	default:
 	}
 

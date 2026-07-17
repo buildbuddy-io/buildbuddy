@@ -261,7 +261,11 @@ func (f *fakeClientIdentityService) AddIdentityToContext(ctx context.Context) (c
 	return ctx, nil
 }
 
-func (f *fakeClientIdentityService) IdentityHeader(si *interfaces.ClientIdentity, expiration time.Duration) (string, error) {
+func (f *fakeClientIdentityService) NewIdentityHeader(si *interfaces.ClientIdentity, expiration time.Duration) (string, error) {
+	return "", nil
+}
+
+func (f *fakeClientIdentityService) CachedIdentityHeader(si *interfaces.ClientIdentity) (string, error) {
 	return "", nil
 }
 

@@ -44,26 +44,26 @@ export default class TargetComponent extends React.Component<Props> {
 
   renderStatusIcon(status: build_event_stream.TestStatus): JSX.Element {
     if (this.props.skippedEvent) {
-      return <SkipForward className="icon purple" />;
+      return <SkipForward className="purple" />;
     }
 
     if (!this.props.testSummaryEvent) {
       return this.props.completedEvent?.buildEvent?.completed?.success ? (
-        <CheckCircle className="icon green" />
+        <CheckCircle className="green" />
       ) : (
-        <XCircle className="icon red" />
+        <XCircle className="red" />
       );
     }
 
     switch (status) {
       case build_event_stream.TestStatus.PASSED:
-        return <CheckCircle className="icon green" />;
+        return <CheckCircle className="green" />;
       case build_event_stream.TestStatus.FLAKY:
-        return <HelpCircle className="icon orange" />;
+        return <HelpCircle className="orange" />;
       case build_event_stream.TestStatus.TIMEOUT:
-        return <Clock className="icon" />;
+        return <Clock />;
       default:
-        return <XCircle className="icon red" />;
+        return <XCircle className="red" />;
     }
   }
 
@@ -215,7 +215,7 @@ export default class TargetComponent extends React.Component<Props> {
               <div className="subtitle">{this.getTime()}</div>
               {historyURL && (
                 <OutlinedLinkButton href={historyURL} className="target-history-button">
-                  <History className="icon" />
+                  <History />
                   <span>Target history</span>
                 </OutlinedLinkButton>
               )}
@@ -234,18 +234,18 @@ export default class TargetComponent extends React.Component<Props> {
 
               {this.props.testSummaryEvent && (
                 <div className="detail">
-                  <Hash className="icon" />
+                  <Hash />
                   {this.props.testSummaryEvent?.buildEvent?.testSummary?.totalRunCount ?? 0} total runs
                 </div>
               )}
               <div className="detail">
-                <Target className="icon" />
+                <Target />
                 {this.props.configuredEvent?.buildEvent?.configured?.targetKind ||
                   this.props.actionEvents?.map((action) => action.buildEvent?.action?.type).join(",")}
               </div>
               {(this.props.configuredEvent?.buildEvent?.configured?.testSize ?? 0) > 0 && (
                 <div className="detail">
-                  <Box className="icon" />
+                  <Box />
                   {this.getTestSize(
                     this.props.configuredEvent?.buildEvent?.configured?.testSize ?? build_event_stream.TestSize.UNKNOWN
                   )}

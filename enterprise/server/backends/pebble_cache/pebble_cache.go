@@ -33,6 +33,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
+	"github.com/buildbuddy-io/buildbuddy/server/util/findmissing"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lockmap"
@@ -100,11 +101,12 @@ var (
 	minBytesAutoZstdCompression = flag.Int64("cache.pebble.min_bytes_auto_zstd_compression", DefaultMinBytesAutoZstdCompression, "Blobs larger than this will be zstd compressed before written to disk.")
 
 	// GCS Large File Support
-	gcsBucket      = flag.String("cache.pebble.gcs.bucket", "", "The name of the GCS bucket to store build artifact files in.")
-	gcsTTLDays     = flag.Int64("cache.pebble.gcs.ttl_days", 0, "An object TTL, specified in days, to apply to the GCS bucket (0 means disabled).")
-	gcsCredentials = flag.String("cache.pebble.gcs.credentials", "", "Credentials in JSON format that will be used to authenticate to GCS.", flag.Secret)
-	gcsProjectID   = flag.String("cache.pebble.gcs.project_id", "", "The Google Cloud project ID of the project owning the above credentials and GCS bucket.")
-	gcsAppName     = flag.String("cache.pebble.gcs.app_name", "", "The app name, under which blobstore data will be stored.")
+	gcsBucket               = flag.String("cache.pebble.gcs.bucket", "", "The name of the GCS bucket to store build artifact files in.")
+	gcsTTLDays              = flag.Int64("cache.pebble.gcs.ttl_days", 0, "An object TTL, specified in days, to apply to the GCS bucket (0 means disabled).")
+	gcsCredentials          = flag.String("cache.pebble.gcs.credentials", "", "Credentials in JSON format that will be used to authenticate to GCS.", flag.Secret)
+	gcsProjectID            = flag.String("cache.pebble.gcs.project_id", "", "The Google Cloud project ID of the project owning the above credentials and GCS bucket.")
+	gcsAppName              = flag.String("cache.pebble.gcs.app_name", "", "The app name, under which blobstore data will be stored.")
+	gcsAtimeUpdateThreshold = flag.Duration("cache.pebble.gcs.atime_update_threshold", 0, "Don't update a GCS object's custom time (its atime) if it was updated more recently than this (0 updates on every atime update).")
 )
 
 var (
@@ -207,7 +209,11 @@ type Options struct {
 	GCSAppName          string
 	GCSTTLDays          *int64
 	MinGCSFileSizeBytes *int64
-	FileStorer          filestore.Store
+	// GCSAtimeUpdateThreshold suppresses a GCS object's custom time (atime)
+	// refresh if it was updated more recently than this. 0 updates on every
+	// atime update.
+	GCSAtimeUpdateThreshold *time.Duration
+	FileStorer              filestore.Store
 }
 
 type sizeUpdate struct {
@@ -277,8 +283,9 @@ type PebbleCache struct {
 	oldMetrics       pebble.Metrics
 	metricsCollector *pebble.MetricsCollector
 
-	minGCSFileSizeBytes int64
-	gcsTTLDays          int64
+	minGCSFileSizeBytes     int64
+	gcsTTLDays              int64
+	gcsAtimeUpdateThreshold time.Duration
 
 	metrics struct {
 		compressedBlobSizeWrite   prometheus.Counter
@@ -376,6 +383,7 @@ func Register(env *real_environment.RealEnv) error {
 		GCSAppName:                  *gcsAppName,
 		GCSTTLDays:                  gcsTTLDays,
 		MinGCSFileSizeBytes:         minGCSFileSizeBytesFlag,
+		GCSAtimeUpdateThreshold:     gcsAtimeUpdateThreshold,
 		EnableAutoRatchet:           *enableAutoRatchet,
 	}
 	c, err := NewPebbleCache(env, opts)
@@ -482,6 +490,10 @@ func SetOptionDefaults(opts *Options) {
 		var ttlInDays int64 = 0
 		opts.GCSTTLDays = &ttlInDays
 	}
+	if opts.GCSAtimeUpdateThreshold == nil {
+		var threshold time.Duration = 0
+		opts.GCSAtimeUpdateThreshold = &threshold
+	}
 	if opts.MinBytesAutoZstdCompression == nil {
 		opts.MinBytesAutoZstdCompression = &DefaultMinBytesAutoZstdCompression
 	}
@@ -531,7 +543,7 @@ func defaultPebbleOptions(mc *pebble.MetricsCollector, pcOpts *Options) *pebble.
 		L0CompactionThreshold:    2,
 		MaxConcurrentCompactions: func() int { return 18 },
 		MemTableSize:             64 << 20, // 64 MB
-		MaxOpenFiles:             2000,     // double the default
+		MaxOpenFiles:             4000,     // 4x the default
 		EventListener: &pebble.EventListener{
 			BackgroundError: mc.BackgroundError,
 			WriteStallBegin: mc.WriteStallBegin,
@@ -684,6 +696,7 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 		includeMetadataSize:         opts.IncludeMetadataSize,
 		minGCSFileSizeBytes:         *opts.MinGCSFileSizeBytes,
 		gcsTTLDays:                  *opts.GCSTTLDays,
+		gcsAtimeUpdateThreshold:     *opts.GCSAtimeUpdateThreshold,
 		fileStorer:                  fileStorer,
 	}
 	zstdLabels := prometheus.Labels{metrics.CacheNameLabel: pc.name, metrics.CompressionType: "zstd"}
@@ -815,8 +828,7 @@ func keyRange(key []byte) ([]byte, []byte) {
 	return keyPrefix(key, keys.MinByte), keyPrefix(key, keys.MaxByte)
 }
 
-func olderThanThreshold(t time.Time, threshold time.Duration) bool {
-	age := time.Since(t)
+func olderThanThreshold(age time.Duration, threshold time.Duration) bool {
 	return age >= threshold
 }
 
@@ -935,12 +947,11 @@ func (p *PebbleCache) updateAtime(update *accessTimeUpdate) error {
 	}
 
 	atime := time.UnixMicro(md.GetLastAccessUsec())
+	newAtime := p.clock.Now()
 
-	if !olderThanThreshold(atime, p.atimeUpdateThreshold) {
+	if !olderThanThreshold(newAtime.Sub(atime), p.atimeUpdateThreshold) {
 		return nil
 	}
-
-	newAtime := p.clock.Now()
 
 	if atime.After(newAtime) {
 		// Atime updates are queued -- if an object was overwritten
@@ -954,18 +965,25 @@ func (p *PebbleCache) updateAtime(update *accessTimeUpdate) error {
 		metrics.CacheNameLabel: p.name,
 	}
 
-	// If this is a GCS object, update the custom time and record the new
-	// custom time.
+	// If this is a GCS object, refresh the custom time and record the new
+	// custom time. Each refresh is a billed GCS Class A operation and the custom
+	// time is only a defensive TTL backstop, so it does not need to track the
+	// pebble atime closely: skip the refresh unless the recorded custom time is
+	// older than gcsAtimeUpdateThreshold. The pebble atime below is still
+	// updated on every access past the atime threshold.
 	if gcsMetadata := md.GetStorageMetadata().GetGcsMetadata(); gcsMetadata != nil {
 		if gcsutil.ObjectIsPastTTL(p.clock, gcsMetadata, p.gcsTTLDays) {
 			return nil
 		}
-		if err := p.fileStorer.UpdateBlobAtime(p.env.GetServerContext(), gcsMetadata, newAtime); err != nil {
-			metrics.PebbleCacheAtimeUpdateGCSErrorCount.With(lbls).Inc()
-			log.Errorf("Error updating GCS custom time (%q): %s", update.key, err)
-			return err
+		lastCustomTime := time.UnixMicro(gcsMetadata.GetLastCustomTimeUsec())
+		if newAtime.Sub(lastCustomTime) >= p.gcsAtimeUpdateThreshold {
+			if err := p.fileStorer.UpdateBlobAtime(p.env.GetServerContext(), gcsMetadata, newAtime); err != nil {
+				metrics.PebbleCacheAtimeUpdateGCSErrorCount.With(lbls).Inc()
+				log.Errorf("Error updating GCS custom time (%q): %s", update.key, err)
+				return err
+			}
+			md.StorageMetadata.GcsMetadata.LastCustomTimeUsec = newAtime.UnixMicro()
 		}
-		md.StorageMetadata.GcsMetadata.LastCustomTimeUsec = newAtime.UnixMicro()
 	}
 
 	md.LastAccessUsec = newAtime.UnixMicro()
@@ -1591,12 +1609,12 @@ func (p *PebbleCache) handleMetadataMismatch(ctx context.Context, causeErr error
 	if !status.IsNotFoundError(causeErr) && !os.IsNotExist(causeErr) {
 		return false
 	}
-	if fileMetadata.GetStorageMetadata().GetFileMetadata() != nil {
+	if fileMetadata.GetStorageMetadata().GetFileMetadata() != nil || fileMetadata.GetStorageMetadata().GetGcsMetadata() != nil {
 		err := p.deleteMetadataOnly(ctx, key)
 		if err != nil && status.IsNotFoundError(err) {
 			return false
 		}
-		log.Warningf("[%s] Metadata record %q was found but file (%+v) not found on disk: %s", p.name, key.String(), fileMetadata, causeErr)
+		log.Warningf("[%s] Metadata record %q was found but file (%+v) not found in storage: %s", p.name, key.String(), fileMetadata, causeErr)
 		if err != nil {
 			log.Warningf("[%s] Error deleting metadata: %s", p.name, err)
 			return false
@@ -1607,7 +1625,7 @@ func (p *PebbleCache) handleMetadataMismatch(ctx context.Context, causeErr error
 }
 
 func (p *PebbleCache) Contains(ctx context.Context, r *rspb.ResourceName) (bool, error) {
-	missing, err := p.FindMissing(ctx, []*rspb.ResourceName{r})
+	missing, err := p.FindMissing(findmissing.ContextWithPurpose(ctx, repb.FindMissingBlobsRequest_CONTAINS), []*rspb.ResourceName{r})
 	if err != nil {
 		return false, err
 	}
@@ -1678,6 +1696,20 @@ func (p *PebbleCache) FindMissing(ctx context.Context, resources []*rspb.Resourc
 			missing = append(missing, r.GetDigest())
 		}
 	}
+
+	if len(resources) > 0 {
+		purposeLabel := findmissing.PurposeFromContext(ctx).String()
+		if present := len(resources) - len(missing); present > 0 {
+			metrics.PebbleCacheFindMissingBlobStatusCount.
+				WithLabelValues(p.name, purposeLabel, metrics.PresentStatusLabel).
+				Add(float64(present))
+		}
+		if len(missing) > 0 {
+			metrics.PebbleCacheFindMissingBlobStatusCount.
+				WithLabelValues(p.name, purposeLabel, metrics.AbsentStatusLabel).
+				Add(float64(len(missing)))
+		}
+	}
 	return missing, nil
 }
 
@@ -1694,30 +1726,67 @@ func (p *PebbleCache) findMissing(ctx context.Context, db pebble.IPebbleDB, grou
 	unlockFn := p.locker.RLock(key.LockID())
 	defer unlockFn()
 
-	md := sgpb.FileMetadataFromVTPool()
-	defer md.ReturnToVTPool()
-	err = p.lookupFileMetadata(ctx, db, key, md)
+	buf, closer, err := p.lookupFileMetadataBytes(db, key)
 	if err != nil {
 		return err
+	}
+	defer closer.Close()
+
+	var md sgpb.FileMetadataFindMissingView
+	if err := md.UnmarshalWire(buf); err != nil {
+		return status.InternalErrorf("error parsing value for %q: %s", key, err)
 	}
 
 	// If this object is somehow stored as a zero-length file, pretend it
 	// does not exist.
-	if md.GetStoredSizeBytes() == 0 {
+	if md.StoredSizeBytes == 0 {
 		log.Infof("Ignoring zero-length file. Key: %q, md: %+v", key, md)
 		return status.NotFoundError("object not found (zero-length)")
 	}
 	// If this is a GCS object, ensure the custom time is relatively recent
 	// so that we avoid saying something exists when it's been deleted by
 	// a GCS lifecycle rule.
-	if gcsMetadata := md.GetStorageMetadata().GetGcsMetadata(); gcsMetadata != nil {
-		if gcsutil.ObjectIsPastTTL(p.clock, gcsMetadata, p.gcsTTLDays) {
+	if md.StorageMetadata.HasGcsMetadata {
+		if gcsutil.CustomTimeIsPastTTL(p.clock, md.StorageMetadata.GcsMetadata.LastCustomTimeUsec, p.gcsTTLDays) {
 			return status.NotFoundError("backing object may have expired")
 		}
 	}
 
-	p.sendAtimeUpdate(ctx, key, md.GetLastAccessUsec())
+	p.sendAtimeUpdate(ctx, key, md.LastAccessUsec)
 	return nil
+}
+
+// lookupFileMetadataBytes is lookupFileMetadataAndVersion, except that it
+// returns the serialized FileMetadata value as stored instead of
+// unmarshalling it. The returned buffer is only valid until the returned
+// closer is closed; on success the caller must close it.
+func (p *PebbleCache) lookupFileMetadataBytes(db pebble.IPebbleDB, key filestore.PebbleKey) ([]byte, io.Closer, error) {
+	var lastErr error
+	for minVersion, version := p.minAndMaxDatabaseVersions(); version >= minVersion; version-- {
+		keyBytes, err := key.Bytes(version)
+		if err != nil {
+			return nil, nil, err
+		}
+		buf, closer, err := db.Get(keyBytes)
+		if err != nil {
+			if err == pebble.ErrNotFound {
+				err = status.NotFoundErrorf("key %q not found", keyBytes)
+			}
+			lastErr = err
+			continue
+		}
+		if len(buf) == 0 {
+			closer.Close()
+			lastErr = status.NotFoundErrorf("key %q not found (empty value)", keyBytes)
+			continue
+		}
+		return buf, closer, nil
+	}
+	// Should never happen.
+	if lastErr == nil {
+		return nil, nil, status.NotFoundErrorf("key %q not found (no version available)", key.String())
+	}
+	return nil, nil, lastErr
 }
 
 func (p *PebbleCache) Get(ctx context.Context, r *rspb.ResourceName) ([]byte, error) {
@@ -1837,11 +1906,11 @@ func (p *PebbleCache) sendSizeUpdate(partID string, cacheType rspb.CacheType, op
 }
 
 func (p *PebbleCache) sendAtimeUpdate(ctx context.Context, key filestore.PebbleKey, lastAccessUsec int64) {
-	atime := time.UnixMicro(lastAccessUsec)
+	age := time.Since(time.UnixMicro(lastAccessUsec))
 
-	p.metrics.atimeDeltaWhenRead.Observe(float64(time.Since(atime).Milliseconds()))
+	p.metrics.atimeDeltaWhenRead.Observe(float64(age.Milliseconds()))
 
-	if !olderThanThreshold(atime, p.atimeUpdateThreshold) {
+	if !olderThanThreshold(age, p.atimeUpdateThreshold) {
 		return
 	}
 
@@ -2248,8 +2317,7 @@ func (p *PebbleCache) TestingWaitForGC(ctx context.Context) error {
 }
 
 type evictionKey struct {
-	bytes           []byte
-	storageMetadata *sgpb.StorageMetadata
+	bytes []byte
 }
 
 func (k *evictionKey) ID() string {
@@ -2513,8 +2581,7 @@ func (e *partitionEvictor) maybeAddToSampleChan(iter pebble.Iterator, fileMetada
 	sizeBytes := getSizeOnLocalDisk(keyBytes, fileMetadata, e.includeMetadataSize)
 	sample := &approxlru.Sample[*evictionKey]{
 		Key: &evictionKey{
-			bytes:           keyBytes,
-			storageMetadata: fileMetadata.GetStorageMetadata(),
+			bytes: keyBytes,
 		},
 		SizeBytes: sizeBytes,
 		Timestamp: atime,
@@ -2799,7 +2866,7 @@ func (e *partitionEvictor) doEvict(sample *approxlru.Sample[*evictionKey]) {
 		return
 	}
 
-	if err := e.deleteFile(sample.Key.bytes, key, md.GetFileRecord().GetIsolation().GetGroupId(), md.GetLastModifyUsec(), sample.SizeBytes, sample.Key.storageMetadata); err != nil {
+	if err := e.deleteFile(sample.Key.bytes, key, md.GetFileRecord().GetIsolation().GetGroupId(), md.GetLastModifyUsec(), sample.SizeBytes, md.GetStorageMetadata()); err != nil {
 		log.Errorf("[%s] Error evicting file for key %q: %s (ignoring)", e.cacheName, sample.Key, err)
 		return
 	}

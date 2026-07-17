@@ -452,7 +452,7 @@ export default class TestGridComponent extends React.Component<Props, State> {
             onClick={this.loadMoreInvocations.bind(this)}
             disabled={this.state.loading}>
             <span>Load more</span>
-            {this.state.loading ? <Spinner className="white" /> : <ChevronsRight className="icon white" />}
+            {this.state.loading ? <Spinner className="white" /> : <ChevronsRight className="white" />}
           </FilledButton>
         )}
       </>

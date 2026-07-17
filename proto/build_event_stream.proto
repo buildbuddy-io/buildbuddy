@@ -295,6 +295,13 @@ message BuildEventId {
   // default arguments and runtime files.
   message RunTargetAnalyzedId {}
 
+  // Identifier of an event reporting stats about the git fetches performed
+  // by a remote runner (i.e. Workflows or remote bazel) while setting up the
+  // git repository. Only published when the runner performs the automatic
+  // checkout; not published if auto-checkout is skipped (e.g. remote bazel
+  // runs with --skip_auto_checkout).
+  message GitFetchCompletedId {}
+
   oneof id {
     UnknownBuildEventId unknown = 1;
     ProgressId progress = 2;
@@ -334,6 +341,7 @@ message BuildEventId {
     ChildInvocationsConfiguredId child_invocations_configured = 1002;
     ChildInvocationCompletedId child_invocation_completed = 1003;
     RunTargetAnalyzedId run_target_analyzed = 1004;
+    GitFetchCompletedId git_fetch_completed = 1005;
   }
 }
 
@@ -1658,6 +1666,22 @@ message RunTargetAnalyzed {
   repeated File runfiles = 3;
   // Any runtime directory dependencies for the runnable target.
   repeated Tree runfileDirectories = 4;
+  // Workspace-relative path to the executable selected by `bazel run`.
+  string executable_path = 5;
+}
+
+// Event reporting stats about the git fetches performed by a remote runner
+// (i.e. Workflows or remote bazel) while setting up the git repository.
+// Only published when the runner performs the automatic checkout; not
+// published if auto-checkout is skipped (e.g. remote bazel runs with
+// --skip_auto_checkout). Fetches performed by the action itself, such as
+// bazel-triggered fetches of external git repos, are not counted.
+message GitFetchCompleted {
+  // Total number of bytes fetched, parsed from git trace2 event logs.
+  int64 total_bytes = 1;
+
+  // Total time spent running git fetch commands.
+  google.protobuf.Duration duration = 2;
 }
 
 // Message describing a build event. Events will have an identifier that
@@ -1706,5 +1730,6 @@ message BuildEvent {
     ChildInvocationsConfigured child_invocations_configured = 1002;
     ChildInvocationCompleted child_invocation_completed = 1003;
     RunTargetAnalyzed run_target_analyzed = 1004;
+    GitFetchCompleted git_fetch_completed = 1005;
   }
 }

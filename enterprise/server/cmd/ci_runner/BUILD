@@ -1,6 +1,6 @@
 load("@io_bazel_rules_docker//container:container.bzl", "container_image")
 load("@io_bazel_rules_docker//go:image.bzl", "go_image")
-load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
 
 # gazelle:default_visibility //enterprise:__subpackages__
 package(
@@ -10,7 +10,7 @@ package(
 )
 
 go_library(
-    name = "main",
+    name = "ci_runner_lib",
     srcs = ["main.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/cmd/ci_runner",
     deps = [
@@ -19,6 +19,7 @@ go_library(
         "//enterprise/server/workflow/config",
         "//proto:build_event_stream_go_proto",
         "//proto:command_line_go_proto",
+        "//proto:publish_build_event_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:runner_go_proto",
         "//server/build_event_publisher",
@@ -55,7 +56,7 @@ go_library(
 
 go_binary(
     name = "ci_runner",
-    embed = [":main"],
+    embed = [":ci_runner_lib"],
     pure = "on",
     static = "on",
 )
@@ -72,4 +73,11 @@ go_image(
     base = ":base_image",
     binary = ":ci_runner",
     tags = ["manual"],
+)
+
+go_test(
+    name = "ci_runner_test",
+    srcs = ["main_test.go"],
+    embed = [":ci_runner_lib"],
+    deps = ["@com_github_stretchr_testify//assert"],
 )

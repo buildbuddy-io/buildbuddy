@@ -26,6 +26,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/cdc"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
+	"github.com/buildbuddy-io/buildbuddy/server/util/findmissing"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -46,6 +47,15 @@ import (
 	remote_cache_config "github.com/buildbuddy-io/buildbuddy/server/remote_cache/config"
 	statuspb "google.golang.org/genproto/googleapis/rpc/status"
 	gstatus "google.golang.org/grpc/status"
+)
+
+const (
+	// defaultFindMissingChunkFallbackConcurrency is the default value of the
+	// cache.find_missing_chunk_fallback_concurrency experiment, which bounds
+	// how many chunked-manifest fallback lookups FindMissingBlobs performs in
+	// parallel. Each lookup issues independent cache reads, so the work is
+	// I/O-bound.
+	defaultFindMissingChunkFallbackConcurrency = 8
 )
 
 var (
@@ -118,39 +128,61 @@ func (s *ContentAddressableStorageServer) FindMissingBlobs(ctx context.Context, 
 		}
 		digestsToLookup = append(digestsToLookup, rn.ToProto())
 	}
-	missing, err := s.cache.FindMissing(ctx, digestsToLookup)
+	// Forward the incoming request's purpose so present/absent metrics are
+	// attributed to the originating code path.
+	missing, err := s.cache.FindMissing(findmissing.ContextWithPurpose(ctx, req.GetPurpose()), digestsToLookup)
 	if err != nil {
 		return nil, err
 	}
 
 	// The chunked-manifest fallback lookup is skipped when the caller signals
 	// that these digests are individual content-defined chunks, not whole blobs.
-	// Otherwise, use the same fallback threshold as read paths so blobs chunked
-	// with an older, smaller chunk size still count as present after increasing
-	// the current chunk size.
+	// Otherwise, use the read fallback threshold so old chunked blobs still
+	// count as present, except for the override-only chunk-size migration range.
 	if efp := s.env.GetExperimentFlagProvider(); len(missing) > 0 && !cdc.IsChunked(ctx) && chunking.Enabled(ctx, efp) {
-		checker := chunking.NewMissingChunkChecker(s.cache)
+		checker := chunking.NewMissingChunkChecker(s.cache, repb.FindMissingBlobsRequest_FMB_CHUNK_VALIDATION)
 		chunkedReadFallbackSizeBytes := chunking.MinChunkedReadFallbackSizeBytes(ctx, efp)
 
-		// https://go.dev/wiki/SliceTricks#filtering-without-allocating
-		stillMissing := missing[:0]
+		var mu sync.Mutex
+		stillMissing := make([]*repb.Digest, 0, len(missing))
+		markMissing := func(d *repb.Digest) {
+			mu.Lock()
+			stillMissing = append(stillMissing, d)
+			mu.Unlock()
+		}
+		concurrency := defaultFindMissingChunkFallbackConcurrency
+		if efp != nil {
+			concurrency = int(efp.Int64(ctx, "cache.find_missing_chunk_fallback_concurrency", defaultFindMissingChunkFallbackConcurrency))
+		}
+		if concurrency <= 0 {
+			concurrency = 1
+		}
+		eg, egCtx := errgroup.WithContext(ctx)
+		eg.SetLimit(concurrency)
 		for _, d := range missing {
-			if d.GetSizeBytes() <= chunkedReadFallbackSizeBytes {
-				stillMissing = append(stillMissing, d)
+			if d.GetSizeBytes() <= chunkedReadFallbackSizeBytes || chunking.ShouldDiscardLegacyChunkedBlob(ctx, efp, d.GetSizeBytes()) {
+				markMissing(d)
 				continue
 			}
-			manifest, err := chunking.LoadManifest(ctx, s.cache, d, req.GetInstanceName(), req.GetDigestFunction())
-			if err != nil {
-				stillMissing = append(stillMissing, d)
-				continue
-			}
-			anyMissing, err := checker.AnyChunkMissing(ctx, manifest)
-			if err != nil {
-				return nil, status.WrapErrorf(err, "missing chunks for %s", d.GetHash())
-			}
-			if anyMissing {
-				stillMissing = append(stillMissing, d)
-			}
+			eg.Go(func() error {
+				manifest, err := chunking.LoadManifest(egCtx, s.cache, d, req.GetInstanceName(), req.GetDigestFunction())
+				if err != nil {
+					// Not stored as a chunked manifest, so it's genuinely missing.
+					markMissing(d)
+					return nil
+				}
+				anyMissing, err := checker.AnyChunkMissing(egCtx, manifest)
+				if err != nil {
+					return status.WrapErrorf(err, "missing chunks for %s", d.GetHash())
+				}
+				if anyMissing {
+					markMissing(d)
+				}
+				return nil
+			})
+		}
+		if err := eg.Wait(); err != nil {
+			return nil, err
 		}
 		missing = stillMissing
 	}
@@ -1298,7 +1330,9 @@ func (s *ContentAddressableStorageServer) splitBlob(ctx context.Context, req *re
 		return nil, err
 	}
 
-	if resp, err := s.FindMissingBlobs(ctx, manifest.ToFindMissingBlobsRequest()); err != nil {
+	fmReq := manifest.ToFindMissingBlobsRequest()
+	fmReq.Purpose = repb.FindMissingBlobsRequest_CAS_SPLIT_BLOB
+	if resp, err := s.FindMissingBlobs(ctx, fmReq); err != nil {
 		return nil, err
 	} else if len(resp.GetMissingBlobDigests()) > 0 {
 		return nil, status.NotFoundErrorf("required chunks not found in CAS: %s", chunking.DigestsSummary(resp.GetMissingBlobDigests()))

@@ -24,6 +24,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/hostid"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
@@ -111,13 +112,15 @@ func Register(env *real_environment.RealEnv) error {
 	}
 	log.Infof("Registering Cache Proxy %s on host %q", proxyID, hostname)
 	node := &cppb.CacheProxyNode{
-		Host:      hostname,
-		ProxyId:   proxyID,
-		OsFamily:  runtime.GOOS,
-		Arch:      runtime.GOARCH,
-		Version:   version.Tag(),
-		StartTime: timestamppb.Now(),
-		Labels:    trimmedLabels,
+		Host:                 hostname,
+		ProxyId:              proxyID,
+		OsFamily:             runtime.GOOS,
+		Arch:                 runtime.GOARCH,
+		Version:              version.Tag(),
+		StartTime:            timestamppb.Now(),
+		Labels:               trimmedLabels,
+		AllocatedCpuMillis:   resources.GetAllocatedCPUMillis(),
+		AllocatedMemoryBytes: resources.GetAllocatedRAMBytes(),
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -213,10 +216,10 @@ func streamHeartbeats(ctx context.Context, shutdownCh <-chan struct{}, client cp
 // meaningful hit/miss distinction on the write side.
 func collectStatistics() *cppb.Statistics {
 	stats := &cppb.Statistics{}
-	stats.AcReadHits, stats.AcReadMisses = sumByHitMiss(metrics.ActionCacheProxiedReadRequests)
-	stats.AcReadHitBytes, stats.AcReadMissBytes = sumByHitMiss(metrics.ActionCacheProxiedReadBytes)
-	stats.CasReadHits, stats.CasReadMisses = sumByHitMiss(metrics.ByteStreamProxiedReadRequests)
-	stats.CasReadHitBytes, stats.CasReadMissBytes = sumByHitMiss(metrics.ByteStreamProxiedReadBytes)
+	stats.AcReadHits, stats.AcReadMisses, stats.AcReadUncacheable = sumByStatus(metrics.ActionCacheProxiedReadRequests)
+	stats.AcReadHitBytes, stats.AcReadMissBytes, stats.AcReadUncacheableBytes = sumByStatus(metrics.ActionCacheProxiedReadBytes)
+	stats.CasReadHits, stats.CasReadMisses, stats.CasReadUncacheable = sumByStatus(metrics.ByteStreamProxiedReadRequests)
+	stats.CasReadHitBytes, stats.CasReadMissBytes, stats.CasReadUncacheableBytes = sumByStatus(metrics.ByteStreamProxiedReadBytes)
 	stats.AcWrites = sumAll(metrics.ActionCacheProxiedWriteRequests)
 	stats.AcWriteBytes = sumAll(metrics.ActionCacheProxiedWriteBytes)
 	stats.CasWrites = sumAll(metrics.ByteStreamProxiedWriteRequests)
@@ -243,36 +246,39 @@ func sumAll(cv *prometheus.CounterVec) int64 {
 	return int64(total)
 }
 
-// sumByHitMiss collects every series from a CounterVec and totals their
-// values into (hits, misses) based on the CacheHitMissStatus label.
-func sumByHitMiss(cv *prometheus.CounterVec) (int64, int64) {
+// sumByStatus collects every series from a CounterVec and totals their values
+// into (hits, misses, uncacheable) based on the CacheHitMissStatus label.
+// Series with any other status value are ignored.
+func sumByStatus(cv *prometheus.CounterVec) (hits int64, misses int64, uncacheable int64) {
 	ch := make(chan prometheus.Metric, 64)
 	go func() {
 		defer close(ch)
 		cv.Collect(ch)
 	}()
-	var hits, misses float64
-	for m := range ch {
+	var h, m, u float64
+	for metric := range ch {
 		dm := &dto.Metric{}
-		if err := m.Write(dm); err != nil {
+		if err := metric.Write(dm); err != nil {
 			continue
 		}
-		var hitMiss string
+		var status string
 		for _, lp := range dm.GetLabel() {
 			if lp.GetName() == metrics.CacheHitMissStatus {
-				hitMiss = lp.GetValue()
+				status = lp.GetValue()
 				break
 			}
 		}
 		v := dm.GetCounter().GetValue()
-		switch hitMiss {
+		switch status {
 		case metrics.HitStatusLabel:
-			hits += v
+			h += v
 		case metrics.MissStatusLabel:
-			misses += v
+			m += v
+		case metrics.UncacheableStatusLabel:
+			u += v
 		}
 	}
-	return int64(hits), int64(misses)
+	return int64(h), int64(m), int64(u)
 }
 
 func openStream(ctx context.Context, client cppb.CacheProxyRegistryClient, node *cppb.CacheProxyNode) (cppb.CacheProxyRegistry_RegisterAndStreamHeartbeatClient, func(), error) {

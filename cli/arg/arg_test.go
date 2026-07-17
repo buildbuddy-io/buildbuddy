@@ -181,6 +181,19 @@ build:ci --remote_cache=grpc://ci-cache
 	}, args.Resolved())
 }
 
+func TestPrepend_NoResolve(t *testing.T) {
+	setupWorkspace(t, ``)
+	args, err := NewBazelArgsNoResolve([]string{"run", "//foo", "--", "--flag=value"})
+	require.NoError(t, err)
+
+	err = args.Prepend("--config=remote_only")
+	require.NoError(t, err)
+
+	want := []string{"run", "--config=remote_only", "//foo", "--", "--flag=value"}
+	require.Equal(t, want, args.Forwarded())
+	require.Equal(t, want, args.Resolved())
+}
+
 func TestPop(t *testing.T) {
 	setupWorkspace(t, `
 build --bes_backend=grpc://default-bes

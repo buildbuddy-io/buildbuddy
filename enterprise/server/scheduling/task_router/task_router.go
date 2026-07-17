@@ -48,7 +48,11 @@ const (
 	// Preferred node limit for tasks using [persistentWorkerRouter].
 	persistentWorkerRouterPreferredNodeLimit = 128
 
-	affinityRouterUseTargetPackageExperiment = "remote_execution.affinity_router_use_target_package"
+	affinityRouterKeyExperiment = "remote_execution.affinity_router_key"
+
+	affinityRouterKeyFirstOutput = "first_output"
+	affinityRouterKeyPackage     = "package"
+	affinityRouterKeyTarget      = "target"
 )
 
 type taskRouter struct {
@@ -318,12 +322,23 @@ func (tr *taskRouter) MarkFailed(ctx context.Context, action *repb.Action, cmd *
 
 // Contains the parameters required to make a routing decision.
 type routingParams struct {
-	cmd                                *repb.Command
-	platform                           *repb.Platform
-	remoteInstanceName                 string
-	groupID                            string
-	targetPackageLabel                 string
-	useTargetPackageForAffinityRouting bool
+	cmd                *repb.Command
+	platform           *repb.Platform
+	remoteInstanceName string
+	groupID            string
+	targetLabel        string
+	targetPackageLabel string
+	affinityRouterKey  string
+}
+
+func normalizeAffinityRouterKey(ctx context.Context, key string) string {
+	switch key {
+	case affinityRouterKeyFirstOutput, affinityRouterKeyPackage, affinityRouterKeyTarget:
+		return key
+	default:
+		log.CtxWarningf(ctx, "Ignoring unsupported %s experiment value %q", affinityRouterKeyExperiment, key)
+		return affinityRouterKeyFirstOutput
+	}
 }
 
 func getTargetPackageLabel(targetLabel string) string {
@@ -338,18 +353,21 @@ func getRoutingParams(ctx context.Context, env environment.Env, action *repb.Act
 	if u, err := env.GetAuthenticator().AuthenticatedUser(ctx); err == nil {
 		groupID = u.GetGroupID()
 	}
-	useTargetPackageForAffinityRouting := false
+	affinityRouterKey := affinityRouterKeyFirstOutput
 	if fp := env.GetExperimentFlagProvider(); fp != nil {
-		useTargetPackageForAffinityRouting = fp.Boolean(ctx, affinityRouterUseTargetPackageExperiment, false)
+		affinityRouterKey = fp.String(ctx, affinityRouterKeyExperiment, affinityRouterKeyFirstOutput)
 	}
+	affinityRouterKey = normalizeAffinityRouterKey(ctx, affinityRouterKey)
 	rmd := bazel_request.GetRequestMetadata(ctx)
+	targetLabel := rmd.GetTargetId()
 	return routingParams{
-		cmd:                                cmd,
-		platform:                           platform.GetProto(action, cmd),
-		remoteInstanceName:                 remoteInstanceName,
-		groupID:                            groupID,
-		targetPackageLabel:                 getTargetPackageLabel(rmd.GetTargetId()),
-		useTargetPackageForAffinityRouting: useTargetPackageForAffinityRouting,
+		cmd:                cmd,
+		platform:           platform.GetProto(action, cmd),
+		remoteInstanceName: remoteInstanceName,
+		groupID:            groupID,
+		targetLabel:        targetLabel,
+		targetPackageLabel: getTargetPackageLabel(targetLabel),
+		affinityRouterKey:  affinityRouterKey,
 	}
 }
 
@@ -481,15 +499,12 @@ func (s *ciRunnerRouter) RoutingInfo(params routingParams) (int, []string, error
 //   - remoteInstanceName
 //   - groupID
 //   - platform properties
-//   - and an affinity hint derived from either the first action output
-//     (default) or the request metadata target package (for experiment-enabled
-//     orgs)
+//   - and an affinity hint selected by the affinity-router-key experiment
 //
 // The first-output hint is stable even if an action's inputs change, which can
 // route successive executions of the same Bazel action back to a warmer
-// executor. The target-package experiment deliberately broadens that affinity so
-// related actions for the same package can share warmed executors and reduce
-// routing spray.
+// executor. The affinity-router-key experiment can instead group by Bazel
+// package or by full Bazel target label.
 type affinityRouter struct {
 	rdb redis.UniversalClient
 }
@@ -503,8 +518,15 @@ func (*affinityRouter) preferredNodeLimit(_ routingParams) int {
 }
 
 func getAffinityRoutingHint(params routingParams) string {
-	if params.useTargetPackageForAffinityRouting && params.targetPackageLabel != "" {
-		return params.targetPackageLabel
+	switch params.affinityRouterKey {
+	case affinityRouterKeyTarget:
+		if params.targetLabel != "" {
+			return params.targetLabel
+		}
+	case affinityRouterKeyPackage:
+		if params.targetPackageLabel != "" {
+			return params.targetPackageLabel
+		}
 	}
 	return getFirstOutput(params.cmd)
 }
@@ -522,10 +544,7 @@ func (*affinityRouter) routingKey(params routingParams) (string, error) {
 	}
 	parts = append(parts, hash.Bytes(b))
 
-	// Add the selected affinity hint as the final part of the routing key. By
-	// default this is the first declared output, but a per-org experiment can
-	// switch this to the target package to reduce routing spray across related
-	// actions belonging to the same package.
+	// Add the selected affinity hint as the final part of the routing key.
 	hint := getAffinityRoutingHint(params)
 	if hint == "" {
 		return "", status.InternalError("routing key requested for action with no affinity hint")

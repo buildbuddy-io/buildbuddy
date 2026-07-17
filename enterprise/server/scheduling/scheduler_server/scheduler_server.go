@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Masterminds/semver/v3"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/action_merger"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
@@ -35,6 +36,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
+	"github.com/buildbuddy-io/buildbuddy/server/util/upgrade"
 	"github.com/buildbuddy-io/buildbuddy/third_party/singleflight"
 	"github.com/go-redis/redis/v8"
 	"github.com/jonboulle/clockwork"
@@ -48,6 +50,7 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	tpb "github.com/buildbuddy-io/buildbuddy/proto/trace"
+	uppb "github.com/buildbuddy-io/buildbuddy/proto/upgrade"
 	remote_execution_config "github.com/buildbuddy-io/buildbuddy/server/remote_execution/config"
 	scheduler_server_config "github.com/buildbuddy-io/buildbuddy/server/scheduling/scheduler_server/config"
 )
@@ -64,6 +67,9 @@ var (
 	proactiveCancellationEnabled = flag.Bool("remote_execution.proactive_cancellation_enabled", false, "If true, the scheduler will proactively cancel task reservations on executors when a task is completed by another executor.")
 	debugExecutorLabelsKey       = flag.String("remote_execution.debug_executor_labels_key", "", "If set, requests using the 'debug-executor-labels' platform property must also set the 'debug-executor-labels-key' platform property to this value, otherwise the requested labels are ignored. If empty, anyone can use 'debug-executor-labels'.", flag.Secret)
 	unclaimedTasksCacheTTL       = flag.Duration("remote_execution.unclaimed_tasks_cache_ttl", 1*time.Second, "If set, cache the unclaimed task list in memory for up to this TTL", flag.Internal)
+
+	upgradePromptMaxLags     = flag.Map("remote_execution.upgrade_prompt_max_lags", map[string]string{}, "Map from upgrade prompt urgency (LOW, MEDIUM, HIGH, or CRITICAL) to the maximum version lag (a semver-shaped diff, e.g. \"0.10.0\" tolerates at most 10 minor versions) an executor may fall behind the newest registered version before GetExecutionNodes prompts an upgrade at that urgency.")
+	upgradePromptMinVersions = flag.Map("remote_execution.upgrade_prompt_min_versions", map[string]string{}, "Map from upgrade prompt urgency (LOW, MEDIUM, HIGH, or CRITICAL) to the minimum version (semver) below which GetExecutionNodes prompts an upgrade at that urgency.")
 )
 
 const (
@@ -84,6 +90,13 @@ const (
 	// this amount of time.
 	executorMaxRegistrationStaleness = 10 * time.Minute
 
+	// How long a computed newest-registered-executor-version value is served
+	// from the in-process cache before the Redis registry is scanned again.
+	executorNewestVersionCacheTTL = 5 * time.Minute
+
+	// Message attached to upgrade prompts returned by GetExecutionNodes.
+	upgradePromptMessage = "One or more of your executors are running an outdated version. The newest available version is %s."
+
 	// The maximum number of times a task may be re-enqueued.
 	maxTaskAttemptCount = 5
 
@@ -98,11 +111,12 @@ const (
 	taskTTL = 24 * time.Hour
 
 	// Names of task fields in Redis task hash.
-	redisTaskProtoField       = "taskProto"
-	redisTaskMetadataField    = "schedulingMetadataProto"
-	redisTaskQueuedAtUsec     = "queuedAtUsec"
-	redisTaskAttempCountField = "attemptCount"
-	redisTaskClaimedField     = "claimed"
+	redisTaskProtoField              = "taskProto"
+	redisTaskMetadataField           = "schedulingMetadataProto"
+	redisTaskQueuedAtUsec            = "queuedAtUsec"
+	redisTaskAttempCountField        = "attemptCount"
+	redisTaskClaimedField            = "claimed"
+	redisTaskReconnectPeriodEndField = "reconnectPeriodEnd"
 
 	// Maximum number of unclaimed task IDs we track per pool.
 	maxUnclaimedTasksTracked = 10_000
@@ -162,8 +176,10 @@ var (
 		-- the lease is still in its reconnection grace period.
 		local isNewAttempt = true
 		if ARGV[1] == "true" then
-			local periodEnd = redis.call("hget", KEYS[1], "reconnectPeriodEnd")
-			if periodEnd ~= nil and periodEnd ~= "" and periodEnd > tonumber(ARGV[3]) then
+			-- Redis hget returns false if the field is missing, and
+			-- tonumber(false) returns nil.
+			local periodEndNanos = tonumber(redis.call("hget", KEYS[1], "reconnectPeriodEnd"))
+			if periodEndNanos ~= nil and periodEndNanos > tonumber(ARGV[3]) then
 				local validToken = false
 
 				-- Temporarily accept either reconnectToken or leaseId.
@@ -184,12 +200,23 @@ var (
 					return 12
 				end
 				isNewAttempt = false
+
+				-- Clear the grace period timer now that the client has
+				-- successfully reconnected within the grace period.
+				--
+				-- If we don't do this, then if the client shuts down and
+				-- re-enqueues the task just after reconnecting, other
+				-- clients would have to unnecessarily wait until the reconnect
+				-- grace period ends, rather than being able to immediately
+				-- retry the task.
+
+				redis.call("hdel", KEYS[1], "reconnectPeriodEnd")
 			end
 		end
 		if isNewAttempt then
 			redis.call("hincrby", KEYS[1], "attemptCount", 1)
 		end
-		redis.call("hset", KEYS[1], "leaseId", ARGV[4])	
+		redis.call("hset", KEYS[1], "leaseId", ARGV[4])
 
 		return redis.call("hset", KEYS[1], "claimed", "1")
 		`)
@@ -1091,6 +1118,9 @@ type persistedTask struct {
 	serializedTask  []byte
 	queuedTimestamp time.Time
 	attemptCount    int64
+	// reconnectPeriodEnd is the time until which the task is reserved for the
+	// previous lease holder to reconnect. Zero if the task is not reserved.
+	reconnectPeriodEnd time.Time
 }
 
 type schedulerClient struct {
@@ -1180,6 +1210,9 @@ type Options struct {
 	Clock                           clockwork.Clock // TODO: get this from env
 	ActionMergingLeaseTTLOverride   time.Duration
 	LeaseDuration, LeaseGracePeriod time.Duration
+	// Decides when GetExecutionNodes prompts the user to upgrade outdated
+	// executors. If nil, no upgrade prompts are generated.
+	UpgradeDetector *upgrade.Detector
 }
 
 type SchedulerServer struct {
@@ -1213,13 +1246,25 @@ type SchedulerServer struct {
 	pools map[nodePoolKey]*nodePool
 
 	leaseDuration, leaseGracePeriod time.Duration
+
+	// Decides when GetExecutionNodes prompts the user to upgrade outdated
+	// executors.
+	detector *upgrade.Detector
+
+	versionMu           sync.Mutex
+	newestVersion       *semver.Version
+	newestVersionExpiry time.Time
 }
 
 func Register(env *real_environment.RealEnv) error {
 	if !remote_execution_config.RemoteExecutionEnabled() {
 		return nil
 	}
-	schedulerServer, err := NewSchedulerServer(env)
+	triggers, err := upgrade.ParseTriggers(*upgradePromptMaxLags, *upgradePromptMinVersions)
+	if err != nil {
+		return status.InvalidArgumentErrorf("Invalid executor upgrade prompt configuration: %s", err)
+	}
+	schedulerServer, err := NewSchedulerServerWithOptions(env, &Options{UpgradeDetector: upgrade.NewDetector(triggers)})
 	if err != nil {
 		return status.InternalErrorf("Error configuring scheduler server: %v", err)
 	}
@@ -1292,6 +1337,7 @@ func NewSchedulerServerWithOptions(env environment.Env, options *Options) (*Sche
 		actionMergingLeaseTTL:             actionMergingLeaseTTL,
 		leaseDuration:                     options.LeaseDuration,
 		leaseGracePeriod:                  options.LeaseGracePeriod,
+		detector:                          options.UpgradeDetector,
 	}
 	s.schedulerClientCache = newSchedulerClientCache(env, s.ownHostPort, s)
 	return s, nil
@@ -1699,11 +1745,15 @@ func (s *SchedulerServer) deleteClaimedTask(ctx context.Context, taskID string) 
 }
 
 func (s *SchedulerServer) unclaimTask(ctx context.Context, taskID, leaseID, reconnectToken string) error {
+	var reconnectPeriodEnd time.Time
+	if reconnectToken != "" {
+		reconnectPeriodEnd = time.Now().Add(*leaseReconnectGracePeriod)
+	}
 	// The script will return 1 if the task is claimed & claim has been released.
 	r, err := redisReleaseClaim.Run(
 		ctx, s.rdb,
 		[]string{s.redisKeyForTask(taskID)},
-		reconnectToken, time.Now().UnixNano(), leaseID,
+		reconnectToken, reconnectPeriodEnd.UnixNano(), leaseID,
 	).Result()
 	if err != nil {
 		return err
@@ -1728,7 +1778,7 @@ func (s *SchedulerServer) claimTask(ctx context.Context, taskID, reconnectToken 
 	r, err := redisAcquireClaim.Run(
 		ctx, s.rdb,
 		[]string{s.redisKeyForTask(taskID)},
-		checkTaskReconnectToken, reconnectToken, time.Now().UnixNano(), leaseId,
+		strconv.FormatBool(checkTaskReconnectToken), reconnectToken, time.Now().UnixNano(), leaseId,
 	).Result()
 	if err != nil {
 		log.CtxErrorf(ctx, "claimTask error: redis script failed: %s", err)
@@ -1823,7 +1873,15 @@ func (s *SchedulerServer) sampleUnclaimedTasks(ctx context.Context, count int, n
 	// do this filtering, which means that even if there are `count` tasks that
 	// can fit, we might wind up returning an empty list here.
 	tasksThatFit := make([]*persistedTask, 0, len(tasks))
+	now := time.Now()
 	for _, task := range tasks {
+		// Skip tasks still within their reconnect grace period: they're
+		// reserved for the previous lease holder to reconnect, so any claim by
+		// another executor would be rejected. Assigning the task now would only
+		// produce a doomed lease attempt.
+		if task.reconnectPeriodEnd.After(now) {
+			continue
+		}
 		// Filter to tasks which can fit on the node.
 		if !nodeCanFitTask(node, task.metadata.GetTaskSize()) {
 			continue
@@ -1877,6 +1935,7 @@ func (s *SchedulerServer) readTask(ctx context.Context, taskID string) (*persist
 		redisTaskMetadataField,
 		redisTaskQueuedAtUsec,
 		redisTaskAttempCountField,
+		redisTaskReconnectPeriodEndField,
 	}
 	key := s.redisKeyForTask(taskID)
 	vals, err := s.rdb.HMGet(ctx, key, fields...).Result()
@@ -1928,12 +1987,24 @@ func (s *SchedulerServer) readTask(ctx context.Context, taskID string) (*persist
 		return nil, status.InvalidArgumentErrorf("could not parse attempt count %q: %v", attemptCountStr, attemptCount)
 	}
 
+	// Reconnect period end field. Absent for tasks that are not reserved for a
+	// previous lease holder to reconnect, in which case it's left as zero.
+	var reconnectPeriodEnd time.Time
+	if str, ok := vals[4].(string); ok && str != "" {
+		if nanos, err := strconv.ParseInt(str, 10, 64); err != nil {
+			log.CtxWarningf(ctx, "could not parse reconnect period end %q for task %q: %s", str, taskID, err)
+		} else {
+			reconnectPeriodEnd = time.Unix(0, nanos)
+		}
+	}
+
 	return &persistedTask{
-		taskID:          taskID,
-		metadata:        metadata,
-		serializedTask:  serializedTask,
-		queuedTimestamp: time.UnixMicro(queuedAtUsec),
-		attemptCount:    attemptCount,
+		taskID:             taskID,
+		metadata:           metadata,
+		serializedTask:     serializedTask,
+		queuedTimestamp:    time.UnixMicro(queuedAtUsec),
+		attemptCount:       attemptCount,
+		reconnectPeriodEnd: reconnectPeriodEnd,
 	}, nil
 }
 
@@ -1972,10 +2043,19 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 		if !claimed {
 			return
 		}
-		log.CtxWarningf(ctx, "LeaseTask stream closed with task still claimed (shutting_down=%t). Re-enqueueing task.", s.isShuttingDown())
+		schedulerShuttingDown := s.isShuttingDown()
+		log.CtxWarningf(ctx, "LeaseTask stream closed with task still claimed (shutting_down=%t). Re-enqueueing task.", schedulerShuttingDown)
 		ctx, cancel := background.ExtendContextForFinalization(ctx, 3*time.Second)
 		defer cancel()
 		reEnqueueReason := "stream closed with task still claimed"
+		if !schedulerShuttingDown {
+			// TODO: figure out if we can reliably detect whether the executor
+			// gave up on the lease due to an executor shutdown vs. a transient
+			// issue with the lease stream. Transient disconnects should also
+			// get a reconnect grace period, since the executor should quickly
+			// retry them.
+			reconnectToken = ""
+		}
 		if err := s.reEnqueueTask(ctx, taskID, leaseID, reconnectToken, probesPerTask, reEnqueueReason); err != nil {
 			log.CtxErrorf(ctx, "LeaseTask %q tried to re-enqueue task but failed with err: %s", taskID, err.Error())
 		} // Success case will be logged by ReEnqueueTask flow.
@@ -2513,8 +2593,10 @@ func (s *SchedulerServer) ScheduleTask(ctx context.Context, req *scpb.ScheduleTa
 		emitRemoteRunnerMetric(ctx, task, metadata, "initial")
 	}
 	if err := s.enqueueTaskReservations(ctx, enqueueRequest, task, opts); err != nil {
-		if _, err := s.deleteTask(ctx, taskID); err != nil {
-			log.CtxWarningf(ctx, "Failed to delete task after scheduling failure: %s", err)
+		deletionContext, deletionCancel := background.ExtendContextForFinalization(ctx, 5*time.Second)
+		defer deletionCancel()
+		if _, err := s.deleteTask(deletionContext, taskID); err != nil {
+			log.CtxWarningf(deletionContext, "Failed to delete task %q after scheduling failure: %s", taskID, err)
 		}
 		return nil, err
 	}
@@ -2727,6 +2809,72 @@ func (s *SchedulerServer) getRegisteredExecutionNodesFromRedis(ctx context.Conte
 	return registeredNodes, nil
 }
 
+// getNewestVersion returns the maximum semantic version among live
+// registrations in the shared executor pool group's pools.
+func (s *SchedulerServer) getNewestVersion(ctx context.Context) *semver.Version {
+	s.versionMu.Lock()
+	defer s.versionMu.Unlock()
+	if s.clock.Now().Before(s.newestVersionExpiry) {
+		return s.newestVersion
+	}
+
+	poolKeys, err := s.rdb.SMembers(ctx, s.redisKeyForExecutorPools(*sharedExecutorPoolGroupID)).Result()
+	if err != nil {
+		log.CtxWarningf(ctx, "could not list shared executor pools for newest version: %s", err)
+		// Don't cache the result of a failed read.
+		return nil
+	}
+	var newest *semver.Version
+	for _, key := range poolKeys {
+		executors, err := s.rdb.HGetAll(ctx, key).Result()
+		if err != nil {
+			log.CtxWarningf(ctx, "could not read executor registrations at %q: %s", key, err)
+			return nil
+		}
+		for _, data := range executors {
+			node := &scpb.RegisteredExecutionNode{}
+			if err := proto.Unmarshal([]byte(data), node); err != nil {
+				continue
+			}
+			if time.Since(node.GetLastPingTime().AsTime()) > executorMaxRegistrationStaleness {
+				continue
+			}
+			// Skip "unknown" and other unparseable versions.
+			v, err := semver.NewVersion(node.GetRegistration().GetVersion())
+			if err != nil {
+				continue
+			}
+			if newest == nil || v.GreaterThan(newest) {
+				newest = v
+			}
+		}
+	}
+
+	s.newestVersion = newest
+	s.newestVersionExpiry = s.clock.Now().Add(executorNewestVersionCacheTTL)
+	return newest
+}
+
+// upgradePrompt returns a Prompt carrying the newest registered executor
+// version if any of the given executors meets one of the configured upgrade
+// triggers (see the --remote_execution.upgrade_prompt_* flags), and nil
+// otherwise. The urgency reflects the most-outdated executor in the list.
+func (s *SchedulerServer) upgradePrompt(ctx context.Context, executors []*scpb.GetExecutionNodesResponse_Executor) *uppb.Prompt {
+	if s.detector == nil || len(executors) == 0 {
+		return nil
+	}
+	newestVersion := s.getNewestVersion(ctx)
+	newestVersionString := "unknown"
+	if newestVersion != nil {
+		newestVersionString = newestVersion.String()
+	}
+	versions := make([]string, 0, len(executors))
+	for _, e := range executors {
+		versions = append(versions, e.GetNode().GetVersion())
+	}
+	return s.detector.Detect(newestVersion, versions, fmt.Sprintf(upgradePromptMessage, newestVersionString))
+}
+
 func (s *SchedulerServer) GetExecutionNodes(ctx context.Context, req *scpb.GetExecutionNodesRequest) (*scpb.GetExecutionNodesResponse, error) {
 	groupID := req.GetRequestContext().GetGroupId()
 	if groupID == "" {
@@ -2784,6 +2932,7 @@ func (s *SchedulerServer) GetExecutionNodes(ctx context.Context, req *scpb.GetEx
 	return &scpb.GetExecutionNodesResponse{
 		Executor:                    executors,
 		UserOwnedExecutorsSupported: userOwnedExecutorsEnabled,
+		UpgradePrompt:               s.upgradePrompt(ctx, executors),
 	}, nil
 }
 

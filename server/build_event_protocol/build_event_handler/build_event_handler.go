@@ -37,6 +37,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
+	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/paging"
@@ -63,6 +64,7 @@ import (
 	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 	pgpb "github.com/buildbuddy-io/buildbuddy/proto/pagination"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	sipb "github.com/buildbuddy-io/buildbuddy/proto/stored_invocation"
 	api_common "github.com/buildbuddy-io/buildbuddy/server/api/common"
@@ -249,6 +251,11 @@ type recordStatsTask struct {
 	persist                  *PersistArtifacts
 	kytheSSTableResourceName *rspb.ResourceName
 	invocationStatus         inspb.InvocationStatus
+	// Git fetch stats reported by the remote runner, if any. These are stored
+	// only in the OLAP DB, so they are carried here rather than read back from
+	// the primary DB at flush time.
+	gitFetchTotalBytes   int64
+	gitFetchDurationUsec int64
 }
 
 // statsRecorder listens for finalized invocations and copies cache stats from
@@ -312,6 +319,8 @@ func (r *statsRecorder) Enqueue(ctx context.Context, beValues *accumulator.BEVal
 		invocationStatus:         invocation.GetInvocationStatus(),
 		persist:                  persist,
 		kytheSSTableResourceName: beValues.KytheSSTableResourceName(),
+		gitFetchTotalBytes:       beValues.GitFetchTotalBytes(),
+		gitFetchDurationUsec:     beValues.GitFetchDuration().Microseconds(),
 	}
 	select {
 	case r.tasks <- req:
@@ -342,14 +351,18 @@ func (r *statsRecorder) lookupInvocation(ctx context.Context, ij *invocationInfo
 	return r.env.GetInvocationDB().LookupInvocation(ctx, ij.id)
 }
 
-func (r *statsRecorder) flushInvocationStatsToOLAPDB(ctx context.Context, ij *invocationInfo) error {
+func (r *statsRecorder) flushInvocationStatsToOLAPDB(ctx context.Context, task *recordStatsTask) error {
 	if r.env.GetOLAPDBHandle() == nil || !*writeToOLAPDBEnabled {
 		return nil
 	}
-	inv, err := r.lookupInvocation(ctx, ij)
+	inv, err := r.lookupInvocation(ctx, task.invocationInfo)
 	if err != nil {
-		return status.InternalErrorf("failed to look up invocation for invocation id %q: %s", ij.id, err)
+		return status.InternalErrorf("failed to look up invocation for invocation id %q: %s", task.invocationInfo.id, err)
 	}
+	// Git fetch stats are stored only in the OLAP DB, so they are carried on
+	// the task instead of being read back from the primary DB.
+	inv.GitFetchTotalBytes = task.gitFetchTotalBytes
+	inv.GitFetchDurationUsec = task.gitFetchDurationUsec
 
 	err = r.env.GetOLAPDBHandle().FlushInvocationStats(ctx, inv)
 	if err != nil {
@@ -392,15 +405,6 @@ func (r *statsRecorder) flushInvocationStatsToOLAPDB(ctx context.Context, ij *in
 		log.CtxInfo(ctx, "Successfully wrote invocation to redis")
 	}
 
-	// Once we've flushed execution stats to ClickHouse for this invocation,
-	// clean up the invocation => execution links, since these are only needed
-	// for listing in-progress executions linked to an invocation, and this
-	// listing will now be queryable using ClickHouse.
-	defer func() {
-		if err := r.env.GetExecutionCollector().DeleteInvocationExecutionLinks(ctx, inv.InvocationID); err != nil {
-			log.CtxErrorf(ctx, "Failed to clean up reverse invocation links for invocation %q: %s", inv.InvocationID, err)
-		}
-	}()
 	for {
 		endIndex = startIndex + batchSize - 1
 		executions, err := r.env.GetExecutionCollector().GetExecutions(ctx, inv.InvocationID, int64(startIndex), int64(endIndex))
@@ -480,7 +484,7 @@ func (r *statsRecorder) handleTask(ctx context.Context, task *recordStatsTask) {
 
 	if task.invocationStatus == inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS {
 		// only flush complete invocation to clickhouse.
-		err = r.flushInvocationStatsToOLAPDB(ctx, task.invocationInfo)
+		err = r.flushInvocationStatsToOLAPDB(ctx, task)
 		if err != nil {
 			log.CtxErrorf(ctx, "Failed to flush stats to clickhouse: %s", err)
 		}
@@ -516,6 +520,11 @@ func (r *statsRecorder) handleTask(ctx context.Context, task *recordStatsTask) {
 
 	artifactsUploaded := make(map[string]struct{}, 0)
 	for _, uri := range task.persist.URIs {
+		// Only persist artifacts from caches that are hosted on the BuildBuddy
+		// domain (but only if we know it).
+		if cache_api_url.String() != "" && urlutil.GetDomain(uri.Hostname()) != urlutil.GetDomain(cache_api_url.WithPath("").Hostname()) {
+			continue
+		}
 		rn, err := digest.ParseDownloadResourceName(uri.Path)
 		if err != nil {
 			log.CtxErrorf(ctx, "Unparseable artifact URI: %s", err)
@@ -534,12 +543,8 @@ func (r *statsRecorder) handleTask(ctx context.Context, task *recordStatsTask) {
 			ctx := usageutil.WithLocalServerLabels(ctx)
 
 			fullPath := path.Join(task.invocationInfo.id, cacheArtifactsBlobstorePath, uri.Path)
-			// Only persist artifacts from caches that are hosted on the BuildBuddy
-			// domain (but only if we know it).
-			if cache_api_url.String() == "" || urlutil.GetDomain(uri.Hostname()) == urlutil.GetDomain(cache_api_url.WithPath("").Hostname()) {
-				if err := persistArtifact(ctx, r.env, uri, fullPath); err != nil {
-					log.CtxError(ctx, err.Error())
-				}
+			if err := persistArtifact(ctx, r.env, uri, fullPath); err != nil {
+				log.CtxError(ctx, err.Error())
 			}
 			return nil
 		})
@@ -851,6 +856,10 @@ type EventChannel struct {
 	// when we're retrying an invocation that is already complete, or is
 	// incomplete but was created too far in the past.
 	isVoid bool
+
+	// lastDBUpdateTime is when the invocation row was last written to the DB.
+	// It is used to periodically update the row while events are streaming.
+	lastDBUpdateTime time.Time
 }
 
 func (e *EventChannel) Context() context.Context {
@@ -875,15 +884,35 @@ func (e *EventChannel) FinalizeInvocation(iid string) error {
 	invocation.Attempt = e.attempt
 	invocation.HasChunkedEventLogs = e.logWriter != nil
 
+	disconnected := invocation.GetInvocationStatus() == inspb.InvocationStatus_DISCONNECTED_INVOCATION_STATUS
+
+	// Flush/close blobstore writers (raw event protos and build logs).
 	if e.pw != nil {
 		if err := e.pw.Flush(ctx); err != nil {
-			return err
+			// Return the error so that the client can retry sending events,
+			// giving us another chance to write them to blobstore. If the
+			// client disconnected, just log the error since they won't get the
+			// error that we return here. This also ensures that we properly
+			// mark the invocation disconnected below.
+			if disconnected {
+				log.CtxWarningf(ctx, "Failed to flush invocation events to blobstore: %s", err)
+			} else {
+				return err
+			}
 		}
 	}
-
 	if e.logWriter != nil {
 		if err := e.logWriter.Close(ctx); err != nil {
-			return err
+			// Return the error so that the client can retry sending events,
+			// giving us another chance to write them to blobstore. If the
+			// client disconnected, just log the error since they won't get the
+			// error that we return here. This also ensures that we properly
+			// mark the invocation disconnected in the DB below.
+			if disconnected {
+				log.CtxWarningf(ctx, "Failed to flush invocation logs to blobstore: %s", err)
+			} else {
+				return err
+			}
 		}
 		invocation.LastChunkId = e.logWriter.GetLastChunkId(ctx)
 	}
@@ -908,7 +937,7 @@ func (e *EventChannel) FinalizeInvocation(iid string) error {
 	// Report a disconnect only if we successfully updated the invocation.
 	// This reduces the likelihood that the disconnected invocation's status
 	// will overwrite any statuses written by a more recent attempt.
-	if invocation.GetInvocationStatus() == inspb.InvocationStatus_DISCONNECTED_INVOCATION_STATUS {
+	if disconnected {
 		log.CtxWarning(ctx, "Reporting disconnected status for invocation")
 		e.statusReporter.ReportDisconnect(ctx)
 	}
@@ -1096,10 +1125,11 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 		}
 		if !created {
 			// We failed to retry an existing invocation
-			log.CtxWarningf(e.ctx, "Voiding EventChannel for invocation %s: invocation already exists and is either completed or was last updated over 4 hours ago, so may not be retried.", iid)
+			log.CtxWarningf(e.ctx, "Voiding EventChannel for invocation %s: invocation already exists and is either completed or past its reconnect window, so may not be retried.", iid)
 			e.isVoid = true
 			return nil
 		}
+		e.lastDBUpdateTime = e.env.GetClock().Now()
 		e.attempt = ti.Attempt
 		e.ctx = log.EnrichContext(e.ctx, "invocation_attempt", fmt.Sprintf("%d", e.attempt))
 		log.CtxInfof(e.ctx, "Created invocation %q, attempt %d", ti.InvocationID, ti.Attempt)
@@ -1178,12 +1208,16 @@ func (e *EventChannel) authenticateEvent(bazelBuildEvent *build_event_stream.Bui
 }
 
 func (e *EventChannel) InitializeLogWriter(iid string) error {
+	// Attach the invocation ID to the context so experiments evaluated by the
+	// log writer can target and bucket by invocation.
+	ctx := bazel_request.OverrideRequestMetadata(e.ctx, &repb.RequestMetadata{ToolInvocationId: iid})
 	var err error
 	e.logWriter, err = eventlog.NewEventLogWriter(
-		e.ctx,
+		ctx,
 		e.env.GetBlobstore(),
 		e.env.GetKeyValStore(),
 		e.env.GetPubSub(),
+		e.env.GetExperimentFlagProvider(),
 		eventlog.GetEventLogPubSubChannel(iid),
 		eventlog.GetEventLogPathFromInvocationIdAndAttempt(iid, e.attempt),
 		e.requestedTerminalColumns,
@@ -1291,6 +1325,25 @@ func (e *EventChannel) processSingleEvent(event *inpb.InvocationEvent, iid strin
 		e.wroteBuildMetadata = true
 	}
 
+	// While events are still streaming, periodically update the invocation
+	// row. The row is otherwise only updated at creation, when metadata is
+	// loaded, and at finalization, so an invocation that runs longer than the
+	// reconnect window would look abandoned and could never be retried if it
+	// got disconnected.
+	updatePeriod := e.env.GetInvocationDB().GetInvocationReconnectWindow() / 2
+	if e.env.GetClock().Since(e.lastDBUpdateTime) >= updatePeriod {
+		ti := &tables.Invocation{InvocationID: iid, Attempt: e.attempt}
+		if updated, err := e.env.GetInvocationDB().UpdateInvocation(e.ctx, ti); err != nil {
+			log.CtxErrorf(e.ctx, "Error updating invocation row while streaming events: %s", err)
+			return status.UnavailableErrorf("write periodic metadata update: %s", err)
+		} else if !updated {
+			e.isVoid = true
+			return status.CanceledErrorf("Attempt %d of invocation %s pre-empted by more recent attempt.", e.attempt, iid)
+		} else {
+			e.lastDBUpdateTime = e.env.GetClock().Now()
+		}
+	}
+
 	return nil
 }
 
@@ -1391,6 +1444,7 @@ func (e *EventChannel) writeBuildMetadata(ctx context.Context, invocationID stri
 		e.isVoid = true
 		return status.CanceledErrorf("Attempt %d of invocation %s pre-empted by more recent attempt, no build metadata written.", e.attempt, invocationID)
 	}
+	e.lastDBUpdateTime = e.env.GetClock().Now()
 	return nil
 }
 

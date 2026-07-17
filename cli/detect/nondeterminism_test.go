@@ -26,6 +26,7 @@ func TestAddBazelFlags(t *testing.T) {
 		bazelArgsForTest(t, "--bazelrc=/tmp/bazelrc", "test", "//foo:bar"),
 		"/tmp/output-base",
 		"/tmp/log.pb.zst",
+		"test-invocation-id",
 		"grpcs://bes.example.com",
 		"https://example.com/invocation/",
 	)
@@ -42,6 +43,7 @@ func TestAddBazelFlags(t *testing.T) {
 		"--disk_cache=",
 		"--noexperimental_convenience_symlinks",
 		"--execution_log_compact_file=/tmp/log.pb.zst",
+		"--invocation_id=test-invocation-id",
 		"//foo:bar",
 	}, args)
 }
@@ -49,7 +51,7 @@ func TestAddBazelFlags(t *testing.T) {
 func TestAddBazelFlags_DoesNotMutateBaseArgs(t *testing.T) {
 	baseArgs := bazelArgsForTest(t, "build", "//foo:bar")
 
-	_, err := addBazelFlags(baseArgs, "/tmp/output-base", "/tmp/log.pb.zst", defaultBESBackend, defaultBESResultsURL)
+	_, err := addBazelFlags(baseArgs, "/tmp/output-base", "/tmp/log.pb.zst", "test-invocation-id", defaultBESBackend, defaultBESResultsURL)
 	require.NoError(t, err)
 
 	assert.Equal(t, []string{"build", "//foo:bar"}, baseArgs.Forwarded())
@@ -65,7 +67,7 @@ func TestParseBazelCommand(t *testing.T) {
 }
 
 func TestRunReturnsDetectionError(t *testing.T) {
-	diff := &spawn_diff.DiffResult{SpawnDiffs: []*spawn_diff.SpawnDiff{{TargetLabel: "//foo:bar"}}}
+	diff := &spawn_diff.DiffResult{SpawnDiffs: []*spawn_diff.SpawnDiff{nondeterministicSpawnDiff("//foo:bar")}}
 	explainer := &fakeExplainer{diff: diff}
 	runner := &fakeRunner{}
 	c := &checker{
@@ -82,8 +84,24 @@ func TestRunReturnsDetectionError(t *testing.T) {
 	require.ErrorIs(t, err, errNondeterminismDetected)
 
 	require.Equal(t, []string{"build", "shutdown", "clean", "build", "shutdown", "clean"}, bazelCommands(runner.runs))
+	assert.True(t, explainer.nondeterministicOnly, "detector should request only non-deterministic spawns")
 	assert.Equal(t, 1, explainer.writeCalls)
 	assert.Same(t, diff, explainer.wroteDiff)
+}
+
+// nondeterministicSpawnDiff returns a representative non-deterministic spawn
+// diff, i.e. what explain.Diff returns for --nondeterministic_only: an exit code
+// change despite unchanged inputs. The classification itself is tested in the
+// cli/explain package; the detector just reports whatever explain.Diff surfaces.
+func nondeterministicSpawnDiff(label string) *spawn_diff.SpawnDiff {
+	return &spawn_diff.SpawnDiff{
+		TargetLabel: label,
+		Diff: &spawn_diff.SpawnDiff_Modified{Modified: &spawn_diff.Modified{
+			Diffs: []*spawn_diff.Diff{{
+				Diff: &spawn_diff.Diff_ExitCode{ExitCode: &spawn_diff.IntDiff{Old: 0, New: 1}},
+			}},
+		}},
+	}
 }
 
 func TestRunReturnsNilWhenNoDiffs(t *testing.T) {
@@ -106,9 +124,9 @@ func TestRunReturnsNilWhenNoDiffs(t *testing.T) {
 }
 
 func TestRemovesOutputBaseAfterEachRun(t *testing.T) {
-	a, err := newArtifacts()
+	m, err := newBuildMetadata()
 	require.NoError(t, err)
-	defer os.RemoveAll(a.tempDir)
+	defer os.RemoveAll(m.tempDir)
 
 	var runner fakeRunner
 	var buildRuns int
@@ -125,7 +143,7 @@ func TestRemovesOutputBaseAfterEachRun(t *testing.T) {
 		buildRuns++
 		require.NoError(t, os.MkdirAll(filepath.Join(outputBase, "execroot"), 0755))
 		if buildRuns == 2 {
-			require.NoDirExists(t, filepath.Join(a.tempDir, "output_base_1"))
+			require.NoDirExists(t, filepath.Join(m.tempDir, "output_base_1"))
 		}
 		return nil
 	}
@@ -138,11 +156,11 @@ func TestRemovesOutputBaseAfterEachRun(t *testing.T) {
 		runner: &runner,
 	}
 
-	require.NoError(t, c.runBuilds(context.Background(), a))
+	require.NoError(t, c.runBuilds(context.Background(), m))
 
 	require.Equal(t, []string{"build", "shutdown", "clean", "build", "shutdown", "clean"}, bazelCommands(runner.runs))
-	require.NoDirExists(t, filepath.Join(a.tempDir, "output_base_1"))
-	require.NoDirExists(t, filepath.Join(a.tempDir, "output_base_2"))
+	require.NoDirExists(t, filepath.Join(m.tempDir, "output_base_1"))
+	require.NoDirExists(t, filepath.Join(m.tempDir, "output_base_2"))
 }
 
 func bazelArgsForTest(t *testing.T, args ...string) *arg.BazelArgs {
@@ -195,13 +213,15 @@ func (r *fakeRunner) Run(ctx context.Context, name string, args ...string) error
 }
 
 type fakeExplainer struct {
-	diff       *spawn_diff.DiffResult
-	diffErr    error
-	writeCalls int
-	wroteDiff  *spawn_diff.DiffResult
+	diff                 *spawn_diff.DiffResult
+	diffErr              error
+	nondeterministicOnly bool
+	writeCalls           int
+	wroteDiff            *spawn_diff.DiffResult
 }
 
-func (e *fakeExplainer) Diff(oldLog, newLog string) (*spawn_diff.DiffResult, error) {
+func (e *fakeExplainer) Diff(oldLog, newLog string, nondeterministicOnly bool) (*spawn_diff.DiffResult, error) {
+	e.nondeterministicOnly = nondeterministicOnly
 	return e.diff, e.diffErr
 }
 

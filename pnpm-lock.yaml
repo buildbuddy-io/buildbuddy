@@ -7,52 +7,52 @@ importers:
     configDependencies: {}
     packageManagerDependencies:
       '@pnpm/exe':
-        specifier: 11.7.0
-        version: 11.7.0
+        specifier: 11.8.0
+        version: 11.8.0
       pnpm:
-        specifier: 11.7.0
-        version: 11.7.0
+        specifier: 11.8.0
+        version: 11.8.0
 
 packages:
 
-  '@pnpm/exe@11.7.0':
-    resolution: {integrity: sha512-3CujpSSp2PIDE0pwu7mWSdjhdDqaZa7OppVooECWWaNEoA/z66s9FZts1MhDO+2yq1XER4gBHh84DVbFN/r1rA==}
+  '@pnpm/exe@11.8.0':
+    resolution: {integrity: sha512-Z4yxxE+Q2bi36Ol/hNN/420TLk6MG1LxB80sIFvwFq2cr8zRkO446c8Ho+jFaBOxdFiGE7RPT5a3tvu9JQarsg==}
     hasBin: true
 
-  '@pnpm/linux-arm64@11.7.0':
-    resolution: {integrity: sha512-ANTX2SlMO+d2y/4bYQhHCwHPX7gSSADJ5+pMUIiDFzIsybnFFaJdZboaFfq9NOxCbETcnDxqZ95Rz3+NHx1JIw==}
+  '@pnpm/linux-arm64@11.8.0':
+    resolution: {integrity: sha512-GynFy14/J4CBFnAl0yIAZofHFjVT9O630/6SQizF+g/tmtgA/LD8LNydlaqp0IqJHLpAYgP6NCz1GpNjAXDSFw==}
     cpu: [arm64]
     os: [linux]
 
-  '@pnpm/linux-x64@11.7.0':
-    resolution: {integrity: sha512-fr75tqixXoS8cnA81HQIomjOGEPnsOsd3xCDL5pMNY5raOXbKurtgRV+RjATvjxlJxSLIVFKegABlxAiB7q72A==}
+  '@pnpm/linux-x64@11.8.0':
+    resolution: {integrity: sha512-t8xZUgi1+3zUDKD7vVv+njzEE22KKVsEx8mDOnHhcrvdk0VQjlXw1gsBRr5qgHm1mSLBHM59p8HYskbIvKs2Bg==}
     cpu: [x64]
     os: [linux]
 
-  '@pnpm/linuxstatic-arm64@11.7.0':
-    resolution: {integrity: sha512-Q++pgzvXkGeqnVRl26/uqmpMGdttQus0rGyL3XIfYGLCi8ZfajYUaCKdZID2MH7+CNOuugWDdFDup3r7BR7Rfg==}
+  '@pnpm/linuxstatic-arm64@11.8.0':
+    resolution: {integrity: sha512-sImQtnqan8mkTE4PPil9Kz3pPtQ+pBvhYEMUFBgOzhHAWloxVRDKK0pJvUXJmx+NqQNng5SiEvhjoAUdm5p34g==}
     cpu: [arm64]
     os: [linux]
     libc: [musl]
 
-  '@pnpm/linuxstatic-x64@11.7.0':
-    resolution: {integrity: sha512-z1+exW6ocU/rmOvJnmU3FUBJYaryCUqFoaXN6KZW5BqTj7BPJb7HJcAyXRlirNZMJlEiUY5rXbfStGPQJhGsVA==}
+  '@pnpm/linuxstatic-x64@11.8.0':
+    resolution: {integrity: sha512-/amFWeX2wOmsuCpEHs+65RBgniuncIE0eCqWdOI7nBk3rcu8SniVeZ8Lq5rABjqNBYUU65zKwHJ5NyWwc+BrKg==}
     cpu: [x64]
     os: [linux]
     libc: [musl]
 
-  '@pnpm/macos-arm64@11.7.0':
-    resolution: {integrity: sha512-gD34/k3JT5oab4BYaqrUor3e4VdwXvkfLNlEI+lvDtX1MHT+2Nauc9p9NsQnpn1zE8blQEflzbF8wAUQ6Dmvkw==}
+  '@pnpm/macos-arm64@11.8.0':
+    resolution: {integrity: sha512-r7OWbYzpvO3CPCozezysoAfpYvUNX0w/2DpqA+lX4HcuBQi7GAR4xx6Gdhbg52uPA7Qux+7kHUj3gL/Mn8DEAA==}
     cpu: [arm64]
     os: [darwin]
 
-  '@pnpm/win-arm64@11.7.0':
-    resolution: {integrity: sha512-hRTcDmm2j7KoRwbqNo0rUAu9A1kVJN98Eob7H09U0uPJbEMax85JGOmERkT3Lf6HjVJuFNBvfaJ3OTI3HmlVGg==}
+  '@pnpm/win-arm64@11.8.0':
+    resolution: {integrity: sha512-BGXgcCdDX1QHv7D3QbQnP4aY/jr9DkSV/fqiiCTaYsgDF4/bOqcjlCr+Md6Az7HL/PJ8bxyjPIqHhdBzZh2TSg==}
     cpu: [arm64]
     os: [win32]
 
-  '@pnpm/win-x64@11.7.0':
-    resolution: {integrity: sha512-r/1NuKY7Z+6ZXVIzVrUEMj6TTEBdR63geV4Rlm8HKEhgQTdxyIsJoqV3FJGqoyzbRaScObqAwRfMaK9dskPddQ==}
+  '@pnpm/win-x64@11.8.0':
+    resolution: {integrity: sha512-J6inRM26+P1hL3DLWLBLI/imW2VlxjSFJsnSlaVvPC6PiGJbC96JhGZ+7l9Oag8loWjb9Z1DbcOf3ibDA9XRJA==}
     cpu: [x64]
     os: [win32]
 
@@ -116,45 +116,45 @@ packages:
     resolution: {integrity: sha512-Btj2BOOO83o3WyH59e8MgXsxEQVcarkUOpEYrubB0urwnN10yQ364rsiByU11nZlqWYZm05i/of7io4mzihBtQ==}
     engines: {node: '>=8'}
 
-  pnpm@11.7.0:
-    resolution: {integrity: sha512-GcyFLBIMcSV2DyRD7mvgyltA+fUFmN4aCaHxd1A+AQ5Xwjx3ZG4B52HeWb+HT7IqM5jDOrlpH8E+uUa28PTWIA==}
+  pnpm@11.8.0:
+    resolution: {integrity: sha512-wfXnxMskHI8XS3Q4UdgvQrgCMkr8iw8Ra5atsVqgZmSUjd42lgo7oQebpbSyndAUATW5S1tfUmNZIknWjlVfJg==}
     engines: {node: '>=22.13'}
     hasBin: true
 
 snapshots:
 
-  '@pnpm/exe@11.7.0':
+  '@pnpm/exe@11.8.0':
     dependencies:
       '@reflink/reflink': 0.1.19
       detect-libc: 2.1.2
     optionalDependencies:
-      '@pnpm/linux-arm64': 11.7.0
-      '@pnpm/linux-x64': 11.7.0
-      '@pnpm/linuxstatic-arm64': 11.7.0
-      '@pnpm/linuxstatic-x64': 11.7.0
-      '@pnpm/macos-arm64': 11.7.0
-      '@pnpm/win-arm64': 11.7.0
-      '@pnpm/win-x64': 11.7.0
+      '@pnpm/linux-arm64': 11.8.0
+      '@pnpm/linux-x64': 11.8.0
+      '@pnpm/linuxstatic-arm64': 11.8.0
+      '@pnpm/linuxstatic-x64': 11.8.0
+      '@pnpm/macos-arm64': 11.8.0
+      '@pnpm/win-arm64': 11.8.0
+      '@pnpm/win-x64': 11.8.0
 
-  '@pnpm/linux-arm64@11.7.0':
+  '@pnpm/linux-arm64@11.8.0':
     optional: true
 
-  '@pnpm/linux-x64@11.7.0':
+  '@pnpm/linux-x64@11.8.0':
     optional: true
 
-  '@pnpm/linuxstatic-arm64@11.7.0':
+  '@pnpm/linuxstatic-arm64@11.8.0':
     optional: true
 
-  '@pnpm/linuxstatic-x64@11.7.0':
+  '@pnpm/linuxstatic-x64@11.8.0':
     optional: true
 
-  '@pnpm/macos-arm64@11.7.0':
+  '@pnpm/macos-arm64@11.8.0':
     optional: true
 
-  '@pnpm/win-arm64@11.7.0':
+  '@pnpm/win-arm64@11.8.0':
     optional: true
 
-  '@pnpm/win-x64@11.7.0':
+  '@pnpm/win-x64@11.8.0':
     optional: true
 
   '@reflink/reflink-darwin-arm64@0.1.19':
@@ -194,7 +194,7 @@ snapshots:
 
   detect-libc@2.1.2: {}
 
-  pnpm@11.7.0: {}
+  pnpm@11.8.0: {}
 
 ---
 lockfileVersion: '9.0'
@@ -239,9 +239,6 @@ importers:
       '@types/react':
         specifier: ^16.14.63
         version: 16.14.63
-      '@types/react-date-range':
-        specifier: ^1.4.10
-        version: 1.4.10
       '@types/react-dom':
         specifier: ^16.9.25
         version: 16.9.25(@types/react@16.14.63)
@@ -300,8 +297,8 @@ importers:
         specifier: ^4.0.0
         version: 4.0.0
       lucide-react:
-        specifier: ^0.545.0
-        version: 0.545.0(react@18.3.1)
+        specifier: ^1.21.0
+        version: 1.21.0(react@18.3.1)
       memoize-one:
         specifier: ^6.0.0
         version: 6.0.0
@@ -326,9 +323,6 @@ importers:
       react:
         specifier: ^18.3.1
         version: 18.3.1
-      react-date-range:
-        specifier: ^2.0.1
-        version: 2.0.1(date-fns@4.1.0)(react@18.3.1)
       react-dom:
         specifier: ^18.3.1
         version: 18.3.1(react@18.3.1)
@@ -475,9 +469,6 @@ packages:
   '@types/prop-types@15.7.14':
     resolution: {integrity: sha512-gNMvNH49DJ7OJYv+KAKn0Xp45p8PLl6zo2YnvDIbTd4J6MER2BmWN49TG7n9LvkyihINxeKW8+3bfS2yDC9dzQ==}
 
-  '@types/react-date-range@1.4.10':
-    resolution: {integrity: sha512-1g3SUKak9ShCH8ZAcLrYT/Ln3t5sI0iDKesAkuAuAXtagpgoI89RTh1APH4RV1IQ0YZQSBQvcQGC2oYaZ++2jw==}
-
   '@types/react-dom@16.9.25':
     resolution: {integrity: sha512-ZK//eAPhwft9Ul2/Zj+6O11YR6L4JX0J2sVeBC9Ft7x7HFN7xk7yUV/zDxqV6rjvqgl6r8Dq7oQImxtyf/Mzcw==}
     peerDependencies:
@@ -518,9 +509,6 @@ packages:
 
   browser-headers@0.4.1:
     resolution: {integrity: sha512-CA9hsySZVo9371qEHjHZtYxV2cFtVj5Wj/ZHi8ooEsrtm4vOnl9Y9HmyYWk9q+05d7K3rdoAE0j3MVEFVvtQtg==}
-
-  classnames@2.5.1:
-    resolution: {integrity: sha512-saHYOzhIQs6wy2sVxTM6bUDsQO4F50V9RQ22qBpEdCW+I+/Wmke2HOl6lS6dTpdxVhb88/I6+Hs+438c3lfUow==}
 
   clsx@2.1.1:
     resolution: {integrity: sha512-eYm0QWBtUrBWZWG0d386OGAw16Z995PiOVo2B7bjWSbHedGl5e0ZWaq65kOGgUSNesEIDkB9ISbTg/JK9dhCZA==}
@@ -583,10 +571,6 @@ packages:
     peerDependencies:
       react: 16.9.0
       react-dom: 16.9.0
-
-  date-fns@2.30.0:
-    resolution: {integrity: sha512-fnULvOpxnC5/Vg3NCiWelDsLiUc9bRwAPs/+LfTLNvetFCtCTN+yQz15C/fs4AwX1R9K5GLtLfn8QW+dWisaAw==}
-    engines: {node: '>=0.11'}
 
   date-fns@4.1.0:
     resolution: {integrity: sha512-Ukq0owbQXxa/U3EGtsdVBkR1w7KOQ5gIBqdH2hkvknzZPYvBxb/aa6E8L7tmjFtkwZBu3UXBbjIgPo/Ez4xaNg==}
@@ -664,8 +648,8 @@ packages:
     resolution: {integrity: sha512-ESL2CrkS/2wTPfuend7Zhkzo2u0daGJ/A2VucJOgQ/C48S/zB8MMeMHSGKYpXhIjbPxfuezITkaBH1wqv00DDQ==}
     engines: {node: 20 || >=22}
 
-  lucide-react@0.545.0:
-    resolution: {integrity: sha512-7r1/yUuflQDSt4f1bpn5ZAocyIxcTyVyBBChSVtBKn5M+392cPmI5YJMWOJKk/HUWGm5wg83chlAZtCcGbEZtw==}
+  lucide-react@1.21.0:
+    resolution: {integrity: sha512-reEZMXq8Qdd5jg5XYkQ5TR1fB/GiQ7ih4vcrthYDtgjSDwh0i6/YLiGjsWsIwgN49gpAnd4J2elSNzncMEEUUQ==}
     peerDependencies:
       react: ^16.5.1 || ^17.0.0 || ^18.0.0 || ^19.0.0
 
@@ -727,12 +711,6 @@ packages:
     resolution: {integrity: sha512-M71sTMB146U3u0di3yup8iM+zv8yPRNQVr1KK4tyBitl3qFvEGucq/rGDRShD2rsJhtN02RJaJ7j5X5hmy8SJg==}
     engines: {node: '>=12.0.0'}
 
-  react-date-range@2.0.1:
-    resolution: {integrity: sha512-jwKYc9zcjYMg2hWbPht+6BF2wjGG5DkRVNJLRXn2Y0B/QCOOnvQX6YXziZVujVADWmgsBaoQnILdmzYw+Bwh0g==}
-    peerDependencies:
-      date-fns: 3.0.6 || >=3.0.0
-      react: ^0.14 || ^15.0.0-rc || >=15.0
-
   react-dom@18.3.1:
     resolution: {integrity: sha512-5m4nQKp+rZRb09LNH59GM4BxTh9251/ylbKIbpe7TpGxfJ+9kv6BLkLBXIjjspbgbnIBNqlI23tRnTWT0snUIw==}
     peerDependencies:
@@ -746,11 +724,6 @@ packages:
 
   react-lifecycles-compat@3.0.4:
     resolution: {integrity: sha512-fBASbA6LnOU9dOU2eW7aQ8xmYBSXUIWr+UmF9b1efZBazGNO+rcXT/icdKnYm2pTwcRylVUYwW7H1PHfLekVzA==}
-
-  react-list@0.8.18:
-    resolution: {integrity: sha512-1OSdDvzuKuwDJvQNuhXxxL+jTmmdtKg1i6KtYgxI9XR98kbOql1FcSGP+Lcvo91fk3cYng+Z6YkC6X9HRJwxfw==}
-    peerDependencies:
-      react: 0.14 || 15 - 19
 
   react-modal@3.16.3:
     resolution: {integrity: sha512-yCYRJB5YkeQDQlTt17WGAgFJ7jr2QYcWa1SHqZ3PluDmnKJ/7+tVU+E6uKyZ0nODaeEj+xCpK4LcSnKXLMC0Nw==}
@@ -817,9 +790,6 @@ packages:
 
   scheduler@0.23.2:
     resolution: {integrity: sha512-UOShsPwz7NrMUqhR6t0hWjFduvOzbtv7toDH1/hIrfRNIDBnnBWd0CwJTGvTpngVlmwGCdP9/Zl/tVrDqcuYzQ==}
-
-  shallow-equal@1.2.1:
-    resolution: {integrity: sha512-S4vJDjHHMBaiZuT9NPb616CSmLf618jawtv3sufLl6ivK8WocjAo58cXwbRV1cgqxH0Qbv+iUt6m05eqEa2IRA==}
 
   tiny-invariant@1.3.3:
     resolution: {integrity: sha512-+FbBPE1o9QAYvviau/qC5SE3caw21q3xkvWKBtja5vgqOWIHHJ3ioaq1VPfn/Szqctz2bU/oYeKd9/z5BL+PVg==}
@@ -943,11 +913,6 @@ snapshots:
 
   '@types/prop-types@15.7.14': {}
 
-  '@types/react-date-range@1.4.10':
-    dependencies:
-      '@types/react': 16.14.63
-      date-fns: 2.30.0
-
   '@types/react-dom@16.9.25(@types/react@16.14.63)':
     dependencies:
       '@types/react': 16.14.63
@@ -987,8 +952,6 @@ snapshots:
       balanced-match: 4.0.4
 
   browser-headers@0.4.1: {}
-
-  classnames@2.5.1: {}
 
   clsx@2.1.1: {}
 
@@ -1038,10 +1001,6 @@ snapshots:
     dependencies:
       react: 18.3.1
       react-dom: 18.3.1(react@18.3.1)
-
-  date-fns@2.30.0:
-    dependencies:
-      '@babel/runtime': 7.27.0
 
   date-fns@4.1.0: {}
 
@@ -1107,7 +1066,7 @@ snapshots:
 
   lru-cache@11.2.6: {}
 
-  lucide-react@0.545.0(react@18.3.1):
+  lucide-react@1.21.0(react@18.3.1):
     dependencies:
       react: 18.3.1
 
@@ -1164,15 +1123,6 @@ snapshots:
       '@types/node': 25.8.0
       long: 5.3.2
 
-  react-date-range@2.0.1(date-fns@4.1.0)(react@18.3.1):
-    dependencies:
-      classnames: 2.5.1
-      date-fns: 4.1.0
-      prop-types: 15.8.1
-      react: 18.3.1
-      react-list: 0.8.18(react@18.3.1)
-      shallow-equal: 1.2.1
-
   react-dom@18.3.1(react@18.3.1):
     dependencies:
       loose-envify: 1.4.0
@@ -1184,10 +1134,6 @@ snapshots:
   react-is@18.3.1: {}
 
   react-lifecycles-compat@3.0.4: {}
-
-  react-list@0.8.18(react@18.3.1):
-    dependencies:
-      react: 18.3.1
 
   react-modal@3.16.3(react-dom@18.3.1(react@18.3.1))(react@18.3.1):
     dependencies:
@@ -1268,8 +1214,6 @@ snapshots:
   scheduler@0.23.2:
     dependencies:
       loose-envify: 1.4.0
-
-  shallow-equal@1.2.1: {}
 
   tiny-invariant@1.3.3: {}
 

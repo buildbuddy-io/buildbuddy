@@ -1154,80 +1154,42 @@ func TestAPIDispatch_ActionFiltering(t *testing.T) {
 		actionFilter              []string
 		codesearchEnabledForGroup bool
 		codesearchFlagEnabled     bool
-		kytheFlagEnabled          bool
 		expectedActions           []string
 	}{
 		{
-			name:                      "no action filter, kythe disabled",
+			name:                      "no action filter, codesearch disabled for group",
 			actionFilter:              nil,
 			codesearchEnabledForGroup: false,
 			codesearchFlagEnabled:     true,
-			kytheFlagEnabled:          true,
 			expectedActions:           []string{"Test all targets"},
 		},
 		{
-			name:                      "no action filter, kythe enabled",
+			name:                      "no action filter, codesearch enabled",
 			actionFilter:              nil,
 			codesearchEnabledForGroup: true,
 			codesearchFlagEnabled:     true,
-			kytheFlagEnabled:          true,
-			expectedActions:           []string{"Test all targets", config.CSIncrementalUpdateName, config.KytheActionName},
-		},
-		{
-			name:                      "action filter, kythe disabled",
-			actionFilter:              []string{"Test all targets"},
-			codesearchEnabledForGroup: false,
-			codesearchFlagEnabled:     true,
-			kytheFlagEnabled:          true,
-			expectedActions:           []string{"Test all targets"},
-		},
-		{
-			name:                      "action filter, kythe enabled",
-			actionFilter:              []string{"Test all targets"},
-			codesearchEnabledForGroup: true,
-			codesearchFlagEnabled:     true,
-			kytheFlagEnabled:          true,
-			expectedActions:           []string{"Test all targets"},
-		},
-		{
-			name:                      "kythe-only action filter",
-			actionFilter:              []string{config.KytheActionName},
-			codesearchEnabledForGroup: true,
-			codesearchFlagEnabled:     true,
-			kytheFlagEnabled:          true,
-			expectedActions:           []string{config.KytheActionName},
-		},
-		{
-			name:                      "all codesearch action filter",
-			actionFilter:              []string{config.CSIncrementalUpdateName, config.KytheActionName},
-			codesearchEnabledForGroup: true,
-			codesearchFlagEnabled:     true,
-			kytheFlagEnabled:          true,
-			expectedActions:           []string{config.CSIncrementalUpdateName, config.KytheActionName},
-		},
-		{
-			name:                      "no action filter, cs indexing only enabled",
-			actionFilter:              nil,
-			codesearchEnabledForGroup: true,
-			codesearchFlagEnabled:     true,
-			kytheFlagEnabled:          false,
 			expectedActions:           []string{"Test all targets", config.CSIncrementalUpdateName},
 		},
 		{
-			name:                      "all codesearch action filter, cs indexing only enabled",
-			actionFilter:              []string{config.CSIncrementalUpdateName, config.KytheActionName},
+			name:                      "action filter excludes codesearch",
+			actionFilter:              []string{"Test all targets"},
 			codesearchEnabledForGroup: true,
 			codesearchFlagEnabled:     true,
-			kytheFlagEnabled:          false,
+			expectedActions:           []string{"Test all targets"},
+		},
+		{
+			name:                      "codesearch-only action filter",
+			actionFilter:              []string{config.CSIncrementalUpdateName},
+			codesearchEnabledForGroup: true,
+			codesearchFlagEnabled:     true,
 			expectedActions:           []string{config.CSIncrementalUpdateName},
 		},
 		{
-			name:                      "all codesearch action filter, kythe indexing only enabled",
-			actionFilter:              []string{config.CSIncrementalUpdateName, config.KytheActionName},
+			name:                      "codesearch indexing flag disabled",
+			actionFilter:              nil,
 			codesearchEnabledForGroup: true,
 			codesearchFlagEnabled:     false,
-			kytheFlagEnabled:          true,
-			expectedActions:           []string{config.KytheActionName},
+			expectedActions:           []string{"Test all targets"},
 		},
 	}
 
@@ -1240,7 +1202,6 @@ func TestAPIDispatch_ActionFiltering(t *testing.T) {
 		require.NoError(t, err)
 
 		flags.Set(t, "remote_execution.enable_codesearch_indexing", tc.codesearchFlagEnabled)
-		flags.Set(t, "remote_execution.enable_kythe_indexing", tc.kytheFlagEnabled)
 
 		workflowID := te.GetWorkflowService().GetLegacyWorkflowIDForGitRepository(gid, repoURL)
 		rsp, err := bbClient.ExecuteWorkflow(ctx, &wfpb.ExecuteWorkflowRequest{
@@ -2393,25 +2354,26 @@ func TestTimeout(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		ctx := context.Background()
-		u, lis := testhttp.NewServer(t)
-		flags.Set(t, "app.build_buddy_url", *u)
-		flags.Set(t, "remote_execution.enable_remote_exec", true)
-		te := newTestEnv(t)
-		ctx, _, gid := authenticate(t, ctx, te)
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := t.Context()
+			u, lis := testhttp.NewServer(t)
+			flags.Set(t, "app.build_buddy_url", *u)
+			flags.Set(t, "remote_execution.enable_remote_exec", true)
+			te := newTestEnv(t)
+			ctx, _, gid := authenticate(t, ctx, te)
 
-		execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
-		te.SetRemoteExecutionClient(execClient)
-		go http.Serve(lis, te.GetWorkflowService())
-		provider := setupFakeGitProvider(t, te)
-		repoURL := makeTempRepo(t)
-		runBBServer(ctx, t, te)
-		repo := createWorkflow(t, te, repoURL, gid, false)
+			execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
+			te.SetRemoteExecutionClient(execClient)
+			go http.Serve(lis, te.GetWorkflowService())
+			provider := setupFakeGitProvider(t, te)
+			repoURL := makeTempRepo(t)
+			runBBServer(ctx, t, te)
+			repo := createWorkflow(t, te, repoURL, gid, false)
 
-		updateGroupStatus(t, te, gid, tc.groupStatus)
-		enableCIRunnerDefaultTimeoutExperiment(t, te, grpb.Group_FREE_TIER_GROUP_STATUS, "1h")
+			updateGroupStatus(t, te, gid, tc.groupStatus)
+			enableCIRunnerDefaultTimeoutExperiment(t, te, grpb.Group_FREE_TIER_GROUP_STATUS, "1h")
 
-		config := `
+			config := `
 actions:
   - name: "Test"
     triggers: { push: { branches: [ "*" ] } }
@@ -2419,17 +2381,18 @@ actions:
     timeout: "2h"
 `
 
-		pushToDefaultBranch(t, te, repo, provider, config)
+			pushToDefaultBranch(t, te, repo, provider, config)
 
-		execReq := execClient.NextExecuteRequest()
-		exec := getExecution(t, ctx, te, execReq.Payload)
-		expectedTimeout := tc.expectedTimeout.String()
-		require.Contains(t, exec.Command.GetArguments(), "--timeout="+expectedTimeout, tc.name)
-		if tc.expectedTimeoutReason != "" {
-			require.Contains(t, exec.Command.GetArguments(), "--timeout_reason="+tc.expectedTimeoutReason, tc.name)
-		} else {
-			require.NotContains(t, exec.Command.GetArguments(), "--timeout_reason="+ci_runner_util.FreeTierTimeoutReason, tc.name)
-		}
-		require.Equal(t, tc.expectedTimeout+workflow.TimeoutGracePeriod, exec.Action.GetTimeout().AsDuration(), tc.name)
+			execReq := execClient.NextExecuteRequest()
+			exec := getExecution(t, ctx, te, execReq.Payload)
+			expectedTimeout := tc.expectedTimeout.String()
+			require.Contains(t, exec.Command.GetArguments(), "--timeout="+expectedTimeout)
+			if tc.expectedTimeoutReason != "" {
+				require.Contains(t, exec.Command.GetArguments(), "--timeout_reason="+tc.expectedTimeoutReason)
+			} else {
+				require.NotContains(t, exec.Command.GetArguments(), "--timeout_reason="+ci_runner_util.FreeTierTimeoutReason)
+			}
+			require.Equal(t, tc.expectedTimeout+workflow.TimeoutGracePeriod, exec.Action.GetTimeout().AsDuration())
+		})
 	}
 }

@@ -10,6 +10,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
@@ -21,6 +22,7 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
+	flagdsync "github.com/open-feature/flagd/core/pkg/sync"
 	flagd "github.com/open-feature/go-sdk-contrib/providers/flagd/pkg"
 )
 
@@ -49,7 +51,27 @@ func Register(env *real_environment.RealEnv) error {
 			return err
 		}
 	}
+	return setProvider(env, provider)
+}
 
+// RegisterInProcessSync adds an interfaces.ExperimentFlagProvider to the env
+// that evaluates flags in-process, sourcing the flag configuration from the
+// provided flagd sync implementation (for example, a GCS-backed sync from the
+// gcsflagsync package). This is an alternative to Register's flagd-backend mode for
+// binaries that pull flags directly from a source rather than talking to a
+// separate flagd process. It will not return until the provider is ready.
+func RegisterInProcessSync(env *real_environment.RealEnv, syncProvider flagdsync.ISync) error {
+	provider, err := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithCustomSyncProvider(syncProvider))
+	if err != nil {
+		return err
+	}
+	return setProvider(env, provider)
+}
+
+// setProvider installs the given OpenFeature provider as the global provider
+// and wires the resulting FlagProvider into env. It blocks until the provider
+// is ready.
+func setProvider(env *real_environment.RealEnv, provider openfeature.FeatureProvider) error {
 	if err := openfeature.SetProviderAndWait(provider); err != nil {
 		return err
 	}
@@ -67,7 +89,8 @@ func Register(env *real_environment.RealEnv) error {
 // flag provider is installed in openfeature.
 func NewFlagProvider(clientName string) (*FlagProvider, error) {
 	return &FlagProvider{
-		client: openfeature.NewClient(clientName),
+		client:  openfeature.NewClient(clientName),
+		podName: resources.GetK8sPodName(),
 	}, nil
 }
 
@@ -90,6 +113,10 @@ func (d *details) Variant() string {
 // FlagProvider implements the interface.ExperimentFlagProvider interface.
 type FlagProvider struct {
 	client *openfeature.Client
+
+	// Kubernetes pod name, computed once and added to the evaluation context so
+	// experiments can target an individual pod.
+	podName string
 }
 
 // Statusz reports a simple statusz page so it's clear on a running app which
@@ -121,6 +148,7 @@ type Option func(*Options)
 //   - invocation_id: Parsed from the bazel request metadata, if set.
 //   - action_id: Parsed from the bazel request metadata, if set.
 //   - region: Parsed from app.region, if set.
+//   - pod_name: The Kubernetes pod name (MY_POD_NAME), if set.
 //
 // The fields allow enabling features at the group level (default), or by
 // user, invocation, or action. Care should be taken to not enable experiments
@@ -154,6 +182,9 @@ func (fp *FlagProvider) getEvaluationContext(ctx context.Context, opts ...any) o
 	}
 	if currentRegion := region.ConfiguredAppRegion(); currentRegion != "" {
 		options.attributes["region"] = currentRegion
+	}
+	if fp.podName != "" {
+		options.attributes["pod_name"] = fp.podName
 	}
 	for _, optI := range opts {
 		if opt, ok := optI.(Option); ok {

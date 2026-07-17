@@ -94,7 +94,7 @@ export default class TargetTestCoverageCardComponent extends React.Component<Pro
 
     return (
       <div className="card">
-        <Percent className="icon purple" />
+        <Percent className="purple" />
         <div className="content">
           <div className="title">Test coverage</div>
           <div className="details">

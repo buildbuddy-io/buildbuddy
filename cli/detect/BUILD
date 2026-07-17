@@ -15,8 +15,14 @@ go_library(
         "//cli/log",
         "//cli/login",
         "//cli/parser/bazelrc",
+        "//proto:buildbuddy_service_go_proto",
+        "//proto:notification_go_proto",
         "//proto:spawn_diff_go_proto",
+        "//server/util/grpc_client",
         "//server/util/shlex",
+        "//server/util/status",
+        "//server/util/uuid",
+        "@org_golang_google_grpc//metadata",
     ],
 )
 

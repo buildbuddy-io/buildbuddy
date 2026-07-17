@@ -29,6 +29,7 @@ import (
 
 	"github.com/armon/circbuf"
 	"github.com/bazelbuild/rules_go/go/runfiles"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ociconv"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/block_io"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/cgroup"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
@@ -42,7 +43,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/cpuset"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ext4"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ociconv"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vfs_server"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vsock"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -731,6 +731,10 @@ type FirecrackerContainer struct {
 		conn *grpc.ClientConn
 		err  error
 	}
+
+	// latestGuestStats is the latest UsageStats sample streamed from vmexec.
+	latestGuestStatsMu sync.Mutex
+	latestGuestStats   *repb.UsageStats
 
 	useOCIFetcher bool
 
@@ -2311,9 +2315,6 @@ func (c *FirecrackerContainer) sendExecRequestToGuest(ctx context.Context, conn 
 	client := vmxpb.NewExecClient(conn)
 	health := hlpb.NewHealthClient(conn)
 
-	var statsMu sync.Mutex
-	var lastGuestStats *repb.UsageStats
-
 	resultCh := make(chan *interfaces.CommandResult, 1)
 	healthCheckErrCh := make(chan error, 1)
 	ctx, cancel := context.WithCancel(ctx)
@@ -2321,9 +2322,7 @@ func (c *FirecrackerContainer) sendExecRequestToGuest(ctx context.Context, conn 
 	go func() {
 		log.CtxDebug(ctx, "Starting Execute stream.")
 		statsListener := func(stats *repb.UsageStats) {
-			statsMu.Lock()
-			defer statsMu.Unlock()
-			lastGuestStats = stats
+			c.updateLatestGuestStats(stats)
 		}
 		res := vmexec_client.Execute(ctx, client, cmd, workDir, c.user, statsListener, stdio)
 		resultCh <- res
@@ -2345,10 +2344,15 @@ func (c *FirecrackerContainer) sendExecRequestToGuest(ctx context.Context, conn 
 				// Task completed; stop health checking.
 				return
 			}
-			ctx, cancel := context.WithTimeout(ctx, *healthCheckTimeout)
-			_, err := health.Check(ctx, &hlpb.HealthCheckRequest{Service: "vmexec"})
+			checkCtx, cancel := context.WithTimeout(ctx, *healthCheckTimeout)
+			_, err := health.Check(checkCtx, &hlpb.HealthCheckRequest{Service: "vmexec"})
 			cancel()
 			if err != nil {
+				// If the parent context was canceled, don't report it as a health check failure
+				// so that the underlying error is surfaced instead.
+				if ctx.Err() != nil {
+					return
+				}
 				healthCheckErrCh <- err
 				return
 			}
@@ -2362,11 +2366,20 @@ func (c *FirecrackerContainer) sendExecRequestToGuest(ctx context.Context, conn 
 		return res, true
 	case err := <-healthCheckErrCh:
 		cancelCgroupPoll()
-		res := commandutil.ErrorResult(status.UnavailableErrorf("VM health check failed (possibly crashed?): %s", err))
-		statsMu.Lock()
-		res.UsageStats = combineHostAndGuestStats(hostCgroupStats.TaskStats(), lastGuestStats)
+
+		errMsg := "VM health check failed (possibly crashed?)"
+		usage := combineHostAndGuestStats(hostCgroupStats.TaskStats(), c.getLatestGuestStats())
+
+		// If the guest used more than 95% of the memory, add a more detailed error message.
+		usedMemoryBytes := usage.GetPeakMemoryBytes()
+		totalMemoryBytes := c.VMConfig().GetMemSizeMb() * 1024 * 1024
+		if totalMemoryBytes > 0 && usedMemoryBytes >= int64(float64(totalMemoryBytes)*0.95) {
+			errMsg = fmt.Sprintf("VM health check failed after guest used %d/%d B memory (%.0f%%); likely out of memory", usedMemoryBytes, totalMemoryBytes, 100*float64(usedMemoryBytes)/float64(totalMemoryBytes))
+		}
+
+		res := commandutil.ErrorResult(status.UnavailableErrorf("%s: %s", errMsg, err))
+		res.UsageStats = usage
 		c.fillNetStats(ctx, res.UsageStats)
-		statsMu.Unlock()
 		return res, false
 	}
 }
@@ -2381,6 +2394,25 @@ func (c *FirecrackerContainer) fillNetStats(ctx context.Context, usageStats *rep
 		return
 	}
 	usageStats.NetworkStats = netStats
+}
+
+func (c *FirecrackerContainer) updateLatestGuestStats(stats *repb.UsageStats) {
+	c.latestGuestStatsMu.Lock()
+	defer c.latestGuestStatsMu.Unlock()
+	if stats == nil {
+		c.latestGuestStats = nil
+		return
+	}
+	c.latestGuestStats = stats.CloneVT()
+}
+
+func (c *FirecrackerContainer) getLatestGuestStats() *repb.UsageStats {
+	c.latestGuestStatsMu.Lock()
+	defer c.latestGuestStatsMu.Unlock()
+	if c.latestGuestStats == nil {
+		return &repb.UsageStats{}
+	}
+	return c.latestGuestStats.CloneVT()
 }
 
 func (c *FirecrackerContainer) vmExecConn(ctx context.Context) (*grpc.ClientConn, error) {
@@ -2904,6 +2936,7 @@ func (c *FirecrackerContainer) stopMachine(ctx context.Context) error {
 	if err := os.Remove(c.cgroupPath()); err != nil && !os.IsNotExist(err) {
 		log.CtxWarningf(ctx, "Failed to remove jailer cgroup: %s", err)
 	}
+	c.updateLatestGuestStats(nil)
 
 	return nil
 }
@@ -3328,12 +3361,22 @@ func (c *FirecrackerContainer) createSnapshot(ctx context.Context, snapshotDetai
 		metrics.Stage: "create_snapshot",
 	}).Dec()
 
-	// By default, mmapped chunks are managed by the executor-wide shared LRU.
+	// When exporting snapshots, we limit the number of chunks mmapped at a time.
+	// Snapshots are exported sequentially, so we don't want recently touched
+	// chunks to stay mmapped longer than necessary.
 	//
-	// When exporting snapshots, we should limit the number of chunks mmapped at a time.
-	// Snapshots are exported sequentially, so we don't want recently touched chunks to stay mmapped longer than necessary.
-	if err := c.memoryStore.LimitMmappedChunks(c.snapshotWriteMaxMmappedChunks()); err != nil {
-		return status.WrapError(err, "set limited LRU for snapshot export")
+	// Full snapshots create a fresh memoryStore that snapshotDetails already
+	// constructs with this limit (via COWOptions.MaxMmappedChunks), so there's
+	// nothing to do here. Only diff snapshots reuse a store that uses the shared
+	// executor LRU, so we apply a limit here.
+	//
+	// Re-limiting the full-snapshot store would allocate a second,
+	// identically-sized LRU and orphan the first, leaking its evictor
+	// goroutines.
+	if snapshotDetails.snapshotType == diffSnapshotType {
+		if err := c.memoryStore.LimitMmappedChunks(c.snapshotWriteMaxMmappedChunks()); err != nil {
+			return status.WrapError(err, "set limited LRU for snapshot export")
+		}
 	}
 
 	machineStart := time.Now()
@@ -3438,10 +3481,9 @@ func (c *FirecrackerContainer) Wait(ctx context.Context) error {
 }
 
 func (c *FirecrackerContainer) Stats(ctx context.Context) (*repb.UsageStats, error) {
-	// Note: We return a non-nil value here since paused Firecracker containers
-	// only exist on disk and legitimately consume 0 memory / CPU resources when
-	// paused.
-	return &repb.UsageStats{}, nil
+	// TODO: figure out a clean way of separating the host cgroup stats from the
+	// VM guest stats, which may report different information.
+	return c.getLatestGuestStats(), nil
 }
 
 // parseFatalInitError looks for a fatal error logged by the init binary, and
@@ -3501,8 +3543,11 @@ func (c *FirecrackerContainer) firecrackerErrorReasons(execErr error, logTail st
 	errorReasons := []string{}
 	msg := strings.ToLower(execErr.Error())
 
-	if strings.Contains(msg, "vm health check failed") {
+	if strings.Contains(msg, "vm health check failed") && !strings.Contains(msg, "likely out of memory") {
 		errorReasons = append(errorReasons, "vm_health_check_failed")
+	}
+	if strings.Contains(msg, "likely out of memory") {
+		errorReasons = append(errorReasons, "vm_health_check_oom")
 	}
 	if strings.Contains(msg, "signal: killed") {
 		errorReasons = append(errorReasons, "signal_killed")

@@ -160,7 +160,7 @@ func (pmk PebbleKey) LockID() string {
 		}
 		return string(fmk)
 	}
-	return filepath.Join(pmk.isolation, pmk.hash)
+	return pmk.isolation + "/" + pmk.hash
 }
 
 func (pmk PebbleKey) CacheType() rspb.CacheType {
@@ -298,9 +298,7 @@ func (pmk *PebbleKey) Bytes(version PebbleKeyVersion) ([]byte, error) {
 			}
 		}
 		filePath := filepath.Join(hashStr, strconv.Itoa(int(pmk.digestFunction)), pmk.isolation, pmk.encryptionKeyID)
-		partDir := PartitionDirectoryPrefix + pmk.partID
-		filePath = filepath.Join(partDir, filePath, "v5")
-		return []byte(filePath), nil
+		return []byte(PartitionDirectoryPrefix + pmk.partID + "/" + filePath + "/v5"), nil
 	case Version6:
 		hashStr := ""
 		if pmk.syntheticHash != "" {
@@ -317,9 +315,7 @@ func (pmk *PebbleKey) Bytes(version PebbleKeyVersion) ([]byte, error) {
 			}
 		}
 		filePath := filepath.Join(hashStr, strconv.Itoa(int(pmk.digestFunction)), pmk.isolation, pmk.encryptionKeyID)
-		partDir := PartitionDirectoryPrefix + pmk.partID
-		filePath = filepath.Join(partDir, filePath, "v6")
-		return []byte(filePath), nil
+		return []byte(PartitionDirectoryPrefix + pmk.partID + "/" + filePath + "/v6"), nil
 	default:
 		return nil, status.FailedPreconditionErrorf("Unknown key version: %v", version)
 	}
@@ -825,25 +821,22 @@ type gcsMetadataWriter struct {
 	ctx        context.Context
 	blobName   string
 	customTime time.Time
+	digest     *repb.Digest
 }
 
 func (g *gcsMetadataWriter) Commit() error {
 	_, spn := tracing.StartSpan(g.ctx)
 	defer spn.End()
 	err := g.CommittedWriteCloser.Commit()
-
-	switch {
-	case status.IsAlreadyExistsError(err):
-		log.Debugf("Write gcs blob %q (already exists)", g.blobName)
-		return nil
-	case status.IsResourceExhaustedError(err):
-		// gcs.ConditionalWriter returns this when there are too many writes to
-		// the same object. We can assume that another write was successful.
-		log.Debugf("Write gcs blob %q (too many writes)", g.blobName)
-		return nil
-	default:
-		return err
+	if err != nil {
+		if status.IsAlreadyExistsError(err) {
+			log.Debugf("Write gcs blob %q (already exists)", g.blobName)
+			return nil
+		}
+		log.CtxWarningf(g.ctx, "Write %s to gcs blob %q failed: %s", digest.String(g.digest), g.blobName, err)
+		return status.UnavailableError("write to blob storage failed")
 	}
+	return nil
 }
 
 func (g *gcsMetadataWriter) Close() error {
@@ -896,6 +889,7 @@ func (fs *fileStorer) BlobWriter(ctx context.Context, fileRecord *sgpb.FileRecor
 		CommittedWriteCloser: wc,
 		blobName:             string(blobName),
 		customTime:           customTime,
+		digest:               fileRecord.GetDigest(),
 	}, nil
 }
 

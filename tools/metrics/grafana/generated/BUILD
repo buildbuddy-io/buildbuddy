@@ -13,5 +13,7 @@ filegroup(
         "//tools/metrics/grafana/generated/baremetal_power:baremetal-power.json",
         "//tools/metrics/grafana/generated/cdc:cdc.json",
         "//tools/metrics/grafana/generated/disk_performance:disk-performance.json",
+        "//tools/metrics/grafana/generated/go_runtime:go-runtime.json",
+        "//tools/metrics/grafana/generated/nameserver:nameserver.json",
     ],
 )

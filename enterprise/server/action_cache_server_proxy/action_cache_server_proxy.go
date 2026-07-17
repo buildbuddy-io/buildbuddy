@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_crypter"
@@ -20,6 +21,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -158,14 +160,30 @@ func (s *ActionCacheServerProxy) cacheActionResultToLocalCAS(ctx context.Context
 
 func (s *ActionCacheServerProxy) actionCacheTTL(ctx context.Context) time.Duration {
 	efp := s.env.GetExperimentFlagProvider()
-	if efp == nil {
-		return 0
+	if efp != nil {
+		ttlSeconds := efp.Int64(ctx, "cache_proxy.action_cache_ttl_seconds", 0)
+		if ttlSeconds > 0 {
+			return time.Duration(ttlSeconds) * time.Second
+		}
 	}
-	ttlSeconds := efp.Int64(ctx, "cache_proxy.action_cache_ttl_seconds", 0)
-	if ttlSeconds <= 0 {
-		return 0
+
+	// Clients may opt into this caching via a platform property as well, whose
+	// value is the duration to serve locally cached results for.
+	for _, prop := range platform.RemoteHeaderOverrides(ctx) {
+		if strings.EqualFold(prop.GetName(), platform.CacheProxyActionCacheTTLPropertyName) {
+			ttl, err := time.ParseDuration(prop.GetValue())
+			if err != nil {
+				log.CtxWarningf(ctx, "Ignoring invalid %q platform property value %q: %s", platform.CacheProxyActionCacheTTLPropertyName, prop.GetValue(), err)
+				return 0
+			}
+			if ttl > 0 {
+				return ttl
+			}
+			return 0
+		}
 	}
-	return time.Duration(ttlSeconds) * time.Second
+
+	return 0
 }
 
 func (s *ActionCacheServerProxy) isLocalActionResultFresh(md *interfaces.CacheMetadata, ttl time.Duration) bool {
@@ -218,9 +236,10 @@ func (s *ActionCacheServerProxy) GetActionResult(ctx context.Context, req *repb.
 	if authutil.EncryptionEnabled(ctx, s.authenticator) && !s.supportsEncryption(ctx) {
 		resp, err := s.remoteACClient.GetActionResult(ctx, req)
 		labels := prometheus.Labels{
-			metrics.StatusLabel:           status.MetricsLabel(err),
-			metrics.CacheHitMissStatus:    metrics.UncacheableStatusLabel,
-			metrics.CacheProxyRequestType: proxy_util.RequestTypeLabelFromContext(ctx),
+			metrics.StatusLabel:            status.MetricsLabel(err),
+			metrics.CacheHitMissStatus:     metrics.UncacheableStatusLabel,
+			metrics.CacheProxyRequestType:  proxy_util.RequestTypeLabelFromContext(ctx),
+			metrics.CacheProxyResultSource: "remote_uncacheable",
 		}
 		metrics.ActionCacheProxiedReadRequests.With(labels).Inc()
 		metrics.ActionCacheProxiedReadBytes.With(labels).Add(float64(proto.Size(resp)))
@@ -240,9 +259,10 @@ func (s *ActionCacheServerProxy) GetActionResult(ctx context.Context, req *repb.
 			cacheStatus = metrics.HitStatusLabel
 		}
 		labels := prometheus.Labels{
-			metrics.StatusLabel:           status.MetricsLabel(err),
-			metrics.CacheHitMissStatus:    cacheStatus,
-			metrics.CacheProxyRequestType: metrics.LocalOnlyCacheProxyRequestLabel,
+			metrics.StatusLabel:            status.MetricsLabel(err),
+			metrics.CacheHitMissStatus:     cacheStatus,
+			metrics.CacheProxyRequestType:  metrics.LocalOnlyCacheProxyRequestLabel,
+			metrics.CacheProxyResultSource: "local_only",
 		}
 		metrics.ActionCacheProxiedReadRequests.With(labels).Inc()
 		metrics.ActionCacheProxiedReadBytes.With(labels).Add(float64(proto.Size(rsp)))
@@ -279,9 +299,10 @@ func (s *ActionCacheServerProxy) GetActionResult(ctx context.Context, req *repb.
 				sizeBytes := int64(proto.Size(localResult))
 				s.recordLocalACHit(ctx, req, localResult, sizeBytes)
 				labels := prometheus.Labels{
-					metrics.StatusLabel:           status.MetricsLabel(nil),
-					metrics.CacheHitMissStatus:    metrics.HitStatusLabel,
-					metrics.CacheProxyRequestType: metrics.DefaultCacheProxyRequestLabel,
+					metrics.StatusLabel:            status.MetricsLabel(nil),
+					metrics.CacheHitMissStatus:     metrics.HitStatusLabel,
+					metrics.CacheProxyRequestType:  metrics.DefaultCacheProxyRequestLabel,
+					metrics.CacheProxyResultSource: "ttl_fast_path",
 				}
 				metrics.ActionCacheProxiedReadRequests.With(labels).Inc()
 				metrics.ActionCacheProxiedReadBytes.With(labels).Add(float64(sizeBytes))
@@ -313,6 +334,7 @@ func (s *ActionCacheServerProxy) GetActionResult(ctx context.Context, req *repb.
 		proto.Equal(req.GetCachedActionResultDigest(), resp.GetActionResultDigest()) {
 		resp = local
 		labels[metrics.CacheHitMissStatus] = metrics.HitStatusLabel
+		labels[metrics.CacheProxyResultSource] = "remote_digest_match"
 		if ttl > 0 {
 			casRN := digest.NewCASResourceName(req.GetCachedActionResultDigest(), req.GetInstanceName(), req.GetDigestFunction()).ToProto()
 			casRNProto, marshalErr := proto.Marshal(casRN)
@@ -339,6 +361,7 @@ func (s *ActionCacheServerProxy) GetActionResult(ctx context.Context, req *repb.
 			s.cacheActionResultToLocalCAS(ctx, localKey, req, resp)
 		}
 		labels[metrics.CacheHitMissStatus] = metrics.MissStatusLabel
+		labels[metrics.CacheProxyResultSource] = "remote_result"
 	}
 
 	metrics.ActionCacheProxiedReadRequests.With(labels).Inc()
@@ -377,11 +400,14 @@ func (s *ActionCacheServerProxy) UpdateActionResult(ctx context.Context, req *re
 		return resp, err
 	}
 
-	// If we have a proxy AC TTL, then we can store this AC entry as valid for that TTL.
-	// This ensures the REv2 guarantee that GetActionResult serves the most recent UpdateActionResult
-	// for all requests to the same endpoint (this proxy).
-	ttl := s.actionCacheTTL(ctx)
-	if *cacheActionResults && ttl > 0 && s.shouldCacheUpdatedActionResult(ctx) {
+	// Always refresh the local AC entry on write, even if this request didn't opt
+	// into local caching. The TTL fast-path in GetActionResult is a per-request
+	// signal, so a read that opts in must observe the most recent write regardless
+	// of whether the writer opted in. Refreshing unconditionally preserves the
+	// REv2 guarantee that GetActionResult serves the most recent UpdateActionResult
+	// for all requests to the same endpoint (this proxy). Entries written while no
+	// client uses the TTL fast-path are simply never read back.
+	if *cacheActionResults && s.shouldCacheUpdatedActionResult(ctx) {
 		cacheCtx, prefixErr := prefix.AttachUserPrefixToContext(ctx, s.env.GetAuthenticator())
 		if prefixErr == nil {
 			getReq := &repb.GetActionResultRequest{

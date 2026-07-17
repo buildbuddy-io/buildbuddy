@@ -1883,6 +1883,58 @@ message FindMissingBlobsRequest {
   // length of the blob digest hashes and the digest functions announced
   // in the server's capabilities.
   DigestFunction.Value digest_function = 3;
+
+  // NOTE: fields below are BuildBuddy extensions, not part of the upstream
+  // REAPI. They use high tag numbers so they will not collide with fields
+  // added upstream.
+
+  // Purpose identifies which internal code path originated a FindMissingBlobs
+  // call. BuildBuddy's own clients populate it; external clients (e.g. Bazel)
+  // leave it UNKNOWN. It is used purely for observability (present/absent rate
+  // by purpose) and MUST NOT affect the result of the lookup.
+  enum Purpose {
+    // Default / unset. External clients that don't set the field land here,
+    // so UNKNOWN doubles as a signal for "originated outside BuildBuddy".
+    UNKNOWN = 0;
+    // atime_updater: batched remote FindMissingBlobs sent purely to bump atime.
+    ATIME_UPDATE = 1;
+    // Validating that an ActionResult's output digests still exist before
+    // returning it (action_cache_server / execution_server AC validation).
+    AC_VALIDATION = 2;
+    // Executor checking which action output files already exist before upload.
+    EXECUTOR_OUTPUT_UPLOAD = 3;
+    // Chunked (bytestream) read/upload manifest + chunk-existence checks.
+    BYTESTREAM_CHUNKING = 4;
+    // Cache proxy (bytestream / CAS proxy) local-or-remote existence checks.
+    CACHE_PROXY = 5;
+    // Remote-asset Fetch: FindMissing used to renew a fetched blob's atime.
+    REMOTE_ASSET_FETCH = 6;
+    // VM snapshot artifact existence checks (snaploader).
+    SNAPSHOT = 7;
+    // Cache migration copy / secondary-cache diff.
+    CACHE_MIGRATION = 8;
+    // Write-path "does this already exist?" dedupe guard.
+    WRITE_DEDUPE = 9;
+    // A Contains() existence check, which is implemented on top of FindMissing.
+    CONTAINS = 10;
+    // Chunk check from BSS proxy on Read.
+    CACHE_PROXY_BSS_CDC_READ = 11;
+    // Chunk check from BSS proxy on Write.
+    CACHE_PROXY_BSS_CDC_WRITE = 12;
+    // Data upload from CI runner.
+    CI_RUNNER_UPLOAD = 13;
+    // Mostly from executors.
+    CLIENT_BATCH_UPLOAD_CDC_CHUNKING = 14;
+    // Currently only used by SpliceBlob API.
+    CDC_MANIFEST_STORE = 15;
+    // AC validation checking existence of digest chunks.
+    AC_MISSING_CHUNK_VALIDATION = 16;
+    // CAS FindMissingBlobs checking existence of digest chunks.
+    FMB_CHUNK_VALIDATION = 17;
+    // CAS SplitBlob API.
+    CAS_SPLIT_BLOB = 18;
+  }
+  Purpose purpose = 1000;
 }
 
 // A response message for
@@ -3076,4 +3128,13 @@ message StoredExecution {
   int64 snapshot_saved_bytes = 86;
   // Wall-clock duration of Container.Pause.
   int64 pause_duration_usec = 87;
+  // Disk space used by the task's workspace (buildroot), in bytes, measured
+  // after the task finishes. Only populated when
+  // executor.workspace.measure_disk_usage is enabled.
+  int64 buildroot_disk_usage_bytes = 88;
+
+  // Test metadata sourced from the command environment.
+  string test_size = 89;
+  uint32 test_shard_index = 90;
+  uint32 test_total_shards = 91;
 }

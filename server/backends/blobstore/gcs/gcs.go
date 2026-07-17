@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"iter"
 	"net/http"
 	"strings"
 	"time"
@@ -21,6 +22,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"google.golang.org/api/googleapi"
+	"google.golang.org/api/iterator"
 	"google.golang.org/api/option"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -34,8 +36,8 @@ var (
 	gcsCredentialsFile = flag.String("storage.gcs.credentials_file", "", "A path to a JSON credentials file that will be used to authenticate to GCS.")
 	gcsCredentials     = flag.String("storage.gcs.credentials", "", "Credentials in JSON format that will be used to authenticate to GCS.", flag.Secret)
 	gcsProjectID       = flag.String("storage.gcs.project_id", "", "The Google Cloud project ID of the project owning the above credentials and GCS bucket.")
-	useGRPC            = flag.Bool("storage.gcs.use_grpc", false, "Whether to use the gRPC client for GCS", flag.Internal)
-	grpcPoolSize       = flag.Int("storage.gcs.grpc_pool_size", 1, "The number of gRPC connections to open to GCS. Only used when `use_grpc=true`", flag.Internal)
+	useGRPC            = flag.Bool("storage.gcs.use_grpc", true, "Whether to use the gRPC client for GCS", flag.Internal)
+	grpcPoolSize       = flag.Int("storage.gcs.grpc_pool_size", 2, "The number of gRPC connections to open to GCS. Only used when `use_grpc=true`", flag.Internal)
 )
 
 // GCSBlobStore implements the blobstore API on top of the google cloud storage API.
@@ -147,6 +149,50 @@ func (g *GCSBlobStore) ReadBlob(ctx context.Context, blobName string) ([]byte, e
 		return util.Decompress(b, err)
 	} else {
 		return b, err
+	}
+}
+
+// ObjectAttrs is the subset of a listed object's metadata that List yields: its
+// full name (including any prefix, suitable for ReadBlob) and its GCS generation
+// number. The generation changes on every write, so it serves as a cheap change
+// token -- a caller can skip re-reading an object whose generation it has
+// already processed, without downloading the object to compare its contents.
+type ObjectAttrs struct {
+	Name       string
+	Generation int64
+}
+
+// List returns an iterator over the attributes of all objects in the bucket
+// whose name begins with prefix. It is not part of the Blobstore interface (only
+// GCS supports it) and is used to discover the set of zone-file objects under a
+// path. Each iteration yields an object's attributes or a non-nil error; the
+// caller should stop on the first error. Objects are fetched lazily from GCS as
+// the range advances, so a caller that breaks early never pages in the rest of
+// the (potentially large) listing.
+func (g *GCSBlobStore) List(ctx context.Context, prefix string) iter.Seq2[ObjectAttrs, error] {
+	return func(yield func(ObjectAttrs, error) bool) {
+		ctx, spn := tracing.StartSpan(ctx)
+		defer spn.End()
+		q := &storage.Query{Prefix: prefix}
+		// Only page in the fields we use, trimming the listing payload.
+		if err := q.SetAttrSelection([]string{"Name", "Generation"}); err != nil {
+			yield(ObjectAttrs{}, err)
+			return
+		}
+		it := g.bucketHandle.Objects(ctx, q)
+		for {
+			attrs, err := it.Next()
+			if errors.Is(err, iterator.Done) {
+				return
+			}
+			if err != nil {
+				yield(ObjectAttrs{}, err)
+				return
+			}
+			if !yield(ObjectAttrs{Name: attrs.Name, Generation: attrs.Generation}, nil) {
+				return
+			}
+		}
 	}
 }
 

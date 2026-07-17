@@ -23,8 +23,7 @@
 
 .base-button:not(.icon-button):not(.square) > .icon:first-child {
   margin-right: 8px;
-  width: 16px;
-  height: 16px;
+  --icon-size: 16px;
 }
 
 .filled-button {

@@ -72,7 +72,7 @@ export default class MenuComponent extends React.Component<Props, State> {
               </a>
             </div>
             {this.props.showHamburger && (!capabilities.auth || !this.props.user) && (
-              <Menu onClick={this.handleMenuClicked.bind(this)} className="icon white" />
+              <Menu onClick={this.handleMenuClicked.bind(this)} className="white" />
             )}
             {this.props.showHamburger && capabilities.auth && this.props.user && (
               <img

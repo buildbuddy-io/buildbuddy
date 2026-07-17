@@ -83,8 +83,7 @@
 }
 
 .terminal .terminal-action .icon {
-  width: 20px;
-  height: 20px;
+  --icon-size: 20px;
 }
 
 .terminal .terminal-action:disabled {

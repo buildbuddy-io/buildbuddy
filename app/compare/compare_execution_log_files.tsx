@@ -288,16 +288,12 @@ export default class CompareExecutionLogFilesComponent extends React.Component<P
                       diff.b.path!
                     )}>
                     <div className="invocation-execution-row-image">
-                      {diff.a.digest?.hashFunctionName == "symlink" ? (
-                        <FileSymlink className="icon" />
-                      ) : (
-                        <File className="icon" />
-                      )}
+                      {diff.a.digest?.hashFunctionName == "symlink" ? <FileSymlink /> : <File />}
                     </div>
                     <div className="invocation-execution-row-header">
                       <span className="invocation-execution-row-header-status">{diff.a.path}</span>
                       {diff.a.digest && <DigestComponent digest={diff.a.digest} expanded={false} />}
-                      <ArrowRight className="icon" />
+                      <ArrowRight />
                       {diff.b.digest && <DigestComponent digest={diff.b.digest} expanded={false} />}
                     </div>
                   </Link>

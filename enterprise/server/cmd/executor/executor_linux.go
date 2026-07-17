@@ -11,9 +11,9 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ociconv"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/cgroup"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vbd"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ociconv"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
@@ -50,32 +50,35 @@ const (
 //				/def456/
 //				...
 //
-// This function returns the cgroup where tasks are placed, relative to
-// the cgroup root. In the above example, this would be
-// "kubepods.slice/pod-abc/container-123/buildbuddy.executor.tasks"
-func setupCgroups() (string, error) {
-	if !*childCgroupsEnabled {
-		return "", nil
-	}
-
+// It returns the original executor cgroup and the parent where task cgroups
+// are placed, both relative to the cgroup root. In the above example, these
+// would be "kubepods.slice/pod-abc/container-123" and
+// "kubepods.slice/pod-abc/container-123/buildbuddy.executor.tasks".
+func setupCgroups() (*Cgroups, error) {
 	// Get the cgroup that the executor process was originally started in.
 	// On k8s this will be something like "kubepods.slice/pod-abc/container-123"
 	startingCgroup, err := cgroup.GetCurrent()
 	if err != nil {
 		if errors.Is(err, cgroup.ErrV1NotSupported) {
 			log.Warningf("Note: executor is running under cgroup v1, which has limited support. Some functionality may not work as expected.")
-			return "", nil
+		} else {
+			log.Warningf("Could not determine starting cgroup: %s", err)
 		}
+		return &Cgroups{}, nil
+	}
+
+	if !*childCgroupsEnabled {
+		return &Cgroups{StartingCgroup: startingCgroup}, nil
 	}
 
 	// Create the executor cgroup and move the executor process to it.
 	executorCgroup := filepath.Join(startingCgroup, executorCgroupName)
 	executorCgroupPath := filepath.Join(cgroup.RootPath, executorCgroup)
 	if err := os.MkdirAll(executorCgroupPath, 0755); err != nil {
-		return "", fmt.Errorf("create executor cgroup %s: %w", executorCgroupPath, err)
+		return nil, fmt.Errorf("create executor cgroup %s: %w", executorCgroupPath, err)
 	}
 	if err := os.WriteFile(filepath.Join(executorCgroupPath, "cgroup.procs"), []byte(strconv.Itoa(os.Getpid())), 0); err != nil {
-		return "", fmt.Errorf("add executor to cgroup %s: %w", executorCgroupPath, err)
+		return nil, fmt.Errorf("add executor to cgroup %s: %w", executorCgroupPath, err)
 	}
 	log.Infof("Set up executor cgroup at %s", executorCgroupPath)
 
@@ -84,7 +87,7 @@ func setupCgroups() (string, error) {
 		// delegate controllers, otherwise it violates the "no internal
 		// processes constraint".
 		if err := moveTiniToExecutorCgroup(executorCgroupPath); err != nil {
-			return "", fmt.Errorf("move tini to cgroup %s: %w", executorCgroupPath, err)
+			return nil, fmt.Errorf("move tini to cgroup %s: %w", executorCgroupPath, err)
 		}
 	}
 
@@ -92,22 +95,24 @@ func setupCgroups() (string, error) {
 	taskCgroup := filepath.Join(startingCgroup, taskCgroupName)
 	taskCgroupPath := filepath.Join(cgroup.RootPath, taskCgroup)
 	if err := os.MkdirAll(taskCgroupPath, 0755); err != nil {
-		return "", fmt.Errorf("create task cgroup %s: %w", taskCgroupPath, err)
+		return nil, fmt.Errorf("create task cgroup %s: %w", taskCgroupPath, err)
 	}
 	log.Infof("Set up task cgroup at %s", taskCgroupPath)
 
 	if err := prometheus.Register(newCgroupMemCollector(executorCgroup, taskCgroup)); err != nil {
-		return "", fmt.Errorf("register cgroup mem collector: %w", err)
+		return nil, fmt.Errorf("register cgroup mem collector: %w", err)
 	}
 
 	// Enable the same controllers for the child cgroups that were enabled
 	// for the starting cgroup.
 	if err := cgroup.DelegateControllers(filepath.Join(cgroup.RootPath, startingCgroup)); err != nil {
-		return "", fmt.Errorf("inherit subtree control: %w", err)
+		return nil, fmt.Errorf("inherit subtree control: %w", err)
 	}
 
-	taskCgroupRelpath := filepath.Join(startingCgroup, taskCgroupName)
-	return taskCgroupRelpath, nil
+	return &Cgroups{
+		StartingCgroup: startingCgroup,
+		CgroupParent:   taskCgroup,
+	}, nil
 }
 
 func moveTiniToExecutorCgroup(executorCgroupPath string) error {

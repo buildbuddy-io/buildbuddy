@@ -7,7 +7,6 @@ import {
   DownloadCloud,
   GitBranch,
   GitCommit,
-  Github,
   GitPullRequest,
   HardDrive,
   Key,
@@ -26,6 +25,8 @@ import { User } from "../auth/auth_service";
 import Breadcrumbs from "../components/breadcrumbs/breadcrumbs";
 import { Link } from "../components/link/link";
 import format from "../format/format";
+import { GithubIcon } from "../icons/github";
+import { Github } from "../icons/github_lucide";
 import { getRepoUrlPathParam, Path } from "../router/router";
 import { RepoURL } from "../util/git";
 import InvocationButtons from "./invocation_buttons";
@@ -96,36 +97,36 @@ export default class InvocationOverviewComponent extends React.Component<Props> 
             {this.props.model.getStatus()}
           </div>
           <div className="detail" title={this.props.model.getDurationSeconds()}>
-            <Clock className="icon" />
+            <Clock />
             {this.props.model.getTiming()}
           </div>
           {isBazelInvocation && !!this.props.model.getUser() && (
             <Link className="detail clickable" href={Path.userHistoryPath + this.props.model.getUser()}>
-              <UserIcon className="icon" />
+              <UserIcon />
               {this.props.model.getUser()}
             </Link>
           )}
           {isBazelInvocation && !!this.props.model.getHost() && (
             <Link className="detail clickable" href={Path.hostHistoryPath + this.props.model.getHost()}>
-              <HardDrive className="icon" />
+              <HardDrive />
               {this.props.model.getHost()}
             </Link>
           )}
           {isBazelInvocation && (
             <div className="detail">
-              <Wrench className="icon" />
+              <Wrench />
               {this.props.model.getTool()}
             </div>
           )}
           {this.props.model.getToolTag() && (
             <div className="detail">
-              <Terminal className="icon" />
+              <Terminal />
               {this.props.model.getToolTag()}
             </div>
           )}
           {isBazelInvocation && (
             <div className="detail" title={this.props.model.getAllPatterns()}>
-              <LayoutGrid className="icon" />
+              <LayoutGrid />
               {this.props.model.getPattern()}
             </div>
           )}
@@ -133,36 +134,36 @@ export default class InvocationOverviewComponent extends React.Component<Props> 
             <div
               className="detail"
               title={`${this.props.model.buildMetrics?.targetMetrics?.targetsConfigured} configured`}>
-              <Target className="icon" />
+              <Target />
               {format.formatWithCommas(this.props.model.getTargetConfiguredCount())}{" "}
               {this.props.model.getTargetConfiguredCount() == 1 ? "target" : "targets"}
             </div>
           )}
           {isBazelInvocation && Boolean(this.props.model.buildMetrics?.actionSummary) && (
             <div title={`${this.props.model.buildMetrics?.actionSummary?.actionsCreated} created`} className="detail">
-              <Activity className="icon" />
+              <Activity />
               {format.formatWithCommas(this.props.model.buildMetrics?.actionSummary?.actionsExecuted)} actions
             </div>
           )}
           {isBazelInvocation && Boolean(this.props.model.buildMetrics?.packageMetrics) && (
             <div className="detail">
-              <Box className="icon" />
+              <Box />
               {format.formatWithCommas(this.props.model.buildMetrics?.packageMetrics?.packagesLoaded)} packages
             </div>
           )}
           {isBazelInvocation && (
             <Link className={this.props.model.getFetchURLs().length ? "detail clickable" : "detail"} href={"#fetches"}>
-              <DownloadCloud className="icon" />
+              <DownloadCloud />
               {format.formatWithCommas(this.props.model.getFetchURLs().length)} fetches
             </Link>
           )}
           <div className="detail">
-            <Cpu className="icon" />
+            <Cpu />
             {this.props.model.getCPU()}
           </div>
           {isBazelInvocation && (
             <div className="detail">
-              <Zap className="icon" />
+              <Zap />
               {this.props.model.getMode()}
             </div>
           )}
@@ -170,7 +171,7 @@ export default class InvocationOverviewComponent extends React.Component<Props> 
             <Link
               className="detail clickable"
               href={Path.repoHistoryPath + getRepoUrlPathParam(this.props.model.getRepo())}>
-              <Github className="icon" />
+              <Github />
               {format.formatGitUrl(this.props.model.getRepo())}
             </Link>
           )}
@@ -180,38 +181,38 @@ export default class InvocationOverviewComponent extends React.Component<Props> 
               href={RepoURL.parse(this.props.model.getRepo())?.pullRequestLink(
                 this.props.model.getPullRequestNumber()!
               )}>
-              <GitPullRequest className="icon" />#{this.props.model.getPullRequestNumber()}
+              <GitPullRequest />#{this.props.model.getPullRequestNumber()}
             </Link>
           )}
           {/* For branches that aren't in forked repos, show a link to the branch history. */}
           {this.props.model.getBranchName() && !this.props.model.getForkRepoURL() && (
             <Link className="detail clickable" href={Path.branchHistoryPath + this.props.model.getBranchName()}>
-              <GitBranch className="icon" />
+              <GitBranch />
               {this.props.model.getBranchName()}
             </Link>
           )}
           {/* For branches in forked repos, just render "{forkName}:{branchName}" */}
           {this.props.model.getBranchName() && this.props.model.getForkRepoURL() && (
             <div className="detail">
-              <GitBranch className="icon" />
+              <GitBranch />
               {RepoURL.parse(this.props.model.getForkRepoURL()!)?.owner}:{this.props.model.getBranchName()!}
             </div>
           )}
           {this.props.model.getCommit() && (
             <Link className="detail clickable" href={Path.commitHistoryPath + this.props.model.getCommit()}>
-              <GitCommit className="icon" />
+              <GitCommit />
               {format.formatCommitHash(this.props.model.getCommit())}
             </Link>
           )}
           {isBazelInvocation && (
             <Link className="detail clickable" href={Path.setupPath}>
-              <Package className="icon" />
+              <Package />
               {this.props.model.getCache()}
             </Link>
           )}
           {hasCapabilityMetadata && (missingActionCacheWrite || missingCASWrite) && (
             <div className="detail" title="This invocation's API key could not write to the cache">
-              <Key className="icon" />
+              <Key />
               {missingActionCacheWrite && missingCASWrite
                 ? "Cache writes disabled"
                 : missingActionCacheWrite
@@ -223,7 +224,7 @@ export default class InvocationOverviewComponent extends React.Component<Props> 
             <Link
               className="detail clickable"
               href={this.props.model.getIsRBEEnabled() ? "#execution" : Path.setupPath}>
-              <Cloud className="icon" />
+              <Cloud />
               {this.props.model.getRBE()}
             </Link>
           )}
@@ -235,19 +236,19 @@ export default class InvocationOverviewComponent extends React.Component<Props> 
           )}
           {this.props.model.getGithubActionsUrl() && (
             <Link className="detail clickable" href={this.props.model.getGithubActionsUrl()} target="_blank">
-              <img className="icon" src="/image/github.svg" />
+              <GithubIcon />
               GitHub Actions
             </Link>
           )}
           {this.props.model.getLinks().map((link) => (
             <Link className="detail clickable" href={link.linkUrl} target="_blank">
-              <LinkIcon className="icon" />
+              <LinkIcon />
               {link.linkText}
             </Link>
           ))}
           {this.props.model.getTags().map((tag) => (
             <Link className="detail clickable" href={Path.home + "?tag=" + tag.name}>
-              <Tag className="icon" />
+              <Tag />
               {tag.name}
             </Link>
           ))}

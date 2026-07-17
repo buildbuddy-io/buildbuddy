@@ -803,10 +803,31 @@ func (p *Parser) resolveArgs(parsedArgs *parsed.OrderedArgs, ws string) (*parsed
 	return parsedArgs.ExpandConfigs(configs, defaultConfig)
 }
 
-// ParseRCFiles parses the provided rc files in the given workspace into Configs
-// and returns a map of the named configs as well as the default (unnamed)
+// RCFilePolicy controls how sections of an rc file are parsed.
+type RCFilePolicy struct {
+	// IsPhase checks whether a phase name is valid.
+	IsPhase func(string) bool
+	// ParsePhase parses the options for a specific phase.
+	ParsePhase func(phase string, tokens []string) ([]arguments.Argument, error)
+}
+
+// ParseBazelrcFiles parses the provided bazelrc files.
+// Returns a map of the named configs as well as the default (unnamed) Config.
+func (p *Parser) ParseBazelrcFiles(workspaceDir string, filePaths ...string) (map[string]*parsed.Config, *parsed.Config, error) {
+	return p.ParseRCFilesWithPolicy(workspaceDir, RCFilePolicy{
+		IsPhase:    bazelrc.IsPhase,
+		ParsePhase: p.ParseConfig,
+	}, filePaths...)
+}
+
+// ParseRCFilesWithPolicy parses rc files and returns a map of the named configs as well as the default (unnamed)
 // Config.
-func (p *Parser) ParseRCFiles(workspaceDir string, filePaths ...string) (map[string]*parsed.Config, *parsed.Config, error) {
+//
+// Files are parsed in order, with later rules appended after earlier rules.
+func (p *Parser) ParseRCFilesWithPolicy(workspaceDir string, policy RCFilePolicy, filePaths ...string) (map[string]*parsed.Config, *parsed.Config, error) {
+	if policy.IsPhase == nil || policy.ParsePhase == nil {
+		return nil, nil, fmt.Errorf("rc file policy must define phase validation and parsing")
+	}
 	seen := make(map[string]struct{}, len(filePaths))
 	namedConfigs := map[string]*parsed.Config{}
 	defaultConfig := parsed.NewConfig()
@@ -827,11 +848,11 @@ func (p *Parser) ParseRCFiles(workspaceDir string, filePaths ...string) (map[str
 			return nil, nil, err
 		}
 		for phase, tokens := range defaultRcRules {
-			if !bazelrc.IsPhase(phase) {
+			if !policy.IsPhase(phase) {
 				log.Warnf("invalid command name '%s'", phase)
 				continue
 			}
-			args, err := p.ParseConfig(phase, tokens)
+			args, err := policy.ParsePhase(phase, tokens)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -844,11 +865,11 @@ func (p *Parser) ParseRCFiles(workspaceDir string, filePaths ...string) (map[str
 				namedConfigs[name] = parsedConfig
 			}
 			for phase, tokens := range config {
-				if !bazelrc.IsPhase(phase) {
-					log.Warnf("invalid command name '%s:%s'", phase, config)
+				if !policy.IsPhase(phase) {
+					log.Warnf("invalid command name '%s:%s'", name, phase)
 					continue
 				}
-				args, err := p.ParseConfig(phase, tokens)
+				args, err := policy.ParsePhase(phase, tokens)
 				if err != nil {
 					return nil, nil, err
 				}
@@ -952,7 +973,7 @@ func (p *Parser) consumeAndParseRCFiles(args *parsed.OrderedArgs, workspaceDir s
 	if err != nil {
 		return nil, nil, err
 	}
-	parsedNamedConfigs, defaultConfig, err := p.ParseRCFiles(workspaceDir, rcFiles...)
+	parsedNamedConfigs, defaultConfig, err := p.ParseBazelrcFiles(workspaceDir, rcFiles...)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to parse bazelrc file: %s", err)
 	}

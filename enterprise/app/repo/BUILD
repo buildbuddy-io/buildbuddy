@@ -19,6 +19,7 @@ ts_library(
         "//app/components/spinner",
         "//app/errors:error_service",
         "//app/icons:github",
+        "//app/icons:github_lucide",
         "//app/icons:google",
         "//app/picker:picker_service",
         "//app/router",

@@ -20,6 +20,7 @@ import { normalizeRepoURL } from "../../../app/util/git";
 import { github } from "../../../proto/github_ts_proto";
 import { workflow } from "../../../proto/workflow_ts_proto";
 import ActionListComponent from "./action_list";
+import ChecksDropdown from "./checks_dropdown";
 import GitHubAppImport from "./github_app_import";
 import WorkflowsZeroStateAnimation from "./zero_state";
 
@@ -490,7 +491,7 @@ class RepoItem extends React.Component<RepoItemProps, RepoItemState> {
     if (!this.state.runWorkflowActionStatuses) return;
     return this.state.runWorkflowActionStatuses.map((actionStatus) => {
       const ok = (actionStatus.status?.code || 0) === 0;
-      const statusIcon = ok ? <CheckCircle className="icon green" /> : <XCircle className="icon red" />;
+      const statusIcon = ok ? <CheckCircle className="green" /> : <XCircle className="red" />;
       return (
         <Link
           className={`run-result card ${ok ? "card-success" : "card-failure"} ${ok ? "clickable" : ""}`}
@@ -508,11 +509,11 @@ class RepoItem extends React.Component<RepoItemProps, RepoItemState> {
                 {ok ? "Started" : "Failed"}
               </div>
               <div className="detail">
-                <Wrench className="icon grey" />
+                <Wrench className="grey" />
                 workflow run
               </div>
               <div className="detail">
-                <GitBranch className="icon grey" />
+                <GitBranch className="grey" />
                 {this.state.runWorkflowBranch}
               </div>
             </div>
@@ -555,8 +556,8 @@ class RepoItem extends React.Component<RepoItemProps, RepoItemState> {
                 </Link>
                 {capabilities.config.githubAppEnabled && this.isDeprecatedWorkflow() && (
                   <div className="upgrade-notice">
-                    <AlertCircle className="icon orange" /> This repository uses the legacy GitHub OAuth integration.
-                    Unlink and re-link to use the new GitHub App integration.
+                    <AlertCircle className="orange" /> This repository uses the legacy GitHub OAuth integration. Unlink
+                    and re-link to use the new GitHub App integration.
                   </div>
                 )}
               </div>
@@ -604,6 +605,7 @@ class RepoItem extends React.Component<RepoItemProps, RepoItemState> {
                   </Popup>
                 </div>
               )}
+              {!this.isDeprecatedWorkflow() && <ChecksDropdown repoUrl={this.props.repoUrl} />}
               {menuItems.length > 0 && (
                 <div className="workflow-button-container">
                   <OutlinedButton

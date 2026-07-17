@@ -1,4 +1,4 @@
-import { ArrowDownCircle, FileCode, FileImageIcon, FileVideoIcon, LucideProps } from "lucide-react";
+import { ArrowDownCircle, FileCode } from "lucide-react";
 import React from "react";
 
 import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
@@ -6,6 +6,7 @@ import { zip } from "../../proto/zip_ts_proto";
 import capabilities from "../capabilities/capabilities";
 import DigestComponent from "../components/digest/digest";
 import { TextLink } from "../components/link/link";
+import { FileIcon } from "../icons/file_icon";
 import rpcService from "../service/rpc_service";
 import { getFileDigest } from "../util/cache";
 import { isImageExtension, isVideoExtension, parseExtension } from "../util/file_types";
@@ -141,7 +142,7 @@ export default class TargetArtifactsCardComponent extends React.Component<Props,
   render() {
     return (
       <div className="card artifacts">
-        <ArrowDownCircle className="icon brown" />
+        <ArrowDownCircle className="brown" />
         <div className="content">
           <div className="title">Artifacts: {this.props.name}</div>
           <div className="details">
@@ -162,7 +163,7 @@ export default class TargetArtifactsCardComponent extends React.Component<Props,
                       className="artifact-view"
                       href={this.makeArtifactViewUri(output.uri, output.name)}
                       target="_blank">
-                      <FileExtensionIcon extension={parseExtension(output.name)} /> View
+                      <FileIcon extension={parseExtension(output.name)} /> View
                     </TextLink>
                   )}
                   <DigestComponent digest={getFileDigest(output) ?? {}} />
@@ -195,16 +196,4 @@ export default class TargetArtifactsCardComponent extends React.Component<Props,
       </div>
     );
   }
-}
-
-/** Returns an appropriate icon based on the file extension. */
-function FileExtensionIcon({ extension, ...rest }: { extension: string } & LucideProps) {
-  const ext = parseExtension(extension);
-  if (isImageExtension(ext)) {
-    return <FileImageIcon {...rest} />;
-  }
-  if (isVideoExtension(ext)) {
-    return <FileVideoIcon {...rest} />;
-  }
-  return <FileCode {...rest} />;
 }

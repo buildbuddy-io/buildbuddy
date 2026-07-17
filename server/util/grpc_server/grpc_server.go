@@ -16,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/rpc/interceptors"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
+	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_forward"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rpcutil"
@@ -94,6 +95,9 @@ func (b *GRPCServer) GetServer() *grpc.Server {
 }
 
 func New(env environment.Env, port int, ssl bool, config GRPCServerConfig) (*GRPCServer, error) {
+	if err := clientip.Init(); err != nil {
+		return nil, err
+	}
 	b := &GRPCServer{env: env}
 	if ssl && !env.GetSSLService().IsEnabled() {
 		return nil, status.InvalidArgumentError("GRPCS requires SSL Service")
@@ -116,7 +120,7 @@ func New(env environment.Env, port int, ssl bool, config GRPCServerConfig) (*GRP
 	} else {
 		log.Infof("gRPC listening on %s", b.hostPort)
 	}
-	if fwdingOptions := grpc_forward.GetForwardingServerOption(); fwdingOptions != nil {
+	if fwdingOptions := grpc_forward.GetForwardingServerOption(env); fwdingOptions != nil {
 		grpcOptions = append(grpcOptions, fwdingOptions)
 	}
 	b.server = grpc.NewServer(grpcOptions...)
@@ -221,8 +225,12 @@ func CommonGRPCServerOptionsWithConfig(env environment.Env, config GRPCServerCon
 			"uint32(grpc_server_worker_multiplier) is too large (%v). Disabling workers", *serverWorkerMultiplier)
 		workerMultiplier = 0
 	}
+	otelOpts := []otelgrpc.Option{otelgrpc.WithMeterProvider(rpcutil.MeterProvider())}
+	if *rpcutil.OTELGRPCMessageEventsEnabled {
+		otelOpts = append(otelOpts, otelgrpc.WithMessageEvents(otelgrpc.ReceivedEvents, otelgrpc.SentEvents))
+	}
 	opts := []grpc.ServerOption{
-		grpc.StatsHandler(otelgrpc.NewServerHandler(otelgrpc.WithMeterProvider(rpcutil.MeterProvider()), otelgrpc.WithMessageEvents(otelgrpc.ReceivedEvents, otelgrpc.SentEvents))),
+		grpc.StatsHandler(otelgrpc.NewServerHandler(otelOpts...)),
 		interceptors.GetUnaryInterceptor(env, config.ExtraChainedUnaryInterceptors...),
 		interceptors.GetStreamInterceptor(env, config.ExtraChainedStreamInterceptors...),
 		grpc.ChainUnaryInterceptor(config.PostAuthUnaryInterceptors...),

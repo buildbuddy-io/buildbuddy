@@ -136,7 +136,7 @@ class ImpersonationComponent extends React.Component<ImpersonationProps, Imperso
     return (
       <div className="impersonation-toolbar">
         <div className="impersonation-caution">
-          <AlertCircle className="icon black" />
+          <AlertCircle className="black" />
           <span>
             <span className="hide-on-mobile">Caution: authenticated as a member of </span>
             <b>{this.props.user.selectedGroupName()}</b> ({this.props.user.selectedGroup?.id})
@@ -147,15 +147,11 @@ class ImpersonationComponent extends React.Component<ImpersonationProps, Imperso
           onClick={this.handleGenerateImpersonationAPIKeyClicked.bind(this)}
           className="generate-api-key-button hide-on-mobile">
           <span>{this.state.apiKey ? "Copy" : "Get"} temporary API key</span>
-          {this.state.isCopied ? (
-            <Check style={{ stroke: "green" }} className="icon black" />
-          ) : (
-            <Copy className="icon black" />
-          )}
+          {this.state.isCopied ? <Check style={{ stroke: "green" }} className="black" /> : <Copy className="black" />}
         </OutlinedButton>
         <OutlinedButton onClick={this.handleExitImpersonationModeClicked.bind(this)} className="exit-button">
           <span>Exit</span>
-          <LogOut className="icon black" />
+          <LogOut className="black" />
         </OutlinedButton>
       </div>
     );
@@ -431,7 +427,9 @@ export default class EnterpriseRootComponent extends React.Component {
                   )}
                   {targets && this.state.user && <TargetsComponent user={this.state.user} search={this.state.search} />}
                   {usage && this.state.user && <UsageComponent path={this.state.path} user={this.state.user} />}
-                  {auditLogs && this.state.user && <AuditLogsComponent user={this.state.user} />}
+                  {auditLogs && this.state.user && (
+                    <AuditLogsComponent user={this.state.user} search={this.state.search} />
+                  )}
                   {executors && this.state.user && <ExecutorsComponent path={this.state.path} user={this.state.user} />}
                   {cacheProxies && this.state.user && (
                     <CacheProxiesComponent path={this.state.path} user={this.state.user} />

@@ -25,6 +25,7 @@ go_library(
         "//server/util/cdc",
         "//server/util/claims",
         "//server/util/compression",
+        "//server/util/findmissing",
         "//server/util/lib/set",
         "//server/util/log",
         "//server/util/prefix",

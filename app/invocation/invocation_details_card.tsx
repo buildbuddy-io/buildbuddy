@@ -44,7 +44,7 @@ export default class ArtifactsCardComponent extends React.Component<Props, State
 
     return (
       <div className="card">
-        <Info className="icon purple" />
+        <Info className="purple" />
         <div className="content">
           <div className="title">Invocation details</div>
           <div className="details">

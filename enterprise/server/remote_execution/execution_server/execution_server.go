@@ -24,6 +24,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/gcplink"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/action_merger"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/oom"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ci_runner_env"
@@ -67,6 +68,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	executil "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/execution"
+	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
@@ -384,13 +386,14 @@ func (s *ExecutionServer) updateExecutionPostCompletion(ctx context.Context, exe
 		// Stage must be COMPLETED, otherwise mergeExecutionUpdates drops this
 		// event as "execution progress appears to restart" after the first
 		// COMPLETED.
-		Stage:                 int64(repb.ExecutionStage_COMPLETED),
-		UpdatedAtUsec:         time.Now().UnixMicro(),
-		PauseDurationUsec:     stats.GetPauseDurationUsec(),
-		SnapshotSavedLocally:  fcStats.GetSnapshotSavedLocally(),
-		SnapshotSavedRemotely: fcStats.GetSnapshotSavedRemotely(),
-		SnapshotIsDiff:        fcStats.GetSnapshotIsDiff(),
-		SnapshotSavedBytes:    fcStats.GetSnapshotSavedBytes(),
+		Stage:                   int64(repb.ExecutionStage_COMPLETED),
+		UpdatedAtUsec:           time.Now().UnixMicro(),
+		PauseDurationUsec:       stats.GetPauseDurationUsec(),
+		SnapshotSavedLocally:    fcStats.GetSnapshotSavedLocally(),
+		SnapshotSavedRemotely:   fcStats.GetSnapshotSavedRemotely(),
+		SnapshotIsDiff:          fcStats.GetSnapshotIsDiff(),
+		SnapshotSavedBytes:      fcStats.GetSnapshotSavedBytes(),
+		BuildrootDiskUsageBytes: stats.GetBuildrootDiskUsageBytes(),
 	}
 	return s.executionCollector.UpdateInProgressExecution(ctx, execution)
 }
@@ -439,6 +442,21 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 			rmd := bazel_request.GetRequestMetadata(ctx)
 			executionProto.TargetLabel = rmd.GetTargetId()
 			executionProto.ActionMnemonic = rmd.GetActionMnemonic()
+			if value, ok := rexec.LookupEnv(cmd.GetEnvironmentVariables(), "TEST_SIZE"); ok {
+				if testSize, ok := bespb.TestSize_value[strings.ToUpper(value)]; ok && testSize != int32(bespb.TestSize_UNKNOWN) {
+					executionProto.TestSize = strings.ToLower(bespb.TestSize(testSize).String())
+				}
+			}
+			if value, ok := rexec.LookupEnv(cmd.GetEnvironmentVariables(), "TEST_SHARD_INDEX"); ok {
+				if shardIndex, err := strconv.ParseUint(value, 10, 32); err == nil {
+					executionProto.TestShardIndex = uint32(shardIndex)
+				}
+			}
+			if value, ok := rexec.LookupEnv(cmd.GetEnvironmentVariables(), "TEST_TOTAL_SHARDS"); ok {
+				if totalShards, err := strconv.ParseUint(value, 10, 32); err == nil {
+					executionProto.TestTotalShards = uint32(totalShards)
+				}
+			}
 			executionProto.DiskBytesRead = md.GetUsageStats().GetCgroupIoStats().GetRbytes()
 			executionProto.DiskBytesWritten = md.GetUsageStats().GetCgroupIoStats().GetWbytes()
 			executionProto.DiskWriteOperations = md.GetUsageStats().GetCgroupIoStats().GetWios()
@@ -546,9 +564,13 @@ func (s *ExecutionServer) flushExecutionToOLAP(ctx context.Context, executionID 
 		return nil, nil
 	}
 
-	// Always clean up invocationLinks and execution updates from the collector.
-	// The execution cannot be retried after this point, so nothing will clean
-	// up this data if we don't do it here.
+	// Always clean up executionInvocationLinks, invocationExecutionLinks, and
+	// execution updates from the collector. The execution cannot be retried
+	// after this point, so nothing will clean up this data if we don't do it
+	// here. This means that even if we fail to AppendExecution or
+	// FlushExecutionStats, we will still remove all links and in-progress
+	// executions.
+	var links []*sipb.StoredInvocationLink
 	defer func() {
 		err := s.executionCollector.DeleteExecutionInvocationLinks(ctx, executionID)
 		if err != nil {
@@ -558,6 +580,11 @@ func (s *ExecutionServer) flushExecutionToOLAP(ctx context.Context, executionID 
 		if err != nil {
 			log.CtxErrorf(ctx, "Failed to clean up in-progress execution in collector: %s", err)
 		}
+		for _, link := range links {
+			if err := s.executionCollector.DeleteInvocationExecutionLink(ctx, link); err != nil {
+				log.CtxErrorf(ctx, "Failed to clean up reverse invocation link for invocation %q: %s", link.GetInvocationId(), err)
+			}
+		}
 	}()
 
 	executionProto, err := s.executionCollector.GetInProgressExecution(ctx, executionID)
@@ -565,7 +592,7 @@ func (s *ExecutionServer) flushExecutionToOLAP(ctx context.Context, executionID 
 		return nil, status.InternalErrorf("failed to get execution %q from redis: %s", executionID, err)
 	}
 
-	links, err := s.executionCollector.GetExecutionInvocationLinks(ctx, executionID)
+	links, err = s.executionCollector.GetExecutionInvocationLinks(ctx, executionID)
 	if err != nil {
 		return nil, status.InternalErrorf("failed to get invocations for execution %q: %s", executionID, err)
 	}
@@ -1662,6 +1689,14 @@ func (s *ExecutionServer) markTaskComplete(ctx context.Context, actionResourceNa
 		md := executeResponse.GetResult().GetExecutionMetadata()
 		if err := s.taskSizer.Update(ctx, cmd, properties, md); err != nil {
 			log.CtxWarningf(ctx, "Failed to update task size: %s", err)
+		}
+	} else if details, ok := oom.DetailsFromError(execErr); ok {
+		// The task was killed by the executor OOM killer. Record a higher memory
+		// estimate so that the task is scheduled with more memory if the client
+		// retries it.
+		md := executeResponse.GetResult().GetExecutionMetadata()
+		if err := s.taskSizer.UpdateForOOM(ctx, cmd, properties, md.GetEstimatedTaskSize(), details.ObservedMemoryBytes); err != nil {
+			log.CtxWarningf(ctx, "Failed to update task size after OOM: %s", err)
 		}
 	}
 

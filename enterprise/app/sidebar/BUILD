@@ -15,6 +15,7 @@ ts_library(
         "//app/auth:auth_service",
         "//app/capabilities",
         "//app/components/link",
+        "//app/icons:github_lucide",
         "//app/router",
         "//app/service:rpc_service",
         "//enterprise/app/org_picker",

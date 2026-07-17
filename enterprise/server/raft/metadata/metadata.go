@@ -388,11 +388,6 @@ type atimeUpdateData struct {
 	gcsMetadata    *sgpb.StorageMetadata_GCSMetadata
 }
 
-func (rc *Server) olderThanThreshold(t time.Time, threshold time.Duration) bool {
-	age := rc.clock.Since(t)
-	return age >= threshold
-}
-
 func (rc *Server) sendAccessTimeUpdate(a atimeUpdateData) {
 	atime := time.UnixMicro(a.lastAccessUsec)
 	if rc.clock.Since(atime) < *atimeUpdateThreshold {
@@ -420,7 +415,7 @@ func (rc *Server) sendAccessTimeUpdate(a atimeUpdateData) {
 }
 
 func (rc *Server) maybeUpdateGCSAtime(ctx context.Context, gcsMetadata *sgpb.StorageMetadata_GCSMetadata) error {
-	if gcsMetadata != nil {
+	if gcsMetadata == nil {
 		return nil
 	}
 	if gcsutil.ObjectIsPastTTL(rc.clock, gcsMetadata, rc.gcsTTLDays) {

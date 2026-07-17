@@ -3,6 +3,7 @@ syntax = "proto3";
 import "google/protobuf/timestamp.proto";
 import "proto/acl.proto";
 import "proto/context.proto";
+import "proto/upgrade.proto";
 
 package cache_proxy;
 
@@ -42,6 +43,12 @@ message CacheProxyNode {
   // operationally (e.g. region, canary, environment) and surfaced on the
   // deployment view.
   map<string, string> labels = 8;
+
+  // CPU allocated to this cache proxy node, in milliCPU (1000 == 1 core).
+  int64 allocated_cpu_millis = 9;
+
+  // Memory allocated to this cache proxy node, in bytes.
+  int64 allocated_memory_bytes = 10;
 }
 
 // Statistics about this cache proxy's performance. Cumulative over the
@@ -50,12 +57,16 @@ message Statistics {
   // Read statistics — broken out by hit/miss.
   int64 ac_read_hits = 1;
   int64 ac_read_misses = 2;
+  int64 ac_read_uncacheable = 13;
   int64 ac_read_hit_bytes = 3;
   int64 ac_read_miss_bytes = 4;
+  int64 ac_read_uncacheable_bytes = 14;
   int64 cas_read_hits = 5;
   int64 cas_read_misses = 6;
+  int64 cas_read_uncacheable = 15;
   int64 cas_read_hit_bytes = 7;
   int64 cas_read_miss_bytes = 8;
+  int64 cas_read_uncacheable_bytes = 16;
 
   // Write statistics.
   int64 ac_writes = 9;
@@ -99,6 +110,8 @@ message GetCacheProxiesResponse {
     // Statistics about this cache proxy's performance.
     Statistics statistics = 3;
   }
+
+  upgrade.Prompt upgrade_prompt = 3;
 }
 
 // Persisted information about a connected cache proxy.

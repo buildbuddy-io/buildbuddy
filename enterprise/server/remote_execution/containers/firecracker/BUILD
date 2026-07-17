@@ -36,6 +36,7 @@ go_library(
         },
     }),
     deps = [
+        "//enterprise/server/oci/ociconv",
         "//enterprise/server/remote_execution/block_io",
         "//enterprise/server/remote_execution/cgroup",
         "//enterprise/server/remote_execution/commandutil",
@@ -49,7 +50,6 @@ go_library(
         "//enterprise/server/util/cpuset",
         "//enterprise/server/util/ext4",
         "//enterprise/server/util/oci",
-        "//enterprise/server/util/ociconv",
         "//enterprise/server/util/vfs_server",
         "//enterprise/server/util/vsock",
         "//enterprise/vmsupport:bundle",

@@ -40,6 +40,7 @@ actions:
       pull_request:
         branches:
           - "*"
+        merge_with_base_interval: 3h
     # TODO: Fix the tests below on Mac, and re-enable.
     steps:
       - run: >-
@@ -67,6 +68,7 @@ actions:
       pull_request:
         branches:
           - "*"
+        merge_with_base_interval: 3h
     # TODO: Fix the tests below on Mac, and re-enable.
     steps:
       - run: >-
@@ -99,37 +101,31 @@ actions:
       pull_request:
         branches:
           - "*"
+        merge_with_base_interval: 3h
     steps:
       - run: "bazel test //... --config=linux-workflows --config=race --test_tag_filters=+bare --build_tag_filters=+bare"
     allow_concurrent_runs: false
-  - name: Nightly flake check
+  - name: Nightly non-determinism check
     triggers:
       schedule:
         crons: ["0 8 * * *"] # 8:00 UTC nightly
     container_image: ubuntu-22.04
     resource_requests:
-      disk: 27GB
+      disk: 40GB
+      cpu: 8
+      memory: 16GB
     steps:
       - run: |
-          bazel test //... \
-            --config=linux-workflows \
-            --config=race \
-            --runs_per_test=20 \
-            --flaky_test_attempts=1 \
-            --test_output=errors
-  - name: Test Scheduled Workflow
-    triggers:
-      schedule:
-        crons: ["15 * * * *  "] # Every hour at :15
-    steps:
-      - run: |
-          echo "SUCCESS!"
+          bb detect nondeterminism --bazel_command='build //... --config=remote' --notify_email --notify_slack=BB_CHECKS_SLACK_WEBHOOK_URL
   - name: Code review
     container_image: ubuntu-22.04
     triggers:
       pull_request:
         branches:
           - "*"
+        types:
+          - opened
+          - ready_for_review
     user: buildbuddy
     steps:
       - run: |

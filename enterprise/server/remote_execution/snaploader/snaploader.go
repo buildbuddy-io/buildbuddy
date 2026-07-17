@@ -941,6 +941,7 @@ func (l *FileCacheLoader) checkAllArtifactsExist(ctx context.Context, manifest *
 			InstanceName:   instanceName,
 			BlobDigests:    missingDigests,
 			DigestFunction: repb.DigestFunction_BLAKE3,
+			Purpose:        repb.FindMissingBlobsRequest_SNAPSHOT,
 		})
 		if err != nil {
 			return status.WrapError(err, "querying remote cache to check for snapshot artifacts")
@@ -1296,6 +1297,7 @@ func (l *FileCacheLoader) findMissingRemoteDigests(ctx context.Context, remoteIn
 			InstanceName:   remoteInstanceName,
 			BlobDigests:    chunk,
 			DigestFunction: repb.DigestFunction_BLAKE3,
+			Purpose:        repb.FindMissingBlobsRequest_SNAPSHOT,
 		})
 		if err != nil {
 			return nil, status.WrapError(err, "querying remote cache for snapshot chunks")

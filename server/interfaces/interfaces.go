@@ -41,6 +41,7 @@ import (
 	csinpb "github.com/buildbuddy-io/buildbuddy/proto/index"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	irpb "github.com/buildbuddy-io/buildbuddy/proto/iprules"
+	npb "github.com/buildbuddy-io/buildbuddy/proto/notification"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rppb "github.com/buildbuddy-io/buildbuddy/proto/repo"
@@ -457,6 +458,10 @@ type InvocationDB interface {
 	DeleteInvocationWithPermsCheck(ctx context.Context, authenticatedUser *UserInfo, invocationID string) error
 	FillCounts(ctx context.Context, log *telpb.TelemetryStat) error
 	SetNowFunc(now func() time.Time)
+
+	// GetInvocationReconnectWindow returns how long after an incomplete
+	// invocation's last DB update the invocation may still be retried.
+	GetInvocationReconnectWindow() time.Duration
 }
 
 type APIKeyGroup interface {
@@ -652,6 +657,10 @@ type UsageService interface {
 	CreateUsageAlertingRule(ctx context.Context, req *usagepb.CreateUsageAlertingRuleRequest) (*usagepb.CreateUsageAlertingRuleResponse, error)
 	DeleteUsageAlertingRule(ctx context.Context, req *usagepb.DeleteUsageAlertingRuleRequest) (*usagepb.DeleteUsageAlertingRuleResponse, error)
 	GetAlertsEnabled() bool
+}
+
+type NotificationService interface {
+	SendNotification(ctx context.Context, req *npb.SendNotificationRequest) (*npb.SendNotificationResponse, error)
 }
 
 type UsageTracker interface {
@@ -1106,6 +1115,14 @@ type TaskSizer interface {
 
 	// Update records a measured task size.
 	Update(ctx context.Context, cmd *repb.Command, props *platform.Properties, md *repb.ExecutedActionMetadata) error
+
+	// UpdateForOOM increases the recorded memory estimate for a task that was
+	// killed by the executor OOM killer after using more memory than its
+	// estimate, so that it is scheduled with at least observedMemoryBytes of
+	// memory the next time it runs (and possibly more, for headroom).
+	// scheduledSize is the size the task was scheduled with, and
+	// observedMemoryBytes is the memory usage observed by the OOM killer.
+	UpdateForOOM(ctx context.Context, cmd *repb.Command, props *platform.Properties, scheduledSize *scpb.TaskSize, observedMemoryBytes int64) error
 }
 
 // ScheduledTask represents an execution task along with its scheduling metadata
@@ -1354,6 +1371,18 @@ type MetricsCollector interface {
 type KeyValStore interface {
 	Set(ctx context.Context, key string, val []byte) error
 	Get(ctx context.Context, key string) ([]byte, error)
+
+	// ReplaceSuffix replaces the value stored at the given key from offset
+	// onward with data, truncating the value to offset+len(data), if the
+	// stored value currently has length expectedLength (missing keys are
+	// treated as having length 0). Otherwise (for example, if the key was
+	// evicted), nothing is written and a FailedPrecondition error is
+	// returned; the caller can recover by writing the full value with Set.
+	// offset must be between 0 and expectedLength; passing offset ==
+	// expectedLength appends data to the value. Keys are expected to have a
+	// single writer at a time, so implementations need not guard against
+	// concurrent writes to the same key.
+	ReplaceSuffix(ctx context.Context, key string, expectedLength, offset int64, data []byte) error
 }
 
 // A RepoDownloader allows testing a git-repo to see if it's downloadable.
@@ -1561,9 +1590,9 @@ type ExecutionCollector interface {
 	// behavior, and will not return the deleted execution.
 	DeleteInProgressExecution(ctx context.Context, executionID string) error
 
-	// DeleteInvocationExecutionLinks deletes all invocation => []execution
-	// links for the given invocation ID.
-	DeleteInvocationExecutionLinks(ctx context.Context, invocationID string) error
+	// DeleteInvocationExecutionLink deletes the single invocation => execution
+	// link.
+	DeleteInvocationExecutionLink(ctx context.Context, link *sipb.StoredInvocationLink) error
 
 	AppendExecution(ctx context.Context, iid string, execution *repb.StoredExecution) error
 	// GetExecutions fetches a range of executions for the given invocation ID.
@@ -1571,7 +1600,6 @@ type ExecutionCollector interface {
 	// of range, then the returned slice will contain as many executions are
 	// available starting from the start index.
 	GetExecutions(ctx context.Context, iid string, start, stop int64) ([]*repb.StoredExecution, error)
-	DeleteExecutions(ctx context.Context, iid string) error
 	ExpireExecutions(ctx context.Context, iid string, ttl time.Duration) error
 	AddInvocation(ctx context.Context, inv *sipb.StoredInvocation) error
 	GetInvocation(ctx context.Context, iid string) (*sipb.StoredInvocation, error)
@@ -1680,10 +1708,12 @@ type ClientIdentity struct {
 }
 
 const (
-	ClientIdentityExecutor   = "executor"
-	ClientIdentityApp        = "app"
-	ClientIdentityWorkflow   = "workflow"
-	ClientIdentityCacheProxy = "cache-proxy"
+	ClientIdentityExecutor         = "executor"
+	ClientIdentityApp              = "app"
+	ClientIdentityWorkflow         = "workflow"
+	ClientIdentityCacheProxy       = "cache-proxy"
+	ClientIdentityMetadataServer   = "metadata-server"
+	ClientIdentityCodeSearchServer = "code-search-server"
 
 	// ClientIdentityGRPCProxy identifies the gRPC forwarding proxy
 	// (server/util/grpc_forward), which proxies unknown RPCs to a backend and
@@ -1701,9 +1731,14 @@ type ClientIdentityService interface {
 	// outgoing context.
 	AddIdentityToContext(ctx context.Context) (context.Context, error)
 
-	// IdentityHeader generates a signed header value for the specified
+	// NewIdentityHeader generates a new signed header value for the specified
 	// identity.
-	IdentityHeader(si *ClientIdentity, expiration time.Duration) (string, error)
+	NewIdentityHeader(si *ClientIdentity, expiration time.Duration) (string, error)
+
+	// CachedIdentityHeader returns a signed header value for the specified
+	// identity, reusing a cached value that is periodically refreshed instead of
+	// signing a new JWT on every call.
+	CachedIdentityHeader(si *ClientIdentity) (string, error)
 
 	// ValidateIncomingIdentity validates the incoming identity and adds the
 	// authenticated identity information to the context. This function is

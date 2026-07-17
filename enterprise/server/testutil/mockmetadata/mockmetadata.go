@@ -24,9 +24,10 @@ func NewServer(maxSizeBytes int64, fs filestore.Store) (*Server, error) {
 	}
 
 	l, err := lru.New[*sgpb.FileMetadata](&lru.Config[*sgpb.FileMetadata]{
-		MaxSize: maxSizeBytes,
-		OnEvict: s.evict,
-		SizeFn:  func(value *sgpb.FileMetadata) int64 { return int64(proto.Size(value)) },
+		MaxSize:    maxSizeBytes,
+		OnEvict:    s.evict,
+		SizeFn:     func(value *sgpb.FileMetadata) int64 { return int64(proto.Size(value)) },
+		ThreadSafe: true,
 	})
 	if err != nil {
 		return nil, err
@@ -37,6 +38,13 @@ func NewServer(maxSizeBytes int64, fs filestore.Store) (*Server, error) {
 
 func (rc *Server) evict(key string, md *sgpb.FileMetadata, reason lru.EvictionReason) {
 	log.Infof("Evicted %+v (REASON: %s)", md, reason)
+
+	if reason == lru.ConflictEviction {
+		// Don't delete the blob if it was evicted due to a conflict, since an
+		// in-flight read may still be using it. This does leave orphaned blobs,
+		// but it's fine for tests.
+		return
+	}
 
 	if inlineMetadata := md.GetStorageMetadata().GetInlineMetadata(); inlineMetadata != nil {
 		return

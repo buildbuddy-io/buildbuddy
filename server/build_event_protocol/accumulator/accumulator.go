@@ -22,6 +22,7 @@ import (
 const (
 	workflowIDFieldName                   = "workflowID"
 	actionNameFieldName                   = "actionName"
+	commitStatusLabelFieldName            = "commitStatusLabel"
 	disableCommitStatusReportingFieldName = "disableCommitStatusReporting"
 	disableTargetTrackingFieldName        = "disableTargetTracking"
 
@@ -39,6 +40,7 @@ var (
 	buildMetadataFieldMapping = map[string]string{
 		"DISABLE_COMMIT_STATUS_REPORTING": disableCommitStatusReportingFieldName,
 		"DISABLE_TARGET_TRACKING":         disableTargetTrackingFieldName,
+		"COMMIT_STATUS_LABEL":             commitStatusLabelFieldName,
 	}
 	bytestreamURIPattern = regexp.MustCompile(`^bytestream://.*/blobs/([a-z0-9]{64})/\d+$`)
 )
@@ -62,6 +64,7 @@ type Accumulator interface {
 	DisableTargetTracking() bool
 	WorkflowID() string
 	ActionName() string
+	CommitStatusLabel() string
 	Pattern() string
 
 	BuildFinished() bool
@@ -86,6 +89,8 @@ type BEValues struct {
 	outputFilesMap            map[string]*build_event_stream.File
 	kytheSSTableResourceName  *rspb.ResourceName
 	profileName               string
+	gitFetchTotalBytes        int64
+	gitFetchDuration          time.Duration
 
 	failedTestOutputURIs []*url.URL
 	passedTestOutputURIs []*url.URL
@@ -163,6 +168,10 @@ func (v *BEValues) AddEvent(event *build_event_stream.BuildEvent) error {
 		v.populateWorkspaceInfoFromBuildMetadata(p.BuildMetadata)
 	case *build_event_stream.BuildEvent_WorkflowConfigured:
 		v.handleWorkflowConfigured(p.WorkflowConfigured)
+	case *build_event_stream.BuildEvent_GitFetchCompleted:
+		// The remote runner reports cumulative totals, so the last event wins.
+		v.gitFetchTotalBytes = p.GitFetchCompleted.GetTotalBytes()
+		v.gitFetchDuration = p.GitFetchCompleted.GetDuration().AsDuration()
 	case *build_event_stream.BuildEvent_Finished:
 		v.sawFinishedEvent = true
 	case *build_event_stream.BuildEvent_BuildToolLogs:
@@ -234,6 +243,18 @@ func (v *BEValues) KytheSSTableResourceName() *rspb.ResourceName {
 	return v.kytheSSTableResourceName
 }
 
+// GitFetchTotalBytes returns the total number of bytes fetched by git while
+// a remote runner set up the git repository, or 0 if not reported.
+func (v *BEValues) GitFetchTotalBytes() int64 {
+	return v.gitFetchTotalBytes
+}
+
+// GitFetchDuration returns the total time a remote runner spent running git
+// fetch commands, or 0 if not reported.
+func (v *BEValues) GitFetchDuration() time.Duration {
+	return v.gitFetchDuration
+}
+
 func (v *BEValues) DisableCommitStatusReporting() bool {
 	return v.getBoolValue(disableCommitStatusReportingFieldName)
 }
@@ -252,6 +273,10 @@ func (v *BEValues) WorkflowID() string {
 
 func (v *BEValues) ActionName() string {
 	return v.getStringValue(actionNameFieldName)
+}
+
+func (v *BEValues) CommitStatusLabel() string {
+	return v.getStringValue(commitStatusLabelFieldName)
 }
 
 func (v *BEValues) BuildFinished() bool {

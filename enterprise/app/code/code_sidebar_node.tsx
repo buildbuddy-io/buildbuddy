@@ -26,9 +26,9 @@ export default class SidebarNodeComponent extends React.Component<SidebarNodePro
     const depth = this.props.depth || 0;
     const expanded = this.props.fullPathToExpanded.get(this.props.fullPath);
     const editing = this.props.fullPathToRenaming.get(this.props.fullPath) || false;
-    let fileIcon = expanded ? <ChevronDown className="icon" /> : <ChevronRight className="icon" />;
+    let fileIcon = expanded ? <ChevronDown /> : <ChevronRight />;
     if (this.props.node.type != "tree") {
-      fileIcon = <File className="icon" />;
+      fileIcon = <File />;
     }
     let change = this.props.changes.get(this.props.fullPath);
     if (change === null) {

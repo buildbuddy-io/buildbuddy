@@ -1,7 +1,6 @@
 package lru
 
 import (
-	"container/list"
 	"errors"
 	"sync"
 	"time"
@@ -40,6 +39,16 @@ type LRU[V any] interface {
 
 	// Remove()s the oldest value in the LRU. (See Remove() above).
 	RemoveOldest() (V, bool)
+
+	// SetMaxSize updates the maximum size of the LRU. If the new max is smaller
+	// than the current size, the least recently used entries are evicted (with
+	// SizeEviction) until the current size fits. New value must be positive.
+	SetMaxSize(maxSize int64) error
+
+	// Purge removes all entries from the LRU, invoking the eviction callback for
+	// each (with ManualEviction) and releasing the backing storage. The LRU
+	// remains usable afterwards.
+	Purge()
 
 	// Returns all keys in the LRU, ordered from most recently used to least.
 	Keys() []string
@@ -113,39 +122,41 @@ type Config[V any] struct {
 	ThreadSafe bool
 }
 
-// lru implements a non-thread safe fixed size LRU cache
-type lru[V any] struct {
-	sizeFn        SizeFn[V]
-	evictList     *list.List
-	items         map[string]*list.Element
-	onEvict       EvictedCallback[V]
-	maxSize       int64
-	currentSize   int64
-	updateInPlace bool
+// noIndex is the sentinel "no such entry" index used for prev/next/head/tail.
+const noIndex int32 = -1
+
+// node is one entry, stored by value in the lru's backing slice. The intrusive
+// doubly-linked recency list is expressed with int32 indices (prev/next) rather
+// than pointers, so the whole cache is a single slice + map for the GC to
+// trace.
+type node[V any] struct {
+	key        string
+	value      V
+	prev, next int32
+	size       int64
+	expiresAt  int64 // unix nanos; 0 when TTL is disabled
 }
 
-// An LRU wrapper that lazily expires entries based on age.
-type expiringLRU[V any] struct {
-	ttl   time.Duration
-	clock clockwork.Clock
-	inner *lru[*expiringEntry[V]]
+// lru is a fixed-size LRU cache. It is not safe for concurrent use unless
+// wrapped in a threadSafeLRU (see Config.ThreadSafe).
+type lru[V any] struct {
+	nodes         []node[V]        // backing storage; indices are stable until freed
+	items         map[string]int32 // key -> node index
+	free          []int32          // recycled node slots
+	head, tail    int32            // most / least recently used indices
+	currentSize   int64
+	maxSize       int64
+	sizeFn        SizeFn[V]
+	onEvict       EvictedCallback[V]
+	updateInPlace bool
+	ttl           time.Duration
+	clock         clockwork.Clock
 }
 
 // A thread-safe wrapper around an LRU.
 type threadSafeLRU[V any] struct {
 	mu    sync.Mutex
 	inner LRU[V]
-}
-
-// Entry is used to hold a value in the evictList
-type Entry[V any] struct {
-	key   string
-	value V
-}
-
-type expiringEntry[V any] struct {
-	value     V
-	createdAt time.Time
 }
 
 // New constructs an LRU based on the specified config.
@@ -156,71 +167,148 @@ func New[V any](config *Config[V]) (LRU[V], error) {
 	if config.SizeFn == nil {
 		return nil, status.InvalidArgumentError("SizeFn is required")
 	}
-	var c LRU[V]
-	if config.TTL > 0 {
-		clock := config.Clock
-		if clock == nil {
-			clock = clockwork.NewRealClock()
-		}
-		c = &expiringLRU[V]{
-			ttl:   config.TTL,
-			clock: clock,
-			inner: &lru[*expiringEntry[V]]{
-				currentSize: 0,
-				maxSize:     config.MaxSize,
-				evictList:   list.New(),
-				items:       make(map[string]*list.Element),
-				onEvict: func(key string, value *expiringEntry[V], reason EvictionReason) {
-					if config.OnEvict != nil {
-						config.OnEvict(key, value.value, reason)
-					}
-				},
-				sizeFn: func(value *expiringEntry[V]) int64 {
-					return config.SizeFn(value.value)
-				},
-				updateInPlace: config.UpdateInPlace,
-			},
-		}
-	} else {
-		c = &lru[V]{
-			currentSize:   0,
-			maxSize:       config.MaxSize,
-			evictList:     list.New(),
-			items:         make(map[string]*list.Element),
-			onEvict:       config.OnEvict,
-			sizeFn:        config.SizeFn,
-			updateInPlace: config.UpdateInPlace,
-		}
+	clock := config.Clock
+	if clock == nil {
+		clock = clockwork.NewRealClock()
+	}
+	var c LRU[V] = &lru[V]{
+		items:         make(map[string]int32),
+		head:          noIndex,
+		tail:          noIndex,
+		maxSize:       config.MaxSize,
+		sizeFn:        config.SizeFn,
+		onEvict:       config.OnEvict,
+		updateInPlace: config.UpdateInPlace,
+		ttl:           config.TTL,
+		clock:         clock,
 	}
 	if config.ThreadSafe {
-		return &threadSafeLRU[V]{
-			inner: c,
-		}, nil
+		c = &threadSafeLRU[V]{inner: c}
 	}
 	return c, nil
 }
 
+// alloc returns a node slot, reusing a freed one or growing the backing slice.
+// Callers must not hold a *node across this call: the slice may reallocate.
+func (c *lru[V]) alloc() int32 {
+	if n := len(c.free); n > 0 {
+		idx := c.free[n-1]
+		c.free = c.free[:n-1]
+		return idx
+	}
+	idx := int32(len(c.nodes))
+	c.nodes = append(c.nodes, node[V]{})
+	return idx
+}
+
+func (c *lru[V]) unlink(idx int32) {
+	n := &c.nodes[idx]
+	if n.prev != noIndex {
+		c.nodes[n.prev].next = n.next
+	} else {
+		c.head = n.next
+	}
+	if n.next != noIndex {
+		c.nodes[n.next].prev = n.prev
+	} else {
+		c.tail = n.prev
+	}
+}
+
+// pushFront inserts node idx at the front of the lru (most recently used).
+// node must not be in the list already.
+func (c *lru[V]) pushFront(idx int32) {
+	n := &c.nodes[idx]
+	n.prev = noIndex
+	n.next = c.head
+	if c.head != noIndex {
+		c.nodes[c.head].prev = idx
+	} else {
+		c.tail = idx
+	}
+	c.head = idx
+}
+
+// pushBack inserts node idx at the back of the lru (least recently used).
+// node must not be in the list already.
+func (c *lru[V]) pushBack(idx int32) {
+	n := &c.nodes[idx]
+	n.next = noIndex
+	n.prev = c.tail
+	if c.tail != noIndex {
+		c.nodes[c.tail].next = idx
+	} else {
+		c.head = idx
+	}
+	c.tail = idx
+}
+
+func (c *lru[V]) moveToFront(idx int32) {
+	if c.head == idx {
+		return
+	}
+	c.unlink(idx)
+	c.pushFront(idx)
+}
+
+// insert adds a brand-new entry (the caller must ensure key is absent).
+func (c *lru[V]) insert(key string, value V, size int64, front bool) {
+	idx := c.alloc()
+	n := &c.nodes[idx]
+	n.key = key
+	n.value = value
+	n.size = size
+	if c.ttl > 0 {
+		n.expiresAt = c.clock.Now().Add(c.ttl).UnixNano()
+	}
+	if front {
+		c.pushFront(idx)
+	} else {
+		c.pushBack(idx)
+	}
+	c.items[key] = idx
+	c.currentSize += size
+}
+
+func (c *lru[V]) removeIndex(idx int32, reason EvictionReason) {
+	c.unlink(idx)
+	n := &c.nodes[idx]
+	delete(c.items, n.key)
+	c.currentSize -= n.size
+	key, value := n.key, n.value
+	*n = node[V]{} // release key/value references before recycling the slot.
+	c.free = append(c.free, idx)
+	if c.onEvict != nil {
+		c.onEvict(key, value, reason)
+	}
+}
+
+func (c *lru[V]) expired(idx int32) bool {
+	return c.ttl > 0 && c.clock.Now().UnixNano() >= c.nodes[idx].expiresAt
+}
+
 func (c *lru[V]) Add(key string, value V) bool {
-	if ent, ok := c.items[key]; ok {
+	size := c.sizeFn(value)
+	if idx, ok := c.items[key]; ok {
 		if c.updateInPlace {
-			// Replace the existing item, moving it to the front.
-			oldSize := c.sizeFn(ent.Value.(*Entry[V]).value)
-			newSize := c.sizeFn(value)
-			c.currentSize += (newSize - oldSize)
-			c.evictList.MoveToFront(ent)
-			ent.Value.(*Entry[V]).value = value
+			n := &c.nodes[idx]
+			c.currentSize += size - n.size
+			n.value = value
+			n.size = size
+			if c.ttl > 0 {
+				n.expiresAt = c.clock.Now().Add(c.ttl).UnixNano()
+			}
+			c.moveToFront(idx)
 		} else {
-			// Remove the existing item and re-insert
-			c.removeElement(ent, ConflictEviction)
-			c.addItem(key, value, c.sizeFn(value), true /*=front*/)
+			// Remove the existing entry (with ConflictEviction) and re-insert.
+			c.removeIndex(idx, ConflictEviction)
+			c.insert(key, value, size, true /*=front*/)
 		}
 	} else {
-		// Add new item
-		c.addItem(key, value, c.sizeFn(value), true /*=front*/)
+		c.insert(key, value, size, true /*=front*/)
 	}
-
-	for c.currentSize > c.maxSize {
-		c.removeOldest()
+	for c.currentSize > c.maxSize && c.tail != noIndex {
+		c.removeIndex(c.tail, SizeEviction)
 	}
 	return true
 }
@@ -234,37 +322,42 @@ func (c *lru[V]) Add(key string, value V) bool {
 // Returns true if the key was added.
 func (c *lru[V]) PushBack(key string, value V) bool {
 	size := c.sizeFn(value)
-	if ent, ok := c.items[key]; ok {
-		// Update or replace the existing item if there is capacity.
-		sizeDelta := size - c.sizeFn(ent.Value.(*Entry[V]).value)
+	if idx, ok := c.items[key]; ok {
+		sizeDelta := size - c.nodes[idx].size
 		if c.currentSize+sizeDelta > c.maxSize {
 			return false
 		}
 		if c.updateInPlace {
-			ent.Value.(*Entry[V]).value = value
+			n := &c.nodes[idx]
+			n.value = value
+			n.size = size
+			if c.ttl > 0 {
+				n.expiresAt = c.clock.Now().Add(c.ttl).UnixNano()
+			}
 			c.currentSize += sizeDelta
 			return true
 		}
-		// Remove the existing item.
-		c.removeElement(ent, ConflictEviction)
+		c.removeIndex(idx, ConflictEviction)
 	}
-
 	if c.currentSize+size > c.maxSize {
 		return false
 	}
-
-	// Add new item
-	c.addItem(key, value, size, false /*=front*/)
+	c.insert(key, value, size, false /*=front*/)
 	return true
 }
 
 func (c *lru[V]) Get(key string) (V, bool) {
-	if ent, ok := c.items[key]; ok {
-		c.evictList.MoveToFront(ent)
-		return ent.Value.(*Entry[V]).value, true
+	if idx, ok := c.items[key]; ok {
+		if c.expired(idx) {
+			c.removeIndex(idx, TTLEviction)
+			var zero V
+			return zero, false
+		}
+		c.moveToFront(idx)
+		return c.nodes[idx].value, true
 	}
-	var v V
-	return v, false
+	var zero V
+	return zero, false
 }
 
 func (c *lru[V]) Contains(key string) bool {
@@ -272,30 +365,26 @@ func (c *lru[V]) Contains(key string) bool {
 	return ok
 }
 
-func (c *lru[V]) Remove(key string) (present bool) {
-	return c.removeWithReason(key, ManualEviction)
-}
-
-func (c *lru[V]) removeWithReason(key string, reason EvictionReason) bool {
-	if ent, ok := c.items[key]; ok {
-		c.removeElement(ent, reason)
+func (c *lru[V]) Remove(key string) bool {
+	if idx, ok := c.items[key]; ok {
+		c.removeIndex(idx, ManualEviction)
 		return true
 	}
 	return false
 }
 
 func (c *lru[V]) RemoveOldest() (V, bool) {
-	ent := c.evictList.Back()
-	if ent != nil {
-		c.removeElement(ent, SizeEviction)
-		return ent.Value.(*Entry[V]).value, true
+	if c.tail == noIndex {
+		var zero V
+		return zero, false
 	}
-	var v V
-	return v, false
+	value := c.nodes[c.tail].value
+	c.removeIndex(c.tail, SizeEviction)
+	return value, true
 }
 
 func (c *lru[V]) Len() int {
-	return c.evictList.Len()
+	return len(c.items)
 }
 
 func (c *lru[V]) Size() int64 {
@@ -303,109 +392,49 @@ func (c *lru[V]) Size() int64 {
 }
 
 func (c *lru[V]) Keys() []string {
-	keys := make([]string, 0, c.evictList.Len())
-	for e := c.evictList.Front(); e != nil; e = e.Next() {
-		keys = append(keys, e.Value.(*Entry[V]).key)
+	keys := make([]string, 0, len(c.items))
+	var now int64
+	if c.ttl > 0 {
+		now = c.clock.Now().UnixNano()
+	}
+	for idx := c.head; idx != noIndex; idx = c.nodes[idx].next {
+		if c.ttl > 0 && now >= c.nodes[idx].expiresAt {
+			// Don't return expired keys.
+			continue
+		}
+		keys = append(keys, c.nodes[idx].key)
 	}
 	return keys
 }
 
-func (c *lru[V]) removeOldest() {
-	ent := c.evictList.Back()
-	if ent != nil {
-		c.removeElement(ent, SizeEviction)
+func (c *lru[V]) SetMaxSize(maxSize int64) error {
+	if maxSize <= 0 {
+		return errors.New("must provide a positive size")
 	}
+	c.maxSize = maxSize
+	// Evict least-recently-used entries until the current size fits. The tail
+	// check guards against accessing an empty cache.
+	for c.currentSize > c.maxSize && c.tail != noIndex {
+		c.removeIndex(c.tail, SizeEviction)
+	}
+	return nil
 }
 
-func (c *lru[V]) addItem(key string, value V, size int64, front bool) {
-	// Add new item
-	kv := &Entry[V]{key, value}
-	var element *list.Element
-	if front {
-		element = c.evictList.PushFront(kv)
-	} else {
-		element = c.evictList.PushBack(kv)
-	}
-	c.items[key] = element
-	c.currentSize += size
-}
-
-func (c *lru[V]) removeElement(e *list.Element, reason EvictionReason) {
-	c.evictList.Remove(e)
-	kv := e.Value.(*Entry[V])
-	delete(c.items, kv.key)
-	c.currentSize -= c.sizeFn(kv.value)
+func (c *lru[V]) Purge() {
 	if c.onEvict != nil {
-		c.onEvict(kv.key, kv.value, reason)
-	}
-}
-
-func (c *expiringLRU[V]) Add(key string, value V) bool {
-	return c.inner.Add(key, c.wrapValue(value))
-}
-
-func (c *expiringLRU[V]) PushBack(key string, value V) bool {
-	return c.inner.PushBack(key, c.wrapValue(value))
-}
-
-func (c *expiringLRU[V]) Get(key string) (V, bool) {
-	entry, ok := c.inner.Get(key)
-	if !ok {
-		var zero V
-		return zero, false
-	}
-	if c.clock.Now().Sub(entry.createdAt) >= c.ttl {
-		c.inner.removeWithReason(key, TTLEviction)
-		var zero V
-		return zero, false
-	}
-	return entry.value, true
-}
-
-func (c *expiringLRU[V]) Contains(key string) bool {
-	_, ok := c.Get(key)
-	return ok
-}
-
-func (c *expiringLRU[V]) Remove(key string) bool {
-	return c.inner.Remove(key)
-}
-
-func (c *expiringLRU[V]) RemoveOldest() (V, bool) {
-	entry, ok := c.inner.RemoveOldest()
-	if !ok {
-		var zero V
-		return zero, false
-	}
-	return entry.value, true
-}
-
-func (c *expiringLRU[V]) Len() int {
-	return c.inner.Len()
-}
-
-func (c *expiringLRU[V]) Size() int64 {
-	return c.inner.Size()
-}
-
-func (c *expiringLRU[V]) Keys() []string {
-	now := c.clock.Now()
-	var keys []string
-	for e := c.inner.evictList.Front(); e != nil; e = e.Next() {
-		ent := e.Value.(*Entry[*expiringEntry[V]])
-		// Don't return expired keys.
-		if now.Sub(ent.value.createdAt) < c.ttl {
-			keys = append(keys, ent.key)
+		for idx := c.head; idx != noIndex; idx = c.nodes[idx].next {
+			n := &c.nodes[idx]
+			c.onEvict(n.key, n.value, ManualEviction)
 		}
 	}
-	return keys
-}
-
-func (c *expiringLRU[V]) wrapValue(value V) *expiringEntry[V] {
-	return &expiringEntry[V]{
-		value:     value,
-		createdAt: c.clock.Now(),
-	}
+	// Release the backing storage entirely (reclaims memory); the next insert
+	// re-grows it.
+	c.nodes = nil
+	c.items = make(map[string]int32)
+	c.free = nil
+	c.head = noIndex
+	c.tail = noIndex
+	c.currentSize = 0
 }
 
 func (c *threadSafeLRU[V]) Add(key string, value V) bool {
@@ -442,6 +471,18 @@ func (c *threadSafeLRU[V]) RemoveOldest() (V, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.inner.RemoveOldest()
+}
+
+func (c *threadSafeLRU[V]) SetMaxSize(maxSize int64) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.inner.SetMaxSize(maxSize)
+}
+
+func (c *threadSafeLRU[V]) Purge() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.inner.Purge()
 }
 
 func (c *threadSafeLRU[V]) Len() int {

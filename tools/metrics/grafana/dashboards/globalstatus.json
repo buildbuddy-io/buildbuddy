@@ -1897,7 +1897,7 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "sum by (region) (up{job=\"cache-proxy\"})",
+          "expr": "sum by (region) (up{job=~\"cache-proxy.*\"})",
           "hide": false,
           "instant": false,
           "legendFormat": "__auto",
@@ -1910,7 +1910,7 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "sum(kube_horizontalpodautoscaler_status_desired_replicas{horizontalpodautoscaler=\"cache-proxy-autoscaler\"}) + sum(up{region=\"us-sjc\", job=\"cache-proxy\"}) + sum(up{region=~\"^aws-.*\", job=\"cache-proxy\"})",
+          "expr": "sum(kube_horizontalpodautoscaler_status_desired_replicas{horizontalpodautoscaler=~\"cache-proxy-autoscaler.*\"}) + sum(up{region=\"us-sjc\", job=\"cache-proxy.*\"}) + sum(up{region=\"us-nuq\", job=\"cache-proxy.*\"}) + sum(up{region=~\"^aws-.*\", job=\"cache-proxy.*\"})",
           "hide": false,
           "instant": false,
           "legendFormat": "Autoscaler target",

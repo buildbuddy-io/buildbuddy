@@ -1,0 +1,18 @@
+syntax = "proto3";
+
+package upgrade;
+
+// Tells the UI to prompt the user to upgrade an old component.
+message Prompt {
+  enum Urgency {
+    UNKNOWN_URGENCY = 0;
+    LOW = 1;
+    MEDIUM = 2;
+    HIGH = 3;
+    CRITICAL = 4;
+  }
+  Urgency urgency = 1;
+
+  // The message that should be displayed in the UI upgrade prompt.
+  string message = 2;
+}

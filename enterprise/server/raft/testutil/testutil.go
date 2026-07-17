@@ -378,6 +378,9 @@ func (fs *FakeStore) StartShard(ctx context.Context, req *rfpb.StartShardRequest
 func (fs *FakeStore) NHID() string {
 	return ""
 }
+func (fs *FakeStore) Zone() string {
+	return ""
+}
 
 type TestingReplica struct {
 	t testing.TB

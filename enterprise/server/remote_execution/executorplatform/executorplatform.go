@@ -4,7 +4,6 @@ package executorplatform
 
 import (
 	"encoding/json"
-	"fmt"
 	"os"
 	"runtime"
 	"slices"
@@ -273,32 +272,34 @@ func ApplyOverrides(env environment.Env, executorProps *ExecutorProperties, plat
 	}
 
 	if strings.EqualFold(platformProps.OS, platform.DarwinOperatingSystemName) {
-		appleSDKVersion := ""
-		appleSDKPlatform := "MacOSX"
-		xcodeVersion := executorProps.DefaultXcodeVersion
+		appleSDKPlatform := ""
+		xcodeVersion := ""
+		hasAppleSDKPlatform := false
+		hasXcodeVersionOverride := false
 
 		for _, v := range command.EnvironmentVariables {
-			// Environment variables from: https://github.com/bazelbuild/bazel/blob/4ed65b05637cd37f0a6c5e79fdc4dfe0ece3fa68/src/main/java/com/google/devtools/build/lib/rules/apple/AppleConfiguration.java#L43
+			// Environment variables from: https://github.com/bazelbuild/bazel/blob/0878dd724149b73a731ab83859a55a65e9b438ed/src/main/java/com/google/devtools/build/lib/exec/local/XcodeLocalEnvProvider.java#L86-L107
 			switch v.Name {
-			case "APPLE_SDK_VERSION_OVERRIDE":
-				appleSDKVersion = v.Value
 			case "APPLE_SDK_PLATFORM":
 				appleSDKPlatform = v.Value
+				hasAppleSDKPlatform = true
 			case "XCODE_VERSION_OVERRIDE":
 				xcodeVersion = v.Value
+				hasXcodeVersionOverride = true
 			}
 		}
 
-		sdk := fmt.Sprintf("%s%s", appleSDKPlatform, appleSDKVersion)
-		developerDir, sdkRoot, err := env.GetXcodeLocator().PathsForVersionAndSDK(xcodeVersion, sdk)
-		if err != nil {
-			return err
-		}
+		if hasAppleSDKPlatform && hasXcodeVersionOverride {
+			developerDir, sdkRoot, err := env.GetXcodeLocator().PathsForVersionAndSDK(xcodeVersion, appleSDKPlatform)
+			if err != nil {
+				return err
+			}
 
-		command.EnvironmentVariables = append(command.EnvironmentVariables, []*repb.Command_EnvironmentVariable{
-			{Name: "DEVELOPER_DIR", Value: developerDir},
-			{Name: "SDKROOT", Value: sdkRoot},
-		}...)
+			command.EnvironmentVariables = append(command.EnvironmentVariables, []*repb.Command_EnvironmentVariable{
+				{Name: "DEVELOPER_DIR", Value: developerDir},
+				{Name: "SDKROOT", Value: sdkRoot},
+			}...)
+		}
 	}
 
 	command.Arguments = append(command.Arguments, platformProps.ExtraArgs...)
@@ -338,7 +339,7 @@ func ApplyOverrides(env environment.Env, executorProps *ExecutorProperties, plat
 		})
 
 		if cis := env.GetClientIdentityService(); cis != nil {
-			h, err := cis.IdentityHeader(&interfaces.ClientIdentity{
+			h, err := cis.NewIdentityHeader(&interfaces.ClientIdentity{
 				Origin: interfaces.ClientIdentityInternalOrigin,
 				Client: interfaces.ClientIdentityWorkflow,
 			}, workflowClientIdentityTokenLifetime)

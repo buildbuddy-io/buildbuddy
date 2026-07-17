@@ -156,7 +156,7 @@ func (t *taskQueue) GetAll(ctx context.Context) []*scpb.EnqueueTaskReservationRe
 			log.CtxError(ctx, "not a *groupPriorityQueue!??!")
 			continue
 		}
-		for _, t := range pq.GetAll() {
+		for _, t := range pq.GetAllUnordered() {
 			reservations = append(reservations, t.EnqueueTaskReservationRequest)
 		}
 	}
@@ -370,6 +370,10 @@ type PriorityTaskScheduler struct {
 	resourceCapacity        *resourceCounts
 	resourcesUsed           *resourceCounts
 	exclusiveTaskScheduling bool
+
+	// activeTaskStartTimes contains, for each currently running task, the
+	// time at which the task started executing.
+	activeTaskStartTimes map[string]time.Time
 }
 
 func NewPriorityTaskScheduler(env environment.Env, exec IExecutor, runnerPool interfaces.RunnerPool, taskLeaser interfaces.TaskLeaser, options *Options) (*PriorityTaskScheduler, error) {
@@ -414,6 +418,7 @@ func NewPriorityTaskScheduler(env environment.Env, exec IExecutor, runnerPool in
 			Custom:    customResourcesUsed,
 		},
 		exclusiveTaskScheduling: *exclusiveTaskScheduling,
+		activeTaskStartTimes:    make(map[string]time.Time),
 	}
 	qes.rootContext = qes.enrichContext(qes.rootContext)
 
@@ -643,6 +648,7 @@ func (q *PriorityTaskScheduler) runTask(ctx context.Context, st *repb.ScheduledT
 
 func (q *PriorityTaskScheduler) trackTask(res *scpb.EnqueueTaskReservationRequest, cancel *context.CancelFunc) {
 	q.activeCancelFuncsCount.Add(1)
+	q.activeTaskStartTimes[res.GetTaskId()] = q.clock.Now()
 	if size := res.GetTaskSize(); size != nil {
 		q.resourcesUsed.RAMBytes += size.GetEstimatedMemoryBytes()
 		q.resourcesUsed.CPUMillis += size.GetEstimatedMilliCpu()
@@ -664,6 +670,7 @@ func (q *PriorityTaskScheduler) trackTask(res *scpb.EnqueueTaskReservationReques
 
 func (q *PriorityTaskScheduler) untrackTask(res *scpb.EnqueueTaskReservationRequest, cancel *context.CancelFunc) {
 	q.activeCancelFuncsCount.Add(-1)
+	delete(q.activeTaskStartTimes, res.GetTaskId())
 	if size := res.GetTaskSize(); size != nil {
 		q.resourcesUsed.RAMBytes -= size.GetEstimatedMemoryBytes()
 		q.resourcesUsed.CPUMillis -= size.GetEstimatedMilliCpu()
@@ -681,6 +688,21 @@ func (q *PriorityTaskScheduler) untrackTask(res *scpb.EnqueueTaskReservationRequ
 		}
 		log.CtxDebugf(q.rootContext, "Released task resources. Queue stats: %s", q.stats())
 	}
+}
+
+// TotalRunningTaskExecutionDuration returns the total time that currently
+// running tasks have collectively spent executing. This approximates the
+// execution progress that would be lost if this executor were shut down,
+// since tasks that get killed are re-enqueued and restart from scratch.
+func (q *PriorityTaskScheduler) TotalRunningTaskExecutionDuration() time.Duration {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	now := q.clock.Now()
+	var total time.Duration
+	for _, startedAt := range q.activeTaskStartTimes {
+		total += now.Sub(startedAt)
+	}
+	return total
 }
 
 func (q *PriorityTaskScheduler) stats() string {

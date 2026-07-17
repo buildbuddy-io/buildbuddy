@@ -9,5 +9,6 @@ go_library(
         "//proto:invocation_go_proto",
         "//server/endpoint_urls/build_buddy_url",
         "//server/real_environment",
+        "//server/util/status",
     ],
 )

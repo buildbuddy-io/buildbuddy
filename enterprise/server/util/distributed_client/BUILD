@@ -19,6 +19,7 @@ go_library(
         "//server/util/authutil",
         "//server/util/bytebufferpool",
         "//server/util/compression",
+        "//server/util/findmissing",
         "//server/util/flag",
         "//server/util/grpc_client",
         "//server/util/grpc_server",

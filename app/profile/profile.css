@@ -36,8 +36,7 @@
 }
 
 .timing-profile-page-empty-state .icon {
-  width: 40px;
-  height: 40px;
+  --icon-size: 40px;
   color: var(--color-text-secondary);
 }
 

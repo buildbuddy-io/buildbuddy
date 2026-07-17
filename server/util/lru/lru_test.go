@@ -2,6 +2,7 @@ package lru_test
 
 import (
 	"fmt"
+	"runtime"
 	"sync"
 	"testing"
 	"time"
@@ -302,4 +303,198 @@ func TestThreadSafeLRU_ConcurrentAccess(t *testing.T) {
 	wg.Wait()
 
 	require.LessOrEqual(t, l.Len(), 10)
+}
+
+func TestSetMaxSize(t *testing.T) {
+	testConfigs(t, func(t *testing.T, config *lru.Config[int]) {
+		cfg := *config
+		cfg.MaxSize = 3
+		cfg.SizeFn = func(value int) int64 { return 1 }
+		l, err := lru.New[int](&cfg)
+		require.NoError(t, err)
+
+		require.True(t, l.Add("a", 1))
+		require.True(t, l.Add("b", 2))
+		require.True(t, l.Add("c", 3))
+		require.Equal(t, 3, l.Len())
+
+		// Shrinking evicts least-recently-used entries down to the new max.
+		err = l.SetMaxSize(1)
+		require.NoError(t, err)
+		require.Equal(t, 1, l.Len())
+		require.Equal(t, int64(1), l.Size())
+		require.True(t, l.Contains("c")) // most recently added survives
+		require.False(t, l.Contains("a"))
+		require.False(t, l.Contains("b"))
+
+		// Growing allows more entries again.
+		err = l.SetMaxSize(3)
+		require.NoError(t, err)
+		require.True(t, l.Add("d", 4))
+		require.True(t, l.Add("e", 5))
+		require.Equal(t, 3, l.Len())
+
+		// Max of 0 rejected, previous size kept.
+		err = l.SetMaxSize(0)
+		require.ErrorContains(t, err, "must provide a positive size")
+		require.Equal(t, 3, l.Len()) // Previous size retained.
+		require.True(t, l.Add("f", 6))
+		require.Equal(t, 3, l.Len())
+
+		// Negative is treated as 0.
+		err = l.SetMaxSize(0)
+		require.ErrorContains(t, err, "must provide a positive size")
+		require.Equal(t, 3, l.Len()) // Previous size retained.
+		require.True(t, l.Add("f", 6))
+		require.Equal(t, 3, l.Len())
+	})
+}
+
+func TestPurge(t *testing.T) {
+	testConfigs(t, func(t *testing.T, config *lru.Config[int]) {
+		evictions := []eviction{}
+		cfg := *config
+		cfg.MaxSize = 10
+		cfg.SizeFn = func(value int) int64 { return 1 }
+		cfg.OnEvict = func(key string, value int, reason lru.EvictionReason) {
+			evictions = append(evictions, eviction{key, value, reason})
+		}
+		l, err := lru.New[int](&cfg)
+		require.NoError(t, err)
+
+		require.True(t, l.Add("a", 1))
+		require.True(t, l.Add("b", 2))
+
+		l.Purge()
+		require.Equal(t, 0, l.Len())
+		require.Equal(t, int64(0), l.Size())
+		require.False(t, l.Contains("a"))
+		require.False(t, l.Contains("b"))
+		// onEvict is invoked once per entry, with ManualEviction.
+		require.Len(t, evictions, 2)
+		for _, e := range evictions {
+			require.Equal(t, lru.ManualEviction, e.reason)
+		}
+
+		// The LRU remains usable after a purge.
+		require.True(t, l.Add("c", 3))
+		require.True(t, l.Contains("c"))
+		require.Equal(t, 1, l.Len())
+	})
+}
+
+// --- Benchmarks -----------------------------------------------------------
+//
+// Run with, e.g.:
+//   bazel test //server/util/lru:lru_test \
+//     --test_arg=-test.bench=BenchmarkLRU --test_arg=-test.benchmem \
+//     --test_arg=-test.run=^NONE$ --test_output=all --nocache_test_results
+
+func benchKeys(n int) []string {
+	keys := make([]string, n)
+	for i := range keys {
+		keys[i] = fmt.Sprintf("PTdefault/%034d", i)
+	}
+	return keys
+}
+
+func newBenchLRU(maxSize int64, ttl time.Duration) lru.LRU[struct{}] {
+	l, err := lru.New(&lru.Config[struct{}]{
+		MaxSize: maxSize,
+		TTL:     ttl,
+		SizeFn:  func(struct{}) int64 { return 1 },
+	})
+	if err != nil {
+		panic(err)
+	}
+	return l
+}
+
+// BenchmarkLRUAdd measures insertion (distinct keys, no eviction). The key
+// signals are allocs/op (should be ~0 in steady state) and ns/op.
+func BenchmarkLRUAdd(b *testing.B) {
+	for _, ttl := range []time.Duration{0, time.Minute} {
+		b.Run("ttl="+ttl.String(), func(b *testing.B) {
+			keys := benchKeys(b.N)
+			l := newBenchLRU(int64(b.N)+1, ttl)
+			b.ReportAllocs()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				l.Add(keys[i], struct{}{})
+			}
+			runtime.KeepAlive(l)
+		})
+	}
+}
+
+// BenchmarkLRUGet measures hot reads (all hits) against a full cache.
+func BenchmarkLRUGet(b *testing.B) {
+	const n = 100_000
+	keys := benchKeys(n)
+	l := newBenchLRU(n, time.Minute)
+	for _, k := range keys {
+		l.Add(k, struct{}{})
+	}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		l.Get(keys[i%n])
+	}
+	runtime.KeepAlive(l)
+}
+
+// BenchmarkLRUGCMark measures the cost of a full GC while the cache is populated
+// (ns/op == time for one GC). This is the guardrail for the cache's GC footprint:
+// it scales with the number of live pointer-ful objects the cache holds.
+func BenchmarkLRUGCMark(b *testing.B) {
+	const n = 500_000
+	keys := benchKeys(n)
+	l := newBenchLRU(n, time.Minute)
+	for _, k := range keys {
+		l.Add(k, struct{}{})
+	}
+	runtime.GC()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		runtime.GC()
+	}
+	b.StopTimer()
+	runtime.KeepAlive(l)
+	runtime.KeepAlive(keys)
+}
+
+// TestLRUMemoryFootprint reports the live-heap footprint of a populated cache and
+// guards against a regression to per-entry heap objects (which is what makes GC
+// expensive). Run with --test_output=all to see the logged numbers.
+func TestLRUMemoryFootprint(t *testing.T) {
+	const n = 200_000
+	keys := benchKeys(n) // allocated before measuring, so key bytes aren't in the delta.
+
+	runtime.GC()
+	var before runtime.MemStats
+	runtime.ReadMemStats(&before)
+
+	l := newBenchLRU(n, time.Minute)
+	for _, k := range keys {
+		l.Add(k, struct{}{})
+	}
+	require.Equal(t, n, l.Len())
+
+	runtime.GC()
+	var after runtime.MemStats
+	runtime.ReadMemStats(&after)
+
+	objectsPerEntry := float64(after.HeapObjects-before.HeapObjects) / float64(n)
+	t.Logf("n=%d  liveHeap=+%d MB  liveObjects=+%d  (%.0f bytes/entry, %.4f objects/entry)",
+		n,
+		(after.HeapAlloc-before.HeapAlloc)>>20,
+		after.HeapObjects-before.HeapObjects,
+		float64(after.HeapAlloc-before.HeapAlloc)/float64(n),
+		objectsPerEntry,
+	)
+	// The array-backed cache keeps ~constant objects regardless of n (one slice +
+	// one map). Guard against a regression to per-entry heap objects.
+	require.Less(t, objectsPerEntry, 0.5, "expected ~0 heap objects per entry")
+	runtime.KeepAlive(l)
+	runtime.KeepAlive(keys)
 }

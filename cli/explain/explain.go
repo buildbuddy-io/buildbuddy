@@ -7,9 +7,7 @@ import (
 	"fmt"
 	"io"
 	"maps"
-	"net/url"
 	"os"
-	"regexp"
 	"runtime"
 	"runtime/pprof"
 	"slices"
@@ -18,27 +16,29 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/explain/compactgraph"
+	"github.com/buildbuddy-io/buildbuddy/cli/explain/timing_profile"
 	"github.com/buildbuddy-io/buildbuddy/cli/flaghistory"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
-	"github.com/buildbuddy-io/buildbuddy/cli/login"
-	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
-	"github.com/buildbuddy-io/buildbuddy/proto/invocation"
+	"github.com/buildbuddy-io/buildbuddy/cli/util/download"
 	"github.com/buildbuddy-io/buildbuddy/proto/spawn"
 	"github.com/buildbuddy-io/buildbuddy/proto/spawn_diff"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
-	gocmp "github.com/google/go-cmp/cmp"
+	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"golang.org/x/sync/errgroup"
-	bspb "google.golang.org/genproto/googleapis/bytestream"
-	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
+
+	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
+	bbpb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
+	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
+	gocmp "github.com/google/go-cmp/cmp"
+	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
 const (
 	explainCmdUsage = `
-usage: bb explain [--old {FILE | INVOCATION_ID}] [--new {FILE | INVOCATION_ID}] [--output_format {text|json|proto}]
+usage: bb explain [--old {FILE | INVOCATION_ID}] [--new {FILE | INVOCATION_ID}] [--output_format {text|json|proto}] [--nondeterministic_only]
+       bb explain profile INVOCATION_ID
 
 Displays a human-readable, structural diff of two compact execution logs, either
 obtained from the given invocations or located at the given file paths.
@@ -50,10 +50,16 @@ build is used as the "old" log.
 Use the --execution_log_compact_file flag to have Bazel produce a compact
 execution log and upload it to the BuildBuddy BES backend.
 
+Pass --nondeterministic_only to restrict the output to non-deterministic spawns,
+i.e. spawns whose outputs or exit code changed even though their inputs didn't.
+
 Output formats:
   text   Unstructured output (default)
   json   Structured output as JSON
   proto  Structured output as binary proto
+
+Subcommands:
+  profile   Analyzes the timing profile for an invocation.
 `
 )
 
@@ -81,18 +87,22 @@ func (m MapFlag) Set(s string) error {
 }
 
 var (
-	explainCmd   = flag.NewFlagSet("explain", flag.ContinueOnError)
-	Flags        = explainCmd
-	oldLog       = explainCmd.String("old", "", "Path to a compact execution log or invocation ID of a build to consider as the baseline for the diff.")
-	newLog       = explainCmd.String("new", "", "Path to a compact execution log or invocation ID of a build to compare against the baseline.")
-	verbose      = explainCmd.Bool("verbose", false, "Print more detailed execution information.")
-	apiTarget    = explainCmd.String("target", "", "The API target to use for fetching logs instead of the last --bes_backend.")
-	outputFormat = explainCmd.String("output_format", "text", "Output format: text, json, or proto.")
+	explainCmd       = flag.NewFlagSet("explain", flag.ContinueOnError)
+	Flags            = explainCmd
+	oldLog           = explainCmd.String("old", "", "Path to a compact execution log or invocation ID of a build to consider as the baseline for the diff.")
+	newLog           = explainCmd.String("new", "", "Path to a compact execution log or invocation ID of a build to compare against the baseline.")
+	verbose          = explainCmd.Bool("verbose", false, "Print more detailed execution information.")
+	apiTarget        = explainCmd.String("target", "", "The API target to use for fetching logs instead of the last --bes_backend.")
+	outputFormat     = explainCmd.String("output_format", "text", "Output format: text, json, or proto.")
+	nondeterministic = explainCmd.Bool("nondeterministic_only", false, "Only show non-deterministic spawns, i.e. spawns whose outputs or exit code changed even though their inputs didn't.")
 
 	profilePaths = make(MapFlag)
 )
 
 func HandleExplain(args []string) (int, error) {
+	if len(args) > 0 && args[0] == "profile" {
+		return timing_profile.HandleProfile(args[1:])
+	}
 	explainCmd.Var(profilePaths, "profile", "Path that a CPU profile should be written to.")
 	if err := arg.ParseFlagSet(explainCmd, args); err != nil {
 		if !errors.Is(err, flag.ErrHelp) {
@@ -141,7 +151,7 @@ func HandleExplain(args []string) (int, error) {
 		return 1, nil
 	}
 
-	diffResult, err := Diff(*oldLog, *newLog)
+	diffResult, err := Diff(*oldLog, *newLog, *nondeterministic)
 	if err != nil {
 		return -1, err
 	}
@@ -185,8 +195,10 @@ func HandleExplain(args []string) (int, error) {
 	return 0, nil
 }
 
-// Diff returns a structural diff of two compact execution logs.
-func Diff(oldPath, newPath string) (*spawn_diff.DiffResult, error) {
+// Diff returns a structural diff of two compact execution logs. If
+// nondeterministicOnly is set, the diff is reduced to the spawns that represent
+// genuine non-determinism (see filterNondeterministicSpawns).
+func Diff(oldPath, newPath string, nondeterministicOnly bool) (*spawn_diff.DiffResult, error) {
 	oldSource, err := openLog(oldPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open old log: %v", err)
@@ -211,96 +223,87 @@ func Diff(oldPath, newPath string) (*spawn_diff.DiffResult, error) {
 	if err := readsEG.Wait(); err != nil {
 		return nil, err
 	}
-	return compactgraph.Diff(oldGraph, newGraph)
+	result, err := compactgraph.Diff(oldGraph, newGraph)
+	if err != nil {
+		return nil, err
+	}
+	if nondeterministicOnly {
+		result.SpawnDiffs = filterNondeterministicSpawns(result.SpawnDiffs)
+	}
+	return result, nil
 }
 
-var uuidPattern = regexp.MustCompile("^(?:.*/invocation/)?([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$")
+// filterNondeterministicSpawns reduces the diff to the modified spawns that
+// represent genuine non-determinism, i.e. whose outputs or exit code changed
+// even though their inputs didn't (see isNondeterministic). Spawns whose
+// non-determinism is expected (e.g. timestamps in test outputs) are dropped.
+func filterNondeterministicSpawns(diffs []*spawn_diff.SpawnDiff) []*spawn_diff.SpawnDiff {
+	var filtered []*spawn_diff.SpawnDiff
+	for _, d := range diffs {
+		if d.GetModified().GetExpected() {
+			continue
+		}
+		if isNondeterministic(d) {
+			filtered = append(filtered, d)
+		}
+	}
+	return filtered
+}
+
+// isNondeterministic reports whether a modified spawn diff records a change in
+// output contents (non-hermetic outputs) or exit code (flaky action) without a
+// corresponding change in inputs.
+func isNondeterministic(d *spawn_diff.SpawnDiff) bool {
+	for _, sd := range d.GetModified().GetDiffs() {
+		switch sd.Diff.(type) {
+		case *spawn_diff.Diff_OutputContents, *spawn_diff.Diff_ExitCode:
+			return true
+		}
+	}
+	return false
+}
 
 func openLog(pathOrId string) (io.ReadCloser, error) {
 	f, err := os.Open(pathOrId)
 	if err == nil {
 		return f, nil
-	} else if !os.IsNotExist(err) || !uuidPattern.MatchString(pathOrId) {
+	} else if !os.IsNotExist(err) || !uuid.Pattern.MatchString(pathOrId) {
 		return nil, err
 	}
-	matches := uuidPattern.FindStringSubmatch(pathOrId)
+	matches := uuid.Pattern.FindStringSubmatch(pathOrId)
 	invocationId := matches[1]
-	// This is an invocation ID, try to fetch its corresponding log.
-	apiKey, err := login.GetAPIKey()
-	if err != nil {
-		return nil, err
-	}
-	ctx := metadata.AppendToOutgoingContext(context.Background(), "x-buildbuddy-api-key", apiKey)
-	backend := *apiTarget
-	if backend == "" {
-		backend, err = flaghistory.GetLastBackend()
-		if err != nil {
-			log.Debugf("Failed to get last backend: %v", err)
-		}
-		if backend == "" {
-			backend = login.DefaultApiTarget
-		}
-	}
-	conn, err := grpc_client.DialSimple(backend)
-	if err != nil {
-		return nil, err
-	}
-	resource, err := getExecLogResource(ctx, conn, invocationId)
-	if err != nil {
-		conn.Close()
-		return nil, err
-	}
 
+	ctx := context.Background()
+	target, err := download.ResolveTarget(*apiTarget)
+	if err != nil {
+		return nil, err
+	}
+	conn, err := grpc_client.DialSimple(target)
+	if err != nil {
+		return nil, err
+	}
 	bsClient := bspb.NewByteStreamClient(conn)
+	bbClient := bbpb.NewBuildBuddyServiceClient(conn)
+
 	// Avoid reading the entire log into memory at once.
 	in, out := io.Pipe()
 	go func() {
-		defer conn.Close()
-		err := cachetools.GetBlob(ctx, bsClient, resource, out)
-		if err != nil {
-			out.CloseWithError(fmt.Errorf("failed to download %s for invocation %s: %v", resource.DownloadString(), invocationId, err))
-		} else {
-			out.Close()
-		}
+		err := download.GetInvocationFile(ctx, bsClient, bbClient, out, invocationId, "execution log", findExecutionLog)
+		conn.Close()
+		out.CloseWithError(err)
 	}()
 	return in, nil
 }
 
-func getExecLogResource(ctx context.Context, conn *grpc_client.ClientConnPool, invocationId string) (*digest.CASResourceName, error) {
-	resp, err := bbspb.NewBuildBuddyServiceClient(conn).GetInvocation(ctx, &invocation.GetInvocationRequest{
-		Lookup: &invocation.InvocationLookup{InvocationId: invocationId},
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to fetch invocation %s: %v", invocationId, err)
-	}
-	if len(resp.GetInvocation()) == 0 {
-		return nil, fmt.Errorf("no such invocation: %s", invocationId)
-	}
-	var bytestreamUri string
-outer:
-	for _, event := range resp.GetInvocation()[0].GetEvent() {
+func findExecutionLog(inv *inpb.Invocation) *bespb.File {
+	for _, event := range inv.GetEvent() {
 		for _, file := range event.GetBuildEvent().GetBuildToolLogs().GetLog() {
 			if file.Name == "execution_log.binpb.zst" {
-				bytestreamUri = file.GetUri()
-				break outer
+				return file
 			}
 		}
 	}
-	if bytestreamUri == "" {
-		return nil, fmt.Errorf("no log found for invocation %s", invocationId)
-	}
-	if !strings.HasPrefix(bytestreamUri, "bytestream://") {
-		return nil, fmt.Errorf("unsupported log URI: %s", bytestreamUri)
-	}
-	bytestreamUrl, err := url.Parse(bytestreamUri)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse bytestream URL: %v", err)
-	}
-	resource, err := digest.ParseDownloadResourceName(bytestreamUrl.Path)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse bytestream resource: %v", err)
-	}
-	return resource, nil
+	return nil
 }
 
 func writeHeader(w io.Writer, oldInvocationId, newInvocationId string) {

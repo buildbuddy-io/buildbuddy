@@ -2,7 +2,6 @@ package priority_queue
 
 import (
 	"container/heap"
-	"slices"
 	"sync"
 	"time"
 )
@@ -92,9 +91,16 @@ func New[V any]() *ThreadSafePriorityQueue[V] {
 func (pq *ThreadSafePriorityQueue[V]) Clone() *ThreadSafePriorityQueue[V] {
 	pq.mu.Lock()
 	defer pq.mu.Unlock()
-	return &ThreadSafePriorityQueue[V]{
-		inner: slices.Clone(pq.inner),
+
+	// Dereference and copy each item, since the priority queue holds a slice of
+	// pointers, and [Item.index] may be concurrently accessed.
+	inner := make([]*Item[V], len(pq.inner))
+	for i := range pq.inner {
+		clone := *pq.inner[i]
+		inner[i] = &clone
 	}
+
+	return &ThreadSafePriorityQueue[V]{inner: inner}
 }
 
 func (pq *ThreadSafePriorityQueue[V]) zeroValue() V {
@@ -160,12 +166,36 @@ func (pq *ThreadSafePriorityQueue[V]) RemoveAt(index int) (V, bool) {
 	return item.(*Item[V]).value, true
 }
 
-func (pq *ThreadSafePriorityQueue[V]) GetAll() []V {
+// GetAllUnordered returns all values in the queue, in an unspecified order
+// that is generally NOT priority order. Use GetAllOrdered if the order
+// matters.
+//
+// It has complexity O(n).
+func (pq *ThreadSafePriorityQueue[V]) GetAllUnordered() []V {
 	pq.mu.Lock()
 	defer pq.mu.Unlock()
 	allValues := make([]V, len(pq.inner))
 	for i, v := range pq.inner {
 		allValues[i] = v.value
+	}
+	return allValues
+}
+
+// GetAllOrdered returns all values in the queue in priority order, highest
+// priority first. Ties in priority are broken by insertion time, earliest
+// first. The queue is left unchanged.
+//
+// It has complexity O(n*log(n)).
+func (pq *ThreadSafePriorityQueue[V]) GetAllOrdered() []V {
+	// Create an O(n) clone with the lock held. The loop below is O(n*log(n)) so
+	// this reduces the time spent with the queue locked.
+	tmp := pq.Clone().inner
+
+	// Repeatedly pop and append the highest priority element to a new slice.
+	allValues := make([]V, 0, len(tmp))
+	for len(tmp) > 0 {
+		item := heap.Pop(&tmp).(*Item[V])
+		allValues = append(allValues, item.value)
 	}
 	return allValues
 }

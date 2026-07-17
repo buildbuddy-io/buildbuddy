@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/login"
 	"github.com/buildbuddy-io/buildbuddy/cli/terminal"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_publisher"
+	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -24,6 +25,7 @@ import (
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	bepb "github.com/buildbuddy-io/buildbuddy/proto/build_events"
 	clpb "github.com/buildbuddy-io/buildbuddy/proto/command_line"
+	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 )
 
 var (
@@ -97,7 +99,12 @@ func record(cmdArgs []string) (int, error) {
 
 	fmt.Fprintln(os.Stderr, streamingLog)
 
-	publisher, err := build_event_publisher.New(*besBackend, apiKey, iid)
+	conn, err := grpc_client.DialSimple(*besBackend)
+	if err != nil {
+		return 1, status.WrapError(err, "dial BES backend")
+	}
+	defer conn.Close()
+	publisher, err := build_event_publisher.New(pepb.NewPublishBuildEventClient(conn), apiKey, iid)
 	if err != nil {
 		return 1, status.WrapError(err, "failed to create publisher")
 	}

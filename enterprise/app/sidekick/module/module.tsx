@@ -1,8 +1,9 @@
 import * as monaco from "monaco-editor";
 import React from "react";
 
-import { ArrowUp, GitCommit, Github, HistoryIcon, Star, Trash2 } from "lucide-react";
+import { ArrowUp, GitCommit, HistoryIcon, Star, Trash2 } from "lucide-react";
 import { roundedDurationSec } from "../../../../app/format/format";
+import { Github } from "../../../../app/icons/github_lucide";
 
 interface Props {
   editor: monaco.editor.IStandaloneCodeEditor;

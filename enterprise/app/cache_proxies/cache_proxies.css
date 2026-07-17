@@ -5,6 +5,13 @@
   font-weight: 700;
 }
 
+/* Push the summary/details toggle to the right edge of the tabs row. */
+.cache-proxies-page .view-mode-toggle {
+  display: flex;
+  align-items: center;
+  margin-left: auto;
+}
+
 .cache-proxies-page .cache-proxy-section {
   display: flex;
 }
@@ -27,7 +34,14 @@
   margin-top: 16px;
 }
 
-.cache-proxies-page .cache-proxy-summary {
+.cache-proxies-page .cache-proxy-details {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-top: 24px;
+}
+
+.cache-proxies-page .cache-proxy-detail {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -136,6 +150,10 @@
 
 .cache-proxies-page .cache-miss-color-swatch {
   background-color: var(--color-status-error);
+}
+
+.cache-proxies-page .cache-uncacheable-color-swatch {
+  background-color: var(--color-amber-500);
 }
 
 .cache-proxies-page .cache-read-color-swatch {

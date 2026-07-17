@@ -18,6 +18,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/oom"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/scheduler_server"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/test/integration/remote_execution/rbetest"
@@ -1920,7 +1921,7 @@ func testInvocationCancellation(t *testing.T, tc cancelInvocationTestCase) {
 	initialTaskCount := testmetrics.CounterValue(t, metrics.RemoteExecutionTasksStartedCount)
 
 	iid := uuid.NewString()
-	bep, err := build_event_publisher.New(bbServer.GRPCAddress(), "", iid)
+	bep, err := build_event_publisher.New(bbServer.PublishBuildEventClient(), "", iid)
 	require.NoError(t, err)
 
 	ctx := context.Background()
@@ -2019,7 +2020,7 @@ func TestActionMerging_CancellationDoesntAffectMergedActions(t *testing.T) {
 	bbServer := rbe.AddBuildBuddyServer()
 	rbe.AddExecutor(t)
 
-	bep, err := build_event_publisher.New(bbServer.GRPCAddress(), "", "invocation1")
+	bep, err := build_event_publisher.New(bbServer.PublishBuildEventClient(), "", "invocation1")
 	require.NoError(t, err)
 
 	ctx := context.Background()
@@ -2614,6 +2615,101 @@ func TestProactiveCancellation(t *testing.T) {
 	cmd1.Exit(0)
 	res1 := cmd1.Wait()
 	assert.Equal(t, 0, res1.ExitCode)
+}
+
+func TestExternallyRetriedTask_OOMError_MemoryEstimateIncreasedForNextAttempt(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		// observedMemoryFactor is how much memory the task used when it was
+		// OOM-killed, as a multiple of its initial memory estimate.
+		observedMemoryFactor float64
+		// expectResize is whether the OOM kill should increase the task's memory
+		// estimate for its next attempt.
+		expectResize bool
+	}{
+		{
+			// The task used more memory than its estimate, so its estimate should
+			// be increased to cover the observed usage.
+			name:                 "task exceeded its memory estimate",
+			observedMemoryFactor: 2,
+			expectResize:         true,
+		},
+		{
+			// The task used less memory than its estimate (it was OOM-killed for
+			// some other reason), so its estimate should be left unchanged.
+			name:                 "task stayed within its memory estimate",
+			observedMemoryFactor: 0.5,
+			expectResize:         false,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			// Create an RBE setup where the test can control the returned command
+			// results via resultsChan.
+			rbe := rbetest.NewRBETestEnv(t)
+			rbe.AddBuildBuddyServer()
+			resultsChan := make(chan *interfaces.CommandResult)
+			rbe.AddExecutorWithOptions(t, &rbetest.ExecutorOptions{
+				Name: "executor1",
+				RunInterceptor: func(ctx context.Context, _original rbetest.RunFunc) *interfaces.CommandResult {
+					return <-resultsChan
+				},
+			})
+
+			// Create an arbitrary task that we will execute multiple times and
+			// observe how its task size is updated.
+			cmdProto := &repb.Command{Arguments: []string{"/bin/true"}}
+
+			// Check the initial memory estimate for this task by running it and
+			// observing the reported memory estimate. Do this twice to confirm that
+			// the estimate is stable.
+			var initialMemoryEstimateBytes int64
+			for i := range 2 {
+				cmd := rbe.Execute(cmdProto, &rbetest.ExecuteOpts{})
+				resultsChan <- &interfaces.CommandResult{}
+				res := cmd.Wait()
+				estimatedMemoryBytes := res.ActionResult.GetExecutionMetadata().GetEstimatedTaskSize().GetEstimatedMemoryBytes()
+				require.Greater(t, estimatedMemoryBytes, int64(0))
+				if i > 0 {
+					require.Equal(t, initialMemoryEstimateBytes, estimatedMemoryBytes, "memory estimate is not stable")
+				} else {
+					initialMemoryEstimateBytes = estimatedMemoryBytes
+				}
+			}
+			require.Greater(t, initialMemoryEstimateBytes, int64(0))
+
+			// Execute the task, simulating an OOM error. In the OOM error details,
+			// report that the task used observedMemoryFactor times its memory
+			// estimate.
+			oomObservedMemoryBytes := int64(test.observedMemoryFactor * float64(initialMemoryEstimateBytes))
+			cmd := rbe.Execute(cmdProto, &rbetest.ExecuteOpts{})
+			resultsChan <- &interfaces.CommandResult{
+				Error: oom.Error(oom.Details{
+					ObservedMemoryBytes:  oomObservedMemoryBytes,
+					EstimatedMemoryBytes: initialMemoryEstimateBytes,
+				}),
+			}
+			res := cmd.MustTerminateAbnormally()
+			require.True(t, status.IsUnavailableError(res.Err))
+
+			// Retry the same task, but have it succeed this time.
+			cmd = rbe.Execute(cmdProto, &rbetest.ExecuteOpts{})
+			resultsChan <- &interfaces.CommandResult{}
+			res = cmd.Wait()
+			require.Equal(t, 0, res.ExitCode)
+
+			retriedTaskMemoryEstimateBytes := res.ActionResult.GetExecutionMetadata().GetEstimatedTaskSize().GetEstimatedMemoryBytes()
+			if test.expectResize {
+				// The retry should be scheduled with at least the memory the task
+				// used when it was OOM-killed, so that it isn't just OOM-killed
+				// again at the same memory level.
+				require.GreaterOrEqual(t, retriedTaskMemoryEstimateBytes, oomObservedMemoryBytes)
+			} else {
+				// The estimate should be unchanged from the initial estimate, since
+				// the task didn't actually exceed it.
+				require.Equal(t, initialMemoryEstimateBytes, retriedTaskMemoryEstimateBytes)
+			}
+		})
+	}
 }
 
 type customResourcesTest struct {

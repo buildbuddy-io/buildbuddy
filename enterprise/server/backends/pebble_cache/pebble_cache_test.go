@@ -36,6 +36,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
+	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
@@ -2348,12 +2349,12 @@ func BenchmarkGetMulti(b *testing.B) {
 	}
 }
 
-func benchmarkFindMissing(b *testing.B, pc *pebble_cache.PebbleCache, ctx context.Context, digestSizeBytes int64, insert bool) {
+func benchmarkFindMissing(b *testing.B, pc *pebble_cache.PebbleCache, ctx context.Context, digestSizeBytes int64, present bool) {
 	digestKeys := make([]*rspb.ResourceName, 0, 100)
 	for i := 0; i < 100; i++ {
 		r, buf := testdigest.RandomCASResourceBuf(b, digestSizeBytes)
 		digestKeys = append(digestKeys, r)
-		if insert {
+		if present {
 			if err := pc.Set(ctx, r, buf); err != nil {
 				b.Fatalf("Error setting %q in cache: %s", r.GetDigest().GetHash(), err.Error())
 			}
@@ -2381,7 +2382,7 @@ func benchmarkFindMissing(b *testing.B, pc *pebble_cache.PebbleCache, ctx contex
 			b.Fatal(err)
 		}
 		b.StopTimer()
-		if insert {
+		if present {
 			if len(missing) != 0 {
 				b.Fatalf("Missing: %+v, but all digests should be present", missing)
 			}
@@ -2401,25 +2402,38 @@ func BenchmarkFindMissing(b *testing.B) {
 	te.SetAuthenticator(testauth.NewTestAuthenticator(b, emptyUserMap))
 	ctx := getAnonContext(b, te)
 
-	maxSizeBytes := int64(100_000_000)
-	rootDir := testfs.MakeTempDir(b)
-	pc, err := pebble_cache.NewPebbleCache(te, &pebble_cache.Options{RootDirectory: rootDir, MaxSizeBytes: maxSizeBytes})
-	if err != nil {
-		b.Fatal(err)
-	}
-	pc.Start()
-	defer pc.Stop()
+	// Make sure there's no eviction to avoid muddying up the benchmark.
+	maxSizeBytes := int64(1_000_000_000_000)
 
-	sizes := []int64{1024, 1024 * 1024, 10 * 1024 * 1024}
-	for _, insert := range []bool{false, true} {
-		for _, size := range sizes {
-			name := fmt.Sprintf("size=%s/insert=%v", units.BytesSize(float64(size)), insert)
-			b.Run(name, func(b *testing.B) {
-				benchmarkFindMissing(b, pc, ctx, size, insert)
+	for _, storage := range []struct {
+		name                   string
+		digestSizeBytes        int64
+		maxInlineFileSizeBytes int64
+	}{
+		{"512B-inline", 512, 1024},
+		{"32KiB-inline", 32 * 1024, 64 * 1024},
+		{"1KiB-external", 1024, 1024},
+	} {
+		for _, present := range []bool{true, false} {
+			rootDir := testfs.MakeTempDir(b)
+			pc, err := pebble_cache.NewPebbleCache(te, &pebble_cache.Options{
+				RootDirectory:          rootDir,
+				MaxSizeBytes:           maxSizeBytes,
+				MaxInlineFileSizeBytes: storage.maxInlineFileSizeBytes,
 			})
+			if err != nil {
+				b.Fatal(err)
+			}
+			pc.Start()
+			name := fmt.Sprintf("storage=%s/present=%v", storage.name, present)
+			b.Run(name, func(b *testing.B) {
+				benchmarkFindMissing(b, pc, ctx, storage.digestSizeBytes, present)
+			})
+			if err := pc.Stop(); err != nil {
+				b.Fatal(err)
+			}
 		}
 	}
-
 }
 
 func benchmarkContains1(b *testing.B, pc *pebble_cache.PebbleCache, ctx context.Context, digestSizeBytes int64) {
@@ -2792,6 +2806,72 @@ func TestGCSBlobStorageOverwriteObjects(t *testing.T) {
 	}
 }
 
+func TestGCSAtimeUpdateThreshold(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
+	// sendAtimeUpdate gates on wall-clock time (time.Since), so start the fake
+	// clock well in the past. Otherwise, once an atime update moves the stored
+	// atime to a fake-future timestamp, subsequent accesses would be skipped.
+	clock := clockwork.NewFakeClockAt(time.Now().Add(-30 * 24 * time.Hour))
+	ctx := getAnonContext(t, te)
+
+	var minGCSFileSize int64 = 1
+	var gcsTTLDays int64 = 1
+	atimeThreshold := 10 * time.Hour
+
+	mockGCS := mockgcs.New(clock)
+	require.NoError(t, mockGCS.SetBucketCustomTimeTTL(ctx, gcsTTLDays))
+	fileStorer := filestore.New(filestore.WithGCSBlobstore(mockGCS, "app-name"), filestore.WithClock(clock))
+	options := &pebble_cache.Options{
+		RootDirectory:           testfs.MakeTempDir(t),
+		MaxSizeBytes:            int64(1_000_000), // 1MB
+		Clock:                   clock,
+		FileStorer:              fileStorer,
+		MaxInlineFileSizeBytes:  1,
+		MinGCSFileSizeBytes:     &minGCSFileSize,
+		GCSTTLDays:              &gcsTTLDays,
+		GCSAtimeUpdateThreshold: &atimeThreshold,
+		AtimeUpdateThreshold:    pointer(time.Duration(0)), // update atime on every access
+		AtimeBufferSize:         pointer(0),                // blocking channel of atime updates
+	}
+	pc, err := pebble_cache.NewPebbleCache(te, options)
+	require.NoError(t, err)
+	require.NoError(t, pc.Start())
+	defer pc.Stop()
+
+	rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+	require.NoError(t, pc.Set(ctx, rn, buf))
+
+	// Writing the object sets its custom time; it does not call UpdateCustomTime.
+	require.Equal(t, 0, mockGCS.UpdateCustomTimeCallCount())
+
+	// waitForAtime blocks until the object's pebble atime reaches the current
+	// (fake) clock time, i.e. until the queued atime update has been processed.
+	waitForAtime := func() {
+		want := clock.Now().UnixMicro()
+		require.Eventually(t, func() bool {
+			md, err := pc.Metadata(ctx, rn)
+			return err == nil && md.LastAccessTimeUsec == want
+		}, time.Minute, 10*time.Millisecond)
+	}
+
+	// Access the object before the threshold elapses. The pebble atime is
+	// updated, but the GCS custom time is left alone.
+	clock.Advance(1 * time.Hour)
+	_, err = pc.Get(ctx, rn)
+	require.NoError(t, err)
+	waitForAtime()
+	require.Equal(t, 0, mockGCS.UpdateCustomTimeCallCount())
+
+	// Access the object once its custom time is older than the threshold.
+	// Now the GCS custom time is refreshed.
+	clock.Advance(10 * time.Hour)
+	_, err = pc.Get(ctx, rn)
+	require.NoError(t, err)
+	waitForAtime()
+	require.Equal(t, 1, mockGCS.UpdateCustomTimeCallCount())
+}
+
 func pointer[T any](value T) *T {
 	return &value
 }
@@ -3045,4 +3125,297 @@ func TestAtimeUpdater(t *testing.T) {
 		return updater.calls.Load() > 0
 	}
 	require.Eventually(t, calledFunc, time.Minute, 100*time.Millisecond)
+}
+
+type faultyGCS struct {
+	filestore.PebbleGCSStorage
+	mu      sync.Mutex
+	readErr error
+}
+
+func (g *faultyGCS) SetReadError(err error) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.readErr = err
+}
+
+func (g *faultyGCS) Reader(ctx context.Context, blobName string, offset, limit int64) (io.ReadCloser, error) {
+	g.mu.Lock()
+	err := g.readErr
+	g.mu.Unlock()
+	if err != nil {
+		return nil, err
+	}
+	return g.PebbleGCSStorage.Reader(ctx, blobName, offset, limit)
+}
+
+type commitFailingGCS struct {
+	filestore.PebbleGCSStorage
+	err error
+}
+
+func (g *commitFailingGCS) ConditionalWriter(ctx context.Context, blobName string, overwriteExisting bool, customTime time.Time, estimatedSize int64) (interfaces.CommittedWriteCloser, error) {
+	w := ioutil.NewCustomCommitWriteCloser(io.Discard)
+	w.SetCommitFn(func(int64) error {
+		return g.err
+	})
+	return w, nil
+}
+
+func newGCSBackedContractCache(t *testing.T, clock clockwork.Clock, gcs filestore.PebbleGCSStorage) (*testenv.TestEnv, interfaces.Cache) {
+	t.Helper()
+	te := testenv.GetTestEnv(t)
+	te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
+	var minGCSFileSize int64 = 1
+	var gcsTTLDays int64 = 30
+	pc, err := pebble_cache.NewPebbleCache(te, &pebble_cache.Options{
+		RootDirectory:          testfs.MakeTempDir(t),
+		MaxSizeBytes:           1_000_000,
+		Clock:                  clock,
+		FileStorer:             filestore.New(filestore.WithGCSBlobstore(gcs, "app-name")),
+		MaxInlineFileSizeBytes: 1,
+		MinGCSFileSizeBytes:    &minGCSFileSize,
+		GCSTTLDays:             &gcsTTLDays,
+	})
+	require.NoError(t, err)
+	require.NoError(t, pc.Start())
+	t.Cleanup(func() { pc.Stop() })
+	return te, pc
+}
+
+// expectMetadataPresent asserts that the metadata-only read methods (Contains,
+// Metadata, FindMissing) report rn as present. PebbleCache answers these from
+// its local index without consulting backing storage.
+func expectMetadataPresent(t *testing.T, ctx context.Context, c interfaces.Cache, rn *rspb.ResourceName) {
+	t.Helper()
+	contains, err := c.Contains(ctx, rn)
+	require.NoError(t, err, "Contains")
+	require.True(t, contains, "Contains")
+
+	_, err = c.Metadata(ctx, rn)
+	require.NoError(t, err, "Metadata")
+
+	missing, err := c.FindMissing(ctx, []*rspb.ResourceName{rn})
+	require.NoError(t, err, "FindMissing")
+	require.Empty(t, missing, "FindMissing")
+}
+
+// expectMetadataMissing asserts that the metadata-only read methods report rn
+// as missing.
+func expectMetadataMissing(t *testing.T, ctx context.Context, c interfaces.Cache, rn *rspb.ResourceName) {
+	t.Helper()
+	contains, err := c.Contains(ctx, rn)
+	require.NoError(t, err, "Contains")
+	require.False(t, contains, "Contains")
+
+	_, err = c.Metadata(ctx, rn)
+	require.True(t, status.IsNotFoundError(err), "Metadata: %v", err)
+
+	missing, err := c.FindMissing(ctx, []*rspb.ResourceName{rn})
+	require.NoError(t, err, "FindMissing")
+	require.Len(t, missing, 1, "FindMissing")
+	require.Equal(t, rn.GetDigest().GetHash(), missing[0].GetHash(), "FindMissing")
+}
+
+// expectContentPresent asserts that the content-returning read methods (Get,
+// GetWithMetadata, GetMulti, Reader) all return data.
+func expectContentPresent(t *testing.T, ctx context.Context, c interfaces.Cache, rn *rspb.ResourceName, data []byte) {
+	t.Helper()
+	got, err := c.Get(ctx, rn)
+	require.NoError(t, err, "Get")
+	require.Equal(t, data, got, "Get")
+
+	got, _, err = c.GetWithMetadata(ctx, rn)
+	require.NoError(t, err, "GetWithMetadata")
+	require.Equal(t, data, got, "GetWithMetadata")
+
+	multi, err := c.GetMulti(ctx, []*rspb.ResourceName{rn})
+	require.NoError(t, err, "GetMulti")
+	require.Equal(t, data, multi[rn.GetDigest()], "GetMulti")
+
+	rc, err := c.Reader(ctx, rn, 0, 0)
+	require.NoError(t, err, "Reader")
+	got, err = io.ReadAll(rc)
+	require.NoError(t, err, "Reader.ReadAll")
+	require.NoError(t, rc.Close(), "Reader.Close")
+	require.Equal(t, data, got, "Reader")
+}
+
+// expectContentNotFound asserts that the content-returning read methods all
+// report rn as missing.
+func expectContentNotFound(t *testing.T, ctx context.Context, c interfaces.Cache, rn *rspb.ResourceName) {
+	t.Helper()
+	_, err := c.Get(ctx, rn)
+	require.True(t, status.IsNotFoundError(err), "Get: %v", err)
+
+	_, _, err = c.GetWithMetadata(ctx, rn)
+	require.True(t, status.IsNotFoundError(err), "GetWithMetadata: %v", err)
+
+	multi, err := c.GetMulti(ctx, []*rspb.ResourceName{rn})
+	require.NoError(t, err, "GetMulti")
+	require.Nil(t, multi[rn.GetDigest()], "GetMulti")
+
+	rc, err := c.Reader(ctx, rn, 0, 0)
+	require.True(t, status.IsNotFoundError(err), "Reader: %v", err)
+	require.Nil(t, rc, "Reader")
+}
+
+// expectContentError asserts that the content-returning read methods all fail
+// with an error containing wantErr that is distinct from a NotFound error (i.e.
+// a transient failure must not be reported as a cache miss).
+func expectContentError(t *testing.T, ctx context.Context, c interfaces.Cache, rn *rspb.ResourceName, wantErr string) {
+	t.Helper()
+	_, err := c.Get(ctx, rn)
+	require.ErrorContains(t, err, wantErr, "Get")
+	require.False(t, status.IsNotFoundError(err), "Get: %v", err)
+
+	_, _, err = c.GetWithMetadata(ctx, rn)
+	require.ErrorContains(t, err, wantErr, "GetWithMetadata")
+	require.False(t, status.IsNotFoundError(err), "GetWithMetadata: %v", err)
+
+	_, err = c.GetMulti(ctx, []*rspb.ResourceName{rn})
+	require.ErrorContains(t, err, wantErr, "GetMulti")
+	require.False(t, status.IsNotFoundError(err), "GetMulti: %v", err)
+
+	rc, err := c.Reader(ctx, rn, 0, 0)
+	require.ErrorContains(t, err, wantErr, "Reader")
+	require.False(t, status.IsNotFoundError(err), "Reader: %v", err)
+	require.Nil(t, rc, "Reader")
+}
+
+func TestPebbleGCSBlobPresent(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		setup func(t *testing.T, ctx context.Context, c interfaces.Cache, rn *rspb.ResourceName, data []byte)
+	}{
+		{
+			name: "set",
+			setup: func(t *testing.T, ctx context.Context, c interfaces.Cache, rn *rspb.ResourceName, data []byte) {
+				require.NoError(t, c.Set(ctx, rn, data))
+			},
+		},
+		{
+			name: "set_multi",
+			setup: func(t *testing.T, ctx context.Context, c interfaces.Cache, rn *rspb.ResourceName, data []byte) {
+				require.NoError(t, c.SetMulti(ctx, map[*rspb.ResourceName][]byte{rn: data}))
+			},
+		},
+		{
+			name: "writer",
+			setup: func(t *testing.T, ctx context.Context, c interfaces.Cache, rn *rspb.ResourceName, data []byte) {
+				w, err := c.Writer(ctx, rn)
+				require.NoError(t, err)
+				defer w.Close()
+				_, err = w.Write(data)
+				require.NoError(t, err)
+				require.NoError(t, w.Commit())
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			clock := clockwork.NewFakeClock()
+			te, c := newGCSBackedContractCache(t, clock, mockgcs.New(clock))
+			ctx := getAnonContext(t, te)
+			rn, data := testdigest.RandomCASResourceBuf(t, 100)
+
+			tc.setup(t, ctx, c, rn, data)
+
+			expectMetadataPresent(t, ctx, c, rn)
+			expectContentPresent(t, ctx, c, rn, data)
+		})
+	}
+}
+
+func TestPebbleGCSBlobMissingAfterDelete(t *testing.T) {
+	clock := clockwork.NewFakeClock()
+	te, c := newGCSBackedContractCache(t, clock, mockgcs.New(clock))
+	ctx := getAnonContext(t, te)
+	rn, data := testdigest.RandomCASResourceBuf(t, 100)
+
+	require.NoError(t, c.Set(ctx, rn, data))
+	require.NoError(t, c.Delete(ctx, rn))
+
+	expectMetadataMissing(t, ctx, c, rn)
+	expectContentNotFound(t, ctx, c, rn)
+}
+
+func TestPebbleGCSBackingObjectDeleted(t *testing.T) {
+	clock := clockwork.NewFakeClock()
+	gcs := mockgcs.New(clock)
+	te, c := newGCSBackedContractCache(t, clock, gcs)
+	ctx := getAnonContext(t, te)
+	rn, data := testdigest.RandomCASResourceBuf(t, 100)
+
+	require.NoError(t, c.Set(ctx, rn, data))
+	require.NoError(t, gcs.DeleteAllBlobs(ctx))
+
+	// Metadata reads are answered from the local index, which still has the
+	// entry even though the backing blob is gone.
+	expectMetadataPresent(t, ctx, c, rn)
+	// The first content miss repairs the local index, so metadata reads miss after it.
+	expectContentNotFound(t, ctx, c, rn)
+	expectMetadataMissing(t, ctx, c, rn)
+}
+
+func TestPebbleGCSBackingReadUnavailable(t *testing.T) {
+	clock := clockwork.NewFakeClock()
+	gcs := &faultyGCS{PebbleGCSStorage: mockgcs.New(clock)}
+	te, c := newGCSBackedContractCache(t, clock, gcs)
+	ctx := getAnonContext(t, te)
+	rn, data := testdigest.RandomCASResourceBuf(t, 100)
+
+	require.NoError(t, c.Set(ctx, rn, data))
+	gcs.SetReadError(status.UnavailableError("gcs read unavailable"))
+
+	expectMetadataPresent(t, ctx, c, rn)
+	expectContentError(t, ctx, c, rn, "gcs read unavailable")
+}
+
+func TestPebbleGCSWriteFaults(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		setup func(t *testing.T, ctx context.Context, c interfaces.Cache, rn *rspb.ResourceName, data []byte)
+	}{
+		{
+			name: "set",
+			setup: func(t *testing.T, ctx context.Context, c interfaces.Cache, rn *rspb.ResourceName, data []byte) {
+				err := c.Set(ctx, rn, data)
+				require.Error(t, err)
+			},
+		},
+		{
+			name: "set_multi",
+			setup: func(t *testing.T, ctx context.Context, c interfaces.Cache, rn *rspb.ResourceName, data []byte) {
+				err := c.SetMulti(ctx, map[*rspb.ResourceName][]byte{rn: data})
+				require.Error(t, err)
+			},
+		},
+		{
+			name: "writer",
+			setup: func(t *testing.T, ctx context.Context, c interfaces.Cache, rn *rspb.ResourceName, data []byte) {
+				w, err := c.Writer(ctx, rn)
+				require.NoError(t, err)
+				defer w.Close()
+				_, err = w.Write(data)
+				require.NoError(t, err)
+				require.Error(t, w.Commit())
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			clock := clockwork.NewFakeClock()
+			gcs := &commitFailingGCS{
+				PebbleGCSStorage: mockgcs.New(clock),
+				err:              status.ResourceExhaustedError("too many concurrent writes"),
+			}
+			te, c := newGCSBackedContractCache(t, clock, gcs)
+			ctx := getAnonContext(t, te)
+			rn, data := testdigest.RandomCASResourceBuf(t, 100)
+
+			tc.setup(t, ctx, c, rn, data)
+
+			expectMetadataMissing(t, ctx, c, rn)
+			expectContentNotFound(t, ctx, c, rn)
+		})
+	}
 }

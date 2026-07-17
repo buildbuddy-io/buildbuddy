@@ -16,24 +16,30 @@ package cache_proxy_registry_server
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
+	"github.com/Masterminds/semver/v3"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/upgrade"
 	"github.com/go-redis/redis/v8"
 	"github.com/jonboulle/clockwork"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	cppb "github.com/buildbuddy-io/buildbuddy/proto/cache_proxy"
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
+	uppb "github.com/buildbuddy-io/buildbuddy/proto/upgrade"
 )
 
 const (
@@ -44,6 +50,19 @@ const (
 	// How often we revalidate credentials for an open registration stream. We
 	// need to regularly revlidate credentials to handle revoked API keys.
 	checkRegistrationCredentialsInterval = 5 * time.Minute
+
+	// How long a computed newest-registered-version value is served from the
+	// in-process cache before the Redis registry is scanned again.
+	newestVersionCacheTTL = 5 * time.Minute
+
+	// Message attached to upgrade prompts returned by GetCacheProxies.
+	upgradePromptMessage = "One or more of your cache proxies are running an outdated version. The newest available version is %s."
+)
+
+var (
+	upgradePromptMaxLags     = flag.Map("cache_proxy.upgrade_prompt_max_lags", map[string]string{}, "Map from upgrade prompt urgency (LOW, MEDIUM, HIGH, or CRITICAL) to the maximum version lag (a semver-shaped diff, e.g. \"0.10.0\" tolerates at most 10 minor versions) a cache proxy may fall behind the newest registered version before GetCacheProxies prompts an upgrade at that urgency.")
+	upgradePromptMinVersions = flag.Map("cache_proxy.upgrade_prompt_min_versions", map[string]string{}, "Map from upgrade prompt urgency (LOW, MEDIUM, HIGH, or CRITICAL) to the minimum version (semver) below which GetCacheProxies prompts an upgrade at that urgency.")
+	sharedPoolGroupID        = flag.String("cache_proxy.shared_pool_group_id", "", "Group ID that owns the shared proxies.")
 )
 
 type CacheProxyRegistryServer struct {
@@ -51,13 +70,22 @@ type CacheProxyRegistryServer struct {
 	clock         clockwork.Clock
 	rdb           redis.UniversalClient
 	quit          chan struct{}
+	detector      *upgrade.Detector
+
+	mu                  sync.Mutex
+	newestVersion       *semver.Version
+	newestVersionExpiry time.Time
 }
 
 func Register(env *real_environment.RealEnv) error {
 	if env.GetDefaultRedisClient() == nil {
 		return nil
 	}
-	s, err := NewCacheProxyRegistryServer(env)
+	triggers, err := upgrade.ParseTriggers(*upgradePromptMaxLags, *upgradePromptMinVersions)
+	if err != nil {
+		return status.InvalidArgumentErrorf("Invalid cache proxy upgrade prompt configuration: %s", err)
+	}
+	s, err := NewCacheProxyRegistryServer(env, upgrade.NewDetector(triggers))
 	if err != nil {
 		return status.InternalErrorf("Error configuring cache proxy registry server: %v", err)
 	}
@@ -65,7 +93,11 @@ func Register(env *real_environment.RealEnv) error {
 	return nil
 }
 
-func NewCacheProxyRegistryServer(env environment.Env) (*CacheProxyRegistryServer, error) {
+func upgradeTriggersFromFlags() (map[uppb.Prompt_Urgency]upgrade.Trigger, error) {
+	return upgrade.ParseTriggers(*upgradePromptMaxLags, *upgradePromptMinVersions)
+}
+
+func NewCacheProxyRegistryServer(env environment.Env, detector *upgrade.Detector) (*CacheProxyRegistryServer, error) {
 	rdb := env.GetDefaultRedisClient()
 	if rdb == nil {
 		return nil, status.FailedPreconditionError("Redis is required for cache proxy registration")
@@ -84,6 +116,7 @@ func NewCacheProxyRegistryServer(env environment.Env) (*CacheProxyRegistryServer
 		clock:         env.GetClock(),
 		rdb:           rdb,
 		quit:          quit,
+		detector:      detector,
 	}, nil
 }
 
@@ -213,6 +246,68 @@ func (s *CacheProxyRegistryServer) removeProxy(ctx context.Context, groupID, pro
 	return s.rdb.HDel(ctx, redisKeyForCacheProxies(groupID), proxyID).Err()
 }
 
+// getNewestVersion returns the maximum semantic version among live
+// registrations in the shared pool group.
+func (s *CacheProxyRegistryServer) getNewestVersion(ctx context.Context) *semver.Version {
+	if *sharedPoolGroupID == "" {
+		return nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.clock.Now().Before(s.newestVersionExpiry) {
+		return s.newestVersion
+	}
+
+	entries, err := s.rdb.HGetAll(ctx, redisKeyForCacheProxies(*sharedPoolGroupID)).Result()
+	if err != nil {
+		log.CtxWarningf(ctx, "could not read cache proxy registrations for newest version: %s", err)
+		// Don't cache the result of a failed read.
+		return nil
+	}
+	var newest *semver.Version
+	for _, data := range entries {
+		reg := &cppb.RegisteredCacheProxy{}
+		if err := proto.Unmarshal([]byte(data), reg); err != nil {
+			continue
+		}
+		if s.clock.Since(reg.GetLastPingTime().AsTime()) > maxRegistrationStaleness {
+			continue
+		}
+		// Skip "unknown" and other unparseable versions.
+		v, err := semver.NewVersion(reg.GetRegistration().GetVersion())
+		if err != nil {
+			continue
+		}
+		if newest == nil || v.GreaterThan(newest) {
+			newest = v
+		}
+	}
+
+	s.newestVersion = newest
+	s.newestVersionExpiry = s.clock.Now().Add(newestVersionCacheTTL)
+	return newest
+}
+
+// upgradePrompt returns a Prompt carrying the newest registered proxy version
+// if any of the given proxies meets one of the configured upgrade triggers
+// (see the --cache_proxy.upgrade_prompt_* flags), and nil otherwise. The
+// urgency reflects the most-outdated proxy in the list.
+func (s *CacheProxyRegistryServer) upgradePrompt(ctx context.Context, proxies []*cppb.GetCacheProxiesResponse_CacheProxy) *uppb.Prompt {
+	if s.detector == nil || len(proxies) == 0 {
+		return nil
+	}
+	newestVersion := s.getNewestVersion(ctx)
+	newestVersionString := "unknown"
+	if newestVersion != nil {
+		newestVersionString = newestVersion.String()
+	}
+	versions := make([]string, 0, len(proxies))
+	for _, p := range proxies {
+		versions = append(versions, p.GetNode().GetVersion())
+	}
+	return s.detector.Detect(newestVersion, versions, fmt.Sprintf(upgradePromptMessage, newestVersionString))
+}
+
 func (s *CacheProxyRegistryServer) GetCacheProxies(ctx context.Context, req *cppb.GetCacheProxiesRequest) (*cppb.GetCacheProxiesResponse, error) {
 	// The group ID comes from the request context (the UI's "selected
 	// group") rather than the authenticated user, because a user can
@@ -271,6 +366,7 @@ func (s *CacheProxyRegistryServer) GetCacheProxies(ctx context.Context, req *cpp
 	})
 
 	return &cppb.GetCacheProxiesResponse{
-		CacheProxy: proxies,
+		CacheProxy:    proxies,
+		UpgradePrompt: s.upgradePrompt(ctx, proxies),
 	}, nil
 }

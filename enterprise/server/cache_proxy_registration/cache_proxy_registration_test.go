@@ -16,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/upgrade"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -57,7 +58,7 @@ func startTestRegistry(t *testing.T, users map[string]interfaces.UserInfo) (*cac
 	})
 	env.SetAuthenticator(testauth.NewTestAuthenticator(t, users))
 
-	registry, err := cache_proxy_registry_server.NewCacheProxyRegistryServer(env)
+	registry, err := cache_proxy_registry_server.NewCacheProxyRegistryServer(env, upgrade.NewDetector(nil))
 	require.NoError(t, err)
 	env.SetCacheProxyRegistryService(registry)
 
@@ -236,9 +237,9 @@ func TestStreamHeartbeats_UnreachableTarget(t *testing.T) {
 	}
 }
 
-func TestSumByHitMiss(t *testing.T) {
+func TestSumByStatus(t *testing.T) {
 	cv := prometheus.NewCounterVec(prometheus.CounterOpts{
-		Name: "test_sum_by_hit_miss",
+		Name: "test_sum_by_status",
 	}, []string{metrics.CacheHitMissStatus, "other"})
 
 	// Two "hit" series across different "other" labels — these should be
@@ -247,21 +248,25 @@ func TestSumByHitMiss(t *testing.T) {
 	cv.WithLabelValues(metrics.HitStatusLabel, "b").Add(4)
 	// One "miss" series.
 	cv.WithLabelValues(metrics.MissStatusLabel, "a").Add(10)
+	// One "uncacheable" series.
+	cv.WithLabelValues(metrics.UncacheableStatusLabel, "a").Add(5)
 	// A series with a status value the helper doesn't recognize — must be
-	// ignored, not double-counted into either bucket.
+	// ignored, not double-counted into any bucket.
 	cv.WithLabelValues("unknown", "a").Add(99)
 
-	hits, misses := sumByHitMiss(cv)
+	hits, misses, uncacheable := sumByStatus(cv)
 	assert.Equal(t, int64(7), hits)
 	assert.Equal(t, int64(10), misses)
+	assert.Equal(t, int64(5), uncacheable)
 }
 
-func TestSumByHitMiss_Empty(t *testing.T) {
+func TestSumByStatus_Empty(t *testing.T) {
 	cv := prometheus.NewCounterVec(prometheus.CounterOpts{
-		Name: "test_sum_by_hit_miss_empty",
+		Name: "test_sum_by_status_empty",
 	}, []string{metrics.CacheHitMissStatus})
 
-	hits, misses := sumByHitMiss(cv)
+	hits, misses, uncacheable := sumByStatus(cv)
 	assert.Equal(t, int64(0), hits)
 	assert.Equal(t, int64(0), misses)
+	assert.Equal(t, int64(0), uncacheable)
 }

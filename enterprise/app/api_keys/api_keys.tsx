@@ -327,6 +327,10 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
     onChange("capability", [capability.Capability.AUDIT_LOG_READ]);
   }
 
+  private onSelectSendNotification(onChange: (name: string, value: any) => any) {
+    onChange("capability", [capability.Capability.SEND_NOTIFICATION]);
+  }
+
   private onChangeVisibility(onChange: (name: string, value: any) => any, e: React.ChangeEvent<HTMLInputElement>) {
     onChange("visibleToDevelopers", e.target.checked);
   }
@@ -488,6 +492,22 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
                     />
                     <span>
                       Audit log reader key <span className="field-description">(for reading audit logs)</span>
+                    </span>
+                  </label>
+                </div>
+              )}
+              {/* User-owned keys cannot be used to send notifications. */}
+              {!this.props.userOwnedOnly && (
+                <div className="field-container">
+                  <label className="checkbox-row">
+                    <input
+                      type="radio"
+                      onChange={this.onSelectSendNotification.bind(this, onChange)}
+                      checked={isSendNotificationKey(request)}
+                    />
+                    <span>
+                      Notification key{" "}
+                      <span className="field-description">(for sending notifications via the API)</span>
                     </span>
                   </label>
                 </div>
@@ -719,6 +739,10 @@ function isAuditLogReader<T extends ApiKeyFields>(apiKey: T | null) {
   return hasExactCapabilities(apiKey, [capability.Capability.AUDIT_LOG_READ]);
 }
 
+function isSendNotificationKey<T extends ApiKeyFields>(apiKey: T | null) {
+  return hasExactCapabilities(apiKey, [capability.Capability.SEND_NOTIFICATION]);
+}
+
 function isReadOnly<T extends ApiKeyFields>(apiKey: T | null) {
   return hasExactCapabilities(apiKey, []);
 }
@@ -737,6 +761,8 @@ function describeCapabilities<T extends ApiKeyFields>(apiKey: T) {
     capabilities = "Org admin";
   } else if (isAuditLogReader(apiKey)) {
     capabilities = "Audit log reader";
+  } else if (isSendNotificationKey(apiKey)) {
+    capabilities = "Send notifications";
   }
   if (apiKey.visibleToDevelopers) {
     capabilities += " (*)";
@@ -828,10 +854,10 @@ class ApiKeyField extends React.Component<ApiKeyFieldProps, ApiKeyFieldState> {
       <div className="api-key-value">
         <span className="display-value">{displayValue}</span>
         <OutlinedButton className="api-key-value-copy icon-button" onClick={this.handleCopyClick.bind(this)}>
-          {isCopied ? <Check style={{ stroke: "green" }} className="icon" /> : <Copy className="icon" />}
+          {isCopied ? <Check style={{ stroke: "green" }} /> : <Copy />}
         </OutlinedButton>
         <OutlinedButton className="api-key-value-hide icon-button" onClick={this.toggleHideValue.bind(this)}>
-          {hideValue ? <Eye className="icon" /> : <EyeOff className="icon" />}
+          {hideValue ? <Eye /> : <EyeOff />}
         </OutlinedButton>
       </div>
     );

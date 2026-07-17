@@ -18,6 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
+	"github.com/buildbuddy-io/buildbuddy/server/util/findmissing"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -94,12 +95,30 @@ func MaxSupportedChunkSizeBytes() int64 {
 	return 4 * 1024 * 1024
 }
 
+// MaxCompressedChunkReadSizeBytes is the per-chunk compressed read buffer cap.
+func MaxCompressedChunkReadSizeBytes() int64 {
+	return 4 * MaxSupportedChunkSizeBytes()
+}
+
 // MinChunkedReadFallbackSizeBytes can be configured independently from the
 // write threshold so server-side miss fallback paths can still read older
 // chunked blobs that were written with a smaller chunk size, but is clamped to
 // at most MaxChunkSizeBytes().
 func MinChunkedReadFallbackSizeBytes(ctx context.Context, efp interfaces.ExperimentFlagProvider) int64 {
 	return min(*minChunkedReadFallbackSizeBytes, MaxChunkSizeBytes(ctx, efp))
+}
+
+// ShouldDiscardLegacyChunkedBlob reports whether a missing whole CAS blob should
+// skip manifest fallback while migrating to a larger avg chunk-size override.
+func ShouldDiscardLegacyChunkedBlob(ctx context.Context, efp interfaces.ExperimentFlagProvider, digestSizeBytes int64) bool {
+	if efp == nil {
+		return false
+	}
+	if AvgChunkSizeBytes(ctx, efp) <= *avgChunkSizeBytes {
+		return false
+	}
+	return digestSizeBytes > MinChunkedReadFallbackSizeBytes(ctx, efp) &&
+		digestSizeBytes <= MaxChunkSizeBytes(ctx, efp)
 }
 
 func MaxWriteSizeBytes(ctx context.Context, efp interfaces.ExperimentFlagProvider) int64 {
@@ -320,7 +339,7 @@ func (cm *Manifest) Store(ctx context.Context, cache interfaces.Cache) error {
 	// avoiding the cost of reading all chunk data for verification.
 	g, goCtx := errgroup.WithContext(ctx)
 	g.Go(func() error {
-		missing, err := cache.FindMissing(goCtx, cm.ChunkResourceNames())
+		missing, err := cache.FindMissing(findmissing.ContextWithPurpose(goCtx, repb.FindMissingBlobsRequest_CDC_MANIFEST_STORE), cm.ChunkResourceNames())
 		if err != nil {
 			return err
 		}
@@ -664,15 +683,21 @@ func digestsStrings(digests ...*repb.Digest) []string {
 
 // MissingChunkChecker is used to check to make sure all of the chunks that make up a blob
 // are present in the cache, and to de-duplicate excess calls to FindMissing.
+// Safe for concurrent use.
 type MissingChunkChecker struct {
-	cache        interfaces.Cache
+	cache interfaces.Cache
+
+	mu           sync.Mutex
 	chunkPresent map[string]bool
+	// For observability only.
+	purpose repb.FindMissingBlobsRequest_Purpose
 }
 
-func NewMissingChunkChecker(cache interfaces.Cache) *MissingChunkChecker {
+func NewMissingChunkChecker(cache interfaces.Cache, purpose repb.FindMissingBlobsRequest_Purpose) *MissingChunkChecker {
 	return &MissingChunkChecker{
 		cache:        cache,
 		chunkPresent: make(map[string]bool),
+		purpose:      purpose,
 	}
 }
 
@@ -684,25 +709,32 @@ func NewMissingChunkChecker(cache interfaces.Cache) *MissingChunkChecker {
 // update them as missing if they're returned from FindMissing.
 func (c *MissingChunkChecker) AnyChunkMissing(ctx context.Context, manifest *Manifest) (bool, error) {
 	var unknownChunks []*rspb.ResourceName
+	c.mu.Lock()
 	for _, rn := range manifest.ChunkResourceNames() {
 		if present, known := c.chunkPresent[rn.GetDigest().GetHash()]; known {
 			if !present {
+				c.mu.Unlock()
 				return true, nil
 			}
 			continue
 		}
 		unknownChunks = append(unknownChunks, rn)
 	}
+	c.mu.Unlock()
 
 	if len(unknownChunks) == 0 {
 		return false, nil
 	}
 
-	missingDigests, err := c.cache.FindMissing(ctx, unknownChunks)
+	// Issue the FindMissing network call outside the lock so concurrent
+	// callers don't serialize on it.
+	missingDigests, err := c.cache.FindMissing(findmissing.ContextWithPurpose(ctx, c.purpose), unknownChunks)
 	if err != nil {
 		return false, err
 	}
 
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	// To prevent unbounded growth, just clear the chunk
 	// cache if its >1000 entries. Checking the len(map)
 	// is O(1) since Go stores the map length in the map

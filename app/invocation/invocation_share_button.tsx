@@ -134,7 +134,7 @@ export default class InvocationShareButtonComponent extends React.Component<
       <>
         <FilledButton className="invocation-share-button" onClick={this.onShareButtonClick.bind(this)}>
           {/* TODO: Use an icon that signifies the current permissions */}
-          <Share2 className="icon white" />
+          <Share2 className="white" />
           Share
         </FilledButton>
         <Modal isOpen={this.state.isOpen} onRequestClose={this.onRequestClose.bind(this)}>

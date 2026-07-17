@@ -30,10 +30,19 @@ func New(clock clockwork.Clock) *mockGCS {
 // N.B. This implementation only mocks out the bits of GCS needed
 // to implement the pebble.PebbleGCSStorage interface.
 type mockGCS struct {
-	clock     clockwork.Clock
-	ageInDays int64
-	items     map[string]*timestampedBlob
-	mu        sync.Mutex
+	clock                     clockwork.Clock
+	ageInDays                 int64
+	items                     map[string]*timestampedBlob
+	mu                        sync.Mutex
+	updateCustomTimeCallCount int
+}
+
+// UpdateCustomTimeCallCount returns the number of times UpdateCustomTime has
+// been called. It is intended for use by tests.
+func (m *mockGCS) UpdateCustomTimeCallCount() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.updateCustomTimeCallCount
 }
 
 func (m *mockGCS) expired(blobName string) bool {
@@ -59,10 +68,10 @@ func (m *mockGCS) Reader(ctx context.Context, blobName string, offset, limit int
 	defer m.mu.Unlock()
 	blob, ok := m.items[blobName]
 	if !ok {
-		return nil, status.NotFoundError("mock gcs blob not found")
+		return nil, status.NotFoundErrorf("mock gcs blob not found: %s", blobName)
 	}
 	if m.expired(blobName) {
-		return nil, status.InternalError("mock gcs blob expired")
+		return nil, status.InternalErrorf("mock gcs blob expired: %s", blobName)
 	}
 	data := blob.data[offset:]
 	if limit > 0 && limit < int64(len(data)) {
@@ -104,15 +113,24 @@ func (m *mockGCS) DeleteBlob(ctx context.Context, blobName string) error {
 	return nil
 }
 
+// DeleteAllBlobs removes every blob in the mock bucket.
+func (m *mockGCS) DeleteAllBlobs(ctx context.Context) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.items = make(map[string]*timestampedBlob)
+	return nil
+}
+
 func (m *mockGCS) UpdateCustomTime(ctx context.Context, blobName string, t time.Time) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	m.updateCustomTimeCallCount++
 	blob, ok := m.items[blobName]
 	if !ok {
-		return status.NotFoundError("mock gcs blob not found")
+		return status.NotFoundErrorf("mock gcs blob not found: %s", blobName)
 	}
 	if m.expired(blobName) {
-		return status.NotFoundError("mock gcs blob expired")
+		return status.NotFoundErrorf("mock gcs blob expired: %s", blobName)
 	}
 	if t.Before(blob.customTime) {
 		return status.FailedPreconditionError("custom time can only move forward")

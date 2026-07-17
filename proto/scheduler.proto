@@ -6,6 +6,7 @@ import "google/protobuf/timestamp.proto";
 import "proto/acl.proto";
 import "proto/context.proto";
 import "proto/trace.proto";
+import "proto/upgrade.proto";
 
 package scheduler;
 
@@ -633,6 +634,8 @@ message GetExecutionNodesResponse {
   }
 
   bool user_owned_executors_supported = 3;
+
+  upgrade.Prompt upgrade_prompt = 4;
 }
 
 // Persisted information about connected executors.

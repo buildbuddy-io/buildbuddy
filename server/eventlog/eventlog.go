@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/backends/chunkstore"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/keyval"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
@@ -40,6 +41,14 @@ const (
 	// This is used for progress logs that are live-updated. We only want to flush
 	// the finalized logs.
 	DefaultTerminalLinesBuffered = 10
+
+	// Experiment gating suffix-only writes of the live chunk to the key-value
+	// store.
+	suffixWritesExperiment = "build_event_stream.live_chunk_suffix_writes_enabled"
+
+	// Redis key suffix for the v2 live log chunk, which is updated more
+	// efficiently, using ReplaceSuffix.
+	liveChunkV2KeySuffix = "/v2"
 )
 
 var (
@@ -49,6 +58,9 @@ var (
 
 	// Max size of the buffer in the EventLogChunkResponse returned by GetEventLogChunk
 	MaxBufferSize = defaultLogChunkSize * 16
+
+	// Length of a chunk ID string.
+	chunkIdLength = len(chunkstore.ChunkIndexAsStringId(0))
 )
 
 func GetEventLogPathFromInvocationIdAndAttempt(invocationId string, attempt uint64) string {
@@ -132,7 +144,7 @@ func GetEventLogChunk(ctx context.Context, env environment.Env, req *elpb.GetEve
 			// If the invocation is in progress and the chunk requested is not on
 			// disk, check the cache to see if the live chunk is being requested.
 			liveChunk := &elpb.LiveEventLogChunk{}
-			if err := keyval.GetProto(ctx, env.GetKeyValStore(), eventLogPath, liveChunk); err == nil {
+			if err := getLiveChunk(ctx, env.GetKeyValStore(), eventLogPath, liveChunk); err == nil {
 				if req.ChunkId == liveChunk.ChunkId {
 					return &elpb.GetEventLogChunkResponse{
 						Buffer:      liveChunk.Buffer,
@@ -188,7 +200,7 @@ func GetEventLogChunk(ctx context.Context, env environment.Env, req *elpb.GetEve
 				// If the invocation is in progress and the chunk requested is not on
 				// disk, check the cache to see if the live chunk is being requested.
 				liveChunk := &elpb.LiveEventLogChunk{}
-				if err := keyval.GetProto(ctx, env.GetKeyValStore(), eventLogPath, liveChunk); err == nil {
+				if err := getLiveChunk(ctx, env.GetKeyValStore(), eventLogPath, liveChunk); err == nil {
 					// TODO(zoey): there is a potential race condition here where we
 					// retrieve the last chunk ID on disk, then one or more live chunks
 					// are written to disk and stored in the database, and then we
@@ -369,7 +381,7 @@ func (q *chunkQueue) pop(ctx context.Context) ([]byte, error) {
 	return result.data, nil
 }
 
-func NewEventLogWriter(ctx context.Context, b interfaces.Blobstore, c interfaces.KeyValStore, pubsub interfaces.PubSub, pubsubChannel string, eventLogPath string, requestedTerminalColumns int, requestedTerminalLines int) (*EventLogWriter, error) {
+func NewEventLogWriter(ctx context.Context, b interfaces.Blobstore, c interfaces.KeyValStore, pubsub interfaces.PubSub, experiments interfaces.ExperimentFlagProvider, pubsubChannel string, eventLogPath string, requestedTerminalColumns int, requestedTerminalLines int) (*EventLogWriter, error) {
 	chunkstoreOptions := &chunkstore.ChunkstoreOptions{
 		WriteBlockSize: defaultLogChunkSize,
 	}
@@ -378,6 +390,9 @@ func NewEventLogWriter(ctx context.Context, b interfaces.Blobstore, c interfaces
 		pubsub:        pubsub,
 		pubsubChannel: pubsubChannel,
 		eventLogPath:  eventLogPath,
+	}
+	if experiments != nil {
+		eventLogWriter.suffixWritesEnabled = experiments.Boolean(ctx, suffixWritesExperiment, false)
 	}
 	var writeHook func(ctx context.Context, writeRequest *chunkstore.WriteRequest, writeResult *chunkstore.WriteResult, chunk []byte, volatileTail []byte)
 	if c != nil {
@@ -417,16 +432,33 @@ type EventLogWriter struct {
 	pubsub           interfaces.PubSub
 	pubsubChannel    string
 	eventLogPath     string
+
+	// Whether to write the live chunk to the key-value store by appending
+	// just the changed suffix when possible (experiment).
+	suffixWritesEnabled bool
+	// The encoded value most recently written to the key-value store. Only
+	// tracked when suffix writes are enabled.
+	lastWritten []byte
+}
+
+// liveChunkKey returns the key-value store key this writer stores the live
+// chunk under: the v2 key when suffix writes are enabled, or the v1 key
+// otherwise.
+func (w *EventLogWriter) liveChunkKey() string {
+	if w.suffixWritesEnabled {
+		return w.eventLogPath + liveChunkV2KeySuffix
+	}
+	return w.eventLogPath
 }
 
 func (w *EventLogWriter) writeChunkToKeyValStore(ctx context.Context, writeRequest *chunkstore.WriteRequest, writeResult *chunkstore.WriteResult, chunk []byte, volatileTail []byte) {
 	if writeResult.Close {
-		keyval.SetProto(ctx, w.keyValueStore, w.eventLogPath, nil)
+		w.keyValueStore.Set(ctx, w.liveChunkKey(), nil)
 		return
 	}
 	chunkId := chunkstore.ChunkIndexAsStringId(writeResult.LastChunkIndex + 1)
 	if chunkId == chunkstore.ChunkIndexAsStringId(math.MaxUint16) {
-		keyval.SetProto(ctx, w.keyValueStore, w.eventLogPath, nil)
+		w.keyValueStore.Set(ctx, w.liveChunkKey(), nil)
 		return
 	}
 	curChunk := elpb.LiveEventLogChunkFromVTPool()
@@ -437,12 +469,18 @@ func (w *EventLogWriter) writeChunkToKeyValStore(ctx context.Context, writeReque
 		curChunk.ReturnToVTPool()
 		return
 	}
-	keyval.SetProto(
-		ctx,
-		w.keyValueStore,
-		w.eventLogPath,
-		curChunk,
-	)
+	if w.suffixWritesEnabled {
+		// Update only the changed suffix, using ReplaceSuffix.
+		w.writeLiveChunkSuffix(ctx, curChunk)
+	} else {
+		metrics.InvocationLogLiveChunkWrittenBytes.WithLabelValues("false").Add(float64(curChunk.SizeVT()))
+		keyval.SetProto(
+			ctx,
+			w.keyValueStore,
+			w.eventLogPath,
+			curChunk,
+		)
+	}
 	w.lastChunk.ReturnToVTPool()
 	w.lastChunk = curChunk
 	if w.pubsub != nil {
@@ -450,8 +488,63 @@ func (w *EventLogWriter) writeChunkToKeyValStore(ctx context.Context, writeReque
 	}
 }
 
+// writeLiveChunkSuffix writes curChunk to the key-value store, overwriting only
+// the changed suffix.
+func (w *EventLogWriter) writeLiveChunkSuffix(ctx context.Context, curChunk *elpb.LiveEventLogChunk) {
+	encoded := append([]byte(curChunk.GetChunkId()), curChunk.GetBuffer()...)
+	if offset := commonPrefixLen(w.lastWritten, encoded); offset > 0 {
+		suffix := encoded[offset:]
+		if err := w.keyValueStore.ReplaceSuffix(ctx, w.liveChunkKey(), int64(len(w.lastWritten)), int64(offset), suffix); err == nil {
+			metrics.InvocationLogLiveChunkWrittenBytes.WithLabelValues("true").Add(float64(len(suffix)))
+			w.lastWritten = encoded
+			return
+		}
+		// The suffix write fails if the stored value doesn't match what we
+		// last wrote, for example if the key was evicted; recover by writing
+		// the full value.
+	}
+	metrics.InvocationLogLiveChunkWrittenBytes.WithLabelValues("true").Add(float64(len(encoded)))
+	if err := w.keyValueStore.Set(ctx, w.liveChunkKey(), encoded); err != nil {
+		// The write failed, so we no longer know what's stored at the key.
+		// Clear lastWritten so the next update writes the full value instead
+		// of overwriting a suffix of a possibly stale value.
+		w.lastWritten = nil
+		return
+	}
+	w.lastWritten = encoded
+}
+
+func commonPrefixLen(a, b []byte) int {
+	n := min(len(a), len(b))
+	for i := range n {
+		if a[i] != b[i] {
+			return i
+		}
+	}
+	return n
+}
+
 func (w *EventLogWriter) GetLastChunkId(ctx context.Context) string {
 	return chunkstore.ChunkIndexAsStringId(w.chunkstoreWriter.GetLastChunkIndex(ctx))
+}
+
+// getLiveChunk reads the live chunk for the given event log path from the
+// key-value store, checking the v2 key first and falling back to the v1 key.
+func getLiveChunk(ctx context.Context, store interfaces.KeyValStore, eventLogPath string, c *elpb.LiveEventLogChunk) error {
+	data, err := store.Get(ctx, eventLogPath+liveChunkV2KeySuffix)
+	if status.IsNotFoundError(err) {
+		return keyval.GetProto(ctx, store, eventLogPath, c)
+	}
+	if err != nil {
+		return err
+	}
+	if len(data) < chunkIdLength {
+		// Shouldn't happen; treat like an evicted live chunk.
+		return status.NotFoundErrorf("malformed live chunk value")
+	}
+	c.ChunkId = string(data[:chunkIdLength])
+	c.Buffer = data[chunkIdLength:]
+	return nil
 }
 
 type WriteWithTailCloser interface {
