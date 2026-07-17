@@ -936,6 +936,7 @@ func NewPresenceCache(cacheName string, version filestore.PebbleKeyVersion, cloc
 	// an experiment rather than creating it on demand.
 	maxSize := max(*presenceCacheMaxEntries, 1)
 	l, err := lru.New(&lru.Config[struct{}]{
+		Name:       "pebble_cache_presence_cache",
 		MaxSize:    maxSize,
 		TTL:        *presenceCacheTTL,
 		Clock:      clock,

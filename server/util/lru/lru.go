@@ -47,8 +47,7 @@ type LRU[V any] interface {
 	// SizeEviction) until the current size fits. New value must be positive.
 	SetMaxSize(maxSize int64) error
 
-	// SetTTL updates the TTL used for NEW entries.
-	// Existing entries are not affected.
+	// SetTTL updates the TTL used for evictions.
 	// A zero value stops expiration entirely.
 	SetTTL(ttl time.Duration) error
 
