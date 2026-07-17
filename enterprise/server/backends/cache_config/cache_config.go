@@ -47,6 +47,9 @@ type GCSConfig struct {
 	AppName             string `yaml:"app_name" usage:"The app name, under which blobstore data will be stored."`
 	MinGCSFileSizeBytes *int64 `yaml:"min_gcs_file_size_bytes" usage:"Files larger than this may be stored in GCS (0 is disabled)."`
 	TTLDays             *int64 `yaml:"ttl_days" usage:"An object TTL, specified in days, to apply to the GCS bucket (0 means disabled)."`
+	// Must be well below TTLDays: the custom time lags the real access time by
+	// up to this much, and is treated as expired once past the TTL.
+	AtimeUpdateThreshold *time.Duration `yaml:"atime_update_threshold" usage:"Don't update a GCS object's custom time (its atime) if it was updated more recently than this (0 updates on every atime update). Only applies to the pebble cache and the raft metadata server; for the meta cache, set this on its metadata server instead."`
 }
 
 type PebbleCacheConfig struct {

@@ -1198,16 +1198,29 @@ func (sm *Replica) updateAtime(wb pebble.Batch, req *rfpb.UpdateAtimeRequest) (*
 	if err := proto.Unmarshal(buf, fileMetadata); err != nil {
 		return nil, err
 	}
-	prevATime := fileMetadata.GetLastAccessUsec()
-	newATime := req.GetAccessTimeUsec()
+	updated := false
 
-	if prevATime > newATime {
-		// Atime should always move forward. If the new one is behind, don't attempt
-		// to add it.
+	// Atime should always move forward. If the new one is behind, or is the same
+	// value a retry already applied, don't attempt to add it.
+	if fileMetadata.GetLastAccessUsec() < req.GetAccessTimeUsec() {
+		fileMetadata.LastAccessUsec = req.GetAccessTimeUsec()
+		updated = true
+	}
+
+	// Set only after the sender refreshed the object's custom time. Like the
+	// atime, it only moves forward.
+	if newCustomTime := req.GetLastCustomTimeUsec(); newCustomTime > 0 {
+		gcsMetadata := fileMetadata.GetStorageMetadata().GetGcsMetadata()
+		if gcsMetadata != nil && gcsMetadata.GetLastCustomTimeUsec() < newCustomTime {
+			gcsMetadata.LastCustomTimeUsec = newCustomTime
+			updated = true
+		}
+	}
+
+	if !updated {
 		return &rfpb.UpdateAtimeResponse{}, nil
 	}
 
-	fileMetadata.LastAccessUsec = req.GetAccessTimeUsec()
 	buf, err = proto.Marshal(fileMetadata)
 	if err != nil {
 		return nil, err

@@ -202,6 +202,7 @@ func pebbleCacheFromConfig(env environment.Env, cfg *cache_config.PebbleCacheCon
 		GCSProjectID:                cfg.GCSConfig.ProjectID,
 		GCSAppName:                  cfg.GCSConfig.AppName,
 		GCSTTLDays:                  cfg.GCSConfig.TTLDays,
+		GCSAtimeUpdateThreshold:     cfg.GCSConfig.AtimeUpdateThreshold,
 		MinGCSFileSizeBytes:         cfg.GCSConfig.MinGCSFileSizeBytes,
 		IncludeMetadataSize:         cfg.IncludeMetadataSize,
 		EnableAutoRatchet:           cfg.EnableAutoRatchet,
