@@ -3419,6 +3419,7 @@ func (p *PebbleCache) Start() error {
 	})
 	p.eg.Go(func() error {
 		p.watchPresenceCacheSize(p.quitChan)
+		return nil
 	})
 	return nil
 }
