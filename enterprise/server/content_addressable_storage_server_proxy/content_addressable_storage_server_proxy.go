@@ -216,6 +216,7 @@ func (s *CASServerProxy) FindMissingBlobs(ctx context.Context, req *repb.FindMis
 	tracing.AddStringAttributeToCurrentSpan(ctx, "requested-blobs", strconv.Itoa(len(req.BlobDigests)))
 
 	if s.findMissingCache == nil || s.efp != nil && s.efp.Boolean(ctx, "cache_proxy.bypass_find_missing_cache", false) {
+		req.Purpose = repb.FindMissingBlobsRequest_CACHE_PROXY_CAS_PASSTHROUGH
 		return s.remote.FindMissingBlobs(ctx, req)
 	}
 
@@ -227,6 +228,7 @@ func (s *CASServerProxy) FindMissingBlobs(ctx context.Context, req *repb.FindMis
 		groupID = user.GetGroupID()
 	} else if !authutil.IsAnonymousUserError(err) {
 		log.Warningf("Error authenticating user, skipping FindMissingBlobs cache: %v", err)
+		req.Purpose = repb.FindMissingBlobsRequest_CACHE_PROXY_CAS_PASSTHROUGH
 		return s.remote.FindMissingBlobs(ctx, req)
 	}
 	cacheKeys := map[string]string{}
@@ -255,6 +257,7 @@ func (s *CASServerProxy) FindMissingBlobs(ctx context.Context, req *repb.FindMis
 		InstanceName:   req.GetInstanceName(),
 		BlobDigests:    misses,
 		DigestFunction: req.GetDigestFunction(),
+		Purpose:        repb.FindMissingBlobsRequest_CACHE_PROXY_CAS_PASSTHROUGH,
 	}
 	rsp, err := s.remote.FindMissingBlobs(ctx, remoteReq)
 	if err != nil {
