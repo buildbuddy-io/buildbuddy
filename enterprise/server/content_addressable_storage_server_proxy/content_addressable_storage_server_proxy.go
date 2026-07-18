@@ -32,7 +32,7 @@ import (
 var (
 	enableGetTreeCaching             = flag.Bool("cache_proxy.enable_get_tree_caching", false, "If true, the Cache Proxy attempts to serve GetTree requests out of the local cache. If false, GetTree requests are always proxied to the remote, authoritative cache.")
 	findMissingBlobsCacheTTL         = flag.Duration("cache_proxy.find_missing_blobs_cache_ttl", 0, "If greater than 0, the proxy caches digests reported by the backing cache as 'present' locally for FindMissingBlobs requests for this long.")
-	findMissingBlobsCacheSizeEntries = flag.Int64("cache_proxy.find_missing_blobs_cache_size_entries", 500*1000, "The number of digests to hold in the in-memory FindMissingBlobs digest cache. Only used if cache_proxy.find_missing_blobs_cache_ttl is greater than 0.")
+	findMissingBlobsCacheSizeEntries = flag.Int64("cache_proxy.find_missing_blobs_cache_size_entries", 500*1000, "The number of digests to hold in each in-memory FindMissingBlobs digest cache. Only used if cache_proxy.find_missing_blobs_cache_ttl is greater than 0.")
 )
 
 type CASServerProxy struct {
@@ -43,10 +43,10 @@ type CASServerProxy struct {
 	remote             repb.ContentAddressableStorageClient
 	localCache         interfaces.Cache
 
-	// Local, in-memory cache for digests served in response to FindMissingBlobs
+	// Local, in-memory caches for digests served in response to FindMissingBlobs
 	// requests. It would be better if this could be in the backing "local"
 	// cache, but that poses two problems:
-	// 1. How can we control the TTL of that cache and ensure that the remote
+	// 1. How can we control the TTL of those caches and ensure that the remote
 	//    (authoritative) cache serves these requests every so often to update
 	//    blob access times.
 	// 2. We don't have a mechanism through which we can tell the local cache
@@ -54,14 +54,16 @@ type CASServerProxy struct {
 	//    remote-return path (local cache didn't have the digest, remote cache
 	//    did).
 	// TODO(go/b/7780): fix those issues.
-	findMissingCache                  lru.LRU[struct{}]
+	findMissingBlobsCache             lru.LRU[struct{}]
+	findMissingChunksCache            lru.LRU[struct{}]
 	findMissingCacheCountersByChunked map[bool]findMissingCacheCounters
 }
 
 type findMissingCacheCounters struct {
-	hits        prometheus.Counter
-	misses      prometheus.Counter
-	uncacheable prometheus.Counter
+	blobCacheHits  prometheus.Counter
+	chunkCacheHits prometheus.Counter
+	misses         prometheus.Counter
+	uncacheable    prometheus.Counter
 }
 
 func Register(env *real_environment.RealEnv) error {
@@ -99,23 +101,32 @@ func New(env environment.Env) (*CASServerProxy, error) {
 		localCache:         env.GetCache(),
 	}
 	if *findMissingBlobsCacheTTL > 0 {
-		cache, err := lru.New[struct{}](&lru.Config[struct{}]{
-			MaxSize:    *findMissingBlobsCacheSizeEntries,
-			SizeFn:     func(struct{}) int64 { return 1 },
-			ThreadSafe: true,
-			TTL:        *findMissingBlobsCacheTTL,
-			Clock:      env.GetClock(),
-		})
-		if err != nil {
-			return nil, status.InvalidArgumentErrorf("Error initializing FindMissingBlobs cache: %s", err)
+		newCache := func() (lru.LRU[struct{}], error) {
+			return lru.New[struct{}](&lru.Config[struct{}]{
+				MaxSize:    *findMissingBlobsCacheSizeEntries,
+				SizeFn:     func(struct{}) int64 { return 1 },
+				ThreadSafe: true,
+				TTL:        *findMissingBlobsCacheTTL,
+				Clock:      env.GetClock(),
+			})
 		}
-		proxy.findMissingCache = cache
+		blobsCache, err := newCache()
+		if err != nil {
+			return nil, status.InvalidArgumentErrorf("Error initializing FindMissingBlobs blobs cache: %s", err)
+		}
+		chunksCache, err := newCache()
+		if err != nil {
+			return nil, status.InvalidArgumentErrorf("Error initializing FindMissingBlobs chunks cache: %s", err)
+		}
+		proxy.findMissingBlobsCache = blobsCache
+		proxy.findMissingChunksCache = chunksCache
 		proxy.findMissingCacheCountersByChunked = make(map[bool]findMissingCacheCounters, 2)
 		for _, chunked := range []bool{false, true} {
 			proxy.findMissingCacheCountersByChunked[chunked] = findMissingCacheCounters{
-				hits:        findMissingBlobsCacheLookups(metrics.HitStatusLabel, chunked),
-				misses:      findMissingBlobsCacheLookups(metrics.MissStatusLabel, chunked),
-				uncacheable: findMissingBlobsCacheLookups(metrics.UncacheableStatusLabel, chunked),
+				blobCacheHits:  findMissingBlobsCacheLookups(metrics.HitStatusLabel, chunked, "blob_cache"),
+				chunkCacheHits: findMissingBlobsCacheLookups(metrics.HitStatusLabel, chunked, "chunk_cache"),
+				misses:         findMissingBlobsCacheLookups(metrics.MissStatusLabel, chunked, "remote"),
+				uncacheable:    findMissingBlobsCacheLookups(metrics.UncacheableStatusLabel, chunked, "remote"),
 			}
 		}
 	}
@@ -215,7 +226,7 @@ func (s *CASServerProxy) FindMissingBlobs(ctx context.Context, req *repb.FindMis
 	defer spn.End()
 	tracing.AddStringAttributeToCurrentSpan(ctx, "requested-blobs", strconv.Itoa(len(req.BlobDigests)))
 
-	if s.findMissingCache == nil || s.efp != nil && s.efp.Boolean(ctx, "cache_proxy.bypass_find_missing_cache", false) {
+	if s.findMissingBlobsCache == nil || s.efp != nil && s.efp.Boolean(ctx, "cache_proxy.bypass_find_missing_cache", false) {
 		req.Purpose = repb.FindMissingBlobsRequest_CACHE_PROXY_CAS_PASSTHROUGH
 		return s.remote.FindMissingBlobs(ctx, req)
 	}
@@ -231,22 +242,36 @@ func (s *CASServerProxy) FindMissingBlobs(ctx context.Context, req *repb.FindMis
 		req.Purpose = repb.FindMissingBlobsRequest_CACHE_PROXY_CAS_PASSTHROUGH
 		return s.remote.FindMissingBlobs(ctx, req)
 	}
+	chunked := cdc.IsChunked(ctx)
 	cacheKeys := make(map[digest.Key]string, len(req.GetBlobDigests()))
 	for _, d := range req.GetBlobDigests() {
 		cacheKeys[digest.NewKey(d)] = s.findMissingBlobsCacheKey(groupID, req, d)
 	}
 
-	// Consult the local FindMissingBlobs cache first to remove some digests.
+	// Consult the local FindMissingBlobs caches first to remove some digests.
+	// All chunks can be a full blob, but not all full blobs can be chunks: a
+	// full blob may exist on the remote only as a CDC manifest, with no raw
+	// bytes stored under its digest, so blob entries cannot satisfy chunk
+	// lookups.
 	misses := make([]*repb.Digest, 0, len(req.GetBlobDigests()))
+	blobCacheHits := 0
+	chunkCacheHits := 0
 	for _, d := range req.GetBlobDigests() {
-		if !s.findMissingCache.Contains(cacheKeys[digest.NewKey(d)]) {
-			misses = append(misses, d)
+		key := cacheKeys[digest.NewKey(d)]
+		if !chunked && s.findMissingBlobsCache.Contains(key) {
+			blobCacheHits++
+			continue
 		}
+		if s.findMissingChunksCache.Contains(key) {
+			chunkCacheHits++
+			continue
+		}
+		misses = append(misses, d)
 	}
 
-	hits := len(req.GetBlobDigests()) - len(misses)
 	counters := s.findMissingCacheCountersByChunked[cdc.IsChunked(ctx)]
-	counters.hits.Add(float64(hits))
+	counters.blobCacheHits.Add(float64(blobCacheHits))
+	counters.chunkCacheHits.Add(float64(chunkCacheHits))
 
 	// All digests were found in the FindMissingBlobs cache, return.
 	if len(misses) == 0 {
@@ -275,7 +300,11 @@ func (s *CASServerProxy) FindMissingBlobs(ctx context.Context, req *repb.FindMis
 		key := cacheKeys[digest.NewKey(d)]
 		if _, ok := missing[key]; !ok {
 			presentRemotely++
-			s.findMissingCache.Add(key, struct{}{})
+			if chunked {
+				s.findMissingChunksCache.Add(key, struct{}{})
+			} else {
+				s.findMissingBlobsCache.Add(key, struct{}{})
+			}
 		}
 	}
 	counters.misses.Add(float64(presentRemotely))
@@ -283,10 +312,11 @@ func (s *CASServerProxy) FindMissingBlobs(ctx context.Context, req *repb.FindMis
 	return rsp, nil
 }
 
-func findMissingBlobsCacheLookups(status string, chunked bool) prometheus.Counter {
+func findMissingBlobsCacheLookups(status string, chunked bool, resultSource string) prometheus.Counter {
 	return metrics.FindMissingBlobsCacheLookups.With(prometheus.Labels{
-		metrics.CacheHitMissStatus: status,
-		metrics.ChunkedLabel:       strconv.FormatBool(chunked),
+		metrics.CacheHitMissStatus:     status,
+		metrics.ChunkedLabel:           strconv.FormatBool(chunked),
+		metrics.CacheProxyResultSource: resultSource,
 	})
 }
 
