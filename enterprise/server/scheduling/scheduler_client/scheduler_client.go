@@ -125,7 +125,6 @@ func makeExecutionNode(pool, executorID, executorHostID string, xcodeLocator int
 		SupportedIsolationTypes:   supportedTypes,
 		CurrentQueueLength:        0,
 		XcodeVersions:             xcodeLocator.Versions(),
-		XcodeSdks:                 xcodeLocator.SDKs(),
 		// TODO: hard-code this to true once it's battle-tested.
 		SupportsProactiveCancellation: *proactiveCancellationEnabled,
 		WarmupImages:                  options.WarmupImages,

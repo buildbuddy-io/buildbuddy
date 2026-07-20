@@ -549,7 +549,3 @@ func (x *xcodeLocator) PathsForVersionAndSDK(xcodeVersion string, sdk string) (s
 func (x *xcodeLocator) Versions() []string {
 	return []string{}
 }
-
-func (x *xcodeLocator) SDKs() []string {
-	return []string{}
-}
