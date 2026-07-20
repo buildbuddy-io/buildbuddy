@@ -273,9 +273,15 @@ func TestTaskRouter_RankNodes_AffinityRouting_UsesExperimentSelectedKey(t *testi
 	selectedOrgPackageCtx := withRequestMetadata(withAuthUser(t, context.Background(), env, "US1"), "//foo/bar", "TestRunner")
 	selectedOrgOtherPackageCtx := withRequestMetadata(withAuthUser(t, context.Background(), env, "US1"), "//foo/baz:foo_test", "TestRunner")
 	router.MarkSucceeded(selectedOrgCtx, nil, firstCmd, instanceName, executorHostID1)
+	router.MarkSucceeded(selectedOrgCtx, nil, firstCmd, instanceName, executorHostID2)
 
 	ranked := router.RankNodes(selectedOrgSameTargetCtx, nil, secondCmd, instanceName, nodes)
-	require.Equal(t, executorHostID1, ranked[0].GetExecutionNode().GetExecutorHostId())
+	require.Equal(t, executorHostID2, ranked[0].GetExecutionNode().GetExecutorHostId())
+	require.True(t, ranked[0].IsPreferred())
+	require.Equal(t, executorHostID1, ranked[1].GetExecutionNode().GetExecutorHostId())
+	require.True(t, ranked[1].IsPreferred())
+	requireNumPreferred(t, 2, ranked)
+	requireNonSequential(t, ranked[2:])
 	requireNotAlwaysRanked(0, executorHostID1, t, router, selectedOrgOtherTargetCtx, secondCmd, instanceName)
 	requireNotAlwaysRanked(0, executorHostID1, t, router, selectedOrgPackageCtx, secondCmd, instanceName)
 	requireNotAlwaysRanked(0, executorHostID1, t, router, selectedOrgOtherPackageCtx, secondCmd, instanceName)
@@ -285,17 +291,27 @@ func TestTaskRouter_RankNodes_AffinityRouting_UsesExperimentSelectedKey(t *testi
 	packageOrgPackageCtx := withRequestMetadata(withAuthUser(t, context.Background(), env, "US2"), "//foo/bar", "TestRunner")
 	packageOrgOtherPackageCtx := withRequestMetadata(withAuthUser(t, context.Background(), env, "US2"), "//foo/baz:foo_test", "TestRunner")
 	router.MarkSucceeded(packageOrgCtx, nil, firstCmd, instanceName, executorHostID1)
+	router.MarkSucceeded(packageOrgCtx, nil, firstCmd, instanceName, executorHostID2)
 
 	ranked = router.RankNodes(packageOrgOtherTargetCtx, nil, secondCmd, instanceName, nodes)
-	require.Equal(t, executorHostID1, ranked[0].GetExecutionNode().GetExecutorHostId())
+	require.Equal(t, executorHostID2, ranked[0].GetExecutionNode().GetExecutorHostId())
+	require.True(t, ranked[0].IsPreferred())
+	require.Equal(t, executorHostID1, ranked[1].GetExecutionNode().GetExecutorHostId())
+	require.True(t, ranked[1].IsPreferred())
+	requireNumPreferred(t, 2, ranked)
 	ranked = router.RankNodes(packageOrgPackageCtx, nil, secondCmd, instanceName, nodes)
-	require.Equal(t, executorHostID1, ranked[0].GetExecutionNode().GetExecutorHostId())
+	require.Equal(t, executorHostID2, ranked[0].GetExecutionNode().GetExecutorHostId())
+	require.Equal(t, executorHostID1, ranked[1].GetExecutionNode().GetExecutorHostId())
 	requireNotAlwaysRanked(0, executorHostID1, t, router, packageOrgOtherPackageCtx, secondCmd, instanceName)
 
 	controlOrgCtx := withRequestMetadata(context.Background(), "//foo/bar:foo_lib", "GoLink")
 	controlOrgOtherTargetCtx := withRequestMetadata(context.Background(), "//foo/bar:foo_test", "TestRunner")
 	router.MarkSucceeded(controlOrgCtx, nil, firstCmd, instanceName, executorHostID1)
+	router.MarkSucceeded(controlOrgCtx, nil, firstCmd, instanceName, executorHostID2)
 
+	ranked = router.RankNodes(controlOrgCtx, nil, firstCmd, instanceName, nodes)
+	require.Equal(t, executorHostID2, ranked[0].GetExecutionNode().GetExecutorHostId())
+	requireNumPreferred(t, 1, ranked)
 	requireNotAlwaysRanked(0, executorHostID1, t, router, controlOrgOtherTargetCtx, secondCmd, instanceName)
 }
 
@@ -332,10 +348,13 @@ func TestTaskRouter_RankNodes_AffinityRouting_TargetKeyFallsBackToFirstOutput(t 
 	}
 
 	router.MarkSucceeded(ctx, nil, firstCmd, instanceName, executorHostID1)
+	router.MarkSucceeded(ctx, nil, firstCmd, instanceName, executorHostID2)
 
 	nodes := sequentiallyNumberedNodes(100)
 	ranked := router.RankNodes(ctx, nil, secondCmd, instanceName, nodes)
-	require.Equal(t, executorHostID1, ranked[0].GetExecutionNode().GetExecutorHostId())
+	require.Equal(t, executorHostID2, ranked[0].GetExecutionNode().GetExecutorHostId())
+	require.Equal(t, executorHostID1, ranked[1].GetExecutionNode().GetExecutorHostId())
+	requireNumPreferred(t, 2, ranked)
 	requireNotAlwaysRanked(0, executorHostID1, t, router, ctx, thirdCmd, instanceName)
 }
 
@@ -682,6 +701,17 @@ func requireNonePreferred(t *testing.T, rankedNodes []interfaces.RankedExecution
 	for i := 1; i < len(rankedNodes); i++ {
 		require.False(t, rankedNodes[i].IsPreferred())
 	}
+}
+
+func requireNumPreferred(t *testing.T, expected int, rankedNodes []interfaces.RankedExecutionNode) {
+	t.Helper()
+	actual := 0
+	for _, node := range rankedNodes {
+		if node.IsPreferred() {
+			actual++
+		}
+	}
+	require.Equal(t, expected, actual)
 }
 
 func requireSameExecutionNodes(t *testing.T, nodes []interfaces.ExecutionNode, ranked []interfaces.RankedExecutionNode) {
