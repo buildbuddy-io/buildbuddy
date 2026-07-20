@@ -151,6 +151,10 @@ const (
 	// containers. Values are parsed as byte sizes, such as "1GB" or "1MB".
 	ShmSizePropertyName = "shm-size"
 
+	// ShmExecPropertyName specifies whether executables can be run from the
+	// /dev/shm tmpfs mount for OCI containers.
+	ShmExecPropertyName = "shm-exec"
+
 	// Whether external network access should be enabled. Valid values are:
 	// - "off": no network access
 	// - "external": network access via a network namespace routed thru the host
@@ -265,7 +269,9 @@ type Properties struct {
 	NetworkEnableIPv6         bool
 
 	// ShmSizeBytes is the requested size of the /dev/shm tmpfs mount.
-	ShmSizeBytes           *int64
+	ShmSizeBytes *int64
+	// ShmExec indicates whether executables can be run from /dev/shm.
+	ShmExec                bool
 	RecycleRunner          bool
 	RunnerRecyclingMaxWait time.Duration
 
@@ -569,6 +575,7 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 		Network:                   stringProp(m, networkPropertyName, ""),
 		NetworkEnableIPv6:         boolProp(m, NetworkEnableIPv6PropertyName, false),
 		ShmSizeBytes:              shmSizeBytes,
+		ShmExec:                   boolProp(m, ShmExecPropertyName, false),
 		RecycleRunner:             recycleRunner,
 		DefaultTimeout:            timeout,
 		TerminationGracePeriod:    terminationGracePeriod,
