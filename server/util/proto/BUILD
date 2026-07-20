@@ -18,6 +18,8 @@ go_test(
         "//proto:storage_go_proto",
         "@com_github_go_faker_faker_v4//:faker",
         "@com_github_stretchr_testify//require",
+        "@org_golang_google_genproto_googleapis_rpc//status",
         "@org_golang_google_protobuf//proto",
+        "@org_golang_google_protobuf//types/known/anypb",
     ],
 )

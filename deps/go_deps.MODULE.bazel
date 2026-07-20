@@ -36,6 +36,14 @@ go_deps.module_override(
     ],
     path = "github.com/planetscale/vtprotobuf",
 )
+# Add VT methods to the pre-generated Status type imported by our Go protos.
+go_deps.module_override(
+    patch_strip = 1,
+    patches = [
+        "@com_github_buildbuddy_io_buildbuddy//buildpatches:genproto_rpc_status_vt.patch",
+    ],
+    path = "google.golang.org/genproto/googleapis/rpc",
+)
 go_deps.module_override(
     patch_strip = 1,
     patches = ["@com_github_buildbuddy_io_buildbuddy//buildpatches:buildifier.patch"],
