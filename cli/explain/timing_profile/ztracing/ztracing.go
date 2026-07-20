@@ -1,31 +1,41 @@
 package ztracing
 
 import (
+	"archive/tar"
+	"compress/gzip"
 	"context"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
+	"runtime"
+	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/storage"
 )
 
 const (
-	ztracingRepoURL    = "https://github.com/coeuvre/ztracing.git"
-	ztracingCommitSHA  = "2652640077baa8852d10f0e33a592a5085206ebe"
-	bazelOutputDirName = "bazel-output"
+	ztracingCommitSHA = "2652640077baa8852d10f0e33a592a5085206ebe"
+	ztracingURLFormat = "https://storage.googleapis.com/buildbuddy-tools/binaries/ztracing/%s/ztracing-%s.tar.gz"
 )
 
 type Installation struct {
-	RepoPath   string
 	BinaryPath string
 	SkillDir   string
 }
 
-// Setup returns a pinned ztracing installation, cloning and building it when
-// necessary. Only the checkout for the configured commit is retained.
+// Setup returns a pinned ztracing installation, downloading it when necessary.
+// Only installations for the configured commit are retained.
 func Setup(ctx context.Context) (*Installation, error) {
+	platform := runtime.GOOS + "-" + runtime.GOARCH
+	switch platform {
+	case "darwin-arm64", "linux-amd64":
+	default:
+		return nil, fmt.Errorf("ztracing is not available for %s", platform)
+	}
+	downloadURL := fmt.Sprintf(ztracingURLFormat, ztracingCommitSHA, platform)
 	cacheDir, err := storage.CacheDir()
 	if err != nil {
 		return nil, fmt.Errorf("get BuildBuddy cache directory: %w", err)
@@ -34,54 +44,134 @@ func Setup(ctx context.Context) (*Installation, error) {
 	if err := os.MkdirAll(rootDir, 0755); err != nil {
 		return nil, fmt.Errorf("create ztracing cache directory: %w", err)
 	}
-	if err := removeOldCheckouts(rootDir, ztracingCommitSHA); err != nil {
+	if err := removeOldInstallations(rootDir, ztracingCommitSHA); err != nil {
 		return nil, err
 	}
 
-	installation := installationAt(rootDir, ztracingCommitSHA)
+	installationDir := filepath.Join(rootDir, ztracingCommitSHA, platform)
+	installation := installationAt(installationDir)
 	if isValidInstallation(installation) {
 		if err := addToPath(installation.BinaryPath); err != nil {
 			return nil, err
 		}
-		log.Printf("Using existing ztracing installation at %s", installation.RepoPath)
+		log.Printf("Using existing ztracing installation at %s", installationDir)
 		return installation, nil
 	}
-	// Remove an interrupted or otherwise incomplete installation before
-	// attempting the clone again.
-	versionDir := filepath.Dir(installation.RepoPath)
-	if err := os.RemoveAll(versionDir); err != nil {
-		return nil, fmt.Errorf("remove incomplete ztracing checkout: %w", err)
+
+	if err := os.RemoveAll(installationDir); err != nil {
+		return nil, fmt.Errorf("remove incomplete ztracing installation: %w", err)
 	}
-	if err := os.MkdirAll(versionDir, 0755); err != nil {
-		return nil, fmt.Errorf("create ztracing version directory: %w", err)
+	if err := os.MkdirAll(installationDir, 0755); err != nil {
+		return nil, fmt.Errorf("create ztracing installation directory: %w", err)
 	}
 
-	log.Printf("Downloading ztracing at commit %s...", ztracingCommitSHA)
-	if err := run(ctx, rootDir, "git", "init", installation.RepoPath); err != nil {
-		return nil, fmt.Errorf("initialize ztracing repository: %w", err)
-	}
-	if err := run(ctx, installation.RepoPath, "git", "remote", "add", "origin", ztracingRepoURL); err != nil {
-		return nil, fmt.Errorf("configure ztracing repository: %w", err)
-	}
-	if err := run(ctx, installation.RepoPath, "git", "fetch", "--depth=1", "origin", ztracingCommitSHA); err != nil {
-		return nil, fmt.Errorf("fetch ztracing commit %s: %w", ztracingCommitSHA, err)
-	}
-	if err := run(ctx, installation.RepoPath, "git", "checkout", "--detach", ztracingCommitSHA); err != nil {
-		return nil, fmt.Errorf("check out ztracing commit %s: %w", ztracingCommitSHA, err)
-	}
-
-	log.Printf("Building ztracing at commit %s...", ztracingCommitSHA)
-	outputUserRoot := filepath.Join(rootDir, bazelOutputDirName)
-	if err := run(ctx, installation.RepoPath, "bazel", "--output_user_root="+outputUserRoot, "build", "//src:ztracing"); err != nil {
-		return nil, fmt.Errorf("build ztracing: %w", err)
+	log.Printf("Downloading ztracing at commit %s for %s...", ztracingCommitSHA, platform)
+	if err := downloadAndExtract(ctx, downloadURL, rootDir, installationDir); err != nil {
+		os.RemoveAll(installationDir)
+		return nil, err
 	}
 	if !isValidInstallation(installation) {
-		return nil, fmt.Errorf("ztracing setup completed but expected artifacts were not found in %q", installation.RepoPath)
+		os.RemoveAll(installationDir)
+		return nil, fmt.Errorf("downloaded ztracing archive did not contain the expected binary and skill")
 	}
 	if err := addToPath(installation.BinaryPath); err != nil {
 		return nil, err
 	}
 	return installation, nil
+}
+
+func downloadAndExtract(ctx context.Context, downloadURL, tempDir, destinationDir string) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, downloadURL, nil)
+	if err != nil {
+		return fmt.Errorf("create ztracing download request: %w", err)
+	}
+	rsp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("download ztracing: %w", err)
+	}
+	defer rsp.Body.Close()
+	if rsp.StatusCode != http.StatusOK {
+		return fmt.Errorf("download ztracing: %s", rsp.Status)
+	}
+
+	archive, err := os.CreateTemp(tempDir, "ztracing-*.tar.gz")
+	if err != nil {
+		return fmt.Errorf("create temporary ztracing archive: %w", err)
+	}
+	archivePath := archive.Name()
+	defer os.Remove(archivePath)
+
+	if _, err := io.Copy(archive, rsp.Body); err != nil {
+		archive.Close()
+		return fmt.Errorf("write ztracing archive: %w", err)
+	}
+	if err := archive.Close(); err != nil {
+		return fmt.Errorf("close ztracing archive: %w", err)
+	}
+	if err := extractArchive(archivePath, destinationDir); err != nil {
+		return fmt.Errorf("extract ztracing archive: %w", err)
+	}
+	return nil
+}
+
+func extractArchive(archivePath, destinationDir string) error {
+	archive, err := os.Open(archivePath)
+	if err != nil {
+		return err
+	}
+	defer archive.Close()
+	gzipReader, err := gzip.NewReader(archive)
+	if err != nil {
+		return err
+	}
+	defer gzipReader.Close()
+
+	tarReader := tar.NewReader(gzipReader)
+	for {
+		header, err := tarReader.Next()
+		if err == io.EOF {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+
+		name := filepath.Clean(filepath.FromSlash(header.Name))
+		if name == "." {
+			continue
+		}
+		if filepath.IsAbs(name) || name == ".." || strings.HasPrefix(name, ".."+string(os.PathSeparator)) {
+			return fmt.Errorf("archive contains invalid path %q", header.Name)
+		}
+		path := filepath.Join(destinationDir, name)
+
+		switch header.Typeflag {
+		case tar.TypeDir:
+			if err := os.MkdirAll(path, header.FileInfo().Mode().Perm()); err != nil {
+				return err
+			}
+		case tar.TypeReg, tar.TypeRegA:
+			if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+				return err
+			}
+			file, err := os.OpenFile(path, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, header.FileInfo().Mode().Perm())
+			if err != nil {
+				return err
+			}
+			if _, err := io.Copy(file, tarReader); err != nil {
+				file.Close()
+				return err
+			}
+			if err := file.Close(); err != nil {
+				return err
+			}
+			if err := os.Chmod(path, header.FileInfo().Mode().Perm()); err != nil {
+				return err
+			}
+		default:
+			return fmt.Errorf("archive contains unsupported entry %q", header.Name)
+		}
+	}
 }
 
 func addToPath(binaryPath string) error {
@@ -95,36 +185,31 @@ func addToPath(binaryPath string) error {
 	return nil
 }
 
-func installationAt(rootDir, commit string) *Installation {
-	repoPath := filepath.Join(rootDir, commit, "repo")
+func installationAt(installationDir string) *Installation {
 	return &Installation{
-		RepoPath:   repoPath,
-		BinaryPath: filepath.Join(repoPath, "bazel-bin", "src", "ztracing"),
-		SkillDir:   filepath.Join(repoPath, ".agents", "skills", "trace-analyzer"),
+		BinaryPath: filepath.Join(installationDir, "bin", "ztracing"),
+		SkillDir:   filepath.Join(installationDir, "skills", "trace-analyzer"),
 	}
 }
 
-// removeOldCheckouts removes all ztracing checkouts except the one at the given commit.
-func removeOldCheckouts(rootDir, keep string) error {
+// removeOldInstallations removes all ztracing installations except the one at the given commit.
+func removeOldInstallations(rootDir, keep string) error {
 	entries, err := os.ReadDir(rootDir)
 	if err != nil {
 		return fmt.Errorf("read ztracing cache directory: %w", err)
 	}
 	for _, entry := range entries {
-		if entry.Name() == keep || entry.Name() == bazelOutputDirName {
+		if entry.Name() == keep {
 			continue
 		}
 		if err := os.RemoveAll(filepath.Join(rootDir, entry.Name())); err != nil {
-			return fmt.Errorf("remove old ztracing checkout %q: %w", entry.Name(), err)
+			return fmt.Errorf("remove old ztracing installation %q: %w", entry.Name(), err)
 		}
 	}
 	return nil
 }
 
 func isValidInstallation(installation *Installation) bool {
-	if _, err := os.Stat(filepath.Join(installation.RepoPath, ".git")); err != nil {
-		return false
-	}
 	if !isExecutable(installation.BinaryPath) {
 		return false
 	}
@@ -135,12 +220,4 @@ func isValidInstallation(installation *Installation) bool {
 func isExecutable(path string) bool {
 	info, err := os.Stat(path)
 	return err == nil && info.Mode().IsRegular() && info.Mode().Perm()&0111 != 0
-}
-
-func run(ctx context.Context, dir, name string, args ...string) error {
-	cmd := exec.CommandContext(ctx, name, args...)
-	cmd.Dir = dir
-	cmd.Stdout = os.Stderr
-	cmd.Stderr = os.Stderr
-	return cmd.Run()
 }
