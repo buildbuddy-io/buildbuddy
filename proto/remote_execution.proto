@@ -487,6 +487,11 @@ service ContentAddressableStorage {
   // Clients SHOULD verify that the digest of the blob assembled by the fetched
   // chunks is equal to the requested blob digest.
   //
+  // The unary response size is limited by the maximum message size of the
+  // protocol in use, e.g. gRPC. Clients that expect the list of chunks to
+  // exceed that limit SHOULD use
+  // [SplitChunks][build.bazel.remote.execution.v2.ContentAddressableStorage.SplitChunks].
+  //
   // The lifetimes of the generated chunk blobs MAY be independent of the
   // lifetime of the original blob. In particular:
   //  * A blob and any chunk derived from it MAY be evicted from the CAS at
@@ -516,6 +521,39 @@ service ContentAddressableStorage {
     option (google.api.http) = { get: "/v2/{instance_name=**}/blobs/{blob_digest.hash}/{blob_digest.size_bytes}:splitBlob" };
   }
 
+  // SplitChunks is a streaming variant of SplitBlob.
+  //
+  // This RPC is equivalent to
+  // [ContentAddressableStorage.SplitBlob][build.bazel.remote.execution.v2.ContentAddressableStorage.SplitBlob],
+  // except that the list of chunk digests is streamed across response messages
+  // to avoid exceeding protocol message size limits. The complete list of
+  // chunks is the concatenation of `chunk_digests` across all responses in
+  // stream order. The server indicates that there are no more chunks by closing
+  // the response stream.
+  //
+  // The maximum message size is not negotiated by this API. Servers SHOULD limit
+  // the number of chunk digests in each response to remain below the maximum
+  // message size accepted by the client/server pair.
+  //
+  // Starting in RE API v2.13, servers that set
+  // [CacheCapabilities.split_blob_support][build.bazel.remote.execution.v2.CacheCapabilities.split_blob_support]
+  // MUST implement this RPC. Clients MUST check that the server supports this
+  // capability and supports RE API v2.13 or newer before using this RPC.
+  //
+  // Errors:
+  //
+  // * `NOT_FOUND`: The requested blob is not present in the CAS, OR there is no
+  //   split information available for the blob, OR at least one chunk needed to
+  //   reconstruct the blob is missing from the CAS.
+  // * `RESOURCE_EXHAUSTED`: There is insufficient disk quota to store the blob
+  //   chunks.
+  //
+  // NOTE: This API is proposed upstream in
+  // https://github.com/bazelbuild/remote-apis/pull/377 and has not merged yet.
+  // If the merged version differs, update this definition (including field
+  // numbers) to match it.
+  rpc SplitChunks(SplitBlobRequest) returns (stream SplitChunksResponse);
+
   // SpliceBlob tells the CAS how chunks can compose a blob.
   //
   // This is the complementary operation to the
@@ -527,6 +565,11 @@ service ContentAddressableStorage {
   // all chunks to the CAS, then call this RPC to tell the server how those chunks
   // compose the original blob. The chunks referenced in the SpliceBlob call SHOULD be
   // available in the CAS before calling this RPC.
+  //
+  // The unary request size is limited by the maximum message size of the
+  // protocol in use, e.g. gRPC. Clients that expect the list of chunks to
+  // exceed that limit SHOULD use
+  // [SpliceChunks][build.bazel.remote.execution.v2.ContentAddressableStorage.SpliceChunks].
   //
   // If a client needs to upload a large blob and is able to split a blob into
   // chunks in such a way that reusable chunks are obtained, e.g., by means of
@@ -570,10 +613,57 @@ service ContentAddressableStorage {
   //   extend the lifetime of the chunks specified in the request, e.g. because
   //   it prefers a different chunking and extended those instead. Clients can
   //   call [SplitBlob][build.bazel.remote.execution.v2.ContentAddressableStorage.SplitBlob]
+  //   or [SplitChunks][build.bazel.remote.execution.v2.ContentAddressableStorage.SplitChunks]
   //   to check what chunk mapping the server is using.
+  //
+  // New in v2.12 and removed in v2.13, use
+  // [SpliceChunks][build.bazel.remote.execution.v2.ContentAddressableStorage.SpliceChunks]
+  // instead.
   rpc SpliceBlob(SpliceBlobRequest) returns (SpliceBlobResponse) {
     option (google.api.http) = { post: "/v2/{instance_name=**}/blobs:spliceBlob" body: "*" };
   }
+
+  // SpliceChunks is a streaming variant of SpliceBlob.
+  //
+  // This RPC is equivalent to
+  // [ContentAddressableStorage.SpliceBlob][build.bazel.remote.execution.v2.ContentAddressableStorage.SpliceBlob],
+  // except that the list of chunk digests is streamed across request messages
+  // to avoid exceeding protocol message size limits. Clients stream chunk
+  // digests as they become available, MUST set the expected blob digest on the
+  // final request, then close the request stream to commit the splice. The
+  // server MUST use `instance_name`, `digest_function`, and `chunking_function`
+  // from the first request and ignore values for those fields on subsequent
+  // requests. Clients SHOULD omit those fields on subsequent requests.
+  //
+  // The maximum message size is not negotiated by this API. Clients SHOULD limit
+  // the number of chunk digests in each request to remain below the maximum
+  // message size accepted by the client/server pair.
+  //
+  // Starting in RE API v2.13, servers that set
+  // [CacheCapabilities.splice_blob_support][build.bazel.remote.execution.v2.CacheCapabilities.splice_blob_support]
+  // MUST implement this RPC. Clients MUST check that the server supports this
+  // capability and supports RE API v2.13 or newer before using this RPC.
+  //
+  // Errors:
+  //
+  // * `NOT_FOUND`: At least one of the blob chunks is not present in the CAS.
+  // * `RESOURCE_EXHAUSTED`: There is insufficient disk quota to store the
+  //   spliced blob.
+  // * `INVALID_ARGUMENT`: The digest of the spliced blob is different from the
+  //   provided expected digest, OR the stream contains an invalid sequence of
+  //   splice requests.
+  // * `ALREADY_EXISTS`: The blob already exists in CAS and the server did not
+  //   extend the lifetime of the chunks specified in the request, e.g. because
+  //   it prefers a different chunking and extended those instead. Clients can
+  //   call [SplitBlob][build.bazel.remote.execution.v2.ContentAddressableStorage.SplitBlob]
+  //   or [SplitChunks][build.bazel.remote.execution.v2.ContentAddressableStorage.SplitChunks]
+  //   to check what chunk mapping the server is using.
+  //
+  // NOTE: This API is proposed upstream in
+  // https://github.com/bazelbuild/remote-apis/pull/377 and has not merged yet.
+  // If the merged version differs, update this definition (including field
+  // numbers) to match it.
+  rpc SpliceChunks(stream SpliceChunksRequest) returns (SpliceBlobResponse);
 }
 
 // The Capabilities service may be used by remote execution clients to query
@@ -2187,6 +2277,30 @@ message SplitBlobResponse {
   ChunkingFunction.Value chunking_function = 2;
 }
 
+// A response message for
+// [ContentAddressableStorage.SplitChunks][build.bazel.remote.execution.v2.ContentAddressableStorage.SplitChunks].
+message SplitChunksResponse {
+  // The ordered list of digests of the chunks into which the blob was split.
+  // The original blob is assembled by concatenating the chunk data according to
+  // the order of the digests in this field, across all responses in stream
+  // order.
+  //
+  // Servers SHOULD limit the number of digests in each response to remain below
+  // the maximum message size accepted by the client/server pair.
+  //
+  // An empty list is allowed in any response. It contributes no chunks to the
+  // assembled chunk list; clients MUST continue reading until the stream closes.
+  //
+  // The server MUST use the same digest function as the one explicitly or
+  // implicitly (through hash length) specified in the split request.
+  repeated Digest chunk_digests = 1;
+
+  // The chunking function used to split the blob. Clients MUST use the value
+  // from the first response and ignore values sent on subsequent responses.
+  // Servers SHOULD omit this field on subsequent responses.
+  ChunkingFunction.Value chunking_function = 2;
+}
+
 // A request message for
 // [ContentAddressableStorage.SpliceBlob][build.bazel.remote.execution.v2.ContentAddressableStorage.SpliceBlob].
 message SpliceBlobRequest {
@@ -2225,6 +2339,51 @@ message SpliceBlobRequest {
   DigestFunction.Value digest_function = 4;
 
   // The chunking function that the client used to split the blob.
+  ChunkingFunction.Value chunking_function = 5;
+}
+
+// A request message for
+// [ContentAddressableStorage.SpliceChunks][build.bazel.remote.execution.v2.ContentAddressableStorage.SpliceChunks].
+message SpliceChunksRequest {
+  // The instance of the execution system to operate against. A server may
+  // support multiple instances of the execution system (with their own workers,
+  // storage, caches, etc.). The server MAY require use of this field to select
+  // between them in an implementation-defined fashion, otherwise it can be
+  // omitted. Servers MUST use the value from the first request and ignore
+  // values sent on subsequent requests.
+  string instance_name = 1;
+
+  // Expected digest of the spliced blob. Clients MUST set this on the final
+  // request and MUST NOT set it on earlier requests.
+  Digest blob_digest = 2;
+
+  // The ordered list of digests of the chunks which need to be concatenated to
+  // assemble the original blob. Chunk digests may be split across multiple
+  // stream requests. The original blob is assembled by concatenating chunks in
+  // the order of these digests across all requests in stream order.
+  //
+  // Clients SHOULD limit the number of digests in each request to remain below
+  // the maximum message size accepted by the client/server pair.
+  //
+  // An empty list is allowed in any request. It contributes no chunks to the
+  // assembled chunk list; servers MUST validate the final concatenated chunk
+  // sequence against `blob_digest`.
+  repeated Digest chunk_digests = 3;
+
+  // The digest function of all chunks to be concatenated and of the blob to be
+  // spliced. The server MUST use the same digest function for both cases.
+  // Servers MUST use the value from the first request and ignore values sent on
+  // subsequent requests.
+  //
+  // If the digest function used is one of MD5, MURMUR3, SHA1, SHA256, SHA384,
+  // SHA512, or VSO, the client MAY leave this field unset. In that case the
+  // server SHOULD infer the digest function using the length of the blob digest
+  // hashes and the digest functions announced in the server's capabilities.
+  DigestFunction.Value digest_function = 4;
+
+  // The chunking function that the client used to split the blob. Servers MUST
+  // use the value from the first request and ignore values sent on subsequent
+  // requests.
   ChunkingFunction.Value chunking_function = 5;
 }
 
@@ -2508,14 +2667,18 @@ message CacheCapabilities {
   // yes, the server/instance implements the specified behavior for blob
   // splitting and a meaningful result can be expected from the
   // [ContentAddressableStorage.SplitBlob][build.bazel.remote.execution.v2.ContentAddressableStorage.SplitBlob]
-  // operation.
+  // operation for RE API v2.12 and from the
+  // [ContentAddressableStorage.SplitChunks][build.bazel.remote.execution.v2.ContentAddressableStorage.SplitChunks]
+  // operation for RE API v2.13 or higher.
   bool split_blob_support = 9;
 
   // Whether blob splicing is supported for the particular server/instance. If
   // yes, the server/instance implements the specified behavior for blob
   // splicing and a meaningful result can be expected from the
   // [ContentAddressableStorage.SpliceBlob][build.bazel.remote.execution.v2.ContentAddressableStorage.SpliceBlob]
-  // operation.
+  // operation for RE API v2.12 and from the
+  // [ContentAddressableStorage.SpliceChunks][build.bazel.remote.execution.v2.ContentAddressableStorage.SpliceChunks]
+  // operation for RE API v2.13 or higher.
   bool splice_blob_support = 10;
 
   // The parameters for the FastCDC 2020 chunking algorithm.

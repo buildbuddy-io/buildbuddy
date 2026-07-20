@@ -310,8 +310,57 @@ func (p *CacheProxy) SpliceBlob(ctx context.Context, req *repb.SpliceBlobRequest
 	return p.casClient.SpliceBlob(ctx, req)
 }
 
+func (p *CacheProxy) SpliceChunks(stream repb.ContentAddressableStorage_SpliceChunksServer) error {
+	clientStream, err := p.casClient.SpliceChunks(stream.Context())
+	if err != nil {
+		return err
+	}
+	finish := func() error {
+		resp, err := clientStream.CloseAndRecv()
+		if err != nil {
+			return err
+		}
+		return stream.SendAndClose(resp)
+	}
+	for {
+		req, err := stream.Recv()
+		if err == io.EOF {
+			return finish()
+		}
+		if err != nil {
+			return err
+		}
+		if err := clientStream.Send(req); err != nil {
+			if err == io.EOF {
+				// Read the final response to return the remote status.
+				return finish()
+			}
+			return err
+		}
+	}
+}
+
 func (p *CacheProxy) SplitBlob(ctx context.Context, req *repb.SplitBlobRequest) (*repb.SplitBlobResponse, error) {
 	return p.casClient.SplitBlob(ctx, req)
+}
+
+func (p *CacheProxy) SplitChunks(req *repb.SplitBlobRequest, stream repb.ContentAddressableStorage_SplitChunksServer) error {
+	clientStream, err := p.casClient.SplitChunks(stream.Context(), req)
+	if err != nil {
+		return err
+	}
+	for {
+		resp, err := clientStream.Recv()
+		if err == io.EOF {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if err := stream.Send(resp); err != nil {
+			return err
+		}
+	}
 }
 
 func logContextFromMetadata(ctx context.Context, md metadata.MD) context.Context {
