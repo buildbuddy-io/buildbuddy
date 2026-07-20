@@ -284,7 +284,12 @@ func (s *ActionCacheServerProxy) GetActionResult(ctx context.Context, req *repb.
 		// Otherwise the extra Metadata call is wasted work.
 		ttlFastPathEligible := isDefaultGetActionResultRequest(req) && ttl > 0
 		var err error
-		localDigest, localResult, localACMD, err := s.getActionResultFromLocalCAS(ctx, localKey, ttlFastPathEligible)
+
+		// Don't issue remote atime updates for local AC reads, these artifacts
+		// will be updated in the remote cache by the result hash verification
+		// read below.
+		localReadCtx := proxy_util.SetSkipRemoteAtimeUpdate(ctx)
+		localDigest, localResult, localACMD, err := s.getActionResultFromLocalCAS(localReadCtx, localKey, ttlFastPathEligible)
 		if err != nil && !status.IsNotFoundError(err) {
 			return nil, err
 		}

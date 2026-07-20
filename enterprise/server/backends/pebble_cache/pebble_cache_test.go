@@ -26,6 +26,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/filestore"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/proxy_util"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -3317,6 +3318,47 @@ func TestAtimeUpdater(t *testing.T) {
 		return updater.calls.Load() > 0
 	}
 	require.Eventually(t, calledFunc, time.Minute, 100*time.Millisecond)
+}
+
+func TestAtimeUpdaterSkipRemote(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
+	ctx := getAnonContext(t, te)
+
+	threshold := time.Microsecond
+	workers := 1
+	opts := &pebble_cache.Options{
+		RootDirectory:         testfs.MakeTempDir(t),
+		MaxSizeBytes:          1_000_000_000,
+		AtimeUpdateThreshold:  &threshold,
+		NumAtimeUpdateWorkers: &workers,
+	}
+	pc, err := pebble_cache.NewPebbleCache(te, opts)
+	require.NoError(t, err)
+	require.NoError(t, pc.Start())
+	defer pc.Stop()
+
+	r, buf := testdigest.RandomCASResourceBuf(t, 100)
+	require.NoError(t, pc.Set(ctx, r, buf))
+
+	updater := fakeAtimeUpdater{calls: &atomic.Int32{}}
+	pc.RegisterAtimeUpdater(updater)
+
+	// A read on a context marked skip-remote-atime-update must not call the
+	// external atime updater, even though it still refreshes the local atime.
+	_, err = pc.Get(proxy_util.SetSkipRemoteAtimeUpdate(ctx), r)
+	require.NoError(t, err)
+	require.Never(t, func() bool {
+		return updater.calls.Load() > 0
+	}, 2*time.Second, 100*time.Millisecond)
+
+	// A normal read still calls the external atime updater, confirming it's wired
+	// up and only the skip-remote read above was suppressed.
+	_, err = pc.Get(ctx, r)
+	require.NoError(t, err)
+	require.Eventually(t, func() bool {
+		return updater.calls.Load() > 0
+	}, time.Minute, 100*time.Millisecond)
 }
 
 type faultyGCS struct {
