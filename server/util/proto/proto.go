@@ -7,7 +7,6 @@ import (
 var Size = gproto.Size
 var Merge = gproto.Merge
 var Equal = gproto.Equal
-var MarshalOld = gproto.Marshal
 
 var String = gproto.String
 var Float32 = gproto.Float32
@@ -35,7 +34,7 @@ func Marshal(v Message) ([]byte, error) {
 	if ok {
 		return vt.MarshalVT()
 	}
-	return MarshalOld(v)
+	return gproto.Marshal(v)
 }
 
 func Unmarshal(b []byte, v Message) error {

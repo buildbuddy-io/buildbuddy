@@ -21,5 +21,6 @@ go_test(
         "@org_golang_google_genproto_googleapis_rpc//status",
         "@org_golang_google_protobuf//proto",
         "@org_golang_google_protobuf//types/known/anypb",
+        "@org_golang_google_protobuf//types/known/wrapperspb",
     ],
 )

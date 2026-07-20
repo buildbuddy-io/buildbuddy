@@ -15,6 +15,7 @@ import (
 	statuspb "google.golang.org/genproto/googleapis/rpc/status"
 	gproto "google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/anypb"
+	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
 const (
@@ -88,7 +89,7 @@ func generateProtos(t testing.TB, providerFn providerFunc) []protoMessage {
 func generateBytes(t testing.TB, protos []protoMessage) [][]byte {
 	res := make([][]byte, 0, len(protos))
 	for _, pb := range protos {
-		buf, err := proto.MarshalOld(pb)
+		buf, err := gproto.Marshal(pb)
 		require.NoError(t, err, "unable to marshal")
 		res = append(res, buf)
 	}
@@ -106,7 +107,16 @@ func TestMarshal(t *testing.T) {
 
 	actual, err := proto.Marshal(md)
 	require.NoError(t, err)
-	expected, err := proto.MarshalOld(md)
+	expected, err := gproto.Marshal(md)
+	require.NoError(t, err)
+	require.Equal(t, expected, actual)
+}
+
+func TestMarshalFallback(t *testing.T) {
+	msg := wrapperspb.String("fallback")
+	expected, err := gproto.Marshal(msg)
+	require.NoError(t, err)
+	actual, err := proto.Marshal(msg)
 	require.NoError(t, err)
 	require.Equal(t, expected, actual)
 }
@@ -132,7 +142,7 @@ func TestMarshalWithExternalVTMessage(t *testing.T) {
 	})
 	require.True(t, ok)
 
-	expected, err := proto.MarshalOld(scoreCard)
+	expected, err := gproto.Marshal(scoreCard)
 	require.NoError(t, err)
 	actual, err := proto.Marshal(scoreCard)
 	require.NoError(t, err)
@@ -152,7 +162,7 @@ func TestUnmarshal(t *testing.T) {
 	err := faker.FakeData(md)
 	require.NoError(t, err, "unable to fake data")
 
-	data, err := proto.MarshalOld(md)
+	data, err := gproto.Marshal(md)
 	require.NoError(t, err)
 
 	actual := &sgpb.FileMetadata{}
@@ -211,7 +221,7 @@ func benchmarkUnmarshal(b *testing.B, unmarshalFn unmarshalFunc, providerFn prov
 func BenchmarkMarshal(b *testing.B) {
 	marshalFns := map[string]marshalFunc{
 		"Old": func(v protoMessage) ([]byte, error) {
-			return proto.MarshalOld(v)
+			return gproto.Marshal(v)
 		},
 		"New": func(v protoMessage) ([]byte, error) {
 			return proto.Marshal(v)
