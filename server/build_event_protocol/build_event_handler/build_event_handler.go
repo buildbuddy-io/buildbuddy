@@ -256,6 +256,7 @@ type recordStatsTask struct {
 	// the primary DB at flush time.
 	gitFetchTotalBytes   int64
 	gitFetchDurationUsec int64
+	gitFetchRetryCount   int64
 }
 
 // statsRecorder listens for finalized invocations and copies cache stats from
@@ -321,6 +322,7 @@ func (r *statsRecorder) Enqueue(ctx context.Context, beValues *accumulator.BEVal
 		kytheSSTableResourceName: beValues.KytheSSTableResourceName(),
 		gitFetchTotalBytes:       beValues.GitFetchTotalBytes(),
 		gitFetchDurationUsec:     beValues.GitFetchDuration().Microseconds(),
+		gitFetchRetryCount:       beValues.GitFetchRetryCount(),
 	}
 	select {
 	case r.tasks <- req:
@@ -363,6 +365,7 @@ func (r *statsRecorder) flushInvocationStatsToOLAPDB(ctx context.Context, task *
 	// the task instead of being read back from the primary DB.
 	inv.GitFetchTotalBytes = task.gitFetchTotalBytes
 	inv.GitFetchDurationUsec = task.gitFetchDurationUsec
+	inv.GitFetchRetryCount = task.gitFetchRetryCount
 
 	err = r.env.GetOLAPDBHandle().FlushInvocationStats(ctx, inv)
 	if err != nil {

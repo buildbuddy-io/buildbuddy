@@ -141,6 +141,7 @@ type Invocation struct {
 	// bazel), if any.
 	GitFetchTotalBytes   int64
 	GitFetchDurationUsec int64
+	GitFetchRetryCount   int64
 }
 
 func (i *Invocation) ExcludedFields() []string {
@@ -818,5 +819,6 @@ func ToInvocationFromPrimaryDB(ti *tables.Invocation) *Invocation {
 		RunStatus:                         ti.RunStatus,
 		GitFetchTotalBytes:                ti.GitFetchTotalBytes,
 		GitFetchDurationUsec:              ti.GitFetchDurationUsec,
+		GitFetchRetryCount:                ti.GitFetchRetryCount,
 	}
 }

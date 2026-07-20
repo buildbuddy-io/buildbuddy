@@ -1,12 +1,23 @@
 package main
 
 import (
+	"context"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"net/http/httputil"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testgit"
+	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestCollectRunfiles_RelativeDirectorySymlink(t *testing.T) {
@@ -25,6 +36,119 @@ func TestCollectRunfiles_RelativeDirectorySymlink(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Empty(t, files)
 	assert.Equal(t, map[string]string{linkPath: targetDir}, dirs)
+}
+
+type stallingReadCloser struct {
+	ctx context.Context
+	io.ReadCloser
+	started bool
+}
+
+func (r *stallingReadCloser) Read(p []byte) (int, error) {
+	if len(p) == 0 {
+		return 0, nil
+	}
+	if !r.started {
+		r.started = true
+		return r.ReadCloser.Read(p[:1])
+	}
+	<-r.ctx.Done()
+	return 0, r.ctx.Err()
+}
+
+func TestGitFetchRetriesSlowTransfer(t *testing.T) {
+	flags.Set(t, "git_fetch_low_speed_retries", 1)
+	flags.Set(t, "git_fetch_low_speed_limit", 1)
+	// Git and libcurl configure the low-speed window in whole seconds, so one
+	// second is the shortest interval and gives the fastest possible check.
+	flags.Set(t, "git_fetch_low_speed_time", time.Second)
+	for _, envVar := range []string{"GIT_HTTP_LOW_SPEED_LIMIT", "GIT_HTTP_LOW_SPEED_TIME"} {
+		originalValue, wasSet := os.LookupEnv(envVar)
+		require.NoError(t, os.Unsetenv(envVar))
+		t.Cleanup(func() {
+			if wasSet {
+				require.NoError(t, os.Setenv(envVar, originalValue))
+				return
+			}
+			require.NoError(t, os.Unsetenv(envVar))
+		})
+	}
+	// Fetch from the proxy URL as-is. Otherwise fetch() embeds the REPO_USER
+	// and REPO_TOKEN credentials in the URL if they are set, which they are
+	// when this test itself runs in a BuildBuddy workflow.
+	t.Setenv("USE_SYSTEM_GIT_CREDENTIALS", "1")
+
+	// Serve a real repository over HTTP.
+	remote := testgit.StartServer(t, testgit.ServerOptions{LogWriter: io.Discard})
+	remote.CreateProject("test-org", "test-repo", &testgit.ProjectSettings{Public: true})
+	sourceDir, wantCommitSHA := testgit.MakeTempRepo(t, map[string]string{"README.md": "test repo"})
+	remote.Push("test-org", "test-repo", remote.AccessToken(), sourceDir)
+
+	// Proxy the Git server and leave the first upload-pack response hanging
+	// after its first byte until Git aborts it. Later responses pass through.
+	upstreamURL, err := url.Parse(remote.RepoURL("test-org", "test-repo", ""))
+	require.NoError(t, err)
+	var stalledFirstFetch atomic.Bool
+	proxy := httputil.NewSingleHostReverseProxy(upstreamURL)
+	proxy.ModifyResponse = func(response *http.Response) error {
+		if response.Request.Method == http.MethodPost && strings.HasSuffix(response.Request.URL.Path, "/git-upload-pack") && stalledFirstFetch.CompareAndSwap(false, true) {
+			response.Body = &stallingReadCloser{ctx: response.Request.Context(), ReadCloser: response.Body}
+		}
+		return nil
+	}
+	proxyServer := httptest.NewServer(proxy)
+	t.Cleanup(proxyServer.Close)
+
+	checkoutDir := t.TempDir()
+	originalWorkingDir, err := os.Getwd()
+	require.NoError(t, err)
+	require.NoError(t, os.Chdir(checkoutDir))
+	t.Cleanup(func() {
+		require.NoError(t, os.Chdir(originalWorkingDir))
+	})
+	invocationLog := newInvocationLog(nil)
+	invocationLog.writer = io.Discard
+	ws := &workspace{
+		rootDir: checkoutDir,
+		log:     &buildEventReporter{log: invocationLog},
+	}
+	require.NoError(t, ws.init(t.Context()))
+
+	// The initial fetch should be aborted by Git's low-speed check. Verify the
+	// runner retries it and the second real fetch retrieves the expected ref.
+	err = ws.fetch(t.Context(), proxyServer.URL, []string{"refs/heads/master"}, 1)
+	require.NoError(t, err)
+	require.Equal(t, int64(1), ws.gitFetchRetryCount)
+	fetchedCommitSHA, gitErr := git(t.Context(), io.Discard, "rev-parse", "FETCH_HEAD")
+	require.Nil(t, gitErr)
+	require.Equal(t, wantCommitSHA, strings.TrimSpace(fetchedCommitSHA))
+}
+
+func TestIsTransferTooSlow(t *testing.T) {
+	// Serve a git HTTP endpoint that starts a ref advertisement and then
+	// stalls, so that git's low-speed check aborts the transfer.
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/x-git-upload-pack-advertisement")
+		io.WriteString(w, "001e# service=git-upload-pack\n")
+		w.(http.Flusher).Flush()
+		<-r.Context().Done()
+	}))
+	t.Cleanup(server.Close)
+
+	// List the stalled remote with the low-speed check configured to trip
+	// after one second (the shortest window git supports). Expect
+	// isTransferTooSlow to match the error that git reports.
+	_, err := gitWithEnv(t.Context(), io.Discard, map[string]string{
+		"GIT_HTTP_LOW_SPEED_LIMIT": "1024",
+		"GIT_HTTP_LOW_SPEED_TIME":  "1",
+	}, "ls-remote", server.URL)
+	require.NotNil(t, err)
+	assert.True(t, isTransferTooSlow(err), "expected a low-speed abort, got: %s", err.Output)
+
+	// A git error unrelated to transfer speed should not match.
+	_, err = git(t.Context(), io.Discard, "ls-remote", filepath.Join(t.TempDir(), "nonexistent"))
+	require.NotNil(t, err)
+	assert.False(t, isTransferTooSlow(err), "unexpected low-speed abort: %s", err.Output)
 }
 
 func TestParseGitFetchedBytes(t *testing.T) {

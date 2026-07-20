@@ -28,6 +28,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/encoding/prototext"
+	"google.golang.org/protobuf/testing/protocmp"
 	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/durationpb"
 
@@ -37,7 +38,6 @@ import (
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
-	"google.golang.org/protobuf/testing/protocmp"
 )
 
 func streamRequest(anyEvent *anypb.Any, iid string, sequenceNumer int64) *pepb.PublishBuildToolEventStreamRequest {
@@ -280,13 +280,14 @@ func finishedEvent() *anypb.Any {
 	return finishedAny
 }
 
-func gitFetchCompletedEvent(totalBytes int64, duration time.Duration) *anypb.Any {
+func gitFetchCompletedEvent(totalBytes int64, duration time.Duration, retryCount int64) *anypb.Any {
 	gitFetchAny := &anypb.Any{}
 	gitFetchAny.MarshalFrom(&bspb.BuildEvent{
 		Payload: &bspb.BuildEvent_GitFetchCompleted{
 			GitFetchCompleted: &bspb.GitFetchCompleted{
 				TotalBytes: totalBytes,
 				Duration:   durationpb.New(duration),
+				RetryCount: retryCount,
 			},
 		},
 		Id: &bspb.BuildEventId{Id: &bspb.BuildEventId_GitFetchCompleted{}},
@@ -981,7 +982,7 @@ func TestGitFetchStatsFlushedToOLAPDB(t *testing.T) {
 
 	// Send a GitFetchCompleted event reporting git fetch stats, as published
 	// by the remote runner after setting up the git repo.
-	request = streamRequest(gitFetchCompletedEvent(9_000_000, 3*time.Second), testInvocationID, 3)
+	request = streamRequest(gitFetchCompletedEvent(9_000_000, 3*time.Second, 2), testInvocationID, 3)
 	err = channel.HandleEvent(request)
 	require.NoError(t, err)
 
@@ -1002,6 +1003,7 @@ func TestGitFetchStatsFlushedToOLAPDB(t *testing.T) {
 	}, 30*time.Second, 50*time.Millisecond)
 	assert.Equal(t, int64(9_000_000), inv.GitFetchTotalBytes)
 	assert.Equal(t, (3 * time.Second).Microseconds(), inv.GitFetchDurationUsec)
+	assert.Equal(t, int64(2), inv.GitFetchRetryCount)
 }
 
 func TestUnfinishedFinalizeWithCanceledContext(t *testing.T) {

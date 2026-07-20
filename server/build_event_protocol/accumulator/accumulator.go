@@ -91,6 +91,7 @@ type BEValues struct {
 	profileName               string
 	gitFetchTotalBytes        int64
 	gitFetchDuration          time.Duration
+	gitFetchRetryCount        int64
 
 	failedTestOutputURIs []*url.URL
 	passedTestOutputURIs []*url.URL
@@ -172,6 +173,7 @@ func (v *BEValues) AddEvent(event *build_event_stream.BuildEvent) error {
 		// The remote runner reports cumulative totals, so the last event wins.
 		v.gitFetchTotalBytes = p.GitFetchCompleted.GetTotalBytes()
 		v.gitFetchDuration = p.GitFetchCompleted.GetDuration().AsDuration()
+		v.gitFetchRetryCount = p.GitFetchCompleted.GetRetryCount()
 	case *build_event_stream.BuildEvent_Finished:
 		v.sawFinishedEvent = true
 	case *build_event_stream.BuildEvent_BuildToolLogs:
@@ -253,6 +255,12 @@ func (v *BEValues) GitFetchTotalBytes() int64 {
 // fetch commands, or 0 if not reported.
 func (v *BEValues) GitFetchDuration() time.Duration {
 	return v.gitFetchDuration
+}
+
+// GitFetchRetryCount returns the number of git fetch retries a remote runner
+// made after low-speed aborts, or 0 if not reported.
+func (v *BEValues) GitFetchRetryCount() int64 {
+	return v.gitFetchRetryCount
 }
 
 func (v *BEValues) DisableCommitStatusReporting() bool {

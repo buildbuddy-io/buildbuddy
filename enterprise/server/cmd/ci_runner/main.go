@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"math"
 	"net/url"
 	"os"
 	"os/exec"
@@ -108,6 +109,9 @@ const (
 	// depth required.
 	smartFetchDepth = -1
 
+	// maxGitFetchLowSpeedRetries caps --git_fetch_low_speed_retries.
+	maxGitFetchLowSpeedRetries = 3
+
 	// Env vars set by workflow runner
 	// NOTE: These env vars are not populated for non-private repos.
 
@@ -192,9 +196,15 @@ var (
 	commitSHA             = flag.String("commit_sha", "", "Commit SHA to report statuses for.")
 	prNumber              = flag.Int64("pull_request_number", 0, "PR number, if applicable (0 if not triggered by a PR).")
 	patchURIs             = flag.Slice("patch_uri", []string{}, "URIs of patches to apply to the repo after checkout. Can be specified multiple times to apply multiple patches.")
-	gitCleanExclude       = flag.Slice("git_clean_exclude", []string{}, "Directories to exclude from `git clean` while setting up the repo.")
-	gitFetchFilters       = flag.Slice("git_fetch_filters", []string{}, "Filters to apply to `git fetch` commands.")
-	gitFetchDepth         = flag.Int("git_fetch_depth", smartFetchDepth, "Depth to use for `git fetch` commands.")
+	gitCleanExclude       = flag.Slice("git_clean_exclude", []string{}, "Directories to exclude from git clean while setting up the repo.")
+
+	// Flags to configure git fetch behavior
+	gitFetchFilters         = flag.Slice("git_fetch_filters", []string{}, "Filters to apply to git fetch commands.")
+	gitFetchDepth           = flag.Int("git_fetch_depth", smartFetchDepth, "Depth to use for git fetch commands.")
+	gitFetchLowSpeedRetries = flag.Int("git_fetch_low_speed_retries", 0, "Number of times to retry git fetch commands that were aborted because the transfer rate was too slow.")
+	gitFetchLowSpeedLimit   = flag.Int64("git_fetch_low_speed_limit", 1024, "Transfer rate in bytes per second below which a git fetch transfer is considered too slow. Only applies if git_fetch_low_speed_retries is set.")
+	gitFetchLowSpeedTime    = flag.Duration("git_fetch_low_speed_time", 30*time.Second, "How long a git fetch transfer must stay below git_fetch_low_speed_limit before it is aborted. Only applies if git_fetch_low_speed_retries is set.")
+
 	// Flags to configure merge-with-base behavior
 	targetRepoURL = flag.String("target_repo_url", "", "If different from pushed_repo_url, indicates a fork (`pushed_repo_url`) is being merged into this repo.")
 	targetBranch  = flag.String("target_branch", "", "If different from pushed_branch, pushed_branch should be merged into this branch in the target repo.")
@@ -281,6 +291,9 @@ type workspace struct {
 
 	// Total time spent running git fetch commands during setup.
 	gitFetchDuration time.Duration
+
+	// Total number of git fetch retries after low-speed aborts during setup.
+	gitFetchRetryCount int64
 
 	// The start time of the setup phase.
 	startTime time.Time
@@ -1107,6 +1120,7 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 			Payload: &bespb.BuildEvent_GitFetchCompleted{GitFetchCompleted: &bespb.GitFetchCompleted{
 				TotalBytes: ws.gitFetchTotalBytes,
 				Duration:   durationpb.New(ws.gitFetchDuration),
+				RetryCount: ws.gitFetchRetryCount,
 			}},
 		}
 		publishErr := ar.reporter.Publish(gitFetchEvent)
@@ -2321,12 +2335,41 @@ func (ws *workspace) fetch(ctx context.Context, remoteURL string, refs []string,
 		fetchEnv["GIT_TRACE2_EVENT_NESTING"] = "5"
 	}
 
-	fetchStart := time.Now()
-	_, fetchErr := gitWithEnv(ctx, ws.log, fetchEnv, fetchArgs...)
-	ws.gitFetchDuration += time.Since(fetchStart)
+	lowSpeedRetries := 0
+	if *gitFetchLowSpeedRetries > 0 {
+		lowSpeedRetries = *gitFetchLowSpeedRetries
+		if lowSpeedRetries > maxGitFetchLowSpeedRetries {
+			writeCommandSummary(ws.log, "Warning: --git_fetch_low_speed_retries=%d exceeds the maximum of %d; using %d.", lowSpeedRetries, maxGitFetchLowSpeedRetries, maxGitFetchLowSpeedRetries)
+			lowSpeedRetries = maxGitFetchLowSpeedRetries
+		}
+		// Respect low-speed settings that are already present in the
+		// environment (e.g. set on the image or in the action env).
+		if os.Getenv("GIT_HTTP_LOW_SPEED_LIMIT") == "" {
+			fetchEnv["GIT_HTTP_LOW_SPEED_LIMIT"] = strconv.FormatInt(*gitFetchLowSpeedLimit, 10)
+		}
+		if os.Getenv("GIT_HTTP_LOW_SPEED_TIME") == "" {
+			// Git configures the low-speed window in whole seconds; round up
+			// so that a sub-second value doesn't truncate to 0, which would
+			// disable the low-speed check entirely.
+			fetchEnv["GIT_HTTP_LOW_SPEED_TIME"] = strconv.Itoa(int(math.Ceil(gitFetchLowSpeedTime.Seconds())))
+		}
+	}
+
+	var fetchErr *commandError
+	for attempt := 0; ; attempt++ {
+		fetchStart := time.Now()
+		_, fetchErr = gitWithEnv(ctx, ws.log, fetchEnv, fetchArgs...)
+		ws.gitFetchDuration += time.Since(fetchStart)
+		if fetchErr == nil || attempt >= lowSpeedRetries || !isTransferTooSlow(fetchErr) {
+			break
+		}
+		ws.gitFetchRetryCount++
+		writeCommandSummary(ws.log, "The fetch was aborted because the transfer rate was too slow. Retrying (attempt %d of %d)...", attempt+1, lowSpeedRetries)
+	}
 	// Count fetched bytes even if the fetch failed, since a failed fetch may
 	// be retried (e.g. with a different depth) and we want the total to
-	// reflect all data transferred.
+	// reflect all data transferred. Retried attempts append to the same log,
+	// so any bytes they recorded before being aborted are counted too.
 	if fetchEnv["GIT_TRACE2_EVENT"] != "" {
 		if f, err := os.Open(trace2Path); err != nil {
 			backendLog.Warningf("Could not open the git trace2 event log; git fetch stats may be undercounted: %s", err)
@@ -2449,6 +2492,15 @@ func isBranchNotFound(err error) bool {
 func isAlreadyUpToDate(err error) bool {
 	gitErr, ok := err.(*commandError)
 	return ok && strings.Contains(gitErr.Output, "up to date")
+}
+
+// isTransferTooSlow returns whether git aborted a transfer because its rate
+// stayed below GIT_HTTP_LOW_SPEED_LIMIT for longer than
+// GIT_HTTP_LOW_SPEED_TIME. The message is libcurl's error string for a
+// low-speed abort (curl error 28).
+func isTransferTooSlow(err error) bool {
+	gitErr, ok := err.(*commandError)
+	return ok && strings.Contains(gitErr.Output, "Operation too slow. Less than")
 }
 
 func git(ctx context.Context, out io.Writer, args ...string) (string, *commandError) {
