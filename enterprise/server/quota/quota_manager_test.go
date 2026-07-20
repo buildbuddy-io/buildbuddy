@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/authdb"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/userdb"
@@ -442,6 +443,38 @@ func TestCheckGroupBlocked(t *testing.T) {
 		authedCtx := testauth.WithAuthenticatedUserInfo(ctx, impersonatingClaims)
 		assert.NoError(t, qm.checkGroupBlocked(authedCtx))
 	})
+}
+
+func TestCreateGCRABucket_RateLimit(t *testing.T) {
+	redisHandle := testredis.Start(t)
+	rdb := redisHandle.Client()
+	t.Cleanup(func() { require.NoError(t, rdb.Close()) })
+
+	env := testenv.GetTestEnv(t)
+	env.SetDefaultRedisClient(rdb)
+	bucket, err := createGCRABucket(env, &bucketConfig{
+		namespace:          "test-namespace",
+		name:               "test-bucket",
+		numRequests:        1,
+		periodDurationUsec: int64(time.Hour.Microseconds()),
+		maxBurst:           2,
+	})
+	require.NoError(t, err)
+
+	ctx := t.Context()
+	for range 3 {
+		allowed, err := bucket.Allow(ctx, "key", 1)
+		require.NoError(t, err)
+		require.True(t, allowed)
+	}
+	allowed, err := bucket.Allow(ctx, "key", 1)
+	require.NoError(t, err)
+	require.False(t, allowed)
+
+	// Rate limit state is independent for each key.
+	allowed, err = bucket.Allow(ctx, "other-key", 1)
+	require.NoError(t, err)
+	require.True(t, allowed)
 }
 
 func TestCreateGCRABucket_VeryLargePeriod(t *testing.T) {
