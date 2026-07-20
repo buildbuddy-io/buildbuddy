@@ -10,7 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"strings"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/storage"
@@ -19,6 +19,7 @@ import (
 const (
 	ztracingCommitSHA = "2652640077baa8852d10f0e33a592a5085206ebe"
 	ztracingURLFormat = "https://storage.googleapis.com/buildbuddy-tools/binaries/ztracing/%s/ztracing-%s.tar.gz"
+	downloadTimeout   = 1 * time.Minute
 )
 
 type Installation struct {
@@ -85,13 +86,14 @@ func downloadAndExtract(ctx context.Context, downloadURL, tempDir, destinationDi
 	if err != nil {
 		return fmt.Errorf("create ztracing download request: %w", err)
 	}
-	rsp, err := http.DefaultClient.Do(req)
+	client := &http.Client{Timeout: downloadTimeout}
+	rsp, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("download ztracing: %w", err)
+		return fmt.Errorf("download %s: %w", downloadURL, err)
 	}
 	defer rsp.Body.Close()
 	if rsp.StatusCode != http.StatusOK {
-		return fmt.Errorf("download ztracing: %s", rsp.Status)
+		return fmt.Errorf("download %s: %s", downloadURL, rsp.Status)
 	}
 
 	archive, err := os.CreateTemp(tempDir, "ztracing-*.tar.gz")
@@ -140,12 +142,14 @@ func extractArchive(archivePath, destinationDir string) error {
 		if name == "." {
 			continue
 		}
-		if filepath.IsAbs(name) || name == ".." || strings.HasPrefix(name, ".."+string(os.PathSeparator)) {
+		if !filepath.IsLocal(name) {
 			return fmt.Errorf("archive contains invalid path %q", header.Name)
 		}
 		path := filepath.Join(destinationDir, name)
 
 		switch header.Typeflag {
+		case tar.TypeXGlobalHeader, tar.TypeXHeader:
+			continue
 		case tar.TypeDir:
 			if err := os.MkdirAll(path, header.FileInfo().Mode().Perm()); err != nil {
 				return err
@@ -202,22 +206,39 @@ func removeOldInstallations(rootDir, keep string) error {
 		if entry.Name() == keep {
 			continue
 		}
-		if err := os.RemoveAll(filepath.Join(rootDir, entry.Name())); err != nil {
-			return fmt.Errorf("remove old ztracing installation %q: %w", entry.Name(), err)
+		installationPath := filepath.Join(rootDir, entry.Name())
+		if err := os.RemoveAll(installationPath); err != nil {
+			return fmt.Errorf("remove old ztracing installation %q: %w", installationPath, err)
 		}
+		log.Printf("Removed old ztracing installation %q", installationPath)
 	}
 	return nil
 }
 
 func isValidInstallation(installation *Installation) bool {
-	if !isExecutable(installation.BinaryPath) {
+	binaryInfo, err := os.Stat(installation.BinaryPath)
+	if err != nil {
+		log.Debugf("Invalid ztracing installation: could not stat binary %q: %s", installation.BinaryPath, err)
 		return false
 	}
-	info, err := os.Stat(filepath.Join(installation.SkillDir, "SKILL.md"))
-	return err == nil && info.Mode().IsRegular()
-}
+	if !binaryInfo.Mode().IsRegular() {
+		log.Debugf("Invalid ztracing installation: binary %q is not a regular file", installation.BinaryPath)
+		return false
+	}
+	if binaryInfo.Mode().Perm()&0111 == 0 {
+		log.Debugf("Invalid ztracing installation: binary %q is not executable", installation.BinaryPath)
+		return false
+	}
 
-func isExecutable(path string) bool {
-	info, err := os.Stat(path)
-	return err == nil && info.Mode().IsRegular() && info.Mode().Perm()&0111 != 0
+	skillPath := filepath.Join(installation.SkillDir, "SKILL.md")
+	skillInfo, err := os.Stat(skillPath)
+	if err != nil {
+		log.Debugf("Invalid ztracing installation: could not stat skill file %q: %s", skillPath, err)
+		return false
+	}
+	if !skillInfo.Mode().IsRegular() {
+		log.Debugf("Invalid ztracing installation: skill file %q is not a regular file", skillPath)
+		return false
+	}
+	return true
 }
