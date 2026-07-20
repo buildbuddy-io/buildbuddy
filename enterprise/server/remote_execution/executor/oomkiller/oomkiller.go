@@ -75,6 +75,12 @@ type TaskState struct {
 	EstimatedMemoryBytes int64
 	// GroupID identifies the group that owns an active task.
 	GroupID string
+	// ExecutionID identifies the execution ID associated with the task,
+	// or "" if the runner is not active.
+	ExecutionID string
+	// InvocationID identifies the invocation associated with the task,
+	// or "" if the runner is not active.
+	InvocationID string
 	// RemoteExecutionPriority is the task's remote execution priority. Positive
 	// values mark low priority tasks, and larger values are lower priority.
 	// This field is only comparable among active tasks with the same non-empty
@@ -280,7 +286,7 @@ func (k *killer) pollWhileTasks(ctx context.Context) {
 }
 
 func (k *killer) check(ctx context.Context) error {
-	snapshot, err := k.monitor.Snapshot(ctx)
+	hostMem, err := k.monitor.Snapshot(ctx)
 	if err != nil {
 		return err
 	}
@@ -290,9 +296,9 @@ func (k *killer) check(ctx context.Context) error {
 	// victim's memory isn't reclaimed instantly, so we can't re-snapshot after
 	// each kill; instead we optimistically subtract each victim's observed
 	// memory from the projected usage.
-	projectedUsedBytes := snapshot.UsedBytes
+	projectedUsedBytes := hostMem.UsedBytes
 	killedCount := 0
-	for k.shouldKill(ctx, projectedUsedBytes, snapshot.LimitBytes) {
+	for k.shouldKill(ctx, projectedUsedBytes, hostMem.LimitBytes) {
 		victim := k.chooseVictim(ctx)
 		if victim == nil {
 			if killedCount == 0 {
@@ -309,8 +315,19 @@ func (k *killer) check(ctx context.Context) error {
 			// instead of waiting for the next poll.
 			continue
 		}
-		log.CtxWarningf(ctx, "Executor OOM killer terminating victim %s: executor memory used=%d projected_remaining=%d limit=%d available=%d victim memory=%d estimated=%d active=%t", taskName(victim.task), snapshot.UsedBytes, projectedUsedBytes, snapshot.LimitBytes, snapshot.AvailableBytes, victim.observedMemoryBytes, victim.state.EstimatedMemoryBytes, victim.state.Active)
-		metrics.RemoteExecutionOOMKillerTargetedTaskMemoryBytes.Observe(float64(victim.observedMemoryBytes))
+
+		ctx := log.EnrichContext(ctx, log.ExecutionIDKey, victim.state.ExecutionID)
+		ctx = log.EnrichContext(ctx, log.InvocationIDKey, victim.state.InvocationID)
+		log.CtxWarningf(
+			ctx,
+			"Executor OOM killer terminating victim %s: "+
+				"Executor{Used:%d ProjectedUsed:%d Limit:%d Avail:%d} "+
+				"Victim{Memory:%d Estimated:%d Active:%t}",
+			taskName(victim.task),
+			hostMem.UsedBytes, projectedUsedBytes, hostMem.LimitBytes, hostMem.AvailableBytes,
+			victim.observedMemoryBytes, victim.state.EstimatedMemoryBytes, victim.state.Active,
+		)
+		metrics.RemoteExecutionOOMKillerTargetedTaskMemoryBytes.WithLabelValues(victim.state.GroupID).Observe(float64(victim.observedMemoryBytes))
 		oomErr := oom.Error(oom.Details{
 			EstimatedMemoryBytes: victim.state.EstimatedMemoryBytes,
 			ObservedMemoryBytes:  victim.observedMemoryBytes,
