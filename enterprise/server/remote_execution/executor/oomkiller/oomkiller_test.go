@@ -2,6 +2,7 @@ package oomkiller
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"testing"
 	"testing/synctest"
@@ -43,6 +44,111 @@ func TestKillerDoesNotKillBelowThreshold(t *testing.T) {
 	defer unregister()
 
 	requireNotKilled(t, task)
+}
+
+func TestKillerRequiresSustainedSomeMemoryPressure(t *testing.T) {
+	ctx := t.Context()
+	monitor := &fakeMemoryMonitor{snapshot: memoryPressureSnapshot(950, 0, 0)}
+	k := newTestKiller(t, ctx, monitor, manualPollInterval)
+	k.someMemoryPressure = memoryPressureThreshold{stallFraction: 0.2, consecutivePolls: 3}
+	now := time.Unix(100, 0)
+	k.now = func() time.Time { return now }
+	task := newFakeTask("task", 100, 800)
+	defer k.Register(ctx, task)()
+
+	// The first poll establishes the cumulative PSI baseline and cannot kill a
+	// task even though memory usage is over the configured threshold.
+	require.NoError(t, k.check(ctx))
+	require.Equal(t, 0, task.killCount())
+
+	// Two intervals with 25% some-stall pressure are not enough because the
+	// policy requires three consecutive intervals.
+	for i := 1; i <= 2; i++ {
+		now = now.Add(time.Second)
+		monitor.set(memoryPressureSnapshot(950, int64(i)*250_000, 0))
+		require.NoError(t, k.check(ctx))
+		require.Equal(t, 0, task.killCount())
+	}
+
+	// The third consecutive interval over the some-stall threshold permits the
+	// killer to select a victim.
+	now = now.Add(time.Second)
+	monitor.set(memoryPressureSnapshot(950, 750_000, 0))
+	require.NoError(t, k.check(ctx))
+	require.Equal(t, 1, task.killCount())
+}
+
+func TestKillerRequiresSustainedFullMemoryPressure(t *testing.T) {
+	ctx := t.Context()
+	monitor := &fakeMemoryMonitor{snapshot: memoryPressureSnapshot(950, 0, 0)}
+	k := newTestKiller(t, ctx, monitor, manualPollInterval)
+	k.fullMemoryPressure = memoryPressureThreshold{stallFraction: 0.05, consecutivePolls: 2}
+	now := time.Unix(100, 0)
+	k.now = func() time.Time { return now }
+	task := newFakeTask("task", 100, 800)
+	defer k.Register(ctx, task)()
+
+	// The first poll establishes the PSI baseline. The first interval with 10%
+	// full-stall pressure records pressure but does not yet permit a kill.
+	require.NoError(t, k.check(ctx))
+	now = now.Add(time.Second)
+	monitor.set(memoryPressureSnapshot(950, 0, 100_000))
+	require.NoError(t, k.check(ctx))
+	require.Equal(t, 0, task.killCount())
+
+	// A second consecutive interval over the full-stall threshold permits the
+	// killer to select a victim.
+	now = now.Add(time.Second)
+	monitor.set(memoryPressureSnapshot(950, 0, 200_000))
+	require.NoError(t, k.check(ctx))
+	require.Equal(t, 1, task.killCount())
+}
+
+func TestKillerDoesNotKillWhenConfiguredMemoryPressureIsUnavailable(t *testing.T) {
+	ctx := t.Context()
+	monitor := &fakeMemoryMonitor{snapshot: &MemorySnapshot{UsedBytes: 950, LimitBytes: 1000, AvailableBytes: 50}}
+	k := newTestKiller(t, ctx, monitor, manualPollInterval)
+	k.someMemoryPressure = memoryPressureThreshold{stallFraction: 0.2, consecutivePolls: 1}
+	task := newFakeTask("task", 100, 800)
+	defer k.Register(ctx, task)()
+
+	// If PSI is unavailable, a configured pressure requirement must fail closed
+	// rather than reverting to the unreliable memory working set signal by itself.
+	require.NoError(t, k.check(ctx))
+	require.Equal(t, 0, task.killCount())
+}
+
+func TestKillerDoesNotAccumulateMemoryPressureBelowMemoryThreshold(t *testing.T) {
+	ctx := t.Context()
+	monitor := &fakeMemoryMonitor{snapshot: memoryPressureSnapshot(500, 0, 0)}
+	k := newTestKiller(t, ctx, monitor, manualPollInterval)
+	k.someMemoryPressure = memoryPressureThreshold{stallFraction: 0.2, consecutivePolls: 2}
+	now := time.Unix(100, 0)
+	k.now = func() time.Time { return now }
+	task := newFakeTask("task", 100, 800)
+	defer k.Register(ctx, task)()
+
+	// Sustained PSI while memory usage is below the memory threshold must not
+	// count toward the consecutive pressure requirement.
+	require.NoError(t, k.check(ctx))
+	now = now.Add(time.Second)
+	monitor.set(memoryPressureSnapshot(500, 500_000, 0))
+	require.NoError(t, k.check(ctx))
+
+	// Crossing the memory threshold starts a new pressure observation period.
+	// The killer waits for two complete high-memory, high-pressure intervals.
+	now = now.Add(time.Second)
+	monitor.set(memoryPressureSnapshot(950, 1_000_000, 0))
+	require.NoError(t, k.check(ctx))
+	now = now.Add(time.Second)
+	monitor.set(memoryPressureSnapshot(950, 1_500_000, 0))
+	require.NoError(t, k.check(ctx))
+	require.Equal(t, 0, task.killCount())
+
+	now = now.Add(time.Second)
+	monitor.set(memoryPressureSnapshot(950, 2_000_000, 0))
+	require.NoError(t, k.check(ctx))
+	require.Equal(t, 1, task.killCount())
 }
 
 func TestKillerUnregistersTaskWhenContextIsDone(t *testing.T) {
@@ -530,6 +636,101 @@ func TestNewRejectsInvalidMemoryUsageThreshold(t *testing.T) {
 	}
 }
 
+func TestNewRejectsInvalidMemoryPressureStallThreshold(t *testing.T) {
+	for _, testCase := range []struct {
+		name      string
+		flagName  string
+		threshold float64
+	}{
+		{name: "negative some", flagName: "executor.oom_killer.memory_pressure_some_stall_threshold", threshold: -0.1},
+		{name: "some over one", flagName: "executor.oom_killer.memory_pressure_some_stall_threshold", threshold: 1.1},
+		{name: "negative full", flagName: "executor.oom_killer.memory_pressure_full_stall_threshold", threshold: -0.1},
+		{name: "full over one", flagName: "executor.oom_killer.memory_pressure_full_stall_threshold", threshold: 1.1},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			flags.Set(t, "executor.oom_killer.memory_usage_threshold", 0.9)
+			flags.Set(t, testCase.flagName, testCase.threshold)
+
+			// PSI stall fractions outside the inclusive range from zero to one
+			// cannot represent a fraction of elapsed wall time.
+			oomKiller, err := New(t.Context(), &fakeMemoryMonitor{})
+			require.ErrorContains(t, err, "must be between 0 and 1")
+			require.Nil(t, oomKiller)
+		})
+	}
+}
+
+func TestNewRejectsInvalidMemoryPressureConsecutivePolls(t *testing.T) {
+	for _, testCase := range []struct {
+		name          string
+		thresholdFlag string
+		pollsFlag     string
+	}{
+		{
+			name:          "some",
+			thresholdFlag: "executor.oom_killer.memory_pressure_some_stall_threshold",
+			pollsFlag:     "executor.oom_killer.memory_pressure_some_stall_consecutive_polls",
+		},
+		{
+			name:          "full",
+			thresholdFlag: "executor.oom_killer.memory_pressure_full_stall_threshold",
+			pollsFlag:     "executor.oom_killer.memory_pressure_full_stall_consecutive_polls",
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			flags.Set(t, "executor.oom_killer.memory_usage_threshold", 0.9)
+			flags.Set(t, testCase.thresholdFlag, 0.1)
+			flags.Set(t, testCase.pollsFlag, 0)
+
+			// An enabled PSI signal must require at least one poll before it can
+			// permit a kill.
+			oomKiller, err := New(t.Context(), &fakeMemoryMonitor{})
+			require.ErrorContains(t, err, "must be greater than 0")
+			require.Nil(t, oomKiller)
+		})
+	}
+}
+
+func TestNewConfiguresMemoryPressureThresholds(t *testing.T) {
+	flags.Set(t, "executor.oom_killer.memory_usage_threshold", 0.9)
+	flags.Set(t, "executor.oom_killer.memory_pressure_some_stall_threshold", 0.2)
+	flags.Set(t, "executor.oom_killer.memory_pressure_some_stall_consecutive_polls", 3)
+	flags.Set(t, "executor.oom_killer.memory_pressure_full_stall_threshold", 0.1)
+	flags.Set(t, "executor.oom_killer.memory_pressure_full_stall_consecutive_polls", 2)
+	flags.Set(t, "executor.enable_oci", true)
+	ctx, cancel := context.WithCancel(t.Context())
+
+	// New should preserve independent some- and full-stall policies so either
+	// signal can satisfy the pressure requirement with its configured persistence.
+	oomKiller, err := New(ctx, &fakeMemoryMonitor{})
+	require.NoError(t, err)
+	k, ok := oomKiller.(*killer)
+	require.True(t, ok)
+	require.Equal(t, memoryPressureThreshold{stallFraction: 0.2, consecutivePolls: 3}, k.someMemoryPressure)
+	require.Equal(t, memoryPressureThreshold{stallFraction: 0.1, consecutivePolls: 2}, k.fullMemoryPressure)
+
+	cancel()
+	select {
+	case <-k.runDone:
+	case <-time.After(time.Second):
+		t.Fatal("OOM killer did not stop")
+	}
+}
+
+func TestNewRejectsUnavailableMemoryPressure(t *testing.T) {
+	flags.Set(t, "executor.oom_killer.memory_usage_threshold", 0.9)
+	flags.Set(t, "executor.oom_killer.memory_pressure_some_stall_threshold", 0.2)
+	flags.Set(t, "executor.enable_oci", true)
+	monitor := &fakeMemoryMonitor{memoryPressureSupportErr: errors.New("PSI unavailable")}
+
+	// A configured pressure requirement must fail executor startup when the monitor
+	// cannot provide the corresponding PSI signal.
+	oomKiller, err := New(t.Context(), monitor)
+	require.ErrorContains(t, err, "check executor OOM killer memory pressure support: PSI unavailable")
+	require.Nil(t, oomKiller)
+	require.Equal(t, 0, monitor.snapshotCount())
+}
+
 func TestNewRejectsUnsupportedIsolationType(t *testing.T) {
 	flags.Set(t, "executor.oom_killer.enabled", true)
 	flags.Set(t, "executor.oom_killer.memory_usage_threshold", 0.9)
@@ -545,9 +746,22 @@ func TestNewRejectsUnsupportedIsolationType(t *testing.T) {
 }
 
 type fakeMemoryMonitor struct {
-	mu        sync.Mutex
-	snapshot  *MemorySnapshot
-	snapshots int
+	mu                       sync.Mutex
+	snapshot                 *MemorySnapshot
+	snapshots                int
+	memoryPressureSupportErr error
+}
+
+func memoryPressureSnapshot(usedBytes, someTotalUsec, fullTotalUsec int64) *MemorySnapshot {
+	return &MemorySnapshot{
+		UsedBytes:      usedBytes,
+		LimitBytes:     1000,
+		AvailableBytes: max(int64(0), 1000-usedBytes),
+		MemoryPressure: &repb.PSI{
+			Some: &repb.PSI_Metrics{Total: someTotalUsec},
+			Full: &repb.PSI_Metrics{Total: fullTotalUsec},
+		},
+	}
 }
 
 func (m *fakeMemoryMonitor) Snapshot(ctx context.Context) (*MemorySnapshot, error) {
@@ -555,6 +769,10 @@ func (m *fakeMemoryMonitor) Snapshot(ctx context.Context) (*MemorySnapshot, erro
 	defer m.mu.Unlock()
 	m.snapshots++
 	return m.snapshot, nil
+}
+
+func (m *fakeMemoryMonitor) CheckMemoryPressureSupport(ctx context.Context) error {
+	return m.memoryPressureSupportErr
 }
 
 func (m *fakeMemoryMonitor) set(snapshot *MemorySnapshot) {
@@ -677,6 +895,8 @@ func newTestKiller(t testing.TB, ctx context.Context, monitor *fakeMemoryMonitor
 	flags.Set(t, "executor.oom_killer.enabled", true)
 	flags.Set(t, "executor.oom_killer.poll_interval", pollInterval)
 	flags.Set(t, "executor.oom_killer.memory_usage_threshold", 0.9)
+	flags.Set(t, "executor.oom_killer.memory_pressure_some_stall_threshold", 0)
+	flags.Set(t, "executor.oom_killer.memory_pressure_full_stall_threshold", 0)
 	flags.Set(t, "executor.enable_oci", true)
 
 	oomKiller, err := New(ctx, monitor)

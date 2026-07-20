@@ -5,8 +5,9 @@
 // Runners can implement this task interface for both active command executions
 // and paused persistent worker containers.
 //
-// When executor memory usage crosses the configured threshold, the killer
-// chooses a victim in priority order:
+// When executor memory usage crosses the configured threshold, and any
+// configured memory pressure requirement is satisfied, the killer chooses a
+// victim in priority order:
 //
 //   - First, active tasks above their estimate.
 //   - Next, the least recently used paused runners.
@@ -24,6 +25,7 @@ package oomkiller
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -109,12 +111,18 @@ type MemorySnapshot struct {
 	LimitBytes int64
 	// AvailableBytes is the executor memory headroom in bytes.
 	AvailableBytes int64
+	// MemoryPressure contains cumulative PSI counters for the executor cgroup.
+	// It may be nil when pressure collection was not requested.
+	MemoryPressure *repb.PSI
 }
 
 // MemoryMonitor reads executor memory usage.
 type MemoryMonitor interface {
 	// Snapshot reads current executor memory usage.
 	Snapshot(ctx context.Context) (*MemorySnapshot, error)
+	// CheckMemoryPressureSupport returns an error if the monitor cannot collect
+	// PSI memory pressure.
+	CheckMemoryPressureSupport(ctx context.Context) error
 }
 
 // systemMemoryMonitor measures system-wide memory usage against total system
@@ -145,9 +153,17 @@ func (m *systemMemoryMonitor) Snapshot(_ context.Context) (*MemorySnapshot, erro
 	}, nil
 }
 
+func (m *systemMemoryMonitor) CheckMemoryPressureSupport(_ context.Context) error {
+	return errors.New("system memory monitor does not support PSI memory pressure")
+}
+
 type killer struct {
 	monitor              MemoryMonitor
 	memoryUsageThreshold float64
+	someMemoryPressure   memoryPressureThreshold
+	fullMemoryPressure   memoryPressureThreshold
+	lastMemoryPressure   *memoryPressureSample
+	now                  func() time.Time
 	// runDone is closed when the background polling loop exits.
 	runDone chan struct{}
 
@@ -166,6 +182,28 @@ type registeredTask struct {
 	killed bool
 }
 
+type memoryPressureThreshold struct {
+	stallFraction    float64
+	consecutivePolls int
+	observedPolls    int
+}
+
+type memoryPressureSample struct {
+	observedAt    time.Time
+	someTotalUsec int64
+	fullTotalUsec int64
+	hasSome       bool
+	hasFull       bool
+	memoryHigh    bool
+}
+
+type memoryPressureConfig struct {
+	someStallThreshold        float64
+	someStallConsecutivePolls int
+	fullStallThreshold        float64
+	fullStallConsecutivePolls int
+}
+
 // Enabled returns whether the OOM killer is enabled.
 func Enabled() bool {
 	return *enabled
@@ -178,6 +216,15 @@ func New(ctx context.Context, monitor MemoryMonitor) (Killer, error) {
 	if threshold <= 0 || threshold >= 1 {
 		return nil, fmt.Errorf("executor OOM killer memory usage threshold must be greater than 0 and less than 1, got %g", threshold)
 	}
+	pressureConfig := memoryPressureConfigFromFlags()
+	somePressure, err := newMemoryPressureThreshold("some", pressureConfig.someStallThreshold, pressureConfig.someStallConsecutivePolls)
+	if err != nil {
+		return nil, err
+	}
+	fullPressure, err := newMemoryPressureThreshold("full", pressureConfig.fullStallThreshold, pressureConfig.fullStallConsecutivePolls)
+	if err != nil {
+		return nil, err
+	}
 	// TODO: support other isolation types once all isolation types are updated
 	// so that Stats() is guaranteed to be non-blocking and always just returns
 	// the last stats observed from the running task.
@@ -186,9 +233,17 @@ func New(ctx context.Context, monitor MemoryMonitor) (Killer, error) {
 			return nil, status.FailedPreconditionErrorf("executor OOM killer only supports OCI and Firecracker isolation types, got enabled isolation type %q", isolationType)
 		}
 	}
+	if somePressure.stallFraction > 0 || fullPressure.stallFraction > 0 {
+		if err := monitor.CheckMemoryPressureSupport(ctx); err != nil {
+			return nil, fmt.Errorf("check executor OOM killer memory pressure support: %w", err)
+		}
+	}
 	k := &killer{
 		monitor:              monitor,
 		memoryUsageThreshold: threshold,
+		someMemoryPressure:   somePressure,
+		fullMemoryPressure:   fullPressure,
+		now:                  time.Now,
 		runDone:              make(chan struct{}),
 		tasks:                make(map[uint64]registeredTask),
 		taskChange:           make(chan struct{}, 1),
@@ -290,6 +345,10 @@ func (k *killer) check(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	memoryHigh := k.shouldKill(ctx, hostMem.UsedBytes, hostMem.LimitBytes)
+	if !k.memoryPressureRequirementSatisfied(hostMem.MemoryPressure, memoryHigh) || !memoryHigh {
+		return nil
+	}
 	// Killing a single task per poll may leave us over the threshold for many
 	// polls, so keep killing victims until executor memory usage is projected to
 	// fall back under the threshold (or we run out of victims). A killed
@@ -345,6 +404,81 @@ func (k *killer) shouldKill(ctx context.Context, usedBytes, limitBytes int64) bo
 		return false
 	}
 	return float64(usedBytes)/float64(limitBytes) >= k.memoryUsageThreshold
+}
+
+func newMemoryPressureThreshold(signal string, stallFraction float64, consecutivePolls int) (memoryPressureThreshold, error) {
+	if stallFraction < 0 || stallFraction > 1 {
+		return memoryPressureThreshold{}, fmt.Errorf("executor OOM killer memory pressure %s stall threshold must be between 0 and 1, got %g", signal, stallFraction)
+	}
+	if stallFraction == 0 {
+		return memoryPressureThreshold{}, nil
+	}
+	if consecutivePolls <= 0 {
+		return memoryPressureThreshold{}, fmt.Errorf("executor OOM killer memory pressure %s consecutive polls must be greater than 0, got %d", signal, consecutivePolls)
+	}
+	return memoryPressureThreshold{
+		stallFraction:    stallFraction,
+		consecutivePolls: consecutivePolls,
+	}, nil
+}
+
+func (k *killer) memoryPressureRequirementSatisfied(pressure *repb.PSI, memoryHigh bool) bool {
+	if k.someMemoryPressure.stallFraction == 0 && k.fullMemoryPressure.stallFraction == 0 {
+		return true
+	}
+	if pressure == nil {
+		k.lastMemoryPressure = nil
+		k.someMemoryPressure.observedPolls = 0
+		k.fullMemoryPressure.observedPolls = 0
+		return false
+	}
+
+	now := k.now()
+	sample := &memoryPressureSample{
+		observedAt: now,
+		memoryHigh: memoryHigh,
+	}
+	if pressure.Some != nil {
+		sample.someTotalUsec = pressure.Some.Total
+		sample.hasSome = true
+	}
+	if pressure.Full != nil {
+		sample.fullTotalUsec = pressure.Full.Total
+		sample.hasFull = true
+	}
+	previous := k.lastMemoryPressure
+	k.lastMemoryPressure = sample
+	if previous == nil || !now.After(previous.observedAt) {
+		k.someMemoryPressure.observedPolls = 0
+		k.fullMemoryPressure.observedPolls = 0
+		return false
+	}
+
+	elapsedUsec := now.Sub(previous.observedAt).Microseconds()
+	valid := memoryHigh && previous.memoryHigh
+	someExceeded := k.someMemoryPressure.observe(
+		sample.someTotalUsec-previous.someTotalUsec,
+		elapsedUsec,
+		valid && sample.hasSome && previous.hasSome,
+	)
+	fullExceeded := k.fullMemoryPressure.observe(
+		sample.fullTotalUsec-previous.fullTotalUsec,
+		elapsedUsec,
+		valid && sample.hasFull && previous.hasFull,
+	)
+	return someExceeded || fullExceeded
+}
+
+func (t *memoryPressureThreshold) observe(stalledUsec, elapsedUsec int64, valid bool) bool {
+	if t.stallFraction == 0 {
+		return false
+	}
+	if !valid || stalledUsec < 0 || elapsedUsec <= 0 || float64(stalledUsec)/float64(elapsedUsec) < t.stallFraction {
+		t.observedPolls = 0
+		return false
+	}
+	t.observedPolls++
+	return t.observedPolls >= t.consecutivePolls
 }
 
 type victimCandidate struct {

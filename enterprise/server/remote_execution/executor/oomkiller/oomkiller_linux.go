@@ -9,8 +9,25 @@ import (
 	"path/filepath"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/cgroup"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 )
+
+var (
+	memoryPressureSomeStallThreshold        = flag.Float64("executor.oom_killer.memory_pressure_some_stall_threshold", 0, "Fraction of time between polls during which at least one task must be stalled on memory pressure before the executor OOM killer starts killing tasks. Setting this to 0 disables the some-stall requirement.", flag.Internal)
+	memoryPressureSomeStallConsecutivePolls = flag.Int("executor.oom_killer.memory_pressure_some_stall_consecutive_polls", 3, "Number of consecutive polls over the some-stall threshold required before the executor OOM killer starts killing tasks.", flag.Internal)
+	memoryPressureFullStallThreshold        = flag.Float64("executor.oom_killer.memory_pressure_full_stall_threshold", 0, "Fraction of time between polls during which all non-idle tasks must be stalled on memory pressure before the executor OOM killer starts killing tasks. Setting this to 0 disables the full-stall requirement.", flag.Internal)
+	memoryPressureFullStallConsecutivePolls = flag.Int("executor.oom_killer.memory_pressure_full_stall_consecutive_polls", 2, "Number of consecutive polls over the full-stall threshold required before the executor OOM killer starts killing tasks.", flag.Internal)
+)
+
+func memoryPressureConfigFromFlags() memoryPressureConfig {
+	return memoryPressureConfig{
+		someStallThreshold:        *memoryPressureSomeStallThreshold,
+		someStallConsecutivePolls: *memoryPressureSomeStallConsecutivePolls,
+		fullStallThreshold:        *memoryPressureFullStallThreshold,
+		fullStallConsecutivePolls: *memoryPressureFullStallConsecutivePolls,
+	}
+}
 
 // NewMemoryMonitor returns the default executor memory monitor. cgroupPath is
 // the executor's starting cgroup path relative to the cgroupfs root. The
@@ -66,16 +83,33 @@ type cgroupMemoryMonitor struct {
 	limitBytes int64
 }
 
+func (m *cgroupMemoryMonitor) CheckMemoryPressureSupport(_ context.Context) error {
+	_, err := cgroup.ReadMemoryPressure(m.dir)
+	if err != nil {
+		return fmt.Errorf("read executor cgroup memory pressure: %w", err)
+	}
+	return nil
+}
+
 func (m *cgroupMemoryMonitor) Snapshot(_ context.Context) (*MemorySnapshot, error) {
 	usedBytes, err := getCgroupWorkingSetMemoryBytes(m.dir)
 	if err != nil {
 		return nil, fmt.Errorf("read executor cgroup memory: %w", err)
 	}
-	return &MemorySnapshot{
+	snapshot := &MemorySnapshot{
 		UsedBytes:      usedBytes,
 		LimitBytes:     m.limitBytes,
 		AvailableBytes: max(int64(0), m.limitBytes-usedBytes),
-	}, nil
+	}
+	if *memoryPressureSomeStallThreshold == 0 && *memoryPressureFullStallThreshold == 0 {
+		return snapshot, nil
+	}
+	memoryPressure, err := cgroup.ReadMemoryPressure(m.dir)
+	if err != nil {
+		return nil, fmt.Errorf("read executor cgroup memory pressure: %w", err)
+	}
+	snapshot.MemoryPressure = memoryPressure
+	return snapshot, nil
 }
 
 // getCgroupWorkingSetMemoryBytes returns the memory usage of the cgroup at the

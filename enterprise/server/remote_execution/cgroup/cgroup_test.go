@@ -164,6 +164,14 @@ func TestReadMemoryStatField(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestReadMemoryPressureUnavailable(t *testing.T) {
+	// A caller that explicitly requests memory pressure needs to know when PSI
+	// is unavailable so it does not treat a missing signal as zero pressure.
+	psi, err := ReadMemoryPressure(t.TempDir())
+	require.Error(t, err)
+	require.Nil(t, psi)
+}
+
 func TestParsePSI(t *testing.T) {
 	r := strings.NewReader(`some avg10=0.00 avg60=1.00 avg300=4.11 total=123456
 full avg10=0.01 avg60=0.50 avg300=1.23 total=23456

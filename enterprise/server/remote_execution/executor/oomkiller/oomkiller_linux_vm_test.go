@@ -98,7 +98,7 @@ func TestVMKillerKillsTaskWhenCgroupMemoryIsExhausted(t *testing.T) {
 	oomKiller, err := New(ctx, monitor)
 	require.NoError(t, err)
 
-	task := &vmTestTask{killed: make(chan error, 1)}
+	task := newVMTestTask(50 << 20)
 	unregister := oomKiller.Register(ctx, task)
 	defer unregister()
 
@@ -113,6 +113,52 @@ func TestVMKillerKillsTaskWhenCgroupMemoryIsExhausted(t *testing.T) {
 		require.True(t, oom.IsError(err), "expected an OOM error, got: %s", err)
 	case <-time.After(60 * time.Second):
 		t.Fatal("task was not killed by the OOM killer")
+	}
+}
+
+func TestVMKillerKillsSmallTaskWhenActiveFileCacheInflatesWorkingSet(t *testing.T) {
+	cgroupDir := setupTestCgroup(t)
+	scratchDir := t.TempDir()
+	var st unix.Statfs_t
+	require.NoError(t, unix.Statfs(scratchDir, &st))
+	require.NotEqual(t, int64(unix.TMPFS_MAGIC), st.Type, "scratch dir %s is on tmpfs; expected a disk-backed filesystem", scratchDir)
+
+	// The working set excludes inactive file cache but includes active file
+	// cache, even though both are reclaimable. Repeatedly read a clean file from
+	// this cgroup so at least 100 MiB of its cache remains active.
+	cacheFile := filepath.Join(scratchDir, "active-file-cache")
+	cmd, _ := startBashInCgroup(t, cgroupDir, fmt.Sprintf("dd if=/dev/zero of=%q bs=1M count=128 conv=fsync", cacheFile))
+	require.NoError(t, cmd.Wait())
+	startBashInCgroup(t, cgroupDir, fmt.Sprintf("while true; do cat %q >/dev/null; done", cacheFile))
+	require.Eventually(t, func() bool {
+		activeFileBytes, err := cgroup.ReadMemoryStatField(cgroupDir, "active_file")
+		return err == nil && activeFileBytes >= 100<<20
+	}, 30*time.Second, 100*time.Millisecond, "active file cache did not reach 100 MiB")
+
+	usedBytes, err := getCgroupWorkingSetMemoryBytes(cgroupDir)
+	require.NoError(t, err)
+
+	flags.Set(t, "executor.oom_killer.enabled", true)
+	flags.Set(t, "executor.oom_killer.poll_interval", 100*time.Millisecond)
+	flags.Set(t, "executor.oom_killer.memory_usage_threshold", 0.9)
+	flags.Set(t, "executor.oom_killer.memory_pressure_some_stall_threshold", 0)
+	flags.Set(t, "executor.oom_killer.memory_pressure_full_stall_threshold", 0)
+	flags.Set(t, "executor.enable_oci", true)
+
+	// Use an artificial limit so the reclaimable cache makes the working set
+	// appear 98% full. With no memory pressure requirement, this high working
+	// set alone causes the OOM killer to terminate a task using only 1 MiB.
+	monitor := &cgroupMemoryMonitor{dir: cgroupDir, limitBytes: usedBytes * 100 / 98}
+	oomKiller, err := New(t.Context(), monitor)
+	require.NoError(t, err)
+	task := newVMTestTask(1 << 20)
+	unregister := oomKiller.Register(t.Context(), task)
+	defer unregister()
+	select {
+	case err := <-task.killed:
+		require.True(t, oom.IsError(err), "expected an OOM error, got: %s", err)
+	case <-time.After(30 * time.Second):
+		t.Fatal("task was not killed for the high working set")
 	}
 }
 
@@ -209,7 +255,15 @@ func startBashInCgroup(t *testing.T, cgroupDir, script string) (*exec.Cmd, io.Wr
 }
 
 type vmTestTask struct {
-	killed chan error
+	memoryBytes int64
+	killed      chan error
+}
+
+func newVMTestTask(memoryBytes int64) *vmTestTask {
+	return &vmTestTask{
+		memoryBytes: memoryBytes,
+		killed:      make(chan error, 1),
+	}
 }
 
 func (f *vmTestTask) State(ctx context.Context) (*TaskState, error) {
@@ -217,7 +271,7 @@ func (f *vmTestTask) State(ctx context.Context) (*TaskState, error) {
 		EstimatedMemoryBytes: 1,
 		StartedAt:            time.Now(),
 		Active:               true,
-		UsageStats:           &repb.UsageStats{MemoryBytes: 50 << 20},
+		UsageStats:           &repb.UsageStats{MemoryBytes: f.memoryBytes},
 	}, nil
 }
 

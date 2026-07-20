@@ -503,6 +503,14 @@ func ReadMemoryStatField(dir, field string) (int64, error) {
 	return readCgroupInt64Field(filepath.Join(dir, "memory.stat"), field)
 }
 
+// ReadMemoryPressure reads the "memory.pressure" file under the given cgroup
+// directory. It returns an error when PSI is not supported by the host kernel.
+// The directory should be an absolute path, including the /sys/fs/cgroup
+// prefix.
+func ReadMemoryPressure(dir string) (*repb.PSI, error) {
+	return readPSIFile(filepath.Join(dir, "memory.pressure"))
+}
+
 // ReadPidsEvents reads the "pids.events" file under the given cgroup
 // directory and returns the counter values as a map. The directory should be an
 // absolute path, including the /sys/fs/cgroup prefix.
