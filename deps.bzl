@@ -313,19 +313,17 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
         sha256 = PODMAN_STATIC_SHA256_ARM64,
     )
 
-    # NOTE: crun 1.16.1 has a double-free bug. Before upgrading, be sure the
-    # release includes a fix for https://github.com/containers/crun/issues/1537
     http_file(
         name = "com_github_containers_crun_crun-linux-amd64",
-        urls = ["https://github.com/containers/crun/releases/download/1.15/crun-1.15-linux-amd64-disable-systemd"],
-        sha256 = "03fd3ec6a7799183eaeefba5ebd3f66f9b5fb41a5b080c196285879631ff5dc1",
+        urls = ["https://github.com/containers/crun/releases/download/1.28/crun-1.28-linux-amd64-disable-systemd"],
+        sha256 = "137bce17e4a102683e9b6974f4141cf6c30da61c8ade43c8f2b2d6961a8b858b",
         downloaded_file_path = "crun",
         executable = True,
     )
     http_file(
         name = "com_github_containers_crun_crun-linux-arm64",
-        urls = ["https://github.com/containers/crun/releases/download/1.15/crun-1.15-linux-arm64-disable-systemd"],
-        sha256 = "1bd840c95e9ae8edc25654dcf2481309724b9ff18ce95dbcd2535da9b026a47d",
+        urls = ["https://github.com/containers/crun/releases/download/1.28/crun-1.28-linux-arm64-disable-systemd"],
+        sha256 = "decac16cacbc570a1d7739d2ba47da4ffe0d3918adb10e47712bd1da0a110a78",
         downloaded_file_path = "crun",
         executable = True,
     )
