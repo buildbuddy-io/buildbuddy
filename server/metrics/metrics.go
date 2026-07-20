@@ -1348,12 +1348,14 @@ var (
 		Buckets:   exponentialBucketRange(1, 1024*1024*1024*1024 /*1 TB*/, 1.5),
 	})
 
-	RemoteExecutionOOMKillerTargetedTaskMemoryBytes = promauto.NewHistogram(prometheus.HistogramOpts{
+	RemoteExecutionOOMKillerTargetedTaskMemoryBytes = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_execution",
 		Name:      "oom_killer_targeted_task_memory_bytes",
 		Help:      "Observed task memory in bytes targeted by the executor OOM killer.",
 		Buckets:   exponentialBucketRange(1, 1024*1024*1024*1024 /*1 TB*/, 1.5),
+	}, []string{
+		GroupID,
 	})
 
 	RemoteExecutionWaitingExecutionResult = promauto.NewGaugeVec(prometheus.GaugeOpts{

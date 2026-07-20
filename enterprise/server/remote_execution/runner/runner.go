@@ -360,6 +360,8 @@ func (k *killableTask) State(ctx context.Context) (*oomkiller.TaskState, error) 
 	return &oomkiller.TaskState{
 		EstimatedMemoryBytes:    k.r.schedulingMetadata.GetTaskSize().GetEstimatedMemoryBytes(),
 		GroupID:                 k.r.schedulingMetadata.GetTaskGroupId(),
+		InvocationID:            k.r.task.GetInvocationId(),
+		ExecutionID:             k.r.task.GetExecutionId(),
 		RemoteExecutionPriority: k.r.schedulingMetadata.GetPriority(),
 		StartedAt:               k.startedAt,
 		UsageStats:              &repb.UsageStats{MemoryBytes: stats.GetMemoryBytes()},
@@ -369,6 +371,10 @@ func (k *killableTask) State(ctx context.Context) (*oomkiller.TaskState, error) 
 
 func (k *killableTask) Kill(ctx context.Context, err error) {
 	k.cancel(err)
+}
+
+func (k *killableTask) String() string {
+	return k.r.String()
 }
 
 // Run runs the task that is currently bound to the command runner.
