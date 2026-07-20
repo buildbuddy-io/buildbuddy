@@ -34,12 +34,11 @@ var (
 
 // Set via x_defs in BUILD file.
 var (
-	goimportsRlocationpath                     string
-	goRlocationpath                            string
-	clangFormatRlocationpath                   string
-	bbCLIRlocationpath                         string
-	prettierRlocationpath                      string
-	prettierPluginOrganizeImportsRlocationpath string
+	goimportsRlocationpath   string
+	goRlocationpath          string
+	clangFormatRlocationpath string
+	bbCLIRlocationpath       string
+	prettierRlocationpath    string
 )
 
 var (
@@ -224,11 +223,6 @@ func runPrettier(ctx context.Context, stdout, stderr io.Writer, fix bool, files 
 	if err != nil {
 		return fmt.Errorf("get prettier command: %w", err)
 	}
-	prettierPluginOrganizeImports, err := runfiles.Rlocation(prettierPluginOrganizeImportsRlocationpath)
-	if err != nil {
-		return fmt.Errorf("find prettier-plugin-organize-imports in runfiles: %w", err)
-	}
-	cmd.Args = append(cmd.Args, "--plugin", filepath.Join(prettierPluginOrganizeImports, "index.js"))
 	if fix {
 		cmd.Args = append(cmd.Args, "--write")
 	} else {

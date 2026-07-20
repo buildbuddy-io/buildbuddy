@@ -10,13 +10,14 @@ def _swc(**kwargs):
         **kwargs
     )
 
-def ts_library(name, srcs, **kwargs):
+def ts_library(name, srcs, tsconfig = "//:tsconfig", **kwargs):
     # TODO: Enable isolated_typecheck = True for faster builds.
     ts_project(
         name = name,
-        tsconfig = "//:tsconfig",
+        tsconfig = tsconfig,
         declaration = True,
         transpiler = _swc,
+        validator = "@npm_typescript6//:validator",
         srcs = srcs,
         **kwargs
     )
@@ -33,6 +34,10 @@ def ts_jasmine_node_test(name, srcs, deps = [], size = "small", **kwargs):
         name = "%s_esm" % name,
         testonly = 1,
         srcs = srcs,
+        # TypeScript 6+ does not automatically discover @types/jasmine in this
+        # project, so explicitly load its global declarations.
+        tsconfig = {"compilerOptions": {"types": ["jasmine"]}},
+        extends = "//:tsconfig",
         deps = deps + ["//:node_modules/@types/jasmine"],
         **kwargs
     )
