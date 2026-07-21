@@ -326,9 +326,11 @@ type StoppableCache interface {
 }
 
 type PooledByteStreamClient interface {
-	StreamBytestreamFile(ctx context.Context, url *url.URL, writer io.Writer) error
-	FetchBytestreamZipManifest(ctx context.Context, url *url.URL) (*zipb.Manifest, error)
-	StreamSingleFileFromBytestreamZip(ctx context.Context, url *url.URL, entry *zipb.ManifestEntry, out io.Writer) error
+	StreamBytestreamFile(ctx context.Context, uri *digest.ByteStreamURI, writer io.Writer) error
+	FetchBytestreamZipManifest(ctx context.Context, uri *digest.ByteStreamURI) (*zipb.Manifest, error)
+	StreamSingleFileFromBytestreamZip(ctx context.Context, uri *digest.ByteStreamURI, entry *zipb.ManifestEntry, out io.Writer) error
+	StreamActionCacheFile(ctx context.Context, url *url.URL, writer io.Writer) error
+	StreamSingleFileFromActionCacheZip(ctx context.Context, url *url.URL, entry *zipb.ManifestEntry, out io.Writer) error
 }
 
 type DBOptions interface {

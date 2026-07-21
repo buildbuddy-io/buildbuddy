@@ -324,7 +324,7 @@ func copyArtifact(ctx context.Context, dst bspb.ByteStreamClient, src interfaces
 	if err != nil {
 		return fmt.Errorf("parse ByteStream URI: %w", err)
 	}
-	blobName := path.Join(*invocationID, "artifacts", "cache", parsedURI.Path)
+	blobName := path.Join(*invocationID, "artifacts", "cache", parsedURI.DownloadString())
 	b, err := src.ReadBlob(ctx, blobName)
 	if err != nil {
 		return fmt.Errorf("read blob %q: %w", blobName, err)

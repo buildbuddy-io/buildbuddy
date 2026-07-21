@@ -2,7 +2,7 @@ package accumulator
 
 import (
 	"context"
-	"net/url"
+	"strings"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
@@ -81,7 +81,7 @@ type BEValues struct {
 	sawStartedEvent           bool
 	sawFinishedEvent          bool
 	buildStartTime            time.Time
-	buildToolLogURIs          []*url.URL
+	buildToolLogURIs          []*digest.ByteStreamURI
 	outputFilesMap            map[string]*build_event_stream.File
 	kytheSSTableResourceName  *rspb.ResourceName
 	profileName               string
@@ -89,8 +89,8 @@ type BEValues struct {
 	gitFetchDuration          time.Duration
 	gitFetchRetryCount        int64
 
-	failedTestOutputURIs []*url.URL
-	passedTestOutputURIs []*url.URL
+	failedTestOutputURIs []*digest.ByteStreamURI
+	passedTestOutputURIs []*digest.ByteStreamURI
 	// TODO(bduffany): Migrate all parser functionality directly into the
 	// accumulator. The parser is a separate entity only for historical reasons.
 	parser *event_parser.StreamingEventParser
@@ -170,46 +170,34 @@ func (v *BEValues) AddEvent(event *build_event_stream.BuildEvent) error {
 		v.maybeExtractOutputFile(p.BuildToolLogs.GetLog()...)
 		for _, toolLog := range p.BuildToolLogs.GetLog() {
 			if uri := toolLog.GetUri(); uri != "" {
-				parsedURL, err := url.Parse(uri)
-				if err != nil {
-					log.Warningf("Error parsing uri from BuildToolLogs: %s", uri)
-					continue
-				}
-				if parsedURL.Scheme != "bytestream" {
-					continue
-				}
 				parsedURI, err := digest.ParseByteStreamURI(uri)
 				if err != nil {
-					log.Warningf("Error parsing uri from BuildToolLogs: %s", uri)
+					if strings.HasPrefix(uri, "bytestream://") {
+						log.Warningf("Error parsing uri from BuildToolLogs: %s", uri)
+					}
 					continue
 				}
-				v.buildToolLogURIs = append(v.buildToolLogURIs, &parsedURI.URL)
+				v.buildToolLogURIs = append(v.buildToolLogURIs, parsedURI)
 			}
 		}
 	case *build_event_stream.BuildEvent_TestResult:
 		v.maybeExtractOutputFile(p.TestResult.GetTestActionOutput()...)
 		for _, f := range p.TestResult.GetTestActionOutput() {
-			u, err := url.Parse(f.GetUri())
-			if err != nil {
-				log.Warningf("Error parsing uri from TestResult: %s", f.GetUri())
-				continue
-			}
-			if u.Scheme != "bytestream" {
-				continue
-			}
 			parsedURI, err := digest.ParseByteStreamURI(f.GetUri())
 			if err != nil {
-				log.Warningf("Error parsing uri from TestResult: %s", f.GetUri())
+				if strings.HasPrefix(f.GetUri(), "bytestream://") {
+					log.Warningf("Error parsing uri from TestResult: %s", f.GetUri())
+				}
 				continue
 			}
 			if p.TestResult.GetStatus() == build_event_stream.TestStatus_PASSED {
 				if len(v.passedTestOutputURIs) < maxPersistableTestArtifacts {
-					v.passedTestOutputURIs = append(v.passedTestOutputURIs, &parsedURI.URL)
+					v.passedTestOutputURIs = append(v.passedTestOutputURIs, parsedURI)
 				}
 				continue
 			}
 			if len(v.failedTestOutputURIs) < maxPersistableTestArtifacts {
-				v.failedTestOutputURIs = append(v.failedTestOutputURIs, &parsedURI.URL)
+				v.failedTestOutputURIs = append(v.failedTestOutputURIs, parsedURI)
 			}
 		}
 	}
@@ -295,15 +283,15 @@ func (v *BEValues) BuildFinished() bool {
 	return v.sawFinishedEvent
 }
 
-func (v *BEValues) BuildToolLogURIs() []*url.URL {
+func (v *BEValues) BuildToolLogURIs() []*digest.ByteStreamURI {
 	return v.buildToolLogURIs
 }
 
-func (v *BEValues) PassedTestOutputURIs() []*url.URL {
+func (v *BEValues) PassedTestOutputURIs() []*digest.ByteStreamURI {
 	return v.passedTestOutputURIs
 }
 
-func (v *BEValues) FailedTestOutputURIs() []*url.URL {
+func (v *BEValues) FailedTestOutputURIs() []*digest.ByteStreamURI {
 	return v.failedTestOutputURIs
 }
 

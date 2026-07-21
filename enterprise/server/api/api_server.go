@@ -580,7 +580,7 @@ func (s *APIServer) GetFile(req *apipb.GetFileRequest, server apipb.ApiService_G
 
 	writer := &getFileWriter{s: server}
 
-	return s.env.GetPooledByteStreamClient().StreamBytestreamFile(ctx, &parsedURI.URL, writer)
+	return s.env.GetPooledByteStreamClient().StreamBytestreamFile(ctx, parsedURI, writer)
 }
 
 func (s *APIServer) GetFileRange(ctx context.Context, req *apipb.GetFileRangeRequest) (*apipb.GetFileRangeResponse, error) {
@@ -700,7 +700,7 @@ func (s *APIServer) handleGetFileRequest(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	err = s.env.GetPooledByteStreamClient().StreamBytestreamFile(r.Context(), &parsedURI.URL, w)
+	err = s.env.GetPooledByteStreamClient().StreamBytestreamFile(r.Context(), parsedURI, w)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
 	}

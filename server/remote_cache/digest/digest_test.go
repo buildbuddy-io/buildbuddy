@@ -134,24 +134,52 @@ func TestParseByteStreamURI(t *testing.T) {
 	for _, testCase := range []struct {
 		name               string
 		uri                string
+		wantHost           string
 		wantInstanceName   string
 		wantDigestFunction repb.DigestFunction_Value
 		wantError          bool
 	}{
 		{
 			name:               "SHA256",
-			uri:                "bytestream://remote.buildbuddy.io/blobs/" + hash + "/1234",
+			uri:                "bytestream://remote.buildbuddy.io:1985/blobs/" + hash + "/1234",
+			wantHost:           "remote.buildbuddy.io:1985",
 			wantDigestFunction: repb.DigestFunction_SHA256,
 		},
 		{
 			name:               "BLAKE3WithInstanceName",
 			uri:                "bytestream://remote.buildbuddy.io/buildbuddy/test/blobs/blake3/" + hash + "/1234",
+			wantHost:           "remote.buildbuddy.io",
 			wantInstanceName:   "buildbuddy/test",
 			wantDigestFunction: repb.DigestFunction_BLAKE3,
 		},
 		{
 			name:      "UnsupportedScheme",
 			uri:       "https://remote.buildbuddy.io/blobs/" + hash + "/1234",
+			wantError: true,
+		},
+		{
+			name:      "ActionCacheScheme",
+			uri:       "actioncache://remote.buildbuddy.io/blobs/ac/" + hash + "/1234",
+			wantError: true,
+		},
+		{
+			name:      "MissingHost",
+			uri:       "bytestream:///blobs/" + hash + "/1234",
+			wantError: true,
+		},
+		{
+			name:      "UserInfo",
+			uri:       "bytestream://user@remote.buildbuddy.io/blobs/" + hash + "/1234",
+			wantError: true,
+		},
+		{
+			name:      "QueryParameters",
+			uri:       "bytestream://remote.buildbuddy.io/blobs/" + hash + "/1234?foo=bar",
+			wantError: true,
+		},
+		{
+			name:      "Fragment",
+			uri:       "bytestream://remote.buildbuddy.io/blobs/" + hash + "/1234#foo",
 			wantError: true,
 		},
 		{
@@ -166,16 +194,15 @@ func TestParseByteStreamURI(t *testing.T) {
 		},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
-			// Parse the full URI so both its transport location and CAS resource
-			// name are available to callers.
+			// Parse the full URI into its host and CAS resource name components.
 			parsedURI, err := digest.ParseByteStreamURI(testCase.uri)
 			if testCase.wantError {
 				require.Error(t, err)
 				return
 			}
 			require.NoError(t, err)
-			assert.Equal(t, "bytestream", parsedURI.Scheme)
-			assert.Equal(t, "remote.buildbuddy.io", parsedURI.Host)
+			assert.Equal(t, testCase.wantHost, parsedURI.GetHost())
+			assert.Equal(t, testCase.uri, parsedURI.String())
 			assert.Equal(t, testCase.wantInstanceName, parsedURI.GetInstanceName())
 			assert.Equal(t, hash, parsedURI.GetDigest().GetHash())
 			assert.EqualValues(t, 1234, parsedURI.GetDigest().GetSizeBytes())

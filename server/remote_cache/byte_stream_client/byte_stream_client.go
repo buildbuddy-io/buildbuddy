@@ -52,27 +52,25 @@ func NewPooledByteStreamClient(env environment.Env) *pooledByteStreamClient {
 	}
 }
 
-func (p *pooledByteStreamClient) FetchBytestreamZipManifest(ctx context.Context, url *url.URL) (*zipb.Manifest, error) {
-	r, err := digest.ParseByteStreamURI(url.String())
-	if err != nil {
-		return nil, err
-	}
+// FetchBytestreamZipManifest fetches and parses the central directory of a zip
+// stored at the given ByteStream URI.
+func (p *pooledByteStreamClient) FetchBytestreamZipManifest(ctx context.Context, uri *digest.ByteStreamURI) (*zipb.Manifest, error) {
 	// Let's just read 64K and see if we can find the central directory in there.
 	// We probably don't want to be in the business of rendering 3000-file zips'
 	// contents anyway.
-	offset := r.GetDigest().GetSizeBytes() - 65536
+	offset := uri.GetDigest().GetSizeBytes() - 65536
 	if offset < 0 {
 		offset = 0
 	}
 
 	var buf bytes.Buffer
-	err = p.StreamBytestreamFileChunk(ctx, url, offset, r.GetDigest().GetSizeBytes()-offset, &buf)
+	err := p.StreamBytestreamFileChunk(ctx, uri, offset, uri.GetDigest().GetSizeBytes()-offset, &buf)
 	if err != nil {
 		return nil, err
 	}
 
 	// We dump the full contents out into a buffer, but that should be 64K or less.
-	return ParseZipManifestFooter(buf.Bytes(), offset, r.GetDigest().GetSizeBytes())
+	return ParseZipManifestFooter(buf.Bytes(), offset, uri.GetDigest().GetSizeBytes())
 }
 
 func ParseZipManifestFooter(footer []byte, offset int64, trueFileSize int64) (*zipb.Manifest, error) {
@@ -96,26 +94,35 @@ func ParseZipManifestFooter(footer []byte, offset int64, trueFileSize int64) (*z
 	return &zipb.Manifest{Entry: entries}, nil
 }
 
-// Just a little song and dance so that we can mock out streamingin tests.
-type Bytestreamer func(ctx context.Context, url *url.URL, offset int64, limit int64, writer io.Writer) error
+// Bytestreamer streams a byte range for zip parsing tests.
+type Bytestreamer func(ctx context.Context, offset int64, limit int64, writer io.Writer) error
 
-func validateLocalFileHeader(ctx context.Context, url *url.URL, entry *zipb.ManifestEntry, streamer Bytestreamer) (int, error) {
+func validateLocalFileHeader(ctx context.Context, entry *zipb.ManifestEntry, streamer Bytestreamer) (int, error) {
 	var buf bytes.Buffer
-	err := streamer(ctx, url, entry.GetHeaderOffset(), ziputil.FileHeaderLen, &buf)
+	err := streamer(ctx, entry.GetHeaderOffset(), ziputil.FileHeaderLen, &buf)
 	if err != nil {
 		return -1, err
 	}
 	return ziputil.ValidateLocalFileHeader(buf.Bytes(), entry)
 }
 
-func (p *pooledByteStreamClient) StreamSingleFileFromBytestreamZip(ctx context.Context, u *url.URL, entry *zipb.ManifestEntry, out io.Writer) error {
-	return streamSingleFileFromBytestreamZipInternal(ctx, u, entry, out, func(ctx context.Context, url *url.URL, offset int64, limit int64, writer io.Writer) error {
-		return p.StreamBytestreamFileChunk(ctx, url, offset, limit, writer)
+// StreamSingleFileFromBytestreamZip streams a zip entry from a ByteStream URI.
+func (p *pooledByteStreamClient) StreamSingleFileFromBytestreamZip(ctx context.Context, uri *digest.ByteStreamURI, entry *zipb.ManifestEntry, out io.Writer) error {
+	return streamSingleFileFromBytestreamZipInternal(ctx, entry, out, func(ctx context.Context, offset int64, limit int64, writer io.Writer) error {
+		return p.StreamBytestreamFileChunk(ctx, uri, offset, limit, writer)
 	})
 }
 
-func streamSingleFileFromBytestreamZipInternal(ctx context.Context, url *url.URL, entry *zipb.ManifestEntry, out io.Writer, streamer Bytestreamer) error {
-	dynamicHeaderBytes, err := validateLocalFileHeader(ctx, url, entry, streamer)
+// StreamSingleFileFromActionCacheZip streams a zip entry from an action-cache
+// URL.
+func (p *pooledByteStreamClient) StreamSingleFileFromActionCacheZip(ctx context.Context, u *url.URL, entry *zipb.ManifestEntry, out io.Writer) error {
+	return streamSingleFileFromBytestreamZipInternal(ctx, entry, out, func(ctx context.Context, offset int64, limit int64, writer io.Writer) error {
+		return p.streamFileChunk(ctx, u, offset, limit, writer)
+	})
+}
+
+func streamSingleFileFromBytestreamZipInternal(ctx context.Context, entry *zipb.ManifestEntry, out io.Writer, streamer Bytestreamer) error {
+	dynamicHeaderBytes, err := validateLocalFileHeader(ctx, entry, streamer)
 	if err != nil {
 		if !status.IsNotFoundError(err) {
 			log.Warningf("Error streaming zip file contents: %s", err)
@@ -127,7 +134,7 @@ func streamSingleFileFromBytestreamZipInternal(ctx context.Context, url *url.URL
 	reader, writer := io.Pipe()
 	defer reader.Close()
 	go func() {
-		err := streamer(ctx, url, entry.GetHeaderOffset()+ziputil.FileHeaderLen, entry.GetCompressedSize()+int64(dynamicHeaderBytes), writer)
+		err := streamer(ctx, entry.GetHeaderOffset()+ziputil.FileHeaderLen, entry.GetCompressedSize()+int64(dynamicHeaderBytes), writer)
 		// StreamBytestreamFileChunk shouldn't return EOF, but let's just be safe.
 		if err != nil && err != io.EOF {
 			writer.CloseWithError(err)
@@ -151,13 +158,29 @@ func streamSingleFileFromBytestreamZipInternal(ctx context.Context, url *url.URL
 	return nil
 }
 
-func (p *pooledByteStreamClient) StreamBytestreamFile(ctx context.Context, url *url.URL, writer io.Writer) error {
-	return p.StreamBytestreamFileChunk(ctx, url, 0, 0, writer)
+// StreamBytestreamFile streams a complete blob from a ByteStream URI.
+func (p *pooledByteStreamClient) StreamBytestreamFile(ctx context.Context, uri *digest.ByteStreamURI, writer io.Writer) error {
+	return p.StreamBytestreamFileChunk(ctx, uri, 0, 0, writer)
 }
 
-func (p *pooledByteStreamClient) StreamBytestreamFileChunk(ctx context.Context, url *url.URL, offset int64, limit int64, writer io.Writer) error {
+// StreamActionCacheFile streams an ActionResult from an action-cache URL.
+func (p *pooledByteStreamClient) StreamActionCacheFile(ctx context.Context, u *url.URL, writer io.Writer) error {
+	return p.streamFileChunk(ctx, u, 0, 0, writer)
+}
+
+// StreamBytestreamFileChunk streams a byte range from a ByteStream URI.
+func (p *pooledByteStreamClient) StreamBytestreamFileChunk(ctx context.Context, uri *digest.ByteStreamURI, offset int64, limit int64, writer io.Writer) error {
+	u := &url.URL{
+		Scheme: "bytestream",
+		Host:   uri.GetHost(),
+		Path:   "/" + strings.TrimPrefix(uri.DownloadString(), "/"),
+	}
+	return p.streamFileChunk(ctx, u, offset, limit, writer)
+}
+
+func (p *pooledByteStreamClient) streamFileChunk(ctx context.Context, url *url.URL, offset int64, limit int64, writer io.Writer) error {
 	if url.Scheme != "bytestream" && url.Scheme != "actioncache" {
-		return status.InvalidArgumentErrorf("Only bytestream:// uris are supported")
+		return status.InvalidArgumentError("Only bytestream:// and actioncache:// URIs are supported")
 	}
 
 	var allErrs error

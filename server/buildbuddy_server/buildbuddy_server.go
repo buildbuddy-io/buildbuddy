@@ -302,7 +302,7 @@ func (s *BuildBuddyServer) GetZipManifest(ctx context.Context, req *zipb.GetZipM
 	if err != nil {
 		return nil, err
 	}
-	man, err := s.env.GetPooledByteStreamClient().FetchBytestreamZipManifest(ctx, &parsedURI.URL)
+	man, err := s.env.GetPooledByteStreamClient().FetchBytestreamZipManifest(ctx, parsedURI)
 	if err != nil {
 		return nil, err
 	}
@@ -2401,8 +2401,10 @@ func (s *BuildBuddyServer) DeleteSecret(ctx context.Context, req *skpb.DeleteSec
 }
 
 type bsLookup struct {
-	URL      *url.URL
-	Filename string
+	ByteStreamURI  *digest.ByteStreamURI
+	ActionCacheURL *url.URL
+	Filename       string
+	ResourcePath   string
 }
 
 func getBestFilename(filename, blobname string) string {
@@ -2428,8 +2430,9 @@ func parseByteStreamURL(bsURL, filename string) (*bsLookup, error) {
 			return nil, err
 		}
 		return &bsLookup{
-			URL:      &parsedURI.URL,
-			Filename: getBestFilename(filename, parsedURI.RequestURI()),
+			ByteStreamURI: parsedURI,
+			Filename:      getBestFilename(filename, parsedURI.DownloadString()),
+			ResourcePath:  parsedURI.DownloadString(),
 		}, nil
 	}
 	if strings.HasPrefix(bsURL, actioncacheProtocolPrefix) {
@@ -2438,8 +2441,9 @@ func parseByteStreamURL(bsURL, filename string) (*bsLookup, error) {
 			return nil, err
 		}
 		return &bsLookup{
-			URL:      u,
-			Filename: getBestFilename(filename, u.RequestURI()),
+			ActionCacheURL: u,
+			Filename:       getBestFilename(filename, u.RequestURI()),
+			ResourcePath:   u.Path,
 		}, nil
 	}
 	return nil, fmt.Errorf("unparsable bytestream URL: '%s'", bsURL)
@@ -2556,7 +2560,7 @@ func (s *BuildBuddyServer) serveArtifact(ctx context.Context, w http.ResponseWri
 		if err != nil {
 			return http.StatusBadRequest, status.FailedPreconditionErrorf("Could not parse bytestream_url '%s' for cache artifact.", params.Get("bytestream_url"))
 		}
-		b, err := s.env.GetBlobstore().ReadBlob(ctx, path.Join(iid, "artifacts", "cache", lookup.URL.Path))
+		b, err := s.env.GetBlobstore().ReadBlob(ctx, path.Join(iid, "artifacts", "cache", lookup.ResourcePath))
 		if err != nil {
 			if status.IsNotFoundError(err) {
 				return http.StatusNotFound, status.NotFoundError("File not found.")
@@ -2646,7 +2650,13 @@ func (s *BuildBuddyServer) serveBytestream(ctx context.Context, w http.ResponseW
 			return http.StatusBadRequest, status.FailedPreconditionErrorf("\"%s\" does not represent a valid ManifestEntry proto when base64 decoded.", zipReference)
 		}
 		setContentHeaders(w, entry.GetName(), download)
-		err = s.env.GetPooledByteStreamClient().StreamSingleFileFromBytestreamZip(ctx, lookup.URL, entry, w)
+		if lookup.ByteStreamURI != nil {
+			err = s.env.GetPooledByteStreamClient().StreamSingleFileFromBytestreamZip(ctx, lookup.ByteStreamURI, entry, w)
+		} else {
+			// Keep the complete actioncache:// URL so its /blobs/ac/... resource
+			// name is parsed by the action-cache streaming path.
+			err = s.env.GetPooledByteStreamClient().StreamSingleFileFromActionCacheZip(ctx, lookup.ActionCacheURL, entry, w)
+		}
 		if err != nil {
 			if status.IsInvalidArgumentError(err) {
 				return http.StatusBadRequest, err
@@ -2658,7 +2668,13 @@ func (s *BuildBuddyServer) serveBytestream(ctx context.Context, w http.ResponseW
 
 	// Stream the file back to our client
 	setContentHeaders(w, lookup.Filename, download)
-	err = s.env.GetPooledByteStreamClient().StreamBytestreamFile(ctx, lookup.URL, w)
+	if lookup.ByteStreamURI != nil {
+		err = s.env.GetPooledByteStreamClient().StreamBytestreamFile(ctx, lookup.ByteStreamURI, w)
+	} else {
+		// Keep the complete actioncache:// URL so its /blobs/ac/... resource
+		// name is parsed by the action-cache streaming path.
+		err = s.env.GetPooledByteStreamClient().StreamActionCacheFile(ctx, lookup.ActionCacheURL, w)
+	}
 
 	if err != nil {
 		if status.IsInvalidArgumentError(err) {
