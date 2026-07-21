@@ -242,6 +242,7 @@ func NewDistributedCache(env environment.Env, c interfaces.Cache, opts Options, 
 
 	if opts.LookasideCacheSizeBytes > 0 {
 		l, err := lru.New[lookasideCacheEntry](&lru.Config[lookasideCacheEntry]{
+			Name:    "distributed_lookaside_cache",
 			MaxSize: opts.LookasideCacheSizeBytes,
 			OnEvict: func(key string, v lookasideCacheEntry, reason lru.EvictionReason) {
 				age := time.Since(time.UnixMilli(v.createdAtMillis))
