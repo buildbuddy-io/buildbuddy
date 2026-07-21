@@ -266,6 +266,61 @@ func TestDeregister_UnknownKey(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestList(t *testing.T) {
+	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("user1", "group1"))
+	gw := setupGateway(t, ta)
+
+	ctx, err := ta.WithAuthenticatedUser(context.Background(), "user1")
+	require.NoError(t, err)
+
+	// A named peer shows up in List with its name and IP.
+	resp, err := gw.Register(ctx, &gwpb.RegisterRequest{NetworkName: "net1", PeerName: "box1", PublicKey: newPubKeyHex(t)})
+	require.NoError(t, err)
+	// An unnamed peer (e.g. a transient bb ssh client) must be omitted.
+	_, err = gw.Register(ctx, &gwpb.RegisterRequest{NetworkName: "net1", PublicKey: newPubKeyHex(t)})
+	require.NoError(t, err)
+
+	list, err := gw.List(ctx, &gwpb.ListRequest{})
+	require.NoError(t, err)
+	require.Len(t, list.GetPeers(), 1)
+	require.Equal(t, "box1", list.GetPeers()[0].GetName())
+	require.Equal(t, resp.GetAssignedIp(), list.GetPeers()[0].GetIp())
+}
+
+func TestList_IsolatedByGroup(t *testing.T) {
+	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers(
+		"user1", "group1",
+		"user2", "group2",
+	))
+	gw := setupGateway(t, ta)
+
+	ctx1, err := ta.WithAuthenticatedUser(context.Background(), "user1")
+	require.NoError(t, err)
+	ctx2, err := ta.WithAuthenticatedUser(context.Background(), "user2")
+	require.NoError(t, err)
+
+	_, err = gw.Register(ctx1, &gwpb.RegisterRequest{PeerName: "box1", PublicKey: newPubKeyHex(t)})
+	require.NoError(t, err)
+
+	// group2 must not see group1's box, even on the same network name.
+	list, err := gw.List(ctx2, &gwpb.ListRequest{})
+	require.NoError(t, err)
+	require.Empty(t, list.GetPeers())
+
+	list, err = gw.List(ctx1, &gwpb.ListRequest{})
+	require.NoError(t, err)
+	require.Len(t, list.GetPeers(), 1)
+	require.Equal(t, "box1", list.GetPeers()[0].GetName())
+}
+
+func TestList_Unauthenticated(t *testing.T) {
+	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("user1", "group1"))
+	gw := setupGateway(t, ta)
+
+	_, err := gw.List(context.Background(), &gwpb.ListRequest{})
+	require.Error(t, err)
+}
+
 // TestCleanupStalePeers verifies that cleanupStalePeers removes peers whose
 // registration time (used as a proxy for last-seen when no WireGuard handshake
 // has occurred) exceeds stalePeerTimeout, while leaving recently registered
