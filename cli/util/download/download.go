@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"net/url"
-	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/flaghistory"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
@@ -107,12 +105,9 @@ func GetBytestreamFile(ctx context.Context, bsClient bspb.ByteStreamClient, uri 
 
 // parseBytestreamURI parses a bytestream:// URI into a CAS resource name.
 func parseBytestreamURI(uri string) (*digest.CASResourceName, error) {
-	if !strings.HasPrefix(uri, "bytestream://") {
-		return nil, fmt.Errorf("unsupported bytestream URI: %s", uri)
-	}
-	u, err := url.Parse(uri)
+	parsedURI, err := digest.ParseByteStreamURI(uri)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse bytestream URI: %w", err)
+		return nil, err
 	}
-	return digest.ParseDownloadResourceName(u.Path)
+	return &parsedURI.CASResourceName, nil
 }

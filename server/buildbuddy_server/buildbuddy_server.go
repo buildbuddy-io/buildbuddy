@@ -32,6 +32,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/directory_size"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/scorecard"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
@@ -297,11 +298,11 @@ func (s *BuildBuddyServer) DeleteInvocation(ctx context.Context, req *inpb.Delet
 }
 
 func (s *BuildBuddyServer) GetZipManifest(ctx context.Context, req *zipb.GetZipManifestRequest) (*zipb.GetZipManifestResponse, error) {
-	u, err := url.Parse(req.GetUri())
+	parsedURI, err := digest.ParseByteStreamURI(req.GetUri())
 	if err != nil {
 		return nil, err
 	}
-	man, err := s.env.GetPooledByteStreamClient().FetchBytestreamZipManifest(ctx, u)
+	man, err := s.env.GetPooledByteStreamClient().FetchBytestreamZipManifest(ctx, &parsedURI.URL)
 	if err != nil {
 		return nil, err
 	}
@@ -2421,7 +2422,17 @@ func getBestFilename(filename, blobname string) string {
 }
 
 func parseByteStreamURL(bsURL, filename string) (*bsLookup, error) {
-	if strings.HasPrefix(bsURL, bytestreamProtocolPrefix) || strings.HasPrefix(bsURL, actioncacheProtocolPrefix) {
+	if strings.HasPrefix(bsURL, bytestreamProtocolPrefix) {
+		parsedURI, err := digest.ParseByteStreamURI(bsURL)
+		if err != nil {
+			return nil, err
+		}
+		return &bsLookup{
+			URL:      &parsedURI.URL,
+			Filename: getBestFilename(filename, parsedURI.RequestURI()),
+		}, nil
+	}
+	if strings.HasPrefix(bsURL, actioncacheProtocolPrefix) {
 		u, err := url.Parse(bsURL)
 		if err != nil {
 			return nil, err

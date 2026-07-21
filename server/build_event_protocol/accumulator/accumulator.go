@@ -3,7 +3,6 @@ package accumulator
 import (
 	"context"
 	"net/url"
-	"regexp"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
@@ -36,14 +35,11 @@ const (
 	KytheOutputName = "kythe_serving.sst"
 )
 
-var (
-	buildMetadataFieldMapping = map[string]string{
-		"DISABLE_COMMIT_STATUS_REPORTING": disableCommitStatusReportingFieldName,
-		"DISABLE_TARGET_TRACKING":         disableTargetTrackingFieldName,
-		"COMMIT_STATUS_LABEL":             commitStatusLabelFieldName,
-	}
-	bytestreamURIPattern = regexp.MustCompile(`^bytestream://.*/blobs/([a-z0-9]{64})/\d+$`)
-)
+var buildMetadataFieldMapping = map[string]string{
+	"DISABLE_COMMIT_STATUS_REPORTING": disableCommitStatusReportingFieldName,
+	"DISABLE_TARGET_TRACKING":         disableTargetTrackingFieldName,
+	"COMMIT_STATUS_LABEL":             commitStatusLabelFieldName,
+}
 
 type Accumulator interface {
 	// Invocation returns the accumulated invocation proto. Not all fields may
@@ -118,21 +114,15 @@ func (v *BEValues) maybeExtractOutputFile(files ...*build_event_stream.File) {
 		if file.GetName() == "" {
 			continue
 		}
-		if m := bytestreamURIPattern.FindStringSubmatch(file.GetUri()); len(m) >= 1 {
-			digestHash := m[1]
-			v.outputFilesMap[digestHash] = proto.Clone(file).(*build_event_stream.File)
+		parsedURI, err := digest.ParseByteStreamURI(file.GetUri())
+		if err != nil {
+			continue
 		}
+		digestHash := parsedURI.GetDigest().GetHash()
+		v.outputFilesMap[digestHash] = proto.Clone(file).(*build_event_stream.File)
 		// Special case: check for kythe output files.
 		if file.GetName() == KytheOutputName {
-			uri, err := url.Parse(file.GetUri())
-			if err != nil {
-				continue
-			}
-			rn, err := digest.ParseDownloadResourceName(uri.Path)
-			if err != nil {
-				continue
-			}
-			v.kytheSSTableResourceName = rn.ToProto()
+			v.kytheSSTableResourceName = parsedURI.ToProto()
 		}
 	}
 }
@@ -180,11 +170,20 @@ func (v *BEValues) AddEvent(event *build_event_stream.BuildEvent) error {
 		v.maybeExtractOutputFile(p.BuildToolLogs.GetLog()...)
 		for _, toolLog := range p.BuildToolLogs.GetLog() {
 			if uri := toolLog.GetUri(); uri != "" {
-				if url, err := url.Parse(uri); err != nil {
+				parsedURL, err := url.Parse(uri)
+				if err != nil {
 					log.Warningf("Error parsing uri from BuildToolLogs: %s", uri)
-				} else if url.Scheme == "bytestream" {
-					v.buildToolLogURIs = append(v.buildToolLogURIs, url)
+					continue
 				}
+				if parsedURL.Scheme != "bytestream" {
+					continue
+				}
+				parsedURI, err := digest.ParseByteStreamURI(uri)
+				if err != nil {
+					log.Warningf("Error parsing uri from BuildToolLogs: %s", uri)
+					continue
+				}
+				v.buildToolLogURIs = append(v.buildToolLogURIs, &parsedURI.URL)
 			}
 		}
 	case *build_event_stream.BuildEvent_TestResult:
@@ -198,14 +197,19 @@ func (v *BEValues) AddEvent(event *build_event_stream.BuildEvent) error {
 			if u.Scheme != "bytestream" {
 				continue
 			}
+			parsedURI, err := digest.ParseByteStreamURI(f.GetUri())
+			if err != nil {
+				log.Warningf("Error parsing uri from TestResult: %s", f.GetUri())
+				continue
+			}
 			if p.TestResult.GetStatus() == build_event_stream.TestStatus_PASSED {
 				if len(v.passedTestOutputURIs) < maxPersistableTestArtifacts {
-					v.passedTestOutputURIs = append(v.passedTestOutputURIs, u)
+					v.passedTestOutputURIs = append(v.passedTestOutputURIs, &parsedURI.URL)
 				}
 				continue
 			}
 			if len(v.failedTestOutputURIs) < maxPersistableTestArtifacts {
-				v.failedTestOutputURIs = append(v.failedTestOutputURIs, u)
+				v.failedTestOutputURIs = append(v.failedTestOutputURIs, &parsedURI.URL)
 			}
 		}
 	}

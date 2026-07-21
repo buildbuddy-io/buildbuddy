@@ -7,7 +7,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"net/url"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -845,16 +844,11 @@ func lookupBazelInvocationOutputs(ctx context.Context, bbClient bbspb.BuildBuddy
 }
 
 func bytestreamURIToResourceName(uri string) (*digest.CASResourceName, error) {
-	u, err := url.Parse(uri)
+	parsedURI, err := digest.ParseByteStreamURI(uri)
 	if err != nil {
-		return nil, fmt.Errorf("parse bytestream uri %q: %w", uri, err)
+		return nil, fmt.Errorf("parse ByteStream URI %q: %w", uri, err)
 	}
-	r := strings.TrimPrefix(u.RequestURI(), "/")
-	rn, err := digest.ParseDownloadResourceName(r)
-	if err != nil {
-		return nil, fmt.Errorf("parse bytestream resource name %q: %w", r, err)
-	}
-	return rn, nil
+	return &parsedURI.CASResourceName, nil
 }
 
 // TODO(vadim): add interactive progress bar for downloads

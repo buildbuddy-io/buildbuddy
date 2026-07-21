@@ -528,7 +528,7 @@ func (r *statsRecorder) handleTask(ctx context.Context, task *recordStatsTask) {
 		if cache_api_url.String() != "" && urlutil.GetDomain(uri.Hostname()) != urlutil.GetDomain(cache_api_url.WithPath("").Hostname()) {
 			continue
 		}
-		rn, err := digest.ParseDownloadResourceName(uri.Path)
+		rn, err := digest.ParseByteStreamURI(uri.String())
 		if err != nil {
 			log.CtxErrorf(ctx, "Unparseable artifact URI: %s", err)
 			continue

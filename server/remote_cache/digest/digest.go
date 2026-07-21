@@ -12,6 +12,7 @@ import (
 	"hash"
 	"io"
 	"math/rand"
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime/debug"
@@ -651,6 +652,31 @@ func ParseDownloadResourceName(resourceName string) (*CASResourceName, error) {
 		return nil, err
 	}
 	return rn.CheckCAS()
+}
+
+// ByteStreamURI contains a parsed ByteStream URI and its CAS resource name.
+type ByteStreamURI struct {
+	url.URL
+	CASResourceName
+}
+
+// ParseByteStreamURI parses a ByteStream URI and its CAS resource name.
+func ParseByteStreamURI(rawURI string) (*ByteStreamURI, error) {
+	parsedURI, err := url.Parse(rawURI)
+	if err != nil {
+		return nil, status.InvalidArgumentErrorf("invalid ByteStream URI: %s", err)
+	}
+	if parsedURI.Scheme != "bytestream" {
+		return nil, status.InvalidArgumentErrorf("invalid ByteStream URI scheme %q", parsedURI.Scheme)
+	}
+	resourceName, err := ParseDownloadResourceName(strings.TrimPrefix(parsedURI.Path, "/"))
+	if err != nil {
+		return nil, status.WrapError(err, "parse ByteStream URI")
+	}
+	return &ByteStreamURI{
+		URL:             *parsedURI,
+		CASResourceName: *resourceName,
+	}, nil
 }
 
 func ParseActionCacheResourceName(resourceName string) (*ACResourceName, error) {

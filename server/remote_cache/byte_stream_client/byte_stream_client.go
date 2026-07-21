@@ -53,7 +53,7 @@ func NewPooledByteStreamClient(env environment.Env) *pooledByteStreamClient {
 }
 
 func (p *pooledByteStreamClient) FetchBytestreamZipManifest(ctx context.Context, url *url.URL) (*zipb.Manifest, error) {
-	r, err := digest.ParseDownloadResourceName(strings.TrimPrefix(url.RequestURI(), "/"))
+	r, err := digest.ParseByteStreamURI(url.String())
 	if err != nil {
 		return nil, err
 	}
