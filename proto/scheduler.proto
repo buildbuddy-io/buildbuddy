@@ -612,6 +612,9 @@ message ExecutionNode {
 
   // Optional set of key-value labels identifying this executor.
   map<string, string> labels = 22;
+
+  // The Xcode Simulator runtimes installed on this executor.
+  repeated string xcode_simulator_runtimes = 23;
 }
 
 message GetExecutionNodesRequest {
