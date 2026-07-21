@@ -29,8 +29,12 @@ export default class CodeSearchComponent extends React.Component<Props, State> {
     inputText: this.getQuery(),
   };
 
+  hasQuery() {
+    return this.props.search.has("q");
+  }
+
   getQuery() {
-    return this.props.search.get("q") || "";
+    return (this.props.search.get("q") || "").trim();
   }
 
   search() {
@@ -61,16 +65,11 @@ export default class CodeSearchComponent extends React.Component<Props, State> {
     }
   }
 
-  handleInputChange(event: React.ChangeEvent<HTMLInputElement>) {
-    this.setState({
-      inputText: event.target.value,
-    });
-  }
-
   componentDidMount() {
     this.keyboardShortcutHandle = shortcuts.register(KeyCombo.slash, () => {
       this.focusSearchBox();
     });
+    this.focusSearchBox();
     this.search();
   }
 
@@ -98,26 +97,8 @@ export default class CodeSearchComponent extends React.Component<Props, State> {
           <div className="circle">
             <Search className="big-icon gray" />
             <h2>Empty Query</h2>
-            <p>
-              To see results, try entering a query. Here are some examples:
-              <ul>
-                <li>
-                  <a href={`/search/?q=${encodeURIComponent("case:yes Hello World")}`}>
-                    <code className="inline-code">case:yes Hello World</code>
-                  </a>
-                </li>
-                <li>
-                  <a href={`/search/?q=${encodeURIComponent("lang:css padding-(left|right)")}`}>
-                    <code className="inline-code">lang:css padding-(left|right)</code>
-                  </a>
-                </li>
-                <li>
-                  <a href={`/search/?q=${encodeURIComponent("lang:go flag.String")}`}>
-                    <code className="inline-code">lang:go flag.String</code>
-                  </a>
-                </li>
-              </ul>
-            </p>
+            <p>To see results, try entering a query. Here are some examples:</p>
+            {this.renderExamples()}
           </div>
         </div>
       );
@@ -173,26 +154,70 @@ export default class CodeSearchComponent extends React.Component<Props, State> {
     (document.querySelector(".searchbox") as HTMLElement | undefined)?.focus();
   }
 
+  renderExamples() {
+    return (
+      <div className="examples">
+        <p>Try:</p>
+        <ul className="examples">
+          <li>
+            <a href={`/search/?q=${encodeURIComponent("case:yes Hello World")}`}>
+              <code className="inline-code">case:yes Hello World</code>
+            </a>
+          </li>
+          <li>
+            <a href={`/search/?q=${encodeURIComponent("lang:css padding-(left|right)")}`}>
+              <code className="inline-code">lang:css padding-(left|right)</code>
+            </a>
+          </li>
+          <li>
+            <a href={`/search/?q=${encodeURIComponent("lang:go flag.String")}`}>
+              <code className="inline-code">lang:go flag.String</code>
+            </a>
+          </li>
+        </ul>
+      </div>
+    );
+  }
+
+  renderSearchBox() {
+    return (
+      <form
+        className="form-bs"
+        onSubmit={(e) => {
+          e.preventDefault();
+          router.updateParams({ q: this.state.inputText });
+        }}>
+        <input
+          type="text"
+          className="searchbox"
+          value={this.state.inputText}
+          onChange={(e) => {
+            this.setState({ inputText: e.target.value });
+          }}
+        />
+        <Search />
+      </form>
+    );
+  }
+
   render() {
+    if (!this.hasQuery()) {
+      // Show nice search box, centered within the page
+      return (
+        <div className="code-search landing">
+          <h1 className="cs-title">Code search</h1>
+          {this.renderSearchBox()}
+          {this.renderExamples()}
+        </div>
+      );
+    }
+
     return (
       <div className="code-search">
         <div className="shelf">
           <div className="title-bar">
-            <div className="cs-title">Code search</div>
-            <form
-              className="form-bs"
-              onSubmit={(e) => {
-                e.preventDefault();
-                router.updateParams({ q: this.state.inputText });
-              }}>
-              <input
-                type="text"
-                className="searchbox"
-                value={this.state.inputText}
-                onChange={this.handleInputChange.bind(this)}
-              />
-              <FilledButton type="submit">SEARCH</FilledButton>
-            </form>
+            <h1 className="cs-title">Code search</h1>
+            {this.renderSearchBox()}
           </div>
         </div>
         <div>
