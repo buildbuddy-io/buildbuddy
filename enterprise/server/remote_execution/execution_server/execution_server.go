@@ -920,7 +920,16 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 	// Inject use-oci-fetcher platform property via experiment.
 	if fp := s.env.GetExperimentFlagProvider(); fp != nil {
 		const useOCIFetcherExperiment = "remote_execution.use_oci_fetcher"
+		const disableOCIFetcherExperiment = "remote_execution.disable_oci_fetcher"
 		useOCIFetcher, details := fp.BooleanDetails(ctx, useOCIFetcherExperiment, false)
+		disableOCIFetcher := fp.Boolean(ctx, disableOCIFetcherExperiment, true)
+		if useOCIFetcher == disableOCIFetcher {
+			log.CtxWarningf(
+				ctx,
+				"OCI fetcher experiment flags do not match: %s=%t, %s=%t; expected the values to be logical opposites",
+				useOCIFetcherExperiment, useOCIFetcher, disableOCIFetcherExperiment, disableOCIFetcher,
+			)
+		}
 		if useOCIFetcher {
 			executionTask.PlatformOverrides.Properties = append(
 				executionTask.PlatformOverrides.Properties,
