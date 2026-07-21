@@ -260,20 +260,6 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
         executable = True,
     )
     http_file(
-        name = "org_llvm_llvm_clang-format_linux-x86_64",
-        executable = True,
-        integrity = "sha256-BQxgAlbiJeq+lgjSj0kv6Gc8bn9d6sWcbalzIjx2TWw=",
-        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/clang-format/clang-format-15_linux-x86_64"],
-    )
-
-    http_file(
-        name = "org_llvm_llvm_clang-format_macos-x86_64",
-        executable = True,
-        integrity = "sha256-lxFvZNl/socLSqKXWLuo+w/n87HtikvBL6qSfs/ewZY=",
-        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/clang-format/clang-format-15_darwin-x86_64"],
-    )
-
-    http_file(
         name = "io_buildbuddy_bb_cli-darwin-arm64",
         executable = True,
         integrity = "sha256-NIFvkFPQj2UW9voLTzgbVup7WAC6vzJo3w316d1sKVI=",
