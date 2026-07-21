@@ -43,6 +43,7 @@ var (
 // networkState holds IP allocation and peer name state for one
 // (groupID, networkName) pair.
 type networkState struct {
+	groupID  string                // group that owns this network
 	index    int                   // assigned network index; determines the /48 prefix
 	namesMu  sync.Mutex            // protects names
 	names    map[string]netip.Addr // peer_name → assigned IP
@@ -226,6 +227,35 @@ func (g *Gateway) Deregister(ctx context.Context, req *gwpb.DeregisterRequest) (
 	return &gwpb.DeregisterResponse{}, nil
 }
 
+// List returns the named peers ("boxes") currently registered by the caller's
+// group. Unnamed peers (e.g. transient bb ssh clients) are omitted.
+func (g *Gateway) List(ctx context.Context, req *gwpb.ListRequest) (*gwpb.ListResponse, error) {
+	claims, err := g.env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	groupID := claims.GetGroupID()
+
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	peers := make([]*gwpb.Peer, 0)
+	for _, info := range g.peers {
+		if info.assignedName == "" {
+			continue
+		}
+		ns := info.networkState
+		if ns.groupID != groupID {
+			continue
+		}
+		peers = append(peers, &gwpb.Peer{
+			Name: info.assignedName,
+			Ip:   info.ip.String(),
+		})
+	}
+	return &gwpb.ListResponse{Peers: peers}, nil
+}
+
 // getOrCreateNetwork returns the networkState for (groupID, networkName),
 // creating it if it doesn't exist. Must be called with g.mu held.
 func (g *Gateway) getOrCreateNetwork(groupID, networkName string) (*networkState, error) {
@@ -238,6 +268,7 @@ func (g *Gateway) getOrCreateNetwork(groupID, networkName string) (*networkState
 	g.nextIndex++
 
 	ns := &networkState{
+		groupID:  groupID,
 		index:    index,
 		names:    make(map[string]netip.Addr),
 		nextHost: 2,

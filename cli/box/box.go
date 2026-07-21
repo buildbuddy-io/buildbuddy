@@ -24,11 +24,15 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rexec"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/lipgloss/table"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/types/known/durationpb"
 
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	elpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
+	gwpb "github.com/buildbuddy-io/buildbuddy/proto/gateway"
+	gwsvcpb "github.com/buildbuddy-io/buildbuddy/proto/gateway_service"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
@@ -53,13 +57,15 @@ const (
 
 	usage = `
 usage: bb box create [options] [name]
+       bb box list [options]
 
-Starts an SSH server inside a remote Firecracker VM. Once the VM is
+create: Starts an SSH server inside a remote Firecracker VM. Once the VM is
 running, prints the command to connect via SSH.
 
-If a name is given, the runner is recycled after the session ends so
-that the next invocation resumes the same VM. Without a name the VM
-is ephemeral.
+If a name is given, the runner is recycled after the session ends so that the
+next invocation resumes the same VM. Without a name the VM is ephemeral.
+
+list: Lists the named boxes currently available for your group.
 
 `
 )
@@ -72,10 +78,20 @@ var (
 	gracePeriod = createFlags.Duration("grace_period", 1*time.Minute, "How long the VM stays alive after all SSH connections close (max 5m)")
 	idleTimeout = createFlags.Duration("idle_timeout", 5*time.Minute, "Close idle SSH sessions after this duration of inactivity (max 5m)")
 
-	targetFlag  = createFlags.String("remote_executor", login.DefaultApiTarget, "Remote executor gRPC target")
-	gatewayFlag = createFlags.String("gateway", "grpcs://gateway.buildbuddy.io", "Gateway gRPC target")
-	apiKeyFlag  = createFlags.String("api_key", "", "Override the API key")
+	targetFlag              = createFlags.String("remote_executor", login.DefaultApiTarget, "Remote executor gRPC target")
+	gatewayFlag, apiKeyFlag = registerGatewayFlags(createFlags)
+
+	listFlags                       = flag.NewFlagSet("box list", flag.ContinueOnError)
+	listGatewayFlag, listAPIKeyFlag = registerGatewayFlags(listFlags)
 )
+
+// registerGatewayFlags registers the gateway connection flags shared by the box
+// subcommands on fs, so their defaults and descriptions are defined once.
+func registerGatewayFlags(fs *flag.FlagSet) (gateway, apiKey *string) {
+	gateway = fs.String("gateway", "grpcs://gateway.buildbuddy.io", "Gateway gRPC target")
+	apiKey = fs.String("api_key", "", "Override the API key")
+	return gateway, apiKey
+}
 
 func HandleBox(args []string) (int, error) {
 	if len(args) == 0 || args[0] == "help" {
@@ -87,6 +103,8 @@ func HandleBox(args []string) (int, error) {
 	switch args[0] {
 	case "create":
 		return handleCreate(args[1:])
+	case "list":
+		return handleList(args[1:])
 	default:
 		log.Printf("unknown box subcommand %q", args[0])
 		log.Print(usage)
@@ -293,6 +311,75 @@ func handleCreate(args []string) (int, error) {
 		fmt.Printf("  Connect: bb ssh %s\n", nameOrIP)
 		return 0, nil
 	}
+}
+
+func handleList(args []string) (int, error) {
+	if err := arg.ParseFlagSet(listFlags, args); err != nil {
+		if err == flag.ErrHelp {
+			log.Print(usage)
+			listFlags.SetOutput(os.Stderr)
+			listFlags.PrintDefaults()
+			return 1, nil
+		}
+		return -1, err
+	}
+
+	if *listGatewayFlag == "" {
+		log.Printf("A non-empty --gateway must be specified")
+		return 1, nil
+	}
+
+	// Resolve API key.
+	key := *listAPIKeyFlag
+	if key == "" {
+		var err error
+		key, err = login.GetAPIKey()
+		if err != nil {
+			return -1, fmt.Errorf("getting API key: %w", err)
+		}
+	}
+
+	ctx := context.Background()
+	ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", key)
+
+	conn, err := grpc_client.DialSimple(*listGatewayFlag)
+	if err != nil {
+		return -1, fmt.Errorf("dialing gateway: %w", err)
+	}
+	defer conn.Close()
+
+	gwClient := gwsvcpb.NewGatewayServiceClient(conn)
+	resp, err := gwClient.List(ctx, &gwpb.ListRequest{})
+	if err != nil {
+		return -1, fmt.Errorf("listing boxes: %w", err)
+	}
+
+	peers := resp.GetPeers()
+	if len(peers) == 0 {
+		fmt.Println("No boxes available.")
+		return 0, nil
+	}
+
+	rows := make([][]string, 0, len(peers))
+	for _, p := range peers {
+		rows = append(rows, []string{p.GetName(), p.GetIp()})
+	}
+
+	headerStyle := lipgloss.NewStyle().Bold(true).Padding(0, 1)
+	cellStyle := lipgloss.NewStyle().Padding(0, 1)
+	t := table.New().
+		Border(lipgloss.RoundedBorder()).
+		BorderStyle(lipgloss.NewStyle().Foreground(lipgloss.Color("240"))).
+		Headers("NAME", "ADDRESS").
+		Rows(rows...).
+		StyleFunc(func(row, col int) lipgloss.Style {
+			if row == table.HeaderRow {
+				return headerStyle
+			}
+			return cellStyle
+		})
+	fmt.Println(t)
+	return 0, nil
 }
 
 // waitForReady polls GetEventLogChunk (BUILD_LOG) for the given invocation ID
