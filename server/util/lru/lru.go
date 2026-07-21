@@ -195,8 +195,10 @@ func newLRUMetrics(name string) *lruMetrics {
 		containsHit:  lookup("contains", metrics.HitStatusLabel),
 		containsMiss: lookup("contains", metrics.MissStatusLabel),
 		lastEvictionAge: map[EvictionReason]prometheus.Gauge{
-			SizeEviction: lastEvictionAge(SizeEviction),
-			TTLEviction:  lastEvictionAge(TTLEviction),
+			SizeEviction:     lastEvictionAge(SizeEviction),
+			TTLEviction:      lastEvictionAge(TTLEviction),
+			ConflictEviction: lastEvictionAge(ConflictEviction),
+			ManualEviction:   lastEvictionAge(ManualEviction),
 		},
 	}
 }
