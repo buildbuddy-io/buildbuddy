@@ -78,6 +78,7 @@ func Setup(ctx context.Context) (*Installation, error) {
 	if err := addToPath(installation.BinaryPath); err != nil {
 		return nil, err
 	}
+	log.Printf("Using ztracing installation at %s", installationDir)
 	return installation, nil
 }
 
