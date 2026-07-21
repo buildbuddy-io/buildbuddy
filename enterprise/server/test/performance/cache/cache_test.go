@@ -76,7 +76,7 @@ func setExperimentProvider(b *testing.B, te *real_environment.RealEnv) {
 			State:          memprovider.Enabled,
 			DefaultVariant: "on",
 			Variants: map[string]any{"on": map[string]any{
-				"max_entries": 1000,
+				"max_entries": numDigests,
 				"ttl":         "1h",
 			}},
 		}
