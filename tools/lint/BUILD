@@ -5,9 +5,9 @@ go_library(
     srcs = ["lint.go"],
     data = [
         "//tools/bb",
-        "//tools/clang-format",
         "//tools/prettier",
         "@io_bazel_rules_go//go",
+        "@llvm//tools:clang-format",
         "@org_golang_x_tools//cmd/goimports",
     ],
     importpath = "github.com/buildbuddy-io/buildbuddy/tools/lint",
@@ -15,7 +15,7 @@ go_library(
     x_defs = {
         "goimportsRlocationpath": "$(rlocationpath @org_golang_x_tools//cmd/goimports)",
         "goRlocationpath": "$(rlocationpath @io_bazel_rules_go//go)",
-        "clangFormatRlocationpath": "$(rlocationpath //tools/clang-format)",
+        "clangFormatRlocationpath": "$(rlocationpath @llvm//tools:clang-format)",
         "prettierRlocationpath": "$(rlocationpath //tools/prettier)",
         "bbCLIRlocationpath": "$(rlocationpath //tools/bb)",
     },
