@@ -56,6 +56,7 @@ var (
 	peerWriteTimeout   = flag.Duration("cache.distributed_cache.peer_write_timeout", time.Minute, "Maximum time to wait for a single distributed cache peer write send or close operation before treating the peer as stalled.")
 	connWindowSize     = flag.Int("cache.distributed_cache.conn_window_size", 64*1024*1024, "Static HTTP/2 window size of each connection in bytes")
 	streamWindowSize   = flag.Int("cache.distributed_cache.stream_window_size", 8*1024*1024, "Static HTTP/2 Window size of each stream in bytes")
+	poolSize           = flag.Int("cache.distributed_cache.client_pool_size", 4, "Number of connections to open per peer.")
 )
 
 type Proxy struct {
@@ -178,7 +179,8 @@ func (c *Proxy) getClient(ctx context.Context, peer string) (dcpb.DistributedCac
 
 	// Disable dynamic windows. Bursty traffic can undersize the window and
 	// cause flow control to kick in prematurely.
-	conn, err := grpc_client.DialInternalWithPoolSize(c.env, resolverPrefix+peer, 2,
+	conn, err := grpc_client.DialInternalWithPoolSize(c.env, resolverPrefix+peer,
+		*poolSize,
 		grpc.WithStaticConnWindowSize(int32(*connWindowSize)),
 		grpc.WithStaticStreamWindowSize(int32(*streamWindowSize)))
 	if err != nil {
