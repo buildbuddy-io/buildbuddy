@@ -1,4 +1,4 @@
-load("@rules_multirun//:defs.bzl", "command", "multirun")
+load("@rules_multirun//:defs.bzl", "multirun")
 
 # Creates a release step that depends on another release step.
 #
