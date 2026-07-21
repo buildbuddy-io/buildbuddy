@@ -124,7 +124,7 @@ func TestGitFetchRetriesSlowTransfer(t *testing.T) {
 	require.Equal(t, wantCommitSHA, strings.TrimSpace(fetchedCommitSHA))
 }
 
-func TestWorkspaceConfig_InvalidPartialCloneRemoteFailsLazyFetch(t *testing.T) {
+func TestWorkspaceConfigRepairsInvalidPartialCloneRemote(t *testing.T) {
 	ctx := t.Context()
 	runGit := func(repoDir string, args ...string) string {
 		args = append([]string{"-C", repoDir}, args...)
@@ -138,12 +138,17 @@ func TestWorkspaceConfig_InvalidPartialCloneRemoteFailsLazyFetch(t *testing.T) {
 	sourceDir, _ := testgit.MakeTempRepo(t, map[string]string{
 		"lazy.txt": "lazy contents\n",
 	})
-	runGit(sourceDir, "config", "uploadpack.allowFilter", "true")
-	// Disable path-walk packing because it does not support object filters.
-	runGit(sourceDir, "config", "pack.usePathWalk", "false")
 	blobOID := runGit(sourceDir, "rev-parse", "HEAD:lazy.txt")
 
-	remoteURL := "file://" + sourceDir
+	remote := testgit.StartServer(t, testgit.ServerOptions{LogWriter: io.Discard})
+	remote.CreateProject("test-org", "test-repo", &testgit.ProjectSettings{Public: true})
+	remote.SetProjectConfig("test-org", "test-repo", "uploadpack.allowFilter", "true")
+	// Lazy fetching requests the missing blob directly by object ID.
+	remote.SetProjectConfig("test-org", "test-repo", "uploadpack.allowAnySHA1InWant", "true")
+	// Disable path-walk packing because it does not support object filters.
+	remote.SetProjectConfig("test-org", "test-repo", "pack.usePathWalk", "false")
+	remote.Push("test-org", "test-repo", remote.AccessToken(), sourceDir)
+	remoteURL := remote.RepoURL("test-org", "test-repo", "")
 	checkoutDir := filepath.Join(t.TempDir(), "repo-root")
 	_, gitErr := git(
 		ctx,
@@ -173,7 +178,9 @@ func TestWorkspaceConfig_InvalidPartialCloneRemoteFailsLazyFetch(t *testing.T) {
 	// Some Git versions persist this filter after the failed lazy fetch. Add it
 	// explicitly so the test deterministically matches the stale state observed
 	// in affected snapshots.
+	runGit(checkoutDir, "config", "remote.true.promisor", "true")
 	runGit(checkoutDir, "config", "remote.true.partialCloneFilter", "blob:none")
+	require.Equal(t, "true", runGit(checkoutDir, "config", "--get", "remote.true.promisor"))
 	require.Equal(t, "blob:none", runGit(checkoutDir, "config", "--get", "remote.true.partialCloneFilter"))
 	require.Contains(t, strings.Fields(runGit(checkoutDir, "remote")), "true")
 
@@ -195,14 +202,20 @@ func TestWorkspaceConfig_InvalidPartialCloneRemoteFailsLazyFetch(t *testing.T) {
 		rootDir: checkoutDir,
 		log:     &buildEventReporter{log: invocationLog},
 	}
-	require.NoError(t, ws.config(ctx))
+	configCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	require.NoError(t, ws.config(configCtx))
 
-	// Configuring an existing workspace currently leaves the invalid promisor
-	// remote in place, so lazy fetches continue to fail.
-	_, gitErr = git(ctx, io.Discard, "cat-file", "blob", blobOID)
-	require.NotNil(t, gitErr)
-	require.Contains(t, gitErr.Output, "'true' does not appear to be a git repository")
-	require.Contains(t, strings.Fields(runGit(checkoutDir, "remote")), "true")
+	// Configuring an existing workspace should point the extension at the
+	// actual remote and remove the stale synthetic remote.
+	require.Equal(t, "origin", runGit(checkoutDir, "config", "--get", "extensions.partialClone"))
+	require.NotContains(t, strings.Fields(runGit(checkoutDir, "remote")), "true")
+
+	fetchCtx, cancelFetch := context.WithTimeout(ctx, 5*time.Second)
+	defer cancelFetch()
+	blobContents, gitErr := git(fetchCtx, io.Discard, "cat-file", "blob", blobOID)
+	require.Nil(t, gitErr)
+	require.Contains(t, blobContents, "lazy contents")
 }
 
 func TestIsTransferTooSlow(t *testing.T) {
