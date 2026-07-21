@@ -3,6 +3,7 @@ package cache_test
 import (
 	"bytes"
 	"context"
+	"flag"
 	"fmt"
 	"io"
 	"runtime"
@@ -49,6 +50,8 @@ const (
 	numDigests   = 100
 )
 
+var enablePebblePresenceCache = flag.Bool("enable_pebble_presence_cache", false, "If true, configure the pebble presence cache for benchmarks.")
+
 func init() {
 	*log.LogLevel = "error"
 	*log.IncludeShortFileName = true
@@ -56,7 +59,7 @@ func init() {
 }
 
 func setExperimentProvider(b *testing.B, te *real_environment.RealEnv) {
-	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
+	flags := map[string]memprovider.InMemoryFlag{
 		migration_cache.MigrationCacheConfigFlag: {
 			State:          memprovider.Enabled,
 			DefaultVariant: "singleton",
@@ -67,7 +70,18 @@ func setExperimentProvider(b *testing.B, te *real_environment.RealEnv) {
 				migration_cache.DecompressReadPercentageField: 0.0,
 			}},
 		},
-	})
+	}
+	if *enablePebblePresenceCache {
+		flags[pebble_cache.PresenceCacheConfigExperiment] = memprovider.InMemoryFlag{
+			State:          memprovider.Enabled,
+			DefaultVariant: "on",
+			Variants: map[string]any{"on": map[string]any{
+				"max_entries": numDigests,
+				"ttl":         "1h",
+			}},
+		}
+	}
+	testProvider := memprovider.NewInMemoryProvider(flags)
 	require.NoError(b, openfeature.SetProviderAndWait(testProvider))
 	fp, err := experiments.NewFlagProvider("")
 	require.NoError(b, err)
