@@ -54,8 +54,8 @@ const (
 var (
 	enableKubeResolver = flag.Bool("cache.distributed_cache.enable_kube_resolver", false, "Enable Kubernetes resolver for resolving peer pod IPs")
 	peerWriteTimeout   = flag.Duration("cache.distributed_cache.peer_write_timeout", time.Minute, "Maximum time to wait for a single distributed cache peer write send or close operation before treating the peer as stalled.")
-	connWindowSize     = flag.Int("cache.distributed_cache.conn_window_size", 64*1024*1024, "Window size of connection pool in bytes")
-	streamWindowSize   = flag.Int("cache.distributed_cache.stream_window_size", 8*1024*1024, "Window size of stream pool in bytes")
+	connWindowSize     = flag.Int("cache.distributed_cache.conn_window_size", 64*1024*1024, "Static HTTP/2 window size of each connection in bytes")
+	streamWindowSize   = flag.Int("cache.distributed_cache.stream_window_size", 8*1024*1024, "Static HTTP/2 Window size of each stream in bytes")
 )
 
 type Proxy struct {
@@ -178,10 +178,9 @@ func (c *Proxy) getClient(ctx context.Context, peer string) (dcpb.DistributedCac
 
 	// Disable dynamic windows. Bursty traffic can undersize the window and
 	// cause flow control to kick in prematurely.
-	conn, err := grpc_client.DialInternalWithPoolSize(c.env, resolverPrefix+peer, 2, []grpc.DialOption{
+	conn, err := grpc_client.DialInternalWithPoolSize(c.env, resolverPrefix+peer, 2,
 		grpc.WithStaticConnWindowSize(int32(*connWindowSize)),
-		grpc.WithStaticStreamWindowSize(int32(*streamWindowSize)),
-	}...)
+		grpc.WithStaticStreamWindowSize(int32(*streamWindowSize)))
 	if err != nil {
 		return nil, err
 	}
