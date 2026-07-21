@@ -1932,15 +1932,15 @@ func (p *PebbleCache) findMissing(ctx context.Context, db pebble.IPebbleDB, grou
 		return err
 	}
 
+	unlockFn := p.locker.RLock(key.LockID())
+	defer unlockFn()
+
 	// Avoid expensive pebble op if key is in the presence cache.
 	// We don't update the atime on hit because we expect the cache TTL to be
 	// configured below the atime update threshold.
 	if p.presence.Contains(key) {
 		return nil
 	}
-
-	unlockFn := p.locker.RLock(key.LockID())
-	defer unlockFn()
 
 	buf, closer, err := p.lookupFileMetadataBytes(db, key)
 	if err != nil {
