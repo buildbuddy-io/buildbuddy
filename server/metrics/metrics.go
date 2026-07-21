@@ -1502,6 +1502,13 @@ var (
 		Help:      "Maximum total RAM that can be allocated for task execution, in **bytes**.",
 	})
 
+	RemoteExecutionAssignableDiskBytes = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "assignable_disk_bytes",
+		Help:      "Maximum total workspace disk that can be allocated for task execution, in **bytes**.",
+	})
+
 	RemoteExecutionAssignedMilliCPU = promauto.NewGauge(prometheus.GaugeOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_execution",

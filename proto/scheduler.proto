@@ -546,6 +546,17 @@ message ExecutionNode {
   // Ex. 7000
   int64 assignable_milli_cpu = 4;
 
+  // Assignable disk bytes in remote execution node, for task workspaces
+  // (buildroots). Derived from the capacity of the filesystem holding the build
+  // root, scaled by executor.disk_capacity_ratio, or set explicitly via
+  // executor.disk_bytes.
+  //
+  // A value of 0 means the executor could not report a disk capacity (e.g. an
+  // older executor, or failed detection), and disk must not be used as a
+  // scheduling constraint for this node.
+  // Ex. 107374182400
+  int64 assignable_disk_bytes = 24;
+
   // Assignable custom resources.
   repeated CustomResource assignable_custom_resources = 11;
 

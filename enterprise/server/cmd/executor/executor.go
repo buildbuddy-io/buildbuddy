@@ -357,6 +357,10 @@ func main() {
 	if err := os.MkdirAll(runner.GetBuildRoot(), 0755); err != nil {
 		log.Fatalf("Unable to create build root directory %q: %s", runner.GetBuildRoot(), err)
 	}
+	if err := resources.ConfigureDiskCapacity(runner.GetBuildRoot()); err != nil {
+		log.Warningf("Could not determine assignable disk capacity: %s", err)
+	}
+	metrics.RemoteExecutionAssignableDiskBytes.Set(math.Floor(float64(resources.GetAllocatedDiskBytes()) * tasksize.MaxResourceCapacityRatio))
 
 	// Run any startup commands.
 	for i, startupCommand := range *startupCommands {
