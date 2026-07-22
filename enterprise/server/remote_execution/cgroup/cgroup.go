@@ -76,6 +76,10 @@ func GetCurrent() (string, error) {
 	return path, nil
 }
 
+// SetupControllers lists the cgroup controllers that Setup may write settings
+// for.
+var SetupControllers = []string{"cpu", "cpuset", "io", "memory", "pids"}
+
 // Setup configures the cgroup at the given path with the given settings.
 // Any settings for cgroup controllers that aren't enabled are ignored.
 // IO limits are applied to the given block device, if specified.
@@ -106,21 +110,25 @@ func Setup(ctx context.Context, path string, s *scpb.CgroupSettings, blockDevice
 	return nil
 }
 
-// writeFile writes a cgroup interface file. Unlike os.WriteFile, it opens the
-// file without O_CREAT: cgroupfs does not support creating files, and an
-// O_CREAT open of a missing interface file (e.g. for a controller that is not
-// yet enabled) fails with a misleading EACCES instead of ENOENT.
+// writeFile writes a cgroup interface file.
+//
+// Unlike os.WriteFile, it opens the file without O_CREAT: cgroupfs does not
+// support creating files, and an O_CREAT open of a missing interface file (e.g.
+// for a controller that is not yet enabled) fails with a misleading EACCES
+// instead of ENOENT.
 func writeFile(path string, value []byte) error {
 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_TRUNC, 0)
 	if err != nil {
 		return err
 	}
-	_, werr := f.Write(value)
-	cerr := f.Close()
-	if werr != nil {
-		return werr
+	n, err := f.Write(value)
+	if err == nil && n < len(value) {
+		err = io.ErrShortWrite
 	}
-	return cerr
+	if closeErr := f.Close(); closeErr != nil && err == nil {
+		err = closeErr
+	}
+	return err
 }
 
 // EnabledControllers returns the controllers enabled for the cgroup at the

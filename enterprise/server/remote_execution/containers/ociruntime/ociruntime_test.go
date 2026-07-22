@@ -76,7 +76,7 @@ func TestMain(m *testing.M) {
 	// Mirror executor startup, which enables the cgroup controllers that task
 	// cgroups need in the parent cgroup of task cgroups. Tests create task
 	// cgroups directly under the cgroupfs root.
-	for _, controller := range []string{"cpu", "cpuset", "io", "memory", "pids"} {
+	for _, controller := range cgroup.SetupControllers {
 		if err := cgroup.WriteSubtreeControl(cgroup.RootPath, map[string]bool{controller: true}); err != nil {
 			log.Printf("Could not enable cgroup controller %q for child cgroups of %q: %s", controller, cgroup.RootPath, err)
 		}

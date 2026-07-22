@@ -13,12 +13,12 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ociconv"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/cgroup"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/ociruntime"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vbd"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/cpuset"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
 	"github.com/prometheus/client_golang/prometheus"
@@ -138,27 +138,28 @@ func setupCgroups() (*Cgroups, error) {
 // ignores settings for them. An error is returned only if a controller is
 // required by an executor flag but couldn't be enabled.
 func enableTaskCgroupControllers(path string) error {
-	for _, c := range []struct {
-		controller string
-		// requiredBy names the executor flag that requires this controller.
-		// It applies only when required is true.
-		requiredBy string
-		required   bool
-	}{
-		{controller: "cpu"},
-		{controller: "cpuset", requiredBy: "executor.cpu_leaser.enable", required: cpuset.LeasingEnabled()},
-		{controller: "io"},
-		{controller: "memory", requiredBy: "executor.oci.enable_cgroup_memory_limit", required: ociruntime.CgroupMemoryLimitEnabled()},
-		{controller: "pids"},
-	} {
-		if err := cgroup.WriteSubtreeControl(path, map[string]bool{c.controller: true}); err != nil {
-			if c.required {
-				return fmt.Errorf("enable cgroup controller %q (required by %s): %w", c.controller, c.requiredBy, err)
+	// Executor flags that require a controller to be enabled, keyed by
+	// controller name.
+	requiredBy := map[string]string{}
+	if cpuset.LeasingEnabled() {
+		requiredBy["cpuset"] = "executor.cpu_leaser.enable"
+	}
+	memoryLimitEnabled, err := flagutil.GetDereferencedValue[bool]("executor.oci.enable_cgroup_memory_limit")
+	if err != nil {
+		log.Warningf("Could not read executor.oci.enable_cgroup_memory_limit flag value: %s", err)
+	} else if memoryLimitEnabled {
+		requiredBy["memory"] = "executor.oci.enable_cgroup_memory_limit"
+	}
+
+	for _, controller := range cgroup.SetupControllers {
+		if err := cgroup.WriteSubtreeControl(path, map[string]bool{controller: true}); err != nil {
+			if flagName, ok := requiredBy[controller]; ok {
+				return fmt.Errorf("enable cgroup controller %q (required by %s): %w", controller, flagName, err)
 			}
 			// Not necessarily a problem: some controllers may be unavailable
 			// in this environment. Task cgroup settings for this controller
 			// will be ignored.
-			log.Infof("Could not enable cgroup controller %q for child cgroups of %q: %s", c.controller, path, err)
+			log.Infof("Could not enable cgroup controller %q for child cgroups of %q: %s", controller, path, err)
 		}
 	}
 	// Log the final subtree control contents, for debugging purposes.
