@@ -37,7 +37,8 @@ func TestRandomKeyInRange(t *testing.T) {
 		lo, hi := byte(0xff), byte(0x00)
 		for i := 0; i < draws; i++ {
 			k := randomKeyInRange(start, end)
-			require.True(t, bytes.HasPrefix(k, gp), "key %q not under the group prefix", k)
+			require.True(t, bytes.Compare(k, start) >= 0 && bytes.Compare(k, end) < 0,
+				"key %q out of [%q, %q)", k, start, end)
 			// The byte just after the group prefix is the randomized digest nibble.
 			b := k[len(gp)]
 			if b < lo {
@@ -50,6 +51,23 @@ func TestRandomKeyInRange(t *testing.T) {
 		// Over 2000 draws it should cover most of ['2','8'], not a single value.
 		assert.Less(t, lo, byte('4'), "low end of digest range never sampled")
 		assert.Greater(t, hi, byte('6'), "high end of digest range never sampled")
+	})
+
+	// Narrow range (bounds differ only in the last byte, digest sub-slot 0..4):
+	// every draw must stay strictly in [start, end) and spread across the slots,
+	// not collapse to the head the way clamping out-of-range draws would.
+	t.Run("narrow_range_stays_in_bounds", func(t *testing.T) {
+		gp := []byte("PTFOO/" + filestore.FixedWidthGroupID("GR1") + "/")
+		start := append(append([]byte(nil), gp...), []byte("abcd000000000000000000000000000000000000000000000000000000000000")...)
+		end := append(append([]byte(nil), gp...), []byte("abcd000000000000000000000000000000000000000000000000000000000005")...)
+		seen := map[string]bool{}
+		for i := 0; i < draws; i++ {
+			k := randomKeyInRange(start, end)
+			require.True(t, bytes.Compare(k, start) >= 0 && bytes.Compare(k, end) < 0,
+				"key %q out of [%q, %q)", k, start, end)
+			seen[string(k)] = true
+		}
+		assert.Greater(t, len(seen), 1, "narrow range collapsed to a single key (head bias)")
 	})
 
 	// Multi-group range: bounds differ in the group field. Keys stay within the

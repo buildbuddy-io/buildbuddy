@@ -367,6 +367,13 @@ func (m *v5ToV6Migrator) FromVersion() filestore.PebbleKeyVersion {
 }
 func (m *v5ToV6Migrator) ToVersion() filestore.PebbleKeyVersion { return filestore.Version6 }
 
+type v6ToV7Migrator struct{}
+
+func (m *v6ToV7Migrator) FromVersion() filestore.PebbleKeyVersion {
+	return filestore.Version6
+}
+func (m *v6ToV7Migrator) ToVersion() filestore.PebbleKeyVersion { return filestore.Version7 }
+
 // Register creates a new PebbleCache from the configured flags and sets it in
 // the provided env.
 func Register(env *real_environment.RealEnv) error {
@@ -796,6 +803,14 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 		if pc.activeDatabaseVersion() >= filestore.Version6 {
 			// Migrate keys from 5->6.
 			pc.migrators = append(pc.migrators, &v5ToV6Migrator{})
+		}
+		if pc.activeDatabaseVersion() >= filestore.Version7 {
+			// Migrate keys from 6->7. v7 is a raft-only, group-prefixed layout;
+			// pebble_cache never sets its active version to v7, so this migrator
+			// is only exercised by tests. The generic migrator rebuilds the key
+			// from the value's FileRecord, so the discarded groupID/digest is
+			// recovered.
+			pc.migrators = append(pc.migrators, &v6ToV7Migrator{})
 		}
 	}
 

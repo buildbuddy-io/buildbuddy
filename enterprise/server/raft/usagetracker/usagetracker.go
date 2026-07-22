@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"math"
+	"math/big"
 	"math/rand"
 	"sort"
 	"strings"
@@ -51,7 +52,7 @@ var (
 	evictionRateLimit                  = flag.Int("cache.raft.eviction_rate_limit", 300, "Maximum number of entries to evict per second (per partition).")
 	deleteBufferSize                   = flag.Int("cache.raft.delete_buffer_size", 20, "Buffer up to this many samples for eviction eviction")
 	minEvictionAge                     = flag.Duration("cache.raft.min_eviction_age", 6*time.Hour, "Don't evict anything unless it's been idle for at least this long")
-	samplerIterRefreshPeriod           = flag.Duration("cache.raft.sampler_iter_refresh_period", 5*time.Minute, "How often the eviction sampler recreates its (reused) pebble iterator so it observes newly written keys and freshened atimes.")
+	samplerIterRefreshPeriod           = flag.Duration("cache.raft.sampler_iter_refresh_period", 5*time.Minute, "How often the eviction sampler recreates its reused pebble iterator.")
 	samplerSleepDuration               = flag.Duration("cache.raft.sampler_sleep_duration", 1*time.Second, "How long the eviction sampler sleeps when it cannot find eligible entries to evict. Set to 0 to disable sleeping (intended for tests).")
 	evictionBatchSize                  = flag.Int("cache.raft.eviction_batch_size", 100, "Buffer this many writes before delete")
 	numDeleteWorkers                   = flag.Int("cache.raft.num_delete_worker", 4, "Number of deletes in parallel")
@@ -79,16 +80,13 @@ const (
 	metricsRefreshPeriod  = 30 * time.Second
 
 	// maxEmptyRangeStreak is how many consecutive empty range selections the
-	// range-scoped sampler tolerates before backing off. A few empty ranges
-	// among populated ones are skipped cheaply; a node hosting only empty
-	// ranges (while the cluster-wide sleep guard doesn't fire) backs off after
-	// this many, rather than busy-spinning a core.
+	// sampler tolerates before backing off, so a node hosting only empty ranges
+	// doesn't busy-spin.
 	maxEmptyRangeStreak = 10
 
-	// cursorReconcileInterval is how many sampler batches elapse between passes
-	// that drop resume cursors for ranges this node no longer hosts. Range IDs
-	// are never reused, so without this the cursor map would grow for every
-	// range removed (merge/split/rebalance) over the life of the process.
+	// cursorReconcileInterval is how many sampler visits between passes that drop
+	// cursors for ranges this node no longer hosts (range IDs are never reused,
+	// so the map would otherwise grow unbounded).
 	cursorReconcileInterval = 1000
 )
 
@@ -184,11 +182,9 @@ type partitionUsage struct {
 	samplerIterRefreshPeriod time.Duration
 	samplerSleepDuration     time.Duration
 
-	// cursors tracks, per range, the next key to resume sampling from. Each
-	// range is swept in a circle: a random entry key when the cursor is empty
-	// (a fresh start or a restart), then forward, wrapping at the range end back
-	// to the range start. Pruned periodically against the store's hosted ranges
-	// (see reconcileCursors) since range IDs are never reused.
+	// cursors holds, per range, the next key to resume sampling from. Pruned
+	// against the store's hosted ranges (see reconcileCursors) since range IDs
+	// are never reused.
 	cursors               map[uint64][]byte
 	minEvictionAge        time.Duration
 	localSizeUpdatePeriod time.Duration
@@ -481,22 +477,14 @@ func (pu *partitionUsage) generateSamplesForEviction(ctx context.Context) error 
 }
 
 // generateSamplesRangeScoped samples eviction candidates by picking a hosted
-// range uniformly and sweeping its keys with a per-range resume cursor so every
-// key is sampled over successive visits. Each range is swept in a circle: it
-// enters at a random key (built from the range bounds by randomKeyInRange) when
-// the cursor is empty, then reads forward, wrapping at the range end back to
-// the range start. The cursor lives only in memory, so "empty" means a fresh
-// start or a restart — entering randomly there keeps the head from being
-// over-sampled across restarts, while the wrap-to-start keeps coverage complete
-// within a run. (A plain random-key seek can't stand alone here: a range spans
-// the whole hash band it was provisioned for, but v7 keys cluster under a
-// shared group prefix, so on a loose range randomKeyInRange lands ~at the head
-// and the sweep supplies the coverage.) Sampling is node-wide (all hosted
-// ranges, leader or follower).
+// range uniformly (node-wide, any replica) and sweeping it in a circle: enter
+// at a random key when the cursor is empty (a fresh start/restart, since it's
+// in-memory), read forward, wrap at the range end back to start. Random entry
+// avoids over-sampling the head across restarts; the wrap keeps coverage
+// complete within a run.
 func (pu *partitionUsage) generateSamplesRangeScoped(ctx context.Context, db pebble.IPebbleDB) error {
-	// One partition-wide iterator, reused across range visits (SeekGE repositions
-	// it) and recreated only on the refresh period below — far less NewIter churn
-	// than recreating per visit, which matters most at a small samplesPerRange.
+	// One partition-wide iterator, reused across visits (SeekGE repositions it)
+	// and recreated only on the refresh period below, to avoid per-visit NewIter.
 	partStart, partEnd := keys.Range([]byte(pu.partitionKeyPrefix() + "/"))
 	iter, err := db.NewIter(&pebble.IterOptions{LowerBound: partStart, UpperBound: partEnd})
 	if err != nil {
@@ -530,9 +518,11 @@ func (pu *partitionUsage) generateSamplesRangeScoped(ctx context.Context, db peb
 			pu.reconcileCursors()
 		}
 
-		// Refresh the reused iterator once it ages past the refresh period so it
-		// observes writes and atime updates made since it was created. Wall time
-		// (not pu.clock) so it fires even under a frozen test clock.
+		// Refresh the snapshot periodically so it sees writes, atime updates, and
+		// deletions. Wall time (not pu.clock) on purpose: it must keep refreshing
+		// during eviction to stop re-sampling already-deleted keys, but eviction
+		// tests run under a frozen fake clock (TestingWaitForGC never advances
+		// it). Cost: the cadence isn't fake-clock-controllable.
 		if time.Since(iterCreatedAt) > pu.samplerIterRefreshPeriod {
 			newIter, err := db.NewIter(&pebble.IterOptions{LowerBound: partStart, UpperBound: partEnd})
 			if err != nil {
@@ -551,9 +541,8 @@ func (pu *partitionUsage) generateSamplesRangeScoped(ctx context.Context, db peb
 			}
 		}
 
-		// Pick a random hosted range in this partition. The store owns
-		// selection, so it always reflects the current range set (splits and
-		// merges included) without the tracker caching a stale list.
+		// Pick a random hosted range; the store owns selection, so it always
+		// reflects the current range set without the tracker caching a stale list.
 		rd := pu.store.RandomOpenRangeDescriptor(pu.part.ID)
 		if rd == nil {
 			// No ranges hosted for this partition yet; sleep and re-check.
@@ -564,24 +553,22 @@ func (pu *partitionUsage) generateSamplesRangeScoped(ctx context.Context, db peb
 		}
 		start, end := rd.GetStart(), rd.GetEnd()
 
-		// Resume sweeping from where the last visit left off. When the cursor is
-		// empty (a fresh start or a restart) enter at a random key so the head
-		// isn't over-sampled; otherwise resume from the saved position.
+		// Resume from the saved cursor, or enter at a random key on a fresh/empty
+		// cursor (avoids over-sampling the head).
 		resume := pu.cursors[rd.GetRangeId()]
 		if len(resume) == 0 || bytes.Compare(resume, start) < 0 || bytes.Compare(resume, end) >= 0 {
 			resume = randomKeyInRange(start, end)
 		}
 		valid := iter.SeekGE(resume)
-		// The iterator spans the whole partition, so a seek can land past this
-		// range's end: a random-entry overshoot, or a resume cursor pointing past
-		// keys deleted since the last visit. Neither means the range is empty —
-		// wrap to the range start before giving up on it.
-		if (!valid || bytes.Compare(iter.Key(), end) >= 0) && bytes.Compare(resume, start) > 0 {
+		// The iterator is partition-wide, so a seek can land outside [start, end)
+		// (random overshoot, stale cursor, or a randomKeyInRange draw below start);
+		// re-seek to start so the sweep stays range-local.
+		if !valid || bytes.Compare(iter.Key(), start) < 0 || bytes.Compare(iter.Key(), end) >= 0 {
 			valid = iter.SeekGE(start)
 		}
 
-		// Read forward up to samplesPerRange keys, stopping at the range end (the
-		// iterator is bounded to the whole partition, not this range).
+		// Read forward up to samplesPerRange keys, bounded on end (the seek above
+		// starts >= start and Next() only advances, so all keys stay in [start,end)).
 		read := 0
 		for ; read < pu.samplesPerRange && valid && bytes.Compare(iter.Key(), end) < 0; read++ {
 			if ctx.Err() != nil {
@@ -603,10 +590,9 @@ func (pu *partitionUsage) generateSamplesRangeScoped(ctx context.Context, db peb
 			valid = iter.Next()
 		}
 
-		// Remember where to resume next visit. On reaching the range end, wrap to
-		// the range start (head) rather than deleting the cursor: within a run we
-		// keep sweeping head-anchored (which covers everything uniformly); only a
-		// restart, which clears the in-memory map, re-enters at a random key.
+		// Save the resume point; at the range end wrap to start (head) rather than
+		// deleting, so we keep sweeping head-anchored within a run (a restart
+		// clears the map and re-enters randomly).
 		if valid && bytes.Compare(iter.Key(), end) < 0 {
 			pu.cursors[rd.GetRangeId()] = append([]byte(nil), iter.Key()...)
 		} else {
@@ -614,9 +600,8 @@ func (pu *partitionUsage) generateSamplesRangeScoped(ctx context.Context, db peb
 		}
 
 		if read == 0 {
-			// Genuinely empty range (the retry from the range start above also
-			// found nothing). Skip cheaply, and only back off after a run of
-			// empty selections so isolated empty ranges don't stall eviction.
+			// Empty range: back off only after a streak so isolated empties don't
+			// stall eviction.
 			emptyStreak++
 			if emptyStreak >= maxEmptyRangeStreak {
 				if !pu.samplerSleep(ctx) {
@@ -630,9 +615,8 @@ func (pu *partitionUsage) generateSamplesRangeScoped(ctx context.Context, db peb
 	}
 }
 
-// reconcileCursors drops resume cursors for ranges this node no longer hosts.
-// Range IDs are never reused, so without this the cursor map would grow for
-// every range removed (merge, split, or rebalance) over the process lifetime.
+// reconcileCursors drops cursors for ranges this node no longer hosts, bounding
+// the map (range IDs are never reused).
 func (pu *partitionUsage) reconcileCursors() {
 	if len(pu.cursors) == 0 {
 		return
@@ -645,49 +629,54 @@ func (pu *partitionUsage) reconcileCursors() {
 	}
 }
 
-// randomKeyInRange returns a key that sorts within (roughly) [start, end),
-// built from the range bounds so it lands where keys actually are — unlike a
-// random position in the raw byte range, which on a group-clustered v7 keyspace
-// falls in the empty gap and SeekGE snaps to the head.
+// randomKeyInRange returns a key ~uniform in [start, end) for the sweep's entry
+// point. It holds the common prefix fixed and interpolates the differing suffix
+// as a base-256 integer (full suffix width, so the result never falls outside
+// [start, end)); SeekGE then snaps to the next real key.
 //
-// The common prefix of start and end is held fixed and randomization begins at
-// the first byte that differs. For a single-group range (bounds share the
-// PT/GR<group>/ prefix) that first differing byte is in the digest, which is
-// dense and uniform, so the result lands on a real key. For a multi-group range
-// it's in the group field; group IDs are uniform, so a random value there plus
-// SeekGE lands on a ~uniform real group. A draw that overshoots the range's
-// last key is the caller's problem (it falls back to the range start).
-//
-// It degrades to ~start when the bounds aren't group-structured (e.g. the
-// hex-band bringup ranges): the common prefix is just PT<part>/ and the random
-// byte sorts before the GR cluster. That's the loose-range case where the
-// caller's cursor sweep still guarantees coverage.
+// Caution: this is uniform over byte space, not the real alphabets (decimal
+// group IDs, hex digests), so a draw in an alphabet gap (e.g. hex '9'..'a')
+// snaps forward and over-weights the next char. Fine here because it only picks
+// the entry point — the sweep still visits every key. A cursor-less sampler
+// would need field-aware interpolation.
 func randomKeyInRange(start, end []byte) []byte {
-	n := 0
-	for n < len(start) && n < len(end) && start[n] == end[n] {
-		n++
+	p := 0
+	for p < len(start) && p < len(end) && start[p] == end[p] {
+		p++
 	}
-	if n >= len(end) {
-		// end is a prefix of start (or they're equal): nothing to randomize.
+	// Full suffix width so padRight only zero-pads (never truncates), keeping the
+	// result >= start.
+	w := len(start) - p
+	if n := len(end) - p; n > w {
+		w = n
+	}
+	if w <= 0 {
 		return append([]byte(nil), start...)
 	}
-	lo := byte(0x00)
-	if n < len(start) {
-		lo = start[n]
-	}
-	hi := end[n]
-	if lo > hi {
+	lo := new(big.Int).SetBytes(padRight(start[p:], w))
+	hi := new(big.Int).SetBytes(padRight(end[p:], w))
+	delta := new(big.Int).Sub(hi, lo)
+	if delta.Sign() <= 0 {
 		return append([]byte(nil), start...)
 	}
-	key := make([]byte, 0, n+9)
-	key = append(key, start[:n]...)
-	key = append(key, lo+byte(rand.Intn(int(hi-lo)+1)))
-	// A few random tail bytes so we don't always land on a prefix boundary.
-	var tail [8]byte
-	for i := range tail {
-		tail[i] = byte(rand.Intn(256))
+	// Uniform in [lo, hi): draw w+8 bytes and reduce mod delta (bias negligible).
+	rb := make([]byte, w+8)
+	for i := range rb {
+		rb[i] = byte(rand.Intn(256))
 	}
-	return append(key, tail[:]...)
+	r := new(big.Int).Mod(new(big.Int).SetBytes(rb), delta)
+	r.Add(r, lo)
+	return append(append([]byte(nil), start[:p]...), r.FillBytes(make([]byte, w))...)
+}
+
+// padRight widens b to w bytes with trailing zeros (b is never longer than w).
+func padRight(b []byte, w int) []byte {
+	if len(b) >= w {
+		return b[:w]
+	}
+	out := make([]byte, w)
+	copy(out, b)
+	return out
 }
 
 func (pu *partitionUsage) maybeAddToSampleChan(ctx context.Context, iter pebble.Iterator, fileMetadata *sgpb.FileMetadata, timer clockwork.Timer) {

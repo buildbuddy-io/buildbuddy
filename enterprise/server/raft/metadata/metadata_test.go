@@ -480,13 +480,11 @@ func TestLRU(t *testing.T) {
 	// and (2) stale-atime samples making recently-Find()'d records appear
 	// old enough to evict.
 	flags.Set(t, "cache.raft.min_eviction_age", 18*time.Minute)
-	// Read a small batch forward per range visit instead of a huge one, so the
-	// sampler rotates ranges and reaches the last few eligible records quickly.
+	// Small batch so the sampler rotates ranges and reaches the last eligible
+	// records quickly.
 	flags.Set(t, "cache.raft.samples_per_range", 10)
-	// The sampler reuses one iterator and refreshes it on this period; the
-	// sampler goroutine starts before this test writes its records, so keep the
-	// refresh short (wall time) so the iterator picks up the writes and current
-	// atimes promptly instead of sampling an empty/stale snapshot.
+	// Short refresh (wall time) so the reused iterator promptly picks up writes,
+	// atime updates, and deletions instead of re-sampling a stale snapshot.
 	flags.Set(t, "cache.raft.sampler_iter_refresh_period", time.Millisecond)
 	// Disable the sampler's idle sleep. In production the sampler sleeps when
 	// it can't find an eligible entry (e.g. a random key landing past the end

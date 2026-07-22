@@ -1686,17 +1686,14 @@ func (s *Store) getLeasedReplicas(ctx context.Context) []*replica.Replica {
 }
 
 // RandomOpenRangeDescriptor returns a uniformly random range this store hosts
-// (as leader or follower) whose data lives in the given partition, or nil if
-// this store hosts no ranges for that partition. Used by the eviction sampler,
-// which samples node-wide: scoping to hosted (not just leased) ranges keeps
-// each range sampled by all its replicas (as today) and avoids tying the
-// sampling rate to the lease distribution.
+// (leader or follower) whose data lives in the given partition, or nil if none.
+// Used by the eviction sampler; scoping to hosted (not leased) ranges keeps the
+// sampling rate independent of lease distribution.
 func (s *Store) RandomOpenRangeDescriptor(partitionID string) *rfpb.RangeDescriptor {
 	s.rangeMu.RLock()
 	defer s.rangeMu.RUnlock()
-	// Reservoir sample (Algorithm R, reservoir size 1): pick the n-th eligible
-	// range with probability 1/n, which leaves every range equally likely (1/N)
-	// in a single pass, without materializing a filtered slice.
+	// Reservoir sample (Algorithm R, size 1): pick the n-th eligible range with
+	// probability 1/n, leaving every range equally likely in a single pass.
 	var chosen *rfpb.RangeDescriptor
 	n := 0
 	for _, rd := range s.openRanges {
@@ -1711,11 +1708,9 @@ func (s *Store) RandomOpenRangeDescriptor(partitionID string) *rfpb.RangeDescrip
 	return chosen
 }
 
-// rangeInPartition reports whether rd holds evictable cache data in the given
-// partition: not the meta range (which holds range descriptors, not cache data,
-// and must never be evicted), and matching the partition. It prefers the
-// descriptor's partition_id and falls back to parsing the start key for
-// descriptors that predate the field (see the alert in validatedRange).
+// rangeInPartition reports whether rd holds evictable data in the partition:
+// not the meta range, and partition-matching. Prefers partition_id, falling
+// back to the start key for descriptors that predate the field.
 func rangeInPartition(rd *rfpb.RangeDescriptor, partitionID string) bool {
 	if rd.GetRangeId() == constants.MetaRangeID {
 		return false
@@ -1727,10 +1722,8 @@ func rangeInPartition(rd *rfpb.RangeDescriptor, partitionID string) bool {
 	return partID == partitionID
 }
 
-// HostedRangeIDs returns the set of range IDs this store hosts (as leader or
-// follower) whose data lives in the given partition, excluding the meta range.
-// Used by the eviction sampler to prune resume cursors for ranges it no longer
-// hosts.
+// HostedRangeIDs returns the range IDs this store hosts in the given partition
+// (excluding the meta range), used by the sampler to prune stale resume cursors.
 func (s *Store) HostedRangeIDs(partitionID string) map[uint64]struct{} {
 	s.rangeMu.RLock()
 	defer s.rangeMu.RUnlock()
