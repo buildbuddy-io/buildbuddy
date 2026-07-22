@@ -195,7 +195,8 @@ func WriteSubtreeControl(path string, settings map[string]bool) error {
 		}
 		strs = append(strs, statusPrefix+controller)
 	}
-	return writeFile(filepath.Join(path, "cgroup.subtree_control"), []byte(strings.Join(strs, " ")))
+	b := []byte(strings.Join(strs, " "))
+	return writeFile(filepath.Join(path, "cgroup.subtree_control"), b)
 }
 
 // DelegateControllers reads the currently enabled controllers for the given
