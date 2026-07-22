@@ -99,7 +99,7 @@ func Setup(ctx context.Context, path string, s *scpb.CgroupSettings, blockDevice
 			continue
 		}
 		settingFilePath := filepath.Join(path, name)
-		if err := writeFile(settingFilePath, value); err != nil {
+		if err := writeFile(settingFilePath, []byte(value)); err != nil {
 			return fmt.Errorf("write %q to cgroup file %q: %w", value, name, err)
 		}
 	}
@@ -110,12 +110,12 @@ func Setup(ctx context.Context, path string, s *scpb.CgroupSettings, blockDevice
 // file without O_CREAT: cgroupfs does not support creating files, and an
 // O_CREAT open of a missing interface file (e.g. for a controller that is not
 // yet enabled) fails with a misleading EACCES instead of ENOENT.
-func writeFile(path, value string) error {
+func writeFile(path string, value []byte) error {
 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_TRUNC, 0)
 	if err != nil {
 		return err
 	}
-	_, werr := f.Write([]byte(value))
+	_, werr := f.Write(value)
 	cerr := f.Close()
 	if werr != nil {
 		return werr
@@ -195,7 +195,7 @@ func WriteSubtreeControl(path string, settings map[string]bool) error {
 		}
 		strs = append(strs, statusPrefix+controller)
 	}
-	return writeFile(filepath.Join(path, "cgroup.subtree_control"), strings.Join(strs, " "))
+	return writeFile(filepath.Join(path, "cgroup.subtree_control"), []byte(strings.Join(strs, " ")))
 }
 
 // DelegateControllers reads the currently enabled controllers for the given
