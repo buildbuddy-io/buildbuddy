@@ -121,7 +121,7 @@ func Register(env *real_environment.RealEnv) error {
 		Labels:               trimmedLabels,
 		AllocatedCpuMillis:   resources.GetAllocatedCPUMillis(),
 		AllocatedMemoryBytes: resources.GetAllocatedRAMBytes(),
-		ConfiguredFlags:      configuredFlags(),
+		ConfiguredFlags:      flag.ConfiguredFlags(),
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -147,25 +147,6 @@ func Register(env *real_environment.RealEnv) error {
 		run(ctx, shutdownCh, env, *appTarget, *apiKey, node)
 	}()
 	return nil
-}
-
-// configuredFlags returns the flags this process was configured with (via
-// the command line or config file), in "--name=value" form. Flags left at
-// their default values are omitted, and the values of secret flags are
-// redacted.
-func configuredFlags() []string {
-	var flags []string
-	flag.CommandLine.VisitAll(func(flg *flag.Flag) {
-		value := flg.Value.String()
-		if value == flg.DefValue {
-			return
-		}
-		if flag.IsSecret(flg) {
-			value = "<redacted>"
-		}
-		flags = append(flags, "--"+flg.Name+"="+value)
-	})
-	return flags
 }
 
 func run(ctx context.Context, shutdownCh <-chan struct{}, env environment.Env, target, apiKey string, node *cppb.CacheProxyNode) {

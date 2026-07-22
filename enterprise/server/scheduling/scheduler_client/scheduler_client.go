@@ -134,6 +134,7 @@ func makeExecutionNode(pool, executorID, executorHostID string, xcodeLocator int
 		FilecacheMaxSizeBytes:         options.FilecacheMaxSizeBytes,
 		StartTime:                     options.StartTime,
 		Labels:                        trimmedLabels,
+		ConfiguredFlags:               flag.ConfiguredFlags(),
 	}, nil
 }
 

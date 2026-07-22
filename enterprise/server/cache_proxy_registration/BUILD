@@ -46,6 +46,7 @@ go_test(
         "//server/testutil/testenv",
         "//server/util/authutil",
         "//server/util/claims",
+        "//server/util/flag",
         "//server/util/status",
         "//server/util/testing/flags",
         "//server/util/upgrade",

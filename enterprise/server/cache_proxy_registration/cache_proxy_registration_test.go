@@ -15,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/buildbuddy-io/buildbuddy/server/util/upgrade"
@@ -276,7 +277,7 @@ func TestConfiguredFlags(t *testing.T) {
 	flags.Set(t, "cache_proxy.app_target", "grpcs://app.example.com")
 	flags.Set(t, "cache_proxy.api_key", "SUPER_SECRET_KEY")
 
-	configured := configuredFlags()
+	configured := flag.ConfiguredFlags()
 
 	assert.Contains(t, configured, "--cache_proxy.app_target=grpcs://app.example.com")
 	// Secret flags are reported, but with their values redacted.
