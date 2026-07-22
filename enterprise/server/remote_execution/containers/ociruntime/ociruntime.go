@@ -97,6 +97,12 @@ var (
 	errSIGSEGV = status.UnavailableErrorf("command was terminated by SIGSEGV, likely due to a memory issue")
 )
 
+// CgroupMemoryLimitEnabled returns whether task cgroup memory limits are
+// enabled via the executor.oci.enable_cgroup_memory_limit flag.
+func CgroupMemoryLimitEnabled() bool {
+	return *enableCgroupMemoryLimit
+}
+
 const (
 	ociVersion = "1.1.0-rc.3" // matches podman
 
