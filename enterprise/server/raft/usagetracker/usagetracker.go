@@ -1,6 +1,7 @@
 package usagetracker
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"flag"
@@ -43,14 +44,14 @@ var (
 	partitionUsageDeltaGossipThreshold = flag.Int("cache.raft.partition_usage_delta_bytes_threshold", 100e6, "Gossip partition usage information if it has changed by more than this amount since the last gossip.")
 	localSizeUpdatePeriod              = flag.Duration("cache.raft.local_size_update_period", 10*time.Second, "How often we update local size updates.")
 	samplesPerEviction                 = flag.Int("cache.raft.samples_per_eviction", 20, "How many records to sample on each eviction")
-	samplesPerBatch                    = flag.Int("cache.raft.samples_per_batch", 10000, "How many keys we read forward every time we get a random key.")
+	samplesPerRange                    = flag.Int("cache.raft.samples_per_range", 10000, "How many keys the eviction sampler reads forward on each range visit.")
 	samplePoolSize                     = flag.Int("cache.raft.sample_pool_size", 500, "How many deletion candidates to maintain between evictions")
 	sampleBufferSize                   = flag.Int("cache.raft.sample_buffer_size", 100, "Buffer up to this many samples for eviction sampling")
 	deletesPerEviction                 = flag.Int("cache.raft.deletes_per_eviction", 5, "Maximum number keys to delete in one eviction attempt before resampling.")
 	evictionRateLimit                  = flag.Int("cache.raft.eviction_rate_limit", 300, "Maximum number of entries to evict per second (per partition).")
 	deleteBufferSize                   = flag.Int("cache.raft.delete_buffer_size", 20, "Buffer up to this many samples for eviction eviction")
 	minEvictionAge                     = flag.Duration("cache.raft.min_eviction_age", 6*time.Hour, "Don't evict anything unless it's been idle for at least this long")
-	samplerIterRefreshPeriod           = flag.Duration("cache.raft.sampler_iter_refresh_peroid", 5*time.Minute, "How often we refresh iterator in sampler")
+	samplerIterRefreshPeriod           = flag.Duration("cache.raft.sampler_iter_refresh_period", 5*time.Minute, "How often the eviction sampler recreates its (reused) pebble iterator so it observes newly written keys and freshened atimes.")
 	samplerSleepDuration               = flag.Duration("cache.raft.sampler_sleep_duration", 1*time.Second, "How long the eviction sampler sleeps when it cannot find eligible entries to evict. Set to 0 to disable sleeping (intended for tests).")
 	evictionBatchSize                  = flag.Int("cache.raft.eviction_batch_size", 100, "Buffer this many writes before delete")
 	numDeleteWorkers                   = flag.Int("cache.raft.num_delete_worker", 4, "Number of deletes in parallel")
@@ -76,7 +77,31 @@ const (
 	samplerSleepThreshold = float64(0.2)
 	evictFlushPeriod      = 10 * time.Second
 	metricsRefreshPeriod  = 30 * time.Second
+
+	// maxEmptyRangeStreak is how many consecutive empty range selections the
+	// range-scoped sampler tolerates before backing off. A few empty ranges
+	// among populated ones are skipped cheaply; a node hosting only empty
+	// ranges (while the cluster-wide sleep guard doesn't fire) backs off after
+	// this many, rather than busy-spinning a core.
+	maxEmptyRangeStreak = 10
+
+	// cursorReconcileInterval is how many sampler batches elapse between passes
+	// that drop resume cursors for ranges this node no longer hosts. Range IDs
+	// are never reused, so without this the cursor map would grow for every
+	// range removed (merge/split/rebalance) over the life of the process.
+	cursorReconcileInterval = 1000
 )
+
+// IStore is the subset of the raft store the tracker needs, defined in the
+// consumer to avoid a tracker->store import cycle.
+type IStore interface {
+	// RandomOpenRangeDescriptor returns a uniformly random range this store
+	// hosts (leader or follower) in the given partition, or nil if none.
+	RandomOpenRangeDescriptor(partitionID string) *rfpb.RangeDescriptor
+	// HostedRangeIDs returns the set of range IDs this store hosts in the given
+	// partition (excluding the meta range). Used to prune stale resume cursors.
+	HostedRangeIDs(partitionID string) map[uint64]struct{}
+}
 
 type Tracker struct {
 	gossipManager interfaces.GossipService
@@ -129,6 +154,7 @@ type metricSet struct {
 type partitionUsage struct {
 	part disk.Partition
 
+	store    IStore
 	dbGetter pebble.Leaser
 	sender   *sender.Sender
 	clock    clockwork.Clock
@@ -154,15 +180,22 @@ type partitionUsage struct {
 
 	sizeBytes int64
 
-	samplesPerBatch          int
+	samplesPerRange          int
 	samplerIterRefreshPeriod time.Duration
 	samplerSleepDuration     time.Duration
-	minEvictionAge           time.Duration
-	localSizeUpdatePeriod    time.Duration
-	evictionBatchSize        int
-	numDeleteWorkers         int
-	numGCSDeleteWorkers      int
-	fileStorer               filestore.Store
+
+	// cursors tracks, per range, the next key to resume sampling from. Each
+	// range is swept in a circle: a random entry key when the cursor is empty
+	// (a fresh start or a restart), then forward, wrapping at the range end back
+	// to the range start. Pruned periodically against the store's hosted ranges
+	// (see reconcileCursors) since range IDs are never reused.
+	cursors               map[uint64][]byte
+	minEvictionAge        time.Duration
+	localSizeUpdatePeriod time.Duration
+	evictionBatchSize     int
+	numDeleteWorkers      int
+	numGCSDeleteWorkers   int
+	fileStorer            filestore.Store
 
 	metrics metricSet
 }
@@ -421,17 +454,6 @@ func (pu *partitionUsage) startSampleGenerator(ctx context.Context) {
 	close(pu.samples)
 }
 
-var digestRunes = []rune("abcdef1234567890")
-
-func (pu *partitionUsage) randomKey(n int) []byte {
-	var randKey strings.Builder
-	randKey.WriteString(pu.partitionKeyPrefix() + "/")
-	for i := 0; i < n; i++ {
-		randKey.WriteString(string(digestRunes[rand.Intn(len(digestRunes))]))
-	}
-	return []byte(randKey.String())
-}
-
 // samplerSleep pauses the sampler for the configured sleep duration to avoid
 // busy-looping when there is nothing useful to sample. It returns false if the
 // context was cancelled.
@@ -454,90 +476,218 @@ func (pu *partitionUsage) generateSamplesForEviction(ctx context.Context) error 
 		return err
 	}
 	defer db.Close()
-	start, end := keys.Range([]byte(pu.partitionKeyPrefix() + "/"))
-	iterCreatedAt := time.Now()
-	iter, err := db.NewIter(&pebble.IterOptions{LowerBound: start, UpperBound: end})
+
+	return pu.generateSamplesRangeScoped(ctx, db)
+}
+
+// generateSamplesRangeScoped samples eviction candidates by picking a hosted
+// range uniformly and sweeping its keys with a per-range resume cursor so every
+// key is sampled over successive visits. Each range is swept in a circle: it
+// enters at a random key (built from the range bounds by randomKeyInRange) when
+// the cursor is empty, then reads forward, wrapping at the range end back to
+// the range start. The cursor lives only in memory, so "empty" means a fresh
+// start or a restart — entering randomly there keeps the head from being
+// over-sampled across restarts, while the wrap-to-start keeps coverage complete
+// within a run. (A plain random-key seek can't stand alone here: a range spans
+// the whole hash band it was provisioned for, but v7 keys cluster under a
+// shared group prefix, so on a loose range randomKeyInRange lands ~at the head
+// and the sweep supplies the coverage.) Sampling is node-wide (all hosted
+// ranges, leader or follower).
+func (pu *partitionUsage) generateSamplesRangeScoped(ctx context.Context, db pebble.IPebbleDB) error {
+	// One partition-wide iterator, reused across range visits (SeekGE repositions
+	// it) and recreated only on the refresh period below — far less NewIter churn
+	// than recreating per visit, which matters most at a small samplesPerRange.
+	partStart, partEnd := keys.Range([]byte(pu.partitionKeyPrefix() + "/"))
+	iter, err := db.NewIter(&pebble.IterOptions{LowerBound: partStart, UpperBound: partEnd})
 	if err != nil {
 		return err
 	}
-	// We update the iter variable later on, so we need to wrap the Close call
-	// in a func to operate on the correct iterator instance.
 	defer func() {
-		iter.Close()
+		if iter != nil {
+			iter.Close()
+		}
 	}()
+	iterCreatedAt := time.Now()
 
-	leftInBatch := pu.samplesPerBatch
 	fileMetadata := sgpb.FileMetadataFromVTPool()
 	defer fileMetadata.ReturnToVTPool()
 
 	timer := pu.clock.NewTimer(0)
 	defer timer.Stop()
 
-	// Files are kept in random order (because they are keyed by digest), so
-	// instead of doing a new seek for every random sample we will seek once
-	// and just read forward, yielding digests until we've found enough.
+	emptyStreak := 0
+	reconcile := 0
+
 	for {
 		if ctx.Err() != nil {
 			return nil
 		}
 
-		// When we started to populate a cache, we cannot find any eligible
-		// entries to evict. We will sleep for some time to prevent from
-		// constantly generating samples in vain.
-		globalSize := pu.GlobalSizeBytes()
-		shouldSleep := globalSize <= int64(samplerSleepThreshold*float64(pu.part.MaxSizeBytes))
-		if shouldSleep {
-			if !pu.samplerSleep(ctx) {
-				return nil
-			}
+		// Periodically drop cursors for ranges this node no longer hosts, so the
+		// map can't grow without bound as ranges are removed.
+		if reconcile++; reconcile >= cursorReconcileInterval {
+			reconcile = 0
+			pu.reconcileCursors()
 		}
 
-		// Refresh the iterator once a while
-		if leftInBatch <= 0 || time.Since(iterCreatedAt) > pu.samplerIterRefreshPeriod {
-			leftInBatch = pu.samplesPerBatch
-			iterCreatedAt = time.Now()
-			// This iterator won't be positioned (Valid() will return false),
-			// so we will position it below.
-			newIter, err := db.NewIter(&pebble.IterOptions{LowerBound: start, UpperBound: end})
+		// Refresh the reused iterator once it ages past the refresh period so it
+		// observes writes and atime updates made since it was created. Wall time
+		// (not pu.clock) so it fires even under a frozen test clock.
+		if time.Since(iterCreatedAt) > pu.samplerIterRefreshPeriod {
+			newIter, err := db.NewIter(&pebble.IterOptions{LowerBound: partStart, UpperBound: partEnd})
 			if err != nil {
 				return err
 			}
 			iter.Close()
 			iter = newIter
+			iterCreatedAt = time.Now()
 		}
-		leftInBatch--
-		if !iter.Valid() {
-			// This happens when we create a new iterator or exhaust the
-			// existing one.
-			randomKey := pu.randomKey(64)
-			if valid := iter.SeekGE(randomKey); !valid {
-				// This is a probabilistic sleep. A partition with no rows on
-				// this node will always sleep. A partition with many rows is
-				// very unlikely to sleep. This ensures that we don't waste CPU
-				// cycles trying to find samples for a partition with no (or
-				// few) rows.
+
+		// Sleep while the partition is mostly empty to avoid busy-looping.
+		globalSize := pu.GlobalSizeBytes()
+		if globalSize <= int64(samplerSleepThreshold*float64(pu.part.MaxSizeBytes)) {
+			if !pu.samplerSleep(ctx) {
+				return nil
+			}
+		}
+
+		// Pick a random hosted range in this partition. The store owns
+		// selection, so it always reflects the current range set (splits and
+		// merges included) without the tracker caching a stale list.
+		rd := pu.store.RandomOpenRangeDescriptor(pu.part.ID)
+		if rd == nil {
+			// No ranges hosted for this partition yet; sleep and re-check.
+			if !pu.samplerSleep(ctx) {
+				return nil
+			}
+			continue
+		}
+		start, end := rd.GetStart(), rd.GetEnd()
+
+		// Resume sweeping from where the last visit left off. When the cursor is
+		// empty (a fresh start or a restart) enter at a random key so the head
+		// isn't over-sampled; otherwise resume from the saved position.
+		resume := pu.cursors[rd.GetRangeId()]
+		if len(resume) == 0 || bytes.Compare(resume, start) < 0 || bytes.Compare(resume, end) >= 0 {
+			resume = randomKeyInRange(start, end)
+		}
+		valid := iter.SeekGE(resume)
+		// The iterator spans the whole partition, so a seek can land past this
+		// range's end: a random-entry overshoot, or a resume cursor pointing past
+		// keys deleted since the last visit. Neither means the range is empty —
+		// wrap to the range start before giving up on it.
+		if (!valid || bytes.Compare(iter.Key(), end) >= 0) && bytes.Compare(resume, start) > 0 {
+			valid = iter.SeekGE(start)
+		}
+
+		// Read forward up to samplesPerRange keys, stopping at the range end (the
+		// iterator is bounded to the whole partition, not this range).
+		read := 0
+		for ; read < pu.samplesPerRange && valid && bytes.Compare(iter.Key(), end) < 0; read++ {
+			if ctx.Err() != nil {
+				return nil
+			}
+			var key filestore.PebbleKey
+			if _, err := key.FromBytes(iter.Key()); err != nil {
+				log.Warningf("cannot generate sample for eviction, skipping: failed to read key: %s", err)
+				valid = iter.Next()
+				continue
+			}
+			fileMetadata.ResetVT()
+			if err := fileMetadata.UnmarshalVT(iter.Value()); err != nil {
+				log.Warningf("cannot generate sample for eviction, skipping: failed to read proto: %s", err)
+				valid = iter.Next()
+				continue
+			}
+			pu.maybeAddToSampleChan(ctx, iter, fileMetadata, timer)
+			valid = iter.Next()
+		}
+
+		// Remember where to resume next visit. On reaching the range end, wrap to
+		// the range start (head) rather than deleting the cursor: within a run we
+		// keep sweeping head-anchored (which covers everything uniformly); only a
+		// restart, which clears the in-memory map, re-enters at a random key.
+		if valid && bytes.Compare(iter.Key(), end) < 0 {
+			pu.cursors[rd.GetRangeId()] = append([]byte(nil), iter.Key()...)
+		} else {
+			pu.cursors[rd.GetRangeId()] = append([]byte(nil), start...)
+		}
+
+		if read == 0 {
+			// Genuinely empty range (the retry from the range start above also
+			// found nothing). Skip cheaply, and only back off after a run of
+			// empty selections so isolated empty ranges don't stall eviction.
+			emptyStreak++
+			if emptyStreak >= maxEmptyRangeStreak {
 				if !pu.samplerSleep(ctx) {
 					return nil
 				}
-				leftInBatch = 0 // Force creating a new iterator
-				continue
+				emptyStreak = 0
 			}
-		}
-		var key filestore.PebbleKey
-		if _, err := key.FromBytes(iter.Key()); err != nil {
-			log.Warningf("cannot generate sample for eviction, skipping: failed to read key: %s", err)
 			continue
 		}
-		fileMetadata.ResetVT() // UnmarshalVT doesn't reset, unlike proto.Unmarshal.
-		err = fileMetadata.UnmarshalVT(iter.Value())
-		if err != nil {
-			log.Warningf("cannot generate sample for eviction, skipping: failed to read proto: %s", err)
-			continue
-		}
-
-		pu.maybeAddToSampleChan(ctx, iter, fileMetadata, timer)
-		iter.Next()
+		emptyStreak = 0
 	}
+}
+
+// reconcileCursors drops resume cursors for ranges this node no longer hosts.
+// Range IDs are never reused, so without this the cursor map would grow for
+// every range removed (merge, split, or rebalance) over the process lifetime.
+func (pu *partitionUsage) reconcileCursors() {
+	if len(pu.cursors) == 0 {
+		return
+	}
+	hosted := pu.store.HostedRangeIDs(pu.part.ID)
+	for id := range pu.cursors {
+		if _, ok := hosted[id]; !ok {
+			delete(pu.cursors, id)
+		}
+	}
+}
+
+// randomKeyInRange returns a key that sorts within (roughly) [start, end),
+// built from the range bounds so it lands where keys actually are — unlike a
+// random position in the raw byte range, which on a group-clustered v7 keyspace
+// falls in the empty gap and SeekGE snaps to the head.
+//
+// The common prefix of start and end is held fixed and randomization begins at
+// the first byte that differs. For a single-group range (bounds share the
+// PT/GR<group>/ prefix) that first differing byte is in the digest, which is
+// dense and uniform, so the result lands on a real key. For a multi-group range
+// it's in the group field; group IDs are uniform, so a random value there plus
+// SeekGE lands on a ~uniform real group. A draw that overshoots the range's
+// last key is the caller's problem (it falls back to the range start).
+//
+// It degrades to ~start when the bounds aren't group-structured (e.g. the
+// hex-band bringup ranges): the common prefix is just PT<part>/ and the random
+// byte sorts before the GR cluster. That's the loose-range case where the
+// caller's cursor sweep still guarantees coverage.
+func randomKeyInRange(start, end []byte) []byte {
+	n := 0
+	for n < len(start) && n < len(end) && start[n] == end[n] {
+		n++
+	}
+	if n >= len(end) {
+		// end is a prefix of start (or they're equal): nothing to randomize.
+		return append([]byte(nil), start...)
+	}
+	lo := byte(0x00)
+	if n < len(start) {
+		lo = start[n]
+	}
+	hi := end[n]
+	if lo > hi {
+		return append([]byte(nil), start...)
+	}
+	key := make([]byte, 0, n+9)
+	key = append(key, start[:n]...)
+	key = append(key, lo+byte(rand.Intn(int(hi-lo)+1)))
+	// A few random tail bytes so we don't always land on a prefix boundary.
+	var tail [8]byte
+	for i := range tail {
+		tail[i] = byte(rand.Intn(256))
+	}
+	return append(key, tail[:]...)
 }
 
 func (pu *partitionUsage) maybeAddToSampleChan(ctx context.Context, iter pebble.Iterator, fileMetadata *sgpb.FileMetadata, timer clockwork.Timer) {
@@ -623,7 +773,7 @@ func (pu *partitionUsage) updateMetrics() {
 	pu.metrics.evictionGCSChanSize.Set(float64(len(pu.gcsDeletes)))
 }
 
-func New(sender *sender.Sender, dbGetter pebble.Leaser, gossipManager interfaces.GossipService, node *rfpb.NodeDescriptor, partitions []disk.Partition, clock clockwork.Clock, fileStorer filestore.Store) (*Tracker, error) {
+func New(store IStore, sender *sender.Sender, dbGetter pebble.Leaser, gossipManager interfaces.GossipService, node *rfpb.NodeDescriptor, partitions []disk.Partition, clock clockwork.Clock, fileStorer filestore.Store) (*Tracker, error) {
 	ut := &Tracker{
 		gossipManager: gossipManager,
 		node:          node,
@@ -654,14 +804,16 @@ func New(sender *sender.Sender, dbGetter pebble.Leaser, gossipManager interfaces
 		}
 		u := &partitionUsage{
 			part:                     p,
+			store:                    store,
 			sender:                   sender,
 			clock:                    clock,
 			nodes:                    make(map[string]*nodePartitionUsage),
+			cursors:                  make(map[uint64][]byte),
 			dbGetter:                 dbGetter,
 			samples:                  make(chan *approxlru.Sample[*evictionKey], *sampleBufferSize),
 			deletes:                  make(chan *approxlru.Sample[*evictionKey], *deleteBufferSize),
 			gcsDeletes:               make(chan *sgpb.StorageMetadata_GCSMetadata, *gcsDeleteBufferSize),
-			samplesPerBatch:          *samplesPerBatch,
+			samplesPerRange:          *samplesPerRange,
 			samplerIterRefreshPeriod: *samplerIterRefreshPeriod,
 			samplerSleepDuration:     *samplerSleepDuration,
 			minEvictionAge:           *minEvictionAge,

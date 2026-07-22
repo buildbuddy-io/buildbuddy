@@ -116,6 +116,12 @@ const (
 	// their remote isntance name, groupID, and digest.
 	Version6
 
+	// Version7 is like Version4 but always prepends the (fixed-width) groupID,
+	// for CAS as well as AC, so a group's keys are contiguous in the keyspace.
+	// The real digest is preserved, so the groupID is recoverable. Not part of
+	// the v0..v6 migration chain (v5/v6 discard the groupID).
+	Version7
+
 	// MaxKeyVersion is always 1 more than the highest defined version, which
 	// allows for tests to iterate across all versions from UndefinedKeyVersion
 	// to MaxKeyVersion and check cross compatibility.
@@ -316,6 +322,21 @@ func (pmk *PebbleKey) Bytes(version PebbleKeyVersion) ([]byte, error) {
 		}
 		filePath := filepath.Join(hashStr, strconv.Itoa(int(pmk.digestFunction)), pmk.isolation, pmk.encryptionKeyID)
 		return []byte(PartitionDirectoryPrefix + pmk.partID + "/" + filePath + "/v6"), nil
+	case Version7:
+		// Group-local layout. A groupID is required for both AC and CAS so that
+		// every key sits under its group's contiguous prefix.
+		if pmk.groupID == "" {
+			return nil, status.FailedPreconditionErrorf("cannot make v7 key: %w", ErrMissingKeyInfo)
+		}
+		rih := pmk.remoteInstanceHash
+		if pmk.isolation == "ac" && rih == "" {
+			rih = "0"
+		}
+		filePath := filepath.Join(pmk.hash, strconv.Itoa(int(pmk.digestFunction)), pmk.isolation, rih, pmk.encryptionKeyID)
+		filePath = filepath.Join(remapANONToFixedGroupID(FixedWidthGroupID(pmk.groupID)), filePath)
+		partDir := PartitionDirectoryPrefix + pmk.partID
+		filePath = filepath.Join(partDir, filePath, "v7")
+		return []byte(filePath), nil
 	default:
 		return nil, status.FailedPreconditionErrorf("Unknown key version: %v", version)
 	}
@@ -512,6 +533,51 @@ func (pmk *PebbleKey) parseVersion6(parts [][]byte) error {
 	return nil
 }
 
+func (pmk *PebbleKey) parseVersion7(parts [][]byte) error {
+	digestFunctionString := ""
+
+	switch len(parts) {
+	// CAS artifact
+	// PTfoo/GR00000000000000000123/abcd..../1/cas/v7
+	case 6:
+		pmk.partID, pmk.groupID, pmk.hash, digestFunctionString, pmk.isolation = string(parts[0]), string(parts[1]), string(parts[2]), string(parts[3]), string(parts[4])
+	case 7:
+		// Either an encrypted CAS artifact or an unencrypted AC artifact; both
+		// have 7 segments, so disambiguate on the isolation segment (parts[4]).
+		if string(parts[4]) == "cas" {
+			// encrypted CAS: PTfoo/GR.../abcd..../1/cas/EK123/v7
+			pmk.partID, pmk.groupID, pmk.hash, digestFunctionString, pmk.isolation, pmk.encryptionKeyID = string(parts[0]), string(parts[1]), string(parts[2]), string(parts[3]), string(parts[4]), string(parts[5])
+		} else {
+			// AC: PTfoo/GR.../abcd..../1/ac/123/v7
+			pmk.partID, pmk.groupID, pmk.hash, digestFunctionString, pmk.isolation, pmk.remoteInstanceHash = string(parts[0]), string(parts[1]), string(parts[2]), string(parts[3]), string(parts[4]), string(parts[5])
+			if pmk.remoteInstanceHash == "0" {
+				pmk.remoteInstanceHash = ""
+			}
+		}
+	// encrypted AC artifact
+	// PTfoo/GR.../abcd..../1/ac/123/EK123/v7
+	case 8:
+		pmk.partID, pmk.groupID, pmk.hash, digestFunctionString, pmk.isolation, pmk.remoteInstanceHash, pmk.encryptionKeyID = string(parts[0]), string(parts[1]), string(parts[2]), string(parts[3]), string(parts[4]), string(parts[5]), string(parts[6])
+		if pmk.remoteInstanceHash == "0" {
+			pmk.remoteInstanceHash = ""
+		}
+	default:
+		return parseError(parts)
+	}
+
+	// Parse hash type string back into a digestFunction enum.
+	intDigestFunction, err := strconv.Atoi(digestFunctionString)
+	if err != nil || intDigestFunction == 0 {
+		// It is an error for a v7 key to have a 0 digestFunction value.
+		return parseError(parts)
+	}
+	pmk.digestFunction = repb.DigestFunction_Value(intDigestFunction)
+
+	pmk.partID = strings.TrimPrefix(pmk.partID, PartitionDirectoryPrefix)
+	pmk.groupID = remapFixedToANONGroupID(trimFixedWidthGroupID(pmk.groupID))
+	return nil
+}
+
 func (pmk *PebbleKey) FromBytes(in []byte) (PebbleKeyVersion, error) {
 	version := UndefinedKeyVersion
 	slash := []byte{filepath.Separator}
@@ -555,6 +621,8 @@ func (pmk *PebbleKey) FromBytes(in []byte) (PebbleKeyVersion, error) {
 		return Version5, pmk.parseVersion5(parts)
 	case Version6:
 		return Version6, pmk.parseVersion6(parts)
+	case Version7:
+		return Version7, pmk.parseVersion7(parts)
 	default:
 		return -1, status.InvalidArgumentErrorf("Unable to parse %q to pebble key", in)
 	}
