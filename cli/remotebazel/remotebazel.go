@@ -922,6 +922,16 @@ func downloadOutputs(ctx context.Context, env environment.Env, mainOutputs []*be
 	return mainLocalArtifacts, nil
 }
 
+func findExecutableOutput(outputs []string, outputBaseDir, executablePath string) (string, error) {
+	expectedPath := filepath.Clean(filepath.Join(outputBaseDir, BuildBuddyArtifactDir, executablePath))
+	for _, output := range outputs {
+		if filepath.Clean(output) == expectedPath {
+			return output, nil
+		}
+	}
+	return "", fmt.Errorf("run executable %q not found among downloaded artifacts", executablePath)
+}
+
 func getWorkingDirectory(workspaceFilePath string) (string, error) {
 	repoRootPath, err := storage.RepoRootPath()
 	if err != nil {
@@ -1137,6 +1147,7 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 	var runfiles []*bespb.File
 	var runfileDirectories []*bespb.Tree
 	var defaultRunArgs []string
+	executablePath := ""
 	for _, e := range inRsp.GetInvocation()[0].GetEvent() {
 		if _, ok := e.GetBuildEvent().GetPayload().(*bespb.BuildEvent_ChildInvocationCompleted); ok {
 			childIID = e.GetBuildEvent().GetId().GetChildInvocationCompleted().GetInvocationId()
@@ -1147,6 +1158,7 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 				runfiles = rta.RunTargetAnalyzed.GetRunfiles()
 				runfileDirectories = rta.RunTargetAnalyzed.GetRunfileDirectories()
 				defaultRunArgs = rta.RunTargetAnalyzed.GetArguments()
+				executablePath = rta.RunTargetAnalyzed.GetExecutablePath()
 			}
 		}
 	}
@@ -1171,10 +1183,10 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 				return 1, fmt.Errorf("download invocation outputs for %q: %w", childIID, err)
 			}
 			if opts.RunOutputLocally {
-				if len(outputs) > 1 {
-					return 1, fmt.Errorf("run requested but target produced more than one artifact")
+				binPath, err := findExecutableOutput(outputs, outputsBaseDir, executablePath)
+				if err != nil {
+					return 1, err
 				}
-				binPath := outputs[0]
 				if err := os.Chmod(binPath, 0755); err != nil {
 					return 1, fmt.Errorf("prepare binary %q for execution: %w", binPath, err)
 				}
