@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/bazelbuild/rules_go/go/runfiles"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/cgroup"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/ociruntime"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
@@ -69,6 +70,18 @@ func init() {
 		log.Fatalf("Failed to locate crun in runfiles: %s", err)
 	}
 	*ociruntime.Runtime = runtimePath
+}
+
+func TestMain(m *testing.M) {
+	// Mirror executor startup, which enables the cgroup controllers that task
+	// cgroups need in the parent cgroup of task cgroups. Tests create task
+	// cgroups directly under the cgroupfs root.
+	for _, controller := range []string{"cpu", "cpuset", "io", "memory", "pids"} {
+		if err := cgroup.WriteSubtreeControl(cgroup.RootPath, map[string]bool{controller: true}); err != nil {
+			log.Printf("Could not enable cgroup controller %q for child cgroups of %q: %s", controller, cgroup.RootPath, err)
+		}
+	}
+	os.Exit(m.Run())
 }
 
 func setupNetworking(t *testing.T) {
