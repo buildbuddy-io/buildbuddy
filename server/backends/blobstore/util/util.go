@@ -3,7 +3,6 @@ package util
 import (
 	"bufio"
 	"bytes"
-	"compress/gzip"
 	"context"
 	"flag"
 	"io"
@@ -15,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/klauspost/compress/gzip"
 	"github.com/prometheus/client_golang/prometheus"
 
 	gstatus "google.golang.org/grpc/status"
@@ -56,7 +56,13 @@ func NewCompressWriter(w io.Writer) io.WriteCloser {
 		// output is always safe since readers auto-detect the format.
 		log.Errorf("Failed to create zstd blobstore writer, falling back to gzip: %s", err)
 	}
-	return gzip.NewWriter(w)
+
+	zw, err := gzip.NewWriterLevel(w, gzip.BestSpeed)
+	if err != nil {
+		// Only reachable with an invalid level constant.
+		return gzip.NewWriter(w)
+	}
+	return zw
 }
 
 // NewCompressReader returns a reader that decompresses data read from r,

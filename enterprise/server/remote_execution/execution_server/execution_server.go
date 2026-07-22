@@ -303,6 +303,7 @@ func (s *ExecutionServer) insertExecution(ctx context.Context, executionID, invo
 		rmd := bazel_request.GetRequestMetadata(ctx)
 		executionProto.TargetLabel = rmd.GetTargetId()
 		executionProto.ActionMnemonic = rmd.GetActionMnemonic()
+		executionProto.ConfigurationId = rmd.GetConfigurationId()
 		executionProto.OutputPath = primaryOutputPath(command)
 		executionProto.RequestedPool = requestedPool
 		executionProto.ClientIp = clientip.Get(ctx)
@@ -442,6 +443,7 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 			rmd := bazel_request.GetRequestMetadata(ctx)
 			executionProto.TargetLabel = rmd.GetTargetId()
 			executionProto.ActionMnemonic = rmd.GetActionMnemonic()
+			executionProto.ConfigurationId = rmd.GetConfigurationId()
 			if value, ok := rexec.LookupEnv(cmd.GetEnvironmentVariables(), "TEST_SIZE"); ok {
 				if testSize, ok := bespb.TestSize_value[strings.ToUpper(value)]; ok && testSize != int32(bespb.TestSize_UNKNOWN) {
 					executionProto.TestSize = strings.ToLower(bespb.TestSize(testSize).String())

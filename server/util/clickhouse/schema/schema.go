@@ -204,6 +204,8 @@ type Execution struct {
 	// RequestMetadata
 	TargetLabel    string `gorm:"codec:ZSTD(1)"`
 	ActionMnemonic string `gorm:"codec:ZSTD(1)"`
+	// ConfigurationID identifies the configuration in which the target was built.
+	ConfigurationID string `gorm:"codec:ZSTD(1)"`
 
 	// Test metadata
 	TestSize        string `gorm:"type:LowCardinality(String)"`
@@ -365,6 +367,7 @@ func (e *Execution) AdditionalFields() []string {
 		"OutputPath",
 		"TargetLabel",
 		"ActionMnemonic",
+		"ConfigurationID",
 		"TestSize",
 		"TestShardIndex",
 		"TestTotalShards",

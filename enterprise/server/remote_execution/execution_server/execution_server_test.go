@@ -868,6 +868,7 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 		ToolInvocationId: invocationID,
 		TargetId:         "//some:test",
 		ActionMnemonic:   "TestRunner",
+		ConfigurationId:  "26b4b27c1032c7df9ed4ffe75e295384222c5464200cf73616ef1beeb8f8028d",
 	})
 	require.NoError(t, err)
 	for k, v := range test.platformOverrides {
@@ -1199,6 +1200,7 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 		RequestedTimeoutUsec:         10000000,
 		TargetLabel:                  "//some:test",
 		ActionMnemonic:               "TestRunner",
+		ConfigurationId:              "26b4b27c1032c7df9ed4ffe75e295384222c5464200cf73616ef1beeb8f8028d",
 		TestSize:                     wantTestSize,
 		TestShardIndex:               2,
 		TestTotalShards:              6,

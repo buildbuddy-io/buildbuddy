@@ -11,6 +11,7 @@ go_library(
         "//server/util/bytebufferpool",
         "//server/util/compression",
         "//server/util/log",
+        "@com_github_klauspost_compress//gzip",
         "@com_github_prometheus_client_golang//prometheus",
         "@org_golang_google_grpc//status",
     ],
