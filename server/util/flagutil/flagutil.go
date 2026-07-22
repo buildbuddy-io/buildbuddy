@@ -1,11 +1,16 @@
 package flagutil
 
 import (
+	stdflag "flag"
+	"reflect"
+
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil/common"
 )
 
-var GetTypeForFlagValue = common.GetTypeForFlagValue
+func GetTypeForFlagValue(value stdflag.Value) (reflect.Type, error) {
+	return common.GetTypeForFlagValue(value)
+}
 
 // SetValueForFlagName sets the value for a flag by name. setFlags is the set of
 // flags that have already been set on the command line; those flags will not be

@@ -188,7 +188,7 @@ func GetBBParserForCommand(commandName string) (*Parser, error) {
 
 	// For CLI-specific commands, add its flags, defined as a flag.FlagSet, to the parser.
 	//
-	// (CLI flags that apply to regular bazel commands are added as `nativeDefinitions`.
+	// (CLI flags that apply to regular bazel commands are added as `nativeDefinitions`.)
 	if command := cli_command.GetCommand(commandName); command != nil {
 		if err := p.AddFlagSet(command.Flags, command.Name); err != nil {
 			return nil, err
@@ -199,7 +199,11 @@ func GetBBParserForCommand(commandName string) (*Parser, error) {
 
 // AddFlagSet teaches the parser about CLI-specific flags declared in a Go flagset.
 func (p *Parser) AddFlagSet(flagSet *flag.FlagSet, supportedCommands ...string) error {
-	for _, definition := range options.DefinitionsFromFlagSet(flagSet, supportedCommands...) {
+	definitions, err := options.DefinitionsFromFlagSet(flagSet, supportedCommands...)
+	if err != nil {
+		return err
+	}
+	for _, definition := range definitions {
 		if err := p.AddOptionDefinition(definition); err != nil {
 			return err
 		}

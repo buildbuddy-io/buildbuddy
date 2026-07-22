@@ -204,34 +204,46 @@ func NewDefinition(name string, opts ...DefinitionOpt) *Definition {
 
 // DefinitionsFromFlagSet converts CLI-specific flags declared in a Go flag set
 // into definitions understood by the argument parser.
-func DefinitionsFromFlagSet(flagSet *flag.FlagSet, supportedCommands ...string) []*Definition {
+func DefinitionsFromFlagSet(flagSet *flag.FlagSet, supportedCommands ...string) ([]*Definition, error) {
 	if flagSet == nil {
-		return nil
+		return nil, nil
 	}
 	var definitions []*Definition
+	var visitErr error
 	flagSet.VisitAll(func(f *flag.Flag) {
+		if visitErr != nil {
+			return
+		}
 		opts := []DefinitionOpt{
 			WithPluginID(NativeBuiltinPluginID),
 			WithSupportFor(supportedCommands...),
 		}
+		// Determine the flag's underlying data type so we know which flag options to apply.
 		valueType, err := flagutil.GetTypeForFlagValue(f.Value)
 		if err != nil {
-			valueType = reflect.TypeOf(f.Value)
+			visitErr = fmt.Errorf("cannot determine type for flag %q: %w", f.Name, err)
+			return
 		}
 		for valueType.Kind() == reflect.Pointer {
 			valueType = valueType.Elem()
 		}
+		// Boolean flags support a negative flag but don't require a value.
 		if valueType.Kind() == reflect.Bool {
 			opts = append(opts, WithNegative())
 		} else {
+			// Non-booleans flags require a value.
 			opts = append(opts, WithRequiresValue())
 		}
+		// Slices and maps support multiple values.
 		if valueType.Kind() == reflect.Slice || valueType.Kind() == reflect.Map {
 			opts = append(opts, WithMulti())
 		}
 		definitions = append(definitions, NewDefinition(f.Name, opts...))
 	})
-	return definitions
+	if visitErr != nil {
+		return nil, visitErr
+	}
+	return definitions, nil
 }
 
 // DefinitionFrom takes a FlagInfo proto message and converts it into a

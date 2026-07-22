@@ -8,14 +8,19 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/options/flag_form"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	flagtypes "github.com/buildbuddy-io/buildbuddy/server/util/flagutil/types"
 )
 
 func TestDefinitionsFromFlagSet(t *testing.T) {
 	testFlags := flag.NewFlagSet("test_flagset", flag.ContinueOnError)
 	testFlags.Bool("enabled", false, "")
 	testFlags.String("name", "", "")
+	flagtypes.StringSlice(testFlags, "tags", nil, "")
+	flagtypes.JSONMap[map[string]string](testFlags, "labels", map[string]string{}, "")
 
-	definitions := options.DefinitionsFromFlagSet(testFlags, "test_command")
+	definitions, err := options.DefinitionsFromFlagSet(testFlags, "test_command")
+	require.NoError(t, err)
 	byName := make(map[string]*options.Definition, len(definitions))
 	for _, definition := range definitions {
 		byName[definition.Name()] = definition
@@ -25,6 +30,10 @@ func TestDefinitionsFromFlagSet(t *testing.T) {
 	require.False(t, byName["enabled"].RequiresValue())
 	require.True(t, byName["name"].RequiresValue())
 	require.False(t, byName["name"].Multi())
+	// Slice- and map-valued flags are repeatable, so they should receive the
+	// Multi() option.
+	require.True(t, byName["tags"].Multi())
+	require.True(t, byName["labels"].Multi())
 }
 
 func RequiredValueDefinition(name, oldname, shortname string, opts ...options.DefinitionOpt) *options.Definition {

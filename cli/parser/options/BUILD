@@ -25,6 +25,7 @@ go_test(
     deps = [
         ":options",
         "//cli/parser/options/flag_form",
+        "//server/util/flagutil/types",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
     ],
