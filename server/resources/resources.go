@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"cloud.google.com/go/compute/metadata"
+	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -20,11 +21,13 @@ import (
 )
 
 var (
-	customResources = flag.Slice("executor.custom_resources", []CustomResource{}, "Optional allocatable custom resources. This works similarly to bazel's local_extra_resources flag. Request these resources in exec_properties using the 'resources:<name>': '<value>' syntax.")
-	memoryBytes     = flag.Int64("executor.memory_bytes", 0, "Optional maximum memory to allocate to execution tasks (approximate). Cannot set both this option and the SYS_MEMORY_BYTES env var.")
-	mmapMemoryBytes = flag.Int64("executor.mmap_memory_bytes", 10e9, "Maximum memory to be allocated towards mmapped files for Firecracker copy-on-write functionality. This is subtraced from the configured memory_bytes. Has no effect if firecracker is disabled or snapshot sharing is disabled.")
-	milliCPU        = flag.Int64("executor.millicpu", 0, "Optional maximum CPU milliseconds to allocate to execution tasks (approximate). Cannot set both this option and the SYS_CPU env var.")
-	zoneOverride    = flag.String("zone_override", "", "A value that will override the auto-detected zone. Ignored if empty")
+	customResources   = flag.Slice("executor.custom_resources", []CustomResource{}, "Optional allocatable custom resources. This works similarly to bazel's local_extra_resources flag. Request these resources in exec_properties using the 'resources:<name>': '<value>' syntax.")
+	memoryBytes       = flag.Int64("executor.memory_bytes", 0, "Optional maximum memory to allocate to execution tasks (approximate). Cannot set both this option and the SYS_MEMORY_BYTES env var.")
+	mmapMemoryBytes   = flag.Int64("executor.mmap_memory_bytes", 10e9, "Maximum memory to be allocated towards mmapped files for Firecracker copy-on-write functionality. This is subtraced from the configured memory_bytes. Has no effect if firecracker is disabled or snapshot sharing is disabled.")
+	milliCPU          = flag.Int64("executor.millicpu", 0, "Optional maximum CPU milliseconds to allocate to execution tasks (approximate). Cannot set both this option and the SYS_CPU env var.")
+	diskBytes         = flag.Int64("executor.disk_bytes", 0, "Optional maximum disk bytes to allocate to execution task workspaces (approximate). If unset, this is derived from the capacity of the filesystem holding the build root, scaled by executor.disk_capacity_ratio.")
+	diskCapacityRatio = flag.Float64("executor.disk_capacity_ratio", 0.9, "Fraction of the build root filesystem's total capacity to report as assignable to task workspaces. Leaves headroom for the OS, the local filecache, and root-reserved blocks. Ignored if executor.disk_bytes is set.")
+	zoneOverride      = flag.String("zone_override", "", "A value that will override the auto-detected zone. Ignored if empty")
 )
 
 const (
@@ -51,6 +54,7 @@ var (
 	allocatedRAMBytes     int64
 	allocatedMmapRAMBytes int64
 	allocatedCPUMillis    int64
+	allocatedDiskBytes    int64
 )
 
 var (
@@ -167,9 +171,38 @@ func Configure(mmapLRUEnabled bool) error {
 		allocatedRAMBytes -= allocatedMmapRAMBytes
 	}
 
+	// Note: disk capacity is configured separately via ConfigureDiskCapacity,
+	// which must run after the build root directory exists.
+	allocatedDiskBytes = *diskBytes
+
 	log.Debugf("Set allocatedRAMBytes to %d", allocatedRAMBytes)
 	log.Debugf("Set allocatedCPUMillis to %d", allocatedCPUMillis)
 
+	return nil
+}
+
+// ConfigureDiskCapacity sets the disk capacity reported as assignable to task
+// workspaces. If executor.disk_bytes is set, that value is used directly.
+// Otherwise the capacity is derived from the total size of the filesystem
+// holding buildRoot, scaled by executor.disk_capacity_ratio.
+//
+// This is separate from Configure because it needs the build root to exist.
+func ConfigureDiskCapacity(buildRoot string) error {
+	if *diskBytes > 0 {
+		allocatedDiskBytes = *diskBytes
+		log.Debugf("Set allocatedDiskBytes to %d (from executor.disk_bytes)", allocatedDiskBytes)
+		return nil
+	}
+	if *diskCapacityRatio <= 0 || *diskCapacityRatio > 1 {
+		return status.InvalidArgumentError("executor.disk_capacity_ratio must be in (0, 1]")
+	}
+	du, err := disk.GetDirUsage(buildRoot)
+	if err != nil {
+		return fmt.Errorf("get disk usage for build root %q: %w", buildRoot, err)
+	}
+	allocatedDiskBytes = int64(float64(du.TotalBytes) * *diskCapacityRatio)
+	log.Debugf("Set allocatedDiskBytes to %d (%.2f of %d total bytes on %q)",
+		allocatedDiskBytes, *diskCapacityRatio, du.TotalBytes, buildRoot)
 	return nil
 }
 
@@ -205,6 +238,13 @@ func GetAllocatedMmapRAMBytes() int64 {
 
 func GetAllocatedCPUMillis() int64 {
 	return allocatedCPUMillis
+}
+
+// GetAllocatedDiskBytes returns the disk capacity allocated to task workspaces,
+// or 0 if it could not be determined (in which case disk should not be used as
+// a scheduling constraint).
+func GetAllocatedDiskBytes() int64 {
+	return allocatedDiskBytes
 }
 
 // Struct version of scpb.CustomResource (for YAML configuration).
