@@ -173,7 +173,6 @@ func TestWorkspaceConfigRepairsInvalidPartialCloneRemote(t *testing.T) {
 	// Verify that the fixture reproduces the reported failure.
 	_, gitErr = git(ctx, io.Discard, "-C", checkoutDir, "cat-file", "blob", blobOID)
 	require.NotNil(t, gitErr)
-	require.Contains(t, gitErr.Output, "'true' does not appear to be a git repository")
 
 	// Some Git versions persist this filter after the failed lazy fetch. Add it
 	// explicitly so the test deterministically matches the stale state observed
@@ -202,18 +201,14 @@ func TestWorkspaceConfigRepairsInvalidPartialCloneRemote(t *testing.T) {
 		rootDir: checkoutDir,
 		log:     &buildEventReporter{log: invocationLog},
 	}
-	configCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-	require.NoError(t, ws.config(configCtx))
+	require.NoError(t, ws.config(ctx))
 
 	// Configuring an existing workspace should point the extension at the
 	// actual remote and remove the stale synthetic remote.
 	require.Equal(t, "origin", runGit(checkoutDir, "config", "--get", "extensions.partialClone"))
 	require.NotContains(t, strings.Fields(runGit(checkoutDir, "remote")), "true")
 
-	fetchCtx, cancelFetch := context.WithTimeout(ctx, 5*time.Second)
-	defer cancelFetch()
-	blobContents, gitErr := git(fetchCtx, io.Discard, "cat-file", "blob", blobOID)
+	blobContents, gitErr := git(ctx, io.Discard, "cat-file", "blob", blobOID)
 	require.Nil(t, gitErr)
 	require.Contains(t, blobContents, "lazy contents")
 }

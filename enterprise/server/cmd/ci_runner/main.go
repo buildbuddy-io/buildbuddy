@@ -2278,6 +2278,8 @@ func configurePartialClone(ctx context.Context) error {
 		}
 	}
 
+	// A failed lazy fetch creates only these two config entries for the
+	// synthetic promisor remote.
 	for _, key := range []string{"remote.true.promisor", "remote.true.partialCloneFilter"} {
 		if _, err := git(ctx, io.Discard, "config", "--unset-all", key); err != nil {
 			if getExitCode(err) == 5 {
