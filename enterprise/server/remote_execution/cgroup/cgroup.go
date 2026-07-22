@@ -212,6 +212,37 @@ func DelegateControllers(path string) error {
 	return nil
 }
 
+// Cgroup controllers that Setup may write settings for.
+var setupControllers = []string{"cpu", "cpuset", "io", "memory", "pids"}
+
+// EnableSetupControllers makes a best-effort attempt to enable every
+// controller that Setup supports for child cgroups of the cgroup at the given
+// path. Controllers that cannot be enabled are logged and skipped, and Setup
+// ignores settings for them. An error is returned if the cpuset controller
+// could not be enabled while CPU leasing is enabled, since CPU leasing
+// depends on cpuset support.
+func EnableSetupControllers(path string) error {
+	for _, controller := range setupControllers {
+		if err := WriteSubtreeControl(path, map[string]bool{controller: true}); err != nil {
+			if controller == "cpuset" && cpuset.LeasingEnabled() {
+				return fmt.Errorf("enable cpuset controller (required for CPU leasing): %w", err)
+			}
+			// Not necessarily a problem: some controllers may be unavailable
+			// in this environment. Settings for this controller will be
+			// ignored.
+			log.Infof("Could not enable cgroup controller %q for child cgroups of %q: %s", controller, path, err)
+		}
+	}
+	// Log the final subtree control contents, for debugging purposes.
+	b, err := os.ReadFile(filepath.Join(path, "cgroup.subtree_control"))
+	if err != nil {
+		log.Warningf("Could not read cgroup.subtree_control for %q: %s", path, err)
+		return nil
+	}
+	log.Infof("Enabled cgroup controllers for child cgroups of %q: %s", path, strings.TrimSpace(string(b)))
+	return nil
+}
+
 func settingsMap(s *scpb.CgroupSettings, blockDevice *block_io.Device) (map[string]string, error) {
 	m := map[string]string{}
 	if s == nil {
