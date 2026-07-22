@@ -13,7 +13,9 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ociconv"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/cgroup"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/ociruntime"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vbd"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/cpuset"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
@@ -70,8 +72,8 @@ func setupCgroups() (*Cgroups, error) {
 	if !*childCgroupsEnabled {
 		// Task cgroups will be created directly under the cgroupfs root.
 		// Make a best-effort attempt to enable the controllers they need.
-		if err := cgroup.EnableSetupControllers(cgroup.RootPath); err != nil {
-			return nil, fmt.Errorf("enable task cgroup controllers: %w", err)
+		if err := enableTaskCgroupControllers(cgroup.RootPath); err != nil {
+			return nil, err
 		}
 		return &Cgroups{StartingCgroup: startingCgroup}, nil
 	}
@@ -119,14 +121,53 @@ func setupCgroups() (*Cgroups, error) {
 	// are potential race conditions around reading/writing
 	// cgroup.subtree_control and child cgroup files concurrently. See
 	// https://github.com/buildbuddy-io/buildbuddy/pull/12812 for more context.
-	if err := cgroup.EnableSetupControllers(taskCgroupPath); err != nil {
-		return nil, fmt.Errorf("enable task cgroup controllers: %w", err)
+	if err := enableTaskCgroupControllers(taskCgroupPath); err != nil {
+		return nil, err
 	}
 
 	return &Cgroups{
 		StartingCgroup: startingCgroup,
 		CgroupParent:   taskCgroup,
 	}, nil
+}
+
+// enableTaskCgroupControllers makes a best-effort attempt to enable each
+// cgroup controller that task cgroups may need, by writing to the
+// cgroup.subtree_control file in the parent cgroup of task cgroups.
+// Controllers that can't be enabled are skipped, and task cgroup setup
+// ignores settings for them. An error is returned only if a controller is
+// required by an executor flag but couldn't be enabled.
+func enableTaskCgroupControllers(path string) error {
+	for _, c := range []struct {
+		controller string
+		// requiredBy names the executor flag that requires this controller.
+		// It applies only when required is true.
+		requiredBy string
+		required   bool
+	}{
+		{controller: "cpu"},
+		{controller: "cpuset", requiredBy: "executor.cpu_leaser.enable", required: cpuset.LeasingEnabled()},
+		{controller: "io"},
+		{controller: "memory", requiredBy: "executor.oci.enable_cgroup_memory_limit", required: ociruntime.CgroupMemoryLimitEnabled()},
+		{controller: "pids"},
+	} {
+		if err := cgroup.WriteSubtreeControl(path, map[string]bool{c.controller: true}); err != nil {
+			if c.required {
+				return fmt.Errorf("enable cgroup controller %q (required by %s): %w", c.controller, c.requiredBy, err)
+			}
+			// Not necessarily a problem: some controllers may be unavailable
+			// in this environment. Task cgroup settings for this controller
+			// will be ignored.
+			log.Infof("Could not enable cgroup controller %q for child cgroups of %q: %s", c.controller, path, err)
+		}
+	}
+	// Log the final subtree control contents, for debugging purposes.
+	if b, err := os.ReadFile(filepath.Join(path, "cgroup.subtree_control")); err != nil {
+		log.Warningf("Could not read cgroup.subtree_control for %q: %s", path, err)
+	} else {
+		log.Infof("Enabled cgroup controllers for child cgroups of %q: %s", path, strings.TrimSpace(string(b)))
+	}
+	return nil
 }
 
 func moveTiniToExecutorCgroup(executorCgroupPath string) error {
