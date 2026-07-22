@@ -23,8 +23,9 @@ const (
 )
 
 type Installation struct {
-	BinaryPath string
-	SkillDir   string
+	BinaryPath  string
+	SkillDir    string
+	LicensePath string
 }
 
 // Setup returns a pinned ztracing installation, downloading it when necessary.
@@ -73,11 +74,12 @@ func Setup(ctx context.Context) (*Installation, error) {
 	}
 	if !isValidInstallation(installation) {
 		os.RemoveAll(installationDir)
-		return nil, fmt.Errorf("downloaded ztracing archive did not contain the expected binary and skill")
+		return nil, fmt.Errorf("downloaded ztracing archive did not contain the expected binary, skill, and license")
 	}
 	if err := addToPath(installation.BinaryPath); err != nil {
 		return nil, err
 	}
+	log.Printf("Using ztracing installation at %s", installationDir)
 	return installation, nil
 }
 
@@ -191,8 +193,9 @@ func addToPath(binaryPath string) error {
 
 func installationAt(installationDir string) *Installation {
 	return &Installation{
-		BinaryPath: filepath.Join(installationDir, "bin", "ztracing"),
-		SkillDir:   filepath.Join(installationDir, "skills", "trace-analyzer"),
+		BinaryPath:  filepath.Join(installationDir, "bin", "ztracing"),
+		SkillDir:    filepath.Join(installationDir, "skills", "trace-analyzer"),
+		LicensePath: filepath.Join(installationDir, "licenses", "ztracing-LICENSE"),
 	}
 }
 
@@ -238,6 +241,11 @@ func isValidInstallation(installation *Installation) bool {
 	}
 	if !skillInfo.Mode().IsRegular() {
 		log.Debugf("Invalid ztracing installation: skill file %q is not a regular file", skillPath)
+		return false
+	}
+
+	if _, err := os.Stat(installation.LicensePath); err != nil {
+		log.Debugf("Invalid ztracing installation: could not stat license file %q: %s", installation.LicensePath, err)
 		return false
 	}
 	return true
