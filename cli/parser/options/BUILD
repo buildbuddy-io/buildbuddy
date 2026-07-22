@@ -13,6 +13,7 @@ go_library(
         "//cli/parser/bazelrc",
         "//cli/parser/options/flag_form",
         "//proto:bazel_flags_go_proto",
+        "//server/util/flagutil",
         "//server/util/lib/seq",
         "//server/util/lib/set",
     ],
@@ -24,6 +25,8 @@ go_test(
     deps = [
         ":options",
         "//cli/parser/options/flag_form",
+        "//server/util/flagutil/types",
         "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
     ],
 )
