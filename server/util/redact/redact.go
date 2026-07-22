@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil/common"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/google/shlex"
 	"google.golang.org/protobuf/encoding/prototext"
@@ -960,4 +961,46 @@ func CollectSensitiveEnvValues(environ []string) []string {
 		}
 	}
 	return values
+}
+
+// IsSecret returns whether the given flag's value may contain secrets,
+// meaning it should never be displayed or logged: either the flag was
+// declared with the Secret tag, or its type contains a struct field tagged
+// config:"secret" (at any depth). Note that for the latter, YAML config
+// export redacts just the secret fields (see flagyaml.RedactSecrets);
+// callers of this coarser check should redact the whole value.
+func IsSecret(flg *flag.Flag) bool {
+	if common.IsSecret(flg) {
+		return true
+	}
+	t, err := common.GetTypeForFlagValue(flg.Value)
+	if err != nil {
+		// Unrecognized flag value type; assume it may contain secrets.
+		return true
+	}
+	return typeContainsSecrets(t, map[reflect.Type]bool{})
+}
+
+func typeContainsSecrets(t reflect.Type, seen map[reflect.Type]bool) bool {
+	if t == nil || seen[t] {
+		return false
+	}
+	seen[t] = true
+	switch t.Kind() {
+	case reflect.Pointer, reflect.Slice, reflect.Array:
+		return typeContainsSecrets(t.Elem(), seen)
+	case reflect.Map:
+		return typeContainsSecrets(t.Key(), seen) || typeContainsSecrets(t.Elem(), seen)
+	case reflect.Struct:
+		for i := 0; i < t.NumField(); i++ {
+			field := t.Field(i)
+			if slices.Contains(strings.Split(field.Tag.Get("config"), ","), "secret") {
+				return true
+			}
+			if typeContainsSecrets(field.Type, seen) {
+				return true
+			}
+		}
+	}
+	return false
 }

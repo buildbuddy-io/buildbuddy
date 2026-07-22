@@ -30,6 +30,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/redact"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/version"
 	"github.com/google/uuid"
@@ -146,6 +147,25 @@ func Register(env *real_environment.RealEnv) error {
 		run(ctx, shutdownCh, env, *appTarget, *apiKey, node)
 	}()
 	return nil
+}
+
+// configuredFlags returns the flags this process was configured with (via
+// the command line or config file), in "--name=value" form. Flags left at
+// their default values are omitted, and the values of secret flags are
+// redacted.
+func configuredFlags() []string {
+	var flags []string
+	flag.CommandLine.VisitAll(func(flg *flag.Flag) {
+		value := flg.Value.String()
+		if value == flg.DefValue {
+			return
+		}
+		if redact.IsSecret(flg) {
+			value = "<redacted>"
+		}
+		flags = append(flags, "--"+flg.Name+"="+value)
+	})
+	return flags
 }
 
 func run(ctx context.Context, shutdownCh <-chan struct{}, env environment.Env, target, apiKey string, node *cppb.CacheProxyNode) {
@@ -317,6 +337,12 @@ func openStream(ctx context.Context, client cppb.CacheProxyRegistryClient, node 
 // has already terminated (io.EOF), it drains the trailer via CloseAndRecv to
 // surface the real status (PermissionDenied, etc.) instead of a bare EOF.
 func sendHeartbeat(stream cppb.CacheProxyRegistry_RegisterAndStreamHeartbeatClient, req *cppb.RegisterCacheProxyRequest) error {
+	// Flag values can change at runtime (the config file is re-read on
+	// SIGHUP), so refresh the reported configuration on every heartbeat
+	// rather than snapshotting it once at startup.
+	if node := req.GetNode(); node != nil {
+		node.ConfiguredFlags = configuredFlags()
+	}
 	err := stream.Send(req)
 	if err == io.EOF {
 		if _, recvErr := stream.CloseAndRecv(); recvErr != nil {

@@ -8,6 +8,7 @@ go_library(
         "//server/config:__subpackages__",
         "//server/util/flag:__subpackages__",
         "//server/util/flagutil:__subpackages__",
+        "//server/util/redact:__subpackages__",
     ],
     deps = [
         "//server/util/status",
