@@ -68,6 +68,11 @@ func setupCgroups() (*Cgroups, error) {
 	}
 
 	if !*childCgroupsEnabled {
+		// Task cgroups will be created directly under the cgroupfs root.
+		// Make a best-effort attempt to enable the controllers they need.
+		if err := cgroup.EnableSetupControllers(cgroup.RootPath); err != nil {
+			return nil, fmt.Errorf("enable task cgroup controllers: %w", err)
+		}
 		return &Cgroups{StartingCgroup: startingCgroup}, nil
 	}
 
@@ -114,15 +119,8 @@ func setupCgroups() (*Cgroups, error) {
 	// are potential race conditions around reading/writing
 	// cgroup.subtree_control and child cgroup files concurrently. See
 	// https://github.com/buildbuddy-io/buildbuddy/pull/12812 for more context.
-	if err := cgroup.DelegateControllers(taskCgroupPath); err != nil {
-		return nil, fmt.Errorf("delegate controllers to task cgroups: %w", err)
-	}
-	// Log the controllers that task cgroups will have enabled, for debugging
-	// purposes. Task setup skips settings for controllers that aren't enabled.
-	if b, err := os.ReadFile(filepath.Join(taskCgroupPath, "cgroup.subtree_control")); err != nil {
-		log.Warningf("Failed to read task cgroup subtree control: %s", err)
-	} else {
-		log.Infof("Enabled controllers for task cgroups: %s", strings.TrimSpace(string(b)))
+	if err := cgroup.EnableSetupControllers(taskCgroupPath); err != nil {
+		return nil, fmt.Errorf("enable task cgroup controllers: %w", err)
 	}
 
 	return &Cgroups{
