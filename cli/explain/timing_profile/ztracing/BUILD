@@ -9,5 +9,6 @@ go_library(
     deps = [
         "//cli/log",
         "//cli/storage",
+        "//cli/terminal",
     ],
 )
