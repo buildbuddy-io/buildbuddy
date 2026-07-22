@@ -451,6 +451,7 @@ func ExecutionFromProto(in *repb.StoredExecution, inv *sipb.StoredInvocation) (*
 		Tags:                               invocation_format.ConvertDBTagsToOLAP(inv.GetTags()),
 		TargetLabel:                        in.GetTargetLabel(),
 		ActionMnemonic:                     in.GetActionMnemonic(),
+		ConfigurationID:                    in.GetConfigurationId(),
 		TestSize:                           in.GetTestSize(),
 		TestShardIndex:                     in.GetTestShardIndex(),
 		TestTotalShards:                    in.GetTestTotalShards(),
