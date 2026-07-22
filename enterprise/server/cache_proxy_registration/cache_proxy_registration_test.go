@@ -16,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/buildbuddy-io/buildbuddy/server/util/upgrade"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
@@ -269,4 +270,20 @@ func TestSumByStatus_Empty(t *testing.T) {
 	assert.Equal(t, int64(0), hits)
 	assert.Equal(t, int64(0), misses)
 	assert.Equal(t, int64(0), uncacheable)
+}
+
+func TestConfiguredFlags(t *testing.T) {
+	flags.Set(t, "cache_proxy.app_target", "grpcs://app.example.com")
+	flags.Set(t, "cache_proxy.api_key", "SUPER_SECRET_KEY")
+
+	configured := configuredFlags()
+
+	assert.Contains(t, configured, "--cache_proxy.app_target=grpcs://app.example.com")
+	// Secret flags are reported, but with their values redacted.
+	assert.Contains(t, configured, "--cache_proxy.api_key=<redacted>")
+	for _, f := range configured {
+		assert.NotContains(t, f, "SUPER_SECRET_KEY")
+		// Flags left at their defaults are omitted.
+		assert.NotContains(t, f, "--cache_proxy.metadata_directory")
+	}
 }

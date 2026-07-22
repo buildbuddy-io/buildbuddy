@@ -47,6 +47,7 @@ go_test(
         "//server/util/authutil",
         "//server/util/claims",
         "//server/util/status",
+        "//server/util/testing/flags",
         "//server/util/upgrade",
         "@com_github_prometheus_client_golang//prometheus",
         "@com_github_stretchr_testify//assert",
