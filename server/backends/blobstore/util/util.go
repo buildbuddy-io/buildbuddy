@@ -2,7 +2,6 @@ package util
 
 import (
 	"bytes"
-	"compress/gzip"
 	"context"
 	"flag"
 	"io"
@@ -11,6 +10,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
+	"github.com/klauspost/compress/gzip"
 	"github.com/prometheus/client_golang/prometheus"
 
 	gstatus "google.golang.org/grpc/status"
@@ -18,8 +18,15 @@ import (
 
 var pathPrefix = flag.String("storage.path_prefix", "", "The prefix directory to store all blobs in")
 
+// NewCompressWriter returns a gzip writer tuned for speed rather than
+// compression ratio.
 func NewCompressWriter(w io.Writer) io.WriteCloser {
-	return gzip.NewWriter(w)
+	zw, err := gzip.NewWriterLevel(w, gzip.BestSpeed)
+	if err != nil {
+		// Only reachable with an invalid level constant.
+		return gzip.NewWriter(w)
+	}
+	return zw
 }
 
 func NewCompressReader(r io.Reader) (io.ReadCloser, error) {
