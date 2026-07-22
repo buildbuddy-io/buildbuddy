@@ -782,6 +782,7 @@ func TestPullCreateExecRemove(t *testing.T) {
 		`},
 		EnvironmentVariables: []*repb.Command_EnvironmentVariable{
 			{Name: "GREETING", Value: "Hello"},
+			{Name: "TEST_ENV_VAR", Value: "overridden"},
 		},
 	}
 	stdio := interfaces.Stdio{}
@@ -797,7 +798,7 @@ HOSTNAME=localhost
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/test/bin
 PWD=/buildbuddy-execroot
 SHLVL=1
-TEST_ENV_VAR=foo
+TEST_ENV_VAR=overridden
 `, string(res.Stdout))
 
 	// Make sure that no cached images were modified.

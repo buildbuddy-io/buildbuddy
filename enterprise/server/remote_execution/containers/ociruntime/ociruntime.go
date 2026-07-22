@@ -795,13 +795,6 @@ func (c *ociContainer) Create(ctx context.Context, workDir string) error {
 
 func (c *ociContainer) Exec(ctx context.Context, cmd *repb.Command, stdio *interfaces.Stdio) *interfaces.CommandResult {
 	args := []string{"exec", "--cwd=" + filepath.Join(c.execrootPath, cmd.GetWorkingDirectory())}
-	// Respect command env. Note, when setting any --env vars at all, it
-	// completely overrides the env from the bundle, rather than just adding
-	// to it. So we specify the complete env here, including the base env,
-	// image env, and command env.
-	for _, e := range baseEnv {
-		args = append(args, "--env="+e)
-	}
 	if c.lockedImage == nil {
 		return commandutil.ErrorResult(status.UnavailableError("exec called before pulling image"))
 	}
@@ -811,11 +804,14 @@ func (c *ociContainer) Exec(ctx context.Context, cmd *repb.Command, stdio *inter
 	}
 	args = append(args, fmt.Sprintf("--user=%d:%d", user.UID, user.GID))
 
+	commandEnv := cmd.GetEnvironmentVariables()
 	cmd, err = withImageConfig(cmd, c.lockedImage.Image)
 	if err != nil {
 		return commandutil.ErrorResult(status.UnavailableErrorf("apply image config: %s", err))
 	}
-	for _, e := range cmd.GetEnvironmentVariables() {
+	// The bundle already contains the base and image environments. Pass only
+	// command env here; crun merges it with the bundle env and gives it precedence.
+	for _, e := range commandEnv {
 		args = append(args, fmt.Sprintf("--env=%s=%s", e.GetName(), e.GetValue()))
 	}
 	args = append(args, c.cid)
