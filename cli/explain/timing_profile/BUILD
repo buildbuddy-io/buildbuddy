@@ -5,7 +5,6 @@ package(default_visibility = ["//cli:__subpackages__"])
 go_library(
     name = "timing_profile",
     srcs = ["timing_profile.go"],
-    embedsrcs = ["allowed_tools.json"],
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/explain/timing_profile",
     deps = [
         "//cli/arg",

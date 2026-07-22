@@ -2,7 +2,6 @@ package claude
 
 import (
 	"bytes"
-	"encoding/json"
 	"fmt"
 	"os/exec"
 	"strings"
@@ -12,8 +11,8 @@ import (
 // must be a JSON array of Claude tool permission rules, such as
 // `["Read", "Bash(git diff *)"]`. Run in dontAsk mode so unapproved tool calls
 // are denied rather than prompting.
-func Run(prompt, allowedToolsJSON string) (string, error) {
-	args, err := commandArgs(allowedToolsJSON)
+func Run(prompt string, allowedTools []string) (string, error) {
+	args, err := commandArgs(allowedTools)
 	if err != nil {
 		return "", err
 	}
@@ -35,12 +34,7 @@ func Run(prompt, allowedToolsJSON string) (string, error) {
 	return strings.TrimRight(stdout.String(), "\n"), nil
 }
 
-func commandArgs(allowedToolsJSON string) ([]string, error) {
-	var allowedTools []string
-	if err := json.Unmarshal([]byte(allowedToolsJSON), &allowedTools); err != nil {
-		return nil, fmt.Errorf("parse allowed tools JSON: %w", err)
-	}
-
+func commandArgs(allowedTools []string) ([]string, error) {
 	args := []string{"--print", "--permission-mode", "dontAsk"}
 	if len(allowedTools) == 0 {
 		return args, nil
