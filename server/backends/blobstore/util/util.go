@@ -66,7 +66,7 @@ func NewCompressWriter(w io.Writer) io.WriteCloser {
 // reader releases decompression resources but does not close r.
 func NewCompressReader(r io.Reader) (io.ReadCloser, error) {
 	br := bufio.NewReader(r)
-	header, err := br.Peek(len(zstdMagic))
+	header, err := br.Peek(max(len(zstdMagic), len(gzipMagic)))
 	if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
 		return nil, err
 	}

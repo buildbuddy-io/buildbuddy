@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-var testBlob = []byte(strings.Repeat("The quick brown fox jumps over the lazy dog. ", 10_000))
+var testBlob = []byte(strings.Repeat("The quick brown fox jumps over the lazy dog. ", 55_000))
 
 func TestCompressDecompressRoundTrip(t *testing.T) {
 	for _, zstdEnabled := range []bool{false, true} {
