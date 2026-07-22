@@ -109,14 +109,20 @@ func setupCgroups() (*Cgroups, error) {
 		return nil, fmt.Errorf("inherit subtree control: %w", err)
 	}
 
-	// Also enable controllers for task cgroups up front. Task setup enables
-	// controllers lazily as needed, but concurrent enablement from multiple
-	// tasks is racy: a task can observe a controller as enabled while another
-	// task's enablement write is still in flight, before the kernel has made
-	// the controller's interface files visible in the task's cgroup, and fail
-	// to open them.
+	// Also enable controllers for task cgroups up front. We could alternatively
+	// do this lazily during task setup, but it's more complicated because there
+	// are potential race conditions around reading/writing
+	// cgroup.subtree_control and child cgroup files concurrently. See
+	// https://github.com/buildbuddy-io/buildbuddy/pull/12812 for more context.
 	if err := cgroup.DelegateControllers(taskCgroupPath); err != nil {
 		return nil, fmt.Errorf("delegate controllers to task cgroups: %w", err)
+	}
+	// Log the controllers that task cgroups will have enabled, for debugging
+	// purposes. Task setup skips settings for controllers that aren't enabled.
+	if b, err := os.ReadFile(filepath.Join(taskCgroupPath, "cgroup.subtree_control")); err != nil {
+		log.Warningf("Failed to read task cgroup subtree control: %s", err)
+	} else {
+		log.Infof("Enabled controllers for task cgroups: %s", strings.TrimSpace(string(b)))
 	}
 
 	return &Cgroups{
