@@ -102,12 +102,29 @@ func Setup(ctx context.Context, path string, s *scpb.CgroupSettings, blockDevice
 			enabledControllers[controller] = true
 		}
 		settingFilePath := filepath.Join(path, name)
-		if err := os.WriteFile(settingFilePath, []byte(value), 0); err != nil {
+		if err := writeFile(settingFilePath, value); err != nil {
 			logSetupPermissionDeniedDiagnostics(ctx, path, name, value, err)
 			return fmt.Errorf("write %q to cgroup file %q: %w", value, name, err)
 		}
 	}
 	return nil
+}
+
+// writeFile writes a cgroup interface file. Unlike os.WriteFile, it opens the
+// file without O_CREAT: cgroupfs does not support creating files, and an
+// O_CREAT open of a missing interface file (e.g. for a controller that is not
+// yet enabled) fails with a misleading EACCES instead of ENOENT.
+func writeFile(path, value string) error {
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_TRUNC, 0)
+	if err != nil {
+		return err
+	}
+	_, werr := f.Write([]byte(value))
+	cerr := f.Close()
+	if werr != nil {
+		return werr
+	}
+	return cerr
 }
 
 func logSetupPermissionDeniedDiagnostics(ctx context.Context, path, settingName, settingValue string, writeErr error) {
@@ -266,8 +283,7 @@ func WriteSubtreeControl(path string, settings map[string]bool) error {
 		}
 		strs = append(strs, statusPrefix+controller)
 	}
-	b := []byte(strings.Join(strs, " "))
-	return os.WriteFile(filepath.Join(path, "cgroup.subtree_control"), b, 0)
+	return writeFile(filepath.Join(path, "cgroup.subtree_control"), strings.Join(strs, " "))
 }
 
 // DelegateControllers reads the currently enabled controllers for the given

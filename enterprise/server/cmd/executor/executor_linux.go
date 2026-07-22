@@ -109,6 +109,16 @@ func setupCgroups() (*Cgroups, error) {
 		return nil, fmt.Errorf("inherit subtree control: %w", err)
 	}
 
+	// Also enable controllers for task cgroups up front. Task setup enables
+	// controllers lazily as needed, but concurrent enablement from multiple
+	// tasks is racy: a task can observe a controller as enabled while another
+	// task's enablement write is still in flight, before the kernel has made
+	// the controller's interface files visible in the task's cgroup, and fail
+	// to open them.
+	if err := cgroup.DelegateControllers(taskCgroupPath); err != nil {
+		return nil, fmt.Errorf("delegate controllers to task cgroups: %w", err)
+	}
+
 	return &Cgroups{
 		StartingCgroup: startingCgroup,
 		CgroupParent:   taskCgroup,
