@@ -94,12 +94,13 @@ func Setup(ctx context.Context, path string, s *scpb.CgroupSettings, blockDevice
 	for name, value := range m {
 		controller, _, _ := strings.Cut(name, ".")
 		if !enabledControllers[controller] {
-			// Attempt to enable the controller if it's not already enabled.
-			if err := EnableController(path, controller); err != nil {
-				log.CtxWarningf(ctx, "Failed to enable cgroup controller %q for cgroup %q: %s", controller, path, err)
-				continue
-			}
-			enabledControllers[controller] = true
+			// Note: we expect all needed controllers to be enabled at
+			// executor startup, so we don't try to enable the controller
+			// here. Enabling controllers lazily is racy: a concurrent Setup
+			// for a sibling cgroup can observe the controller as enabled
+			// before the kernel has made its interface files visible.
+			log.CtxWarningf(ctx, "Skipping cgroup setting %q: the %q controller is not enabled for cgroup %q", name, controller, path)
+			continue
 		}
 		settingFilePath := filepath.Join(path, name)
 		if err := writeFile(settingFilePath, value); err != nil {
