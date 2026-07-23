@@ -38,6 +38,7 @@ go_test(
     size = "small",
     srcs = ["interceptors_test.go"],
     deps = [
+        ":interceptors",
         "//proto:ping_service_go_proto",
         "//server/interfaces",
         "//server/testutil/testenv",

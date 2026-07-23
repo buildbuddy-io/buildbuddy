@@ -339,14 +339,7 @@ func (cm *Manifest) Store(ctx context.Context, cache interfaces.Cache) error {
 	// avoiding the cost of reading all chunk data for verification.
 	g, goCtx := errgroup.WithContext(ctx)
 	g.Go(func() error {
-		missing, err := cache.FindMissing(findmissing.ContextWithPurpose(goCtx, repb.FindMissingBlobsRequest_CDC_MANIFEST_STORE), cm.ChunkResourceNames())
-		if err != nil {
-			return err
-		}
-		if len(missing) > 0 {
-			return status.InvalidArgumentErrorf("required chunks not found in CAS: %+v", DigestsSummary(missing))
-		}
-		return nil
+		return cm.checkChunksExist(goCtx, cache)
 	})
 	g.Go(func() error {
 		return cm.checkOrVerifyChunks(goCtx, cache)
@@ -358,6 +351,22 @@ func (cm *Manifest) Store(ctx context.Context, cache interfaces.Cache) error {
 	return cm.store(ctx, cache)
 }
 
+// StoreWithoutContentVerification stores the manifest after checking that all
+// referenced chunks exist and their declared sizes add up to the blob size,
+// without reading their contents or verifying their combined hash.
+func (cm *Manifest) StoreWithoutContentVerification(ctx context.Context, cache interfaces.Cache) error {
+	if len(cm.ChunkDigests) == 0 {
+		return status.InvalidArgumentError("chunked manifest must have at least one chunk")
+	}
+	if err := cm.checkChunkSizes(); err != nil {
+		return err
+	}
+	if err := cm.checkChunksExist(ctx, cache); err != nil {
+		return err
+	}
+	return cm.store(ctx, cache)
+}
+
 // StoreWithoutVerification saves the chunked manifest to the cache without
 // checking that all chunks exist or that their combined hash matches the blob
 // digest.
@@ -366,6 +375,36 @@ func (cm *Manifest) StoreWithoutVerification(ctx context.Context, cache interfac
 		return status.InvalidArgumentError("chunked manifest must have at least one chunk")
 	}
 	return cm.store(ctx, cache)
+}
+
+func (cm *Manifest) checkChunksExist(ctx context.Context, cache interfaces.Cache) error {
+	missing, err := cache.FindMissing(findmissing.ContextWithPurpose(ctx, repb.FindMissingBlobsRequest_CDC_MANIFEST_STORE), cm.ChunkResourceNames())
+	if err != nil {
+		return err
+	}
+	if len(missing) > 0 {
+		return status.InvalidArgumentErrorf("required chunks not found in CAS: %+v", DigestsSummary(missing))
+	}
+	return nil
+}
+
+func (cm *Manifest) checkChunkSizes() error {
+	blobSize := cm.BlobDigest.GetSizeBytes()
+	if blobSize < 0 {
+		return status.InvalidArgumentErrorf("invalid manifest: blob has invalid size %d", blobSize)
+	}
+	var totalSize int64
+	for _, chunkDigest := range cm.ChunkDigests {
+		chunkSize := chunkDigest.GetSizeBytes()
+		if chunkSize < 0 || chunkSize > blobSize-totalSize {
+			return status.InvalidArgumentErrorf("invalid manifest: chunk sizes exceed blob size %d", blobSize)
+		}
+		totalSize += chunkSize
+	}
+	if totalSize != blobSize {
+		return status.InvalidArgumentErrorf("invalid manifest: chunk sizes total %d, expected blob size %d", totalSize, blobSize)
+	}
+	return nil
 }
 
 func (cm *Manifest) store(ctx context.Context, cache interfaces.Cache) error {

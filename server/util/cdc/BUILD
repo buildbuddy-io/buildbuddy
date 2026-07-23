@@ -5,5 +5,8 @@ go_library(
     srcs = ["cdc.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/util/cdc",
     visibility = ["//visibility:public"],
-    deps = ["@org_golang_google_grpc//metadata"],
+    deps = [
+        "//server/util/authutil",
+        "@org_golang_google_grpc//metadata",
+    ],
 )
