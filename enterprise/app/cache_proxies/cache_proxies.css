@@ -167,3 +167,8 @@
 .cache-proxies-page .cache-stat {
   font-weight: 600;
 }
+
+.cache-proxies-page .cache-proxy-configured-flags {
+  font-family: monospace;
+  overflow-wrap: anywhere;
+}

@@ -148,6 +148,25 @@ func Register(env *real_environment.RealEnv) error {
 	return nil
 }
 
+// configuredFlags returns the flags this process was configured with (via
+// the command line or config file), in "--name=value" form. Flags left at
+// their default values are omitted, and the values of secret flags are
+// redacted.
+func configuredFlags() []string {
+	var flags []string
+	flag.CommandLine.VisitAll(func(flg *flag.Flag) {
+		value := flg.Value.String()
+		if value == flg.DefValue {
+			return
+		}
+		if flag.IsSecret(flg) {
+			value = "<redacted>"
+		}
+		flags = append(flags, "--"+flg.Name+"="+value)
+	})
+	return flags
+}
+
 func run(ctx context.Context, shutdownCh <-chan struct{}, env environment.Env, target, apiKey string, node *cppb.CacheProxyNode) {
 	ctx = metadata.AppendToOutgoingContext(ctx, authutil.APIKeyHeader, apiKey)
 	for {
@@ -317,6 +336,12 @@ func openStream(ctx context.Context, client cppb.CacheProxyRegistryClient, node 
 // has already terminated (io.EOF), it drains the trailer via CloseAndRecv to
 // surface the real status (PermissionDenied, etc.) instead of a bare EOF.
 func sendHeartbeat(stream cppb.CacheProxyRegistry_RegisterAndStreamHeartbeatClient, req *cppb.RegisterCacheProxyRequest) error {
+	// Flag values can change at runtime (the config file is re-read on
+	// SIGHUP), so refresh the reported configuration on every heartbeat
+	// rather than snapshotting it once at startup.
+	if node := req.GetNode(); node != nil {
+		node.ConfiguredFlags = configuredFlags()
+	}
 	err := stream.Send(req)
 	if err == io.EOF {
 		if _, recvErr := stream.CloseAndRecv(); recvErr != nil {

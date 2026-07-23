@@ -49,6 +49,11 @@ message CacheProxyNode {
 
   // Memory allocated to this cache proxy node, in bytes.
   int64 allocated_memory_bytes = 10;
+
+  // The flags this cache proxy was configured with (via the command line or
+  // config file), in "--name=value" form. Only flags set to non-default
+  // values are included, and the values of secret flags are redacted.
+  repeated string configured_flags = 11;
 }
 
 // Statistics about this cache proxy's performance. Cumulative over the
