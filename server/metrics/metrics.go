@@ -1059,7 +1059,7 @@ var (
 		Namespace: bbNamespace,
 		Subsystem: "remote_cache",
 		Name:      "migration_backfill_count",
-		Help:      "Number of reads in dest-primary that missed the new (primary) cache and were served from the old cache (dest-primary fallback). Not every fallback enqueues a copy (e.g. AC is not backfilled); see migration_blobs_copied{reason=\"backfill\"} for actual copies.",
+		Help:      "Number of reads in dest-primary that missed the new (primary) cache and were served from the old cache (dest-primary fallback). Not every fallback enqueues a copy (e.g. AC is not backfilled); see migration_blobs_copied with reason=backfill for actual copies.",
 	}, []string{
 		CacheRequestType,
 		GroupID,
