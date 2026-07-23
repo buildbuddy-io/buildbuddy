@@ -475,9 +475,7 @@ func (h *hitTracker) recordDetailedStats(d *repb.Digest, stats *detailedStats) e
 			result.OriginInvocationId = originInvocationID
 		}
 	}
-	// ScoreCard_Result.MarshalVT is slower, so we use MarshalOld for now.
-	// https://github.com/buildbuddy-io/buildbuddy-internal/issues/3018
-	b, err := proto.MarshalOld(result)
+	b, err := proto.Marshal(result)
 	if err != nil {
 		return err
 	}
