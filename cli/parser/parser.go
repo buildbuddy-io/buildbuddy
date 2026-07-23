@@ -55,6 +55,13 @@ var (
 		streamrunlogsoptdef.OnStreamRunLogsFailure.Name(): streamrunlogsoptdef.OnStreamRunLogsFailure,
 	}
 
+	nativeBBConfigDefinition = options.NewDefinition(
+		"bb_config",
+		options.WithSupportFor("startup"),
+		options.WithMulti(),
+		options.WithRequiresValue(),
+	)
+
 	// make this a var so the test can replace it.
 	bazelHelp = runBazelHelpWithCache
 
@@ -170,6 +177,7 @@ func NewParser(optionDefinitions []*options.Definition, commands []string, alias
 // by the bb CLI. It does not load Bazel's full flag definitions.
 func GetNativeParser() *Parser {
 	definitions := slices.Collect(maps.Values(nativeDefinitions))
+	definitions = append(definitions, nativeBBConfigDefinition)
 	aliases := map[string]string{}
 	for alias, command := range cli_command.Aliases {
 		aliases[alias] = command.Name
