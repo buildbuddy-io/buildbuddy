@@ -441,6 +441,124 @@ func TestDispatch_TaskSizeOverridesExperiment(t *testing.T) {
 	}, task.GetPlatformOverrides(), protocmp.Transform()))
 }
 
+func TestDispatch_PriorityAdjustmentExperiment(t *testing.T) {
+	// The experiment prioritizes tasks requesting the "firecracker" isolation
+	// type by adding -5000 to their scheduling priority (lower priority values
+	// are scheduled first), and leaves the priority unchanged for all other
+	// isolation types. The user's requested isolation type is supplied to the
+	// experiment as evaluation context.
+	const flagdConfig = `
+{
+  "$schema": "https://flagd.dev/schema/v0/flags.json",
+  "flags": {
+    "remote_execution.priority_adjustment": {
+      "state": "ENABLED",
+      "variants": {
+        "prioritize-firecracker": -5000,
+        "default": 0
+      },
+      "defaultVariant": "default",
+      "targeting": {
+        "if": [
+          { "==": [ { "var": "workload-isolation-type" }, "firecracker" ] },
+          "prioritize-firecracker"
+        ]
+      }
+    }
+  }
+}
+`
+	for _, tc := range []struct {
+		name              string
+		isolationType     string
+		requestedPriority int32
+		// wantPriority is the scheduling priority we expect to be sent to the
+		// scheduler after the experiment adjustment is applied.
+		wantPriority int32
+		// wantVariant is the experiment variant we expect to be recorded on the
+		// task, or empty if no variant should be recorded.
+		wantVariant string
+	}{
+		{
+			// Firecracker tasks are targeted by the experiment, so -5000 is
+			// added to the requested priority to prioritize them. The result
+			// (-4900) is outside the normally-supported range, which is allowed
+			// because the adjustment runs after the requested priority has
+			// already been validated.
+			name:              "firecracker isolation gets prioritized",
+			isolationType:     "firecracker",
+			requestedPriority: 100,
+			wantPriority:      -4900,
+			wantVariant:       "prioritize-firecracker",
+		},
+		{
+			// Tasks requesting a different isolation type fall through to the
+			// default variant, which leaves the priority untouched and records
+			// no experiment variant.
+			name:              "other isolation type is left unchanged",
+			isolationType:     "oci",
+			requestedPriority: 100,
+			wantPriority:      100,
+			wantVariant:       "",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			env, _, _ := setupEnv(t)
+
+			tmp := testfs.MakeTempDir(t)
+			offlineFlagPath := testfs.WriteFile(t, tmp, "config.flagd.json", flagdConfig)
+			provider, err := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(offlineFlagPath))
+			require.NoError(t, err)
+			openfeature.SetProviderAndWait(provider)
+			fp, err := experiments.NewFlagProvider("test")
+			require.NoError(t, err)
+			env.SetExperimentFlagProvider(fp)
+
+			ctx := context.Background()
+			s := env.GetRemoteExecutionService()
+
+			ctx = withIncomingMetadata(t, ctx, &repb.RequestMetadata{
+				ToolDetails:      &repb.ToolDetails{ToolName: "bazel", ToolVersion: "6.3.0"},
+				ToolInvocationId: "10243d8a-a329-4f46-abfb-bfbceed12baa",
+			})
+			ctx, err = env.GetAuthenticator().(*testauth.TestAuthenticator).WithAuthenticatedUser(ctx, "US1")
+			require.NoError(t, err)
+
+			// The user requests a specific isolation type via platform property.
+			action := &repb.Action{
+				Platform: &repb.Platform{
+					Properties: []*repb.Platform_Property{
+						{Name: "workload-isolation-type", Value: tc.isolationType},
+					},
+				},
+			}
+			arn := uploadAction(ctx, t, env, "" /*=instanceName*/, repb.DigestFunction_SHA256, action)
+
+			ctx, err = prefix.AttachUserPrefixToContext(ctx, env.GetAuthenticator())
+			require.NoError(t, err)
+			err = s.Dispatch(ctx, &repb.ExecuteRequest{
+				ActionDigest:    arn.GetDigest(),
+				ExecutionPolicy: &repb.ExecutionPolicy{Priority: tc.requestedPriority},
+			}, action, "12345678")
+			require.NoError(t, err)
+
+			sched := env.GetSchedulerService().(*schedulerServerMock)
+			require.Equal(t, 1, len(sched.scheduleReqs))
+			require.Equal(t, tc.wantPriority, sched.scheduleReqs[0].GetMetadata().GetPriority())
+
+			task := &repb.ExecutionTask{}
+			require.NoError(t, proto.Unmarshal(sched.scheduleReqs[0].SerializedTask, task))
+			if tc.wantVariant != "" {
+				require.Contains(t, task.GetExperiments(), "remote_execution.priority_adjustment:"+tc.wantVariant)
+			} else {
+				for _, exp := range task.GetExperiments() {
+					require.False(t, strings.HasPrefix(exp, "remote_execution.priority_adjustment:"), "unexpected experiment entry: %s", exp)
+				}
+			}
+		})
+	}
+}
+
 func TestDispatch_ContainerImageRewriteExperiment(t *testing.T) {
 	for _, tc := range []struct {
 		name                  string

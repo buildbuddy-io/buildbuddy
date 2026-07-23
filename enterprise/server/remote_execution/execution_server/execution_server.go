@@ -1029,6 +1029,25 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 		}
 	}
 
+	// Optionally adjust the task's scheduling priority via experiment. This
+	// runs after execute() has already validated that the user-requested
+	// priority is within the supported range, so the experiment is allowed to
+	// push the effective priority outside that range. For now we only support
+	// adding to the priority value (setting priority to an absolute value is
+	// not supported)
+	priority := req.GetExecutionPolicy().GetPriority()
+	if efp != nil {
+		const priorityAdjustmentExperiment = "remote_execution.priority_adjustment"
+		adjustment, details := efp.Int64Details(
+			ctx, priorityAdjustmentExperiment, 0,
+			experiments.WithContext("workload-isolation-type", props.WorkloadIsolationType),
+		)
+		priority += int32(adjustment)
+		if v := details.Variant(); v != "" && v != "default" {
+			executionTask.Experiments = append(executionTask.Experiments, priorityAdjustmentExperiment+":"+v)
+		}
+	}
+
 	schedulingMetadata := &scpb.SchedulingMetadata{
 		Os:                props.OS,
 		Arch:              props.Arch,
@@ -1042,7 +1061,7 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 		RequestedTaskSize: requestedTaskSize,
 		ExecutorGroupId:   pool.GroupID,
 		TaskGroupId:       taskGroupID,
-		Priority:          req.GetExecutionPolicy().GetPriority(),
+		Priority:          priority,
 	}
 	serializedTask, err := proto.Marshal(executionTask)
 	if err != nil {
