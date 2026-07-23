@@ -54,6 +54,14 @@ import { MessageClass, timestampToDate } from "../util/proto";
 import { getErrorReason } from "../util/rpc";
 import { quote } from "../util/shlex";
 import ActionCompareButtonComponent from "./action_compare_button";
+import {
+  CompactExecLogActionEdge,
+  CompactExecLogActionEdgesIndex,
+  CompactExecLogActionSummary,
+  compareTargetLabelsByRelevance,
+  findCompactExecLogAction,
+  getCompactExecLogActionEdgesIndex,
+} from "./compact_exec_log_action_edges";
 import { ExecuteOperation, executionStatusLabel, waitExecution } from "./execution_status";
 import TreeNodeComponent, { TreeNode } from "./invocation_action_tree_node";
 import InvocationModel from "./invocation_model";
@@ -113,11 +121,26 @@ interface State {
   executionDownloads: cache.ExecutionDownload[];
   executionDownloadsLoading: boolean;
   executionDownloadsNextPageToken: string;
+  actionEdgesIndex?: CompactExecLogActionEdgesIndex;
+  actionEdgesLoading: boolean;
+  actionEdgesError?: string;
+  inputSourcesExpanded: boolean;
+  expandedOutputConsumerPaths: Set<string>;
 }
 
 interface ServerLog {
   name: string;
   text: string;
+}
+
+interface ActionEdgeGroup {
+  artifactPath: string;
+  edges: CompactExecLogActionEdge[];
+}
+
+interface ActionEdgeTargetGroup {
+  targetLabel: string;
+  actions: CompactExecLogActionSummary[];
 }
 
 export default class InvocationActionCardComponent extends React.Component<Props, State> {
@@ -138,15 +161,20 @@ export default class InvocationActionCardComponent extends React.Component<Props
     executionDownloads: [],
     executionDownloadsLoading: false,
     executionDownloadsNextPageToken: "",
+    actionEdgesLoading: false,
+    inputSourcesExpanded: false,
+    expandedOutputConsumerPaths: new Set<string>(),
   };
 
   private executionDownloadsContainerRef = React.createRef<HTMLDivElement>();
   private treeShaToChildrenPromiseMap = new Map<string, Promise<TreeNode[]>>();
+  private actionEdgesRequestId = 0;
 
   componentDidMount() {
     this.fetchAction();
     this.fetchExecuteResponseOrActionResult();
     this.fetchSpawnMetrics();
+    this.fetchActionEdges();
     if (this.getExecutionId()) {
       this.fetchExecutionDownloads("");
     }
@@ -157,11 +185,13 @@ export default class InvocationActionCardComponent extends React.Component<Props
       this.fetchAction();
       this.fetchExecuteResponseOrActionResult();
       this.fetchSpawnMetrics();
+      this.fetchActionEdges();
       this.fetchExecutionDownloads("");
       return;
     }
     if (prevProps.model.getExecutionLogFileUri() !== this.props.model.getExecutionLogFileUri()) {
       this.fetchSpawnMetrics();
+      this.fetchActionEdges();
     }
     if (prevProps.search.get("executeResponseDigest") !== this.props.search.get("executeResponseDigest")) {
       this.fetchExecuteResponseOrActionResult();
@@ -174,6 +204,10 @@ export default class InvocationActionCardComponent extends React.Component<Props
     if (prevExecutionId !== executionId) {
       this.fetchExecutionDownloads("");
     }
+  }
+
+  componentWillUnmount() {
+    this.actionEdgesRequestId++;
   }
 
   fetchSpawnMetrics() {
@@ -207,6 +241,46 @@ export default class InvocationActionCardComponent extends React.Component<Props
         });
       })
       .catch((e) => console.error("Failed to fetch execution log:", e));
+  }
+
+  fetchActionEdges() {
+    const requestId = ++this.actionEdgesRequestId;
+    const actionDigestParam = this.props.search.get("actionDigest");
+    const actionDigest = parseActionDigest(actionDigestParam || "");
+    const model = this.props.model;
+    const executionLogUri = model.getExecutionLogFileUri();
+    if (!actionDigest || !executionLogUri) {
+      this.setState({ actionEdgesIndex: undefined, actionEdgesLoading: false, actionEdgesError: undefined });
+      return;
+    }
+
+    this.setState({
+      actionEdgesLoading: true,
+      actionEdgesError: undefined,
+      inputSourcesExpanded: false,
+      expandedOutputConsumerPaths: new Set<string>(),
+    });
+    getCompactExecLogActionEdgesIndex(executionLogUri, () => model.getExecutionLog())
+      .then((index) => {
+        if (
+          requestId !== this.actionEdgesRequestId ||
+          this.props.model !== model ||
+          this.props.search.get("actionDigest") !== actionDigestParam ||
+          this.props.model.getExecutionLogFileUri() !== executionLogUri
+        ) {
+          return;
+        }
+        this.setState({ actionEdgesIndex: index, actionEdgesLoading: false });
+      })
+      .catch((e) => {
+        if (requestId !== this.actionEdgesRequestId) return;
+        console.error("Failed to fetch compact execution log action edges:", e);
+        this.setState({
+          actionEdgesIndex: undefined,
+          actionEdgesLoading: false,
+          actionEdgesError: "Failed to load compact execution log action dependencies.",
+        });
+      });
   }
 
   fetchAction() {
@@ -1017,6 +1091,329 @@ export default class InvocationActionCardComponent extends React.Component<Props
     );
   }
 
+  private getCurrentCompactLogAction(): CompactExecLogActionSummary | undefined {
+    const digest = parseActionDigest(this.props.search.get("actionDigest") ?? "");
+    return findCompactExecLogAction(
+      this.state.actionEdgesIndex,
+      digest,
+      this.state.execution?.targetLabel,
+      this.state.execution?.actionMnemonic
+    );
+  }
+
+  private getRelatedCompactLogActionEdges(direction: "parents" | "children"): CompactExecLogActionEdge[] {
+    const currentAction = this.getCurrentCompactLogAction();
+    if (!currentAction) return [];
+    return direction === "parents" ? currentAction.parentEdges : currentAction.childEdges;
+  }
+
+  private groupCompactLogActionEdges(edges: CompactExecLogActionEdge[]): ActionEdgeGroup[] {
+    const groups = new Map<string, CompactExecLogActionEdge[]>();
+    for (const edge of edges) {
+      const group = groups.get(edge.artifactPath);
+      if (group) {
+        group.push(edge);
+      } else {
+        groups.set(edge.artifactPath, [edge]);
+      }
+    }
+    return Array.from(groups.entries()).map(([artifactPath, edges]) => ({ artifactPath, edges }));
+  }
+
+  private groupCompactLogActionEdgesByTarget(
+    edges: CompactExecLogActionEdge[],
+    referenceTargetLabel?: string
+  ): ActionEdgeTargetGroup[] {
+    const groups = new Map<string, CompactExecLogActionSummary[]>();
+    const seenActionIdsByTarget = new Map<string, Set<string>>();
+    for (const edge of edges) {
+      const action = this.state.actionEdgesIndex?.actionById.get(edge.actionId);
+      if (!action) continue;
+      const targetLabel = action.targetLabel || "";
+      const seenActionIds = seenActionIdsByTarget.get(targetLabel) || new Set<string>();
+      if (seenActionIds.has(action.id)) continue;
+      seenActionIds.add(action.id);
+      seenActionIdsByTarget.set(targetLabel, seenActionIds);
+      const actions = groups.get(targetLabel) || [];
+      actions.push(action);
+      groups.set(targetLabel, actions);
+    }
+    return Array.from(groups.entries())
+      .map(([targetLabel, actions]) => ({ targetLabel, actions }))
+      .sort((a, b) => compareTargetLabelsByRelevance(a.targetLabel, b.targetLabel, referenceTargetLabel));
+  }
+
+  private getUniqueCompactLogActionCount(edges: CompactExecLogActionEdge[]): number {
+    return new Set(edges.map((edge) => edge.actionId)).size;
+  }
+
+  private getOutputConsumerEdges(outputPath: string): CompactExecLogActionEdge[] {
+    const currentAction = this.getCurrentCompactLogAction();
+    if (!currentAction) return [];
+
+    const exactMatches = currentAction.childEdges.filter((edge) => edge.artifactPath === outputPath);
+    if (exactMatches.length) return exactMatches;
+
+    const outputPathSuffix = this.getBazelOutBinSuffix(outputPath);
+    if (!outputPathSuffix) return [];
+    return currentAction.childEdges.filter((edge) => this.getBazelOutBinSuffix(edge.artifactPath) === outputPathSuffix);
+  }
+
+  private getBazelOutBinSuffix(path: string): string | undefined {
+    const match = path.match(/^bazel-out\/[^/]+\/bin\/(.+)$/);
+    return match?.[1];
+  }
+
+  private isOutputConsumerExpanded(outputPath: string): boolean {
+    return this.state.expandedOutputConsumerPaths.has(outputPath);
+  }
+
+  private toggleOutputConsumerExpansion(outputPath: string) {
+    this.setState((state) => {
+      const expandedOutputConsumerPaths = new Set(state.expandedOutputConsumerPaths);
+      if (expandedOutputConsumerPaths.has(outputPath)) {
+        expandedOutputConsumerPaths.delete(outputPath);
+      } else {
+        expandedOutputConsumerPaths.add(outputPath);
+      }
+      return { expandedOutputConsumerPaths };
+    });
+  }
+
+  private getDigestBackedCompactLogActionHref(action: CompactExecLogActionSummary): string | undefined {
+    if (!action.digestHash) return undefined;
+    const search = new URLSearchParams();
+    search.set("actionDigest", `${action.digestHash}/${action.digestSizeBytes || 0}`);
+    return `/invocation/${this.props.model.getInvocationId()}?${search.toString()}#action`;
+  }
+
+  private getSymlinkSourceAction(
+    action: CompactExecLogActionSummary,
+    visitedActionIds = new Set<string>()
+  ): CompactExecLogActionSummary | undefined {
+    if (visitedActionIds.has(action.id)) return undefined;
+    visitedActionIds.add(action.id);
+
+    for (const parentId of action.parentIds) {
+      const parentAction = this.state.actionEdgesIndex?.actionById.get(parentId);
+      if (!parentAction) continue;
+      if (parentAction.digestHash) return parentAction;
+      if (parentAction.kind === "symlink") {
+        const sourceAction = this.getSymlinkSourceAction(parentAction, visitedActionIds);
+        if (sourceAction) return sourceAction;
+      }
+    }
+    return undefined;
+  }
+
+  private getCompactLogActionHref(action: CompactExecLogActionSummary): string | undefined {
+    const digestBackedHref = this.getDigestBackedCompactLogActionHref(action);
+    if (digestBackedHref) return digestBackedHref;
+
+    const sourceAction = action.kind === "symlink" ? this.getSymlinkSourceAction(action) : undefined;
+    return sourceAction ? this.getDigestBackedCompactLogActionHref(sourceAction) : undefined;
+  }
+
+  private renderCompactLogActionLink(action: CompactExecLogActionSummary, hideTargetLabel: boolean = false) {
+    const actionText = action.cached ? `${action.label} (Cached)` : action.label;
+    const symlinkSourceAction =
+      action.kind === "symlink" && !action.digestHash ? this.getSymlinkSourceAction(action) : undefined;
+    const href = this.getCompactLogActionHref(action);
+    const actionTitle = [
+      actionText,
+      action.primaryOutputPath ? `Primary output: ${action.primaryOutputPath}` : "",
+      symlinkSourceAction
+        ? `Opens source action: ${symlinkSourceAction.targetLabel} > ${symlinkSourceAction.label}`
+        : "",
+      !href && action.kind === "symlink" ? "Symlink action source not found in the compact execution log." : "",
+    ]
+      .filter(Boolean)
+      .join("\n");
+    const content = (
+      <>
+        {!hideTargetLabel && (
+          <>
+            <span className="action-edge-target" title={action.targetLabel}>
+              {action.targetLabel || "<unknown target>"}
+            </span>
+            <ChevronRight className="action-edge-separator icon" />
+          </>
+        )}
+        <span className="action-edge-action" title={actionTitle}>
+          {actionText}
+        </span>
+        {action.kind === "symlink" && <span className="action-edge-chip">Symlink</span>}
+        {action.result === "failed" && <span className="action-edge-chip failed">Failed</span>}
+      </>
+    );
+    if (!href) {
+      return (
+        <span className={`action-edge-row action-edge-row-static ${hideTargetLabel ? "action-edge-action-only" : ""}`}>
+          {content}
+        </span>
+      );
+    }
+    return (
+      <TextLink className={`action-edge-row ${hideTargetLabel ? "action-edge-action-only" : ""}`} href={href}>
+        {content}
+      </TextLink>
+    );
+  }
+
+  private renderActionEdgeTargetGroups(edges: CompactExecLogActionEdge[]) {
+    const targetGroups = this.groupCompactLogActionEdgesByTarget(edges, this.getCurrentCompactLogAction()?.targetLabel);
+    return targetGroups.map((group) => (
+      <div className="action-edge-target-group" key={group.targetLabel || "<unknown target>"}>
+        <div className="action-edge-target-group-label" title={group.targetLabel}>
+          {group.targetLabel || "<unknown target>"}
+        </div>
+        <div className="action-edge-target-group-actions">
+          {group.actions.map((action) => (
+            <div className="action-edge-target-group-action" key={action.id}>
+              {this.renderCompactLogActionLink(action, true)}
+            </div>
+          ))}
+        </div>
+      </div>
+    ));
+  }
+
+  private renderOutputConsumerDisclosure(outputPath: string) {
+    const edges = this.getOutputConsumerEdges(outputPath);
+    if (!edges.length) return null;
+
+    const expanded = this.isOutputConsumerExpanded(outputPath);
+    const consumerCount = this.groupCompactLogActionEdgesByTarget(
+      edges,
+      this.getCurrentCompactLogAction()?.targetLabel
+    ).reduce((count, group) => count + group.actions.length, 0);
+    const Chevron = expanded ? ChevronDown : ChevronRight;
+    return (
+      <button
+        className="action-edge-output-toggle"
+        onClick={(event) => {
+          event.stopPropagation();
+          this.toggleOutputConsumerExpansion(outputPath);
+        }}
+        type="button">
+        <Chevron className="icon" />
+        Consumed by {consumerCount}
+      </button>
+    );
+  }
+
+  private renderOutputConsumerSection(outputPath: string) {
+    const disclosure = this.renderOutputConsumerDisclosure(outputPath);
+    if (!disclosure) return null;
+    return (
+      <div className="action-edge-output-consumer-section">
+        <div className="action-edge-output-consumer-line">{disclosure}</div>
+        {this.renderOutputConsumerDetails(outputPath)}
+      </div>
+    );
+  }
+
+  private renderOutputConsumerDetails(outputPath: string) {
+    if (!this.isOutputConsumerExpanded(outputPath)) return null;
+    const edges = this.getOutputConsumerEdges(outputPath);
+    if (!edges.length) return null;
+    return <div className="action-edge-output-consumers">{this.renderActionEdgeTargetGroups(edges)}</div>;
+  }
+
+  private renderInputSourcesSection() {
+    if (!this.props.model.hasExecutionLog()) return null;
+
+    if (this.state.actionEdgesLoading) {
+      return (
+        <div className="action-section">
+          <div className="action-property-title">Input sources</div>
+          <div>
+            <div className="action-edge-empty">Loading compact execution log dependencies...</div>
+          </div>
+        </div>
+      );
+    }
+    if (this.state.actionEdgesError) return null;
+
+    const currentAction = this.getCurrentCompactLogAction();
+    if (!currentAction) return null;
+
+    const relatedEdges = this.getRelatedCompactLogActionEdges("parents");
+    const expanded = this.state.inputSourcesExpanded;
+    const sourceCount = this.getUniqueCompactLogActionCount(relatedEdges);
+    return (
+      <div className="action-section">
+        <div className="action-property-title">Input sources</div>
+        <div>
+          {relatedEdges.length ? (
+            <>
+              <button
+                className="action-edge-section-toggle"
+                onClick={() => this.setState({ inputSourcesExpanded: !expanded })}
+                type="button">
+                {expanded ? <ChevronDown className="icon" /> : <ChevronRight className="icon" />}
+                {expanded ? "Hide" : "Show"} {sourceCount} input source{sourceCount === 1 ? "" : "s"}
+              </button>
+              {expanded && this.renderInputSourceDetails(relatedEdges)}
+            </>
+          ) : (
+            <div className="action-edge-empty">No input sources found in the compact execution log.</div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  private renderInputSourceDetails(edges: CompactExecLogActionEdge[]) {
+    const edgeGroups = this.groupCompactLogActionEdges(edges);
+    return (
+      <div className="action-edge-section-panel">
+        <div className="action-edge-list">
+          {edgeGroups.map((group) => (
+            <div className="action-edge-group" key={group.artifactPath}>
+              <div className="action-edge-artifact-path" title={group.artifactPath}>
+                {group.artifactPath}
+              </div>
+              <div className="action-edge-group-list">{this.renderActionEdgeTargetGroups(group.edges)}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  private renderCompactLogActionIdentity() {
+    const action = this.getCurrentCompactLogAction();
+    if (!action) return null;
+
+    const targetLabel = action.targetLabel || "<unknown target>";
+    const actionText = action.cached ? `${action.label} (Cached)` : action.label;
+    return (
+      <>
+        <div className="action-section">
+          <div className="action-property-title">Target label</div>
+          <div>
+            {action.targetLabel ? (
+              <TextLink
+                className="target-label-link"
+                href={`/invocation/${this.props.model.getInvocationId()}?${new URLSearchParams({
+                  target: action.targetLabel,
+                })}`}>
+                {targetLabel}
+              </TextLink>
+            ) : (
+              targetLabel
+            )}
+          </div>
+        </div>
+        <div className="action-section">
+          <div className="action-property-title">Action</div>
+          <div>{actionText}</div>
+        </div>
+      </>
+    );
+  }
+
   /** Build a fully-formed `bb execute` command for this action. */
   private buildBbExecuteCommand(): string {
     const { action, command } = this.state;
@@ -1289,16 +1686,19 @@ export default class InvocationActionCardComponent extends React.Component<Props
         {actionsResult.outputDirectories.length ? (
           <div className="action-list">
             {actionsResult.outputDirectories.map((dir) => (
-              <TreeNodeComponent
-                node={{
-                  obj: new build.bazel.remote.execution.v2.DirectoryNode({ name: dir.path, digest: dir.treeDigest }),
-                  type: "tree",
-                }}
-                treeShaToExpanded={this.state.treeShaToExpanded}
-                treeShaToChildrenMap={this.state.treeShaToChildrenMap}
-                treeShaToTotalSizeMap={this.state.treeShaToTotalSizeMap}
-                handleFileClicked={this.handleFileClicked.bind(this)}
-              />
+              <div className="action-output-entry" key={dir.path}>
+                <TreeNodeComponent
+                  node={{
+                    obj: new build.bazel.remote.execution.v2.DirectoryNode({ name: dir.path, digest: dir.treeDigest }),
+                    type: "tree",
+                  }}
+                  treeShaToExpanded={this.state.treeShaToExpanded}
+                  treeShaToChildrenMap={this.state.treeShaToChildrenMap}
+                  treeShaToTotalSizeMap={this.state.treeShaToTotalSizeMap}
+                  handleFileClicked={this.handleFileClicked.bind(this)}
+                />
+                {this.renderOutputConsumerSection(dir.path)}
+              </div>
             ))}
           </div>
         ) : (
@@ -1319,15 +1719,18 @@ export default class InvocationActionCardComponent extends React.Component<Props
         {symlinks.length ? (
           <div className="action-list">
             {symlinks.map((symlink) => (
-              <div className="tree-node-symlink">
-                <span>
-                  <FileSymlink className="symlink-icon" />
-                </span>{" "}
-                <span>{symlink.path}</span>{" "}
-                <span>
-                  <ArrowRight className="arrow-right-icon" />
-                </span>{" "}
-                <span>{symlink.target}</span>
+              <div className="action-output-entry" key={symlink.path}>
+                <div className="tree-node-symlink">
+                  <span>
+                    <FileSymlink className="symlink-icon" />
+                  </span>{" "}
+                  <span>{symlink.path}</span>{" "}
+                  <span>
+                    <ArrowRight className="arrow-right-icon" />
+                  </span>{" "}
+                  <span>{symlink.target}</span>
+                </div>
+                {this.renderOutputConsumerSection(symlink.path)}
               </div>
             ))}
           </div>
@@ -1683,6 +2086,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
               {this.state.action ? (
                 <div className="details">
                   <div>
+                    {this.renderCompactLogActionIdentity()}
                     <div className="action-section">
                       <div className="action-property-title">Digest</div>
                       <DigestComponent digest={digest} expanded={true} />
@@ -1697,23 +2101,26 @@ export default class InvocationActionCardComponent extends React.Component<Props
                     )}
                     <div className="action-section">
                       <div className="action-property-title">Input files</div>
-                      {this.state.inputNodes.length ? (
-                        <div className="input-tree">
-                          {this.state.inputNodes.map((node) => (
-                            <TreeNodeComponent
-                              node={node}
-                              treeShaToExpanded={this.state.treeShaToExpanded}
-                              treeShaToChildrenMap={this.state.treeShaToChildrenMap}
-                              treeShaToTotalSizeMap={this.state.treeShaToTotalSizeMap}
-                              handleFileClicked={this.handleFileClicked.bind(this)}
-                              getFileViewUrl={this.getFileViewUrl.bind(this)}
-                            />
-                          ))}
-                        </div>
-                      ) : (
-                        <div>None found</div>
-                      )}
+                      <div>
+                        {this.state.inputNodes.length ? (
+                          <div className="input-tree">
+                            {this.state.inputNodes.map((node) => (
+                              <TreeNodeComponent
+                                node={node}
+                                treeShaToExpanded={this.state.treeShaToExpanded}
+                                treeShaToChildrenMap={this.state.treeShaToChildrenMap}
+                                treeShaToTotalSizeMap={this.state.treeShaToTotalSizeMap}
+                                handleFileClicked={this.handleFileClicked.bind(this)}
+                                getFileViewUrl={this.getFileViewUrl.bind(this)}
+                              />
+                            ))}
+                          </div>
+                        ) : (
+                          <div>None found</div>
+                        )}
+                      </div>
                     </div>
+                    {this.renderInputSourcesSection()}
                     <div className="action-section">
                       <div className="action-property-title">Cacheable</div>
                       <div>{!this.state.action.doNotCache ? "Yes" : "No"}</div>
@@ -1969,34 +2376,41 @@ export default class InvocationActionCardComponent extends React.Component<Props
                       </div>
                       <div className="action-section">
                         <div className="action-property-title">Output files</div>
-                        {this.state.actionResult.outputFiles ? (
-                          <div className="action-list">
-                            {this.state.actionResult.outputFiles.map((file) => (
-                              <div
-                                className="file-name clickable"
-                                onClick={this.handleOutputFileClicked.bind(this, file)}>
-                                <span>
-                                  <Download className="file-icon" />
-                                </span>
-                                <span className="prop-link">{file.path}</span>
-                                {file.digest && (
-                                  <TextLink
-                                    className="artifact-view"
-                                    href={this.getFileViewUrl(file.path, file.digest)}
-                                    // Otherwise the file will be downloaded instead
-                                    onClick={(e) => e.stopPropagation()}
-                                    target="_blank">
-                                    <FileIcon extension={file.path} /> View
-                                  </TextLink>
-                                )}
-                                {file.isExecutable && <span className="detail"> (executable)</span>}
-                                {file.digest && <DigestComponent digest={file.digest} />}
-                              </div>
-                            ))}
-                          </div>
-                        ) : (
-                          <div>None found</div>
-                        )}
+                        <div>
+                          {this.state.actionResult.outputFiles ? (
+                            <div className="action-list">
+                              {this.state.actionResult.outputFiles.map((file) => (
+                                <div className="action-output-entry" key={file.path}>
+                                  <div
+                                    className="file-name clickable"
+                                    onClick={this.handleOutputFileClicked.bind(this, file)}>
+                                    <span>
+                                      <Download className="file-icon" />
+                                    </span>
+                                    <span className="prop-link" title={file.path}>
+                                      {file.path}
+                                    </span>
+                                    {file.digest && (
+                                      <TextLink
+                                        className="artifact-view"
+                                        href={this.getFileViewUrl(file.path, file.digest)}
+                                        // Otherwise the file will be downloaded instead
+                                        onClick={(e) => e.stopPropagation()}
+                                        target="_blank">
+                                        <FileIcon extension={file.path} /> View
+                                      </TextLink>
+                                    )}
+                                    {file.isExecutable && <span className="detail"> (executable)</span>}
+                                    {file.digest && <DigestComponent digest={file.digest} />}
+                                  </div>
+                                  {this.renderOutputConsumerSection(file.path)}
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <div>None found</div>
+                          )}
+                        </div>
                       </div>
                       {this.renderOutputDirectories(this.state.actionResult)}
                       {this.renderOutputSymlinks(this.state.actionResult)}
