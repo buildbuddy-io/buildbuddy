@@ -12,6 +12,7 @@ import (
 	"hash"
 	"io"
 	"math/rand"
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime/debug"
@@ -651,6 +652,52 @@ func ParseDownloadResourceName(resourceName string) (*CASResourceName, error) {
 		return nil, err
 	}
 	return rn.CheckCAS()
+}
+
+// ByteStreamURI contains the host and CAS resource name of a parsed ByteStream
+// URI.
+type ByteStreamURI struct {
+	CASResourceName
+	host string
+}
+
+// GetHost returns the URI host, including the port if one was specified.
+func (u *ByteStreamURI) GetHost() string {
+	return u.host
+}
+
+// String returns the canonical ByteStream URI.
+func (u *ByteStreamURI) String() string {
+	return (&url.URL{
+		Scheme: "bytestream",
+		Host:   u.host,
+		Path:   "/" + strings.TrimPrefix(u.DownloadString(), "/"),
+	}).String()
+}
+
+// ParseByteStreamURI parses a ByteStream URI and its CAS resource name.
+func ParseByteStreamURI(rawURI string) (*ByteStreamURI, error) {
+	parsedURI, err := url.Parse(rawURI)
+	if err != nil {
+		return nil, status.InvalidArgumentErrorf("invalid ByteStream URI: %s", err)
+	}
+	if parsedURI.Scheme != "bytestream" {
+		return nil, status.InvalidArgumentErrorf("invalid ByteStream URI scheme %q", parsedURI.Scheme)
+	}
+	if parsedURI.Host == "" {
+		return nil, status.InvalidArgumentError("invalid ByteStream URI: missing host")
+	}
+	if parsedURI.User != nil || parsedURI.ForceQuery || parsedURI.RawQuery != "" || parsedURI.Fragment != "" {
+		return nil, status.InvalidArgumentError("invalid ByteStream URI: user info, query parameters, and fragments are not supported")
+	}
+	resourceName, err := ParseDownloadResourceName(strings.TrimPrefix(parsedURI.Path, "/"))
+	if err != nil {
+		return nil, status.WrapError(err, "parse ByteStream URI")
+	}
+	return &ByteStreamURI{
+		CASResourceName: *resourceName,
+		host:            parsedURI.Host,
+	}, nil
 }
 
 func ParseActionCacheResourceName(resourceName string) (*ACResourceName, error) {

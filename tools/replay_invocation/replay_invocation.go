@@ -6,7 +6,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"net/url"
 	"os"
 	"path"
 	"regexp"
@@ -321,20 +320,16 @@ func main() {
 // Copies a persisted artifact from the given blobstore to the destination cache
 // target.
 func copyArtifact(ctx context.Context, dst bspb.ByteStreamClient, src interfaces.Blobstore, uri string) error {
-	parsedURL, err := url.Parse(uri)
+	parsedURI, err := digest.ParseByteStreamURI(uri)
 	if err != nil {
-		return fmt.Errorf("parse bytestream URI as URL: %w", err)
+		return fmt.Errorf("parse ByteStream URI: %w", err)
 	}
-	blobName := path.Join(*invocationID, "artifacts", "cache", parsedURL.Path)
+	blobName := path.Join(*invocationID, "artifacts", "cache", parsedURI.DownloadString())
 	b, err := src.ReadBlob(ctx, blobName)
 	if err != nil {
 		return fmt.Errorf("read blob %q: %w", blobName, err)
 	}
-	rn, err := digest.ParseDownloadResourceName(parsedURL.Path)
-	if err != nil {
-		return fmt.Errorf("parse bytestream URI as resource name: %w", err)
-	}
-	if _, err := cachetools.UploadBlobToCAS(ctx, dst, rn.GetInstanceName(), rn.GetDigestFunction(), b); err != nil {
+	if _, err := cachetools.UploadBlobToCAS(ctx, dst, parsedURI.GetInstanceName(), parsedURI.GetDigestFunction(), b); err != nil {
 		return fmt.Errorf("upload blob to CAS: %w", err)
 	}
 	return nil

@@ -567,35 +567,20 @@ func (gfs *getFileWriter) Write(data []byte) (int, error) {
 	return len(data), err
 }
 
-func parseBytestreamCASURI(uri string) (*url.URL, *digest.CASResourceName, error) {
-	parsedURL, err := url.Parse(uri)
-	if err != nil {
-		return nil, nil, status.InvalidArgumentErrorf("Invalid URL")
-	}
-	if parsedURL.Scheme != "bytestream" {
-		return nil, nil, status.InvalidArgumentError("only bytestream:// URIs are supported")
-	}
-	rn, err := digest.ParseDownloadResourceName(strings.TrimPrefix(parsedURL.RequestURI(), "/"))
-	if err != nil {
-		return nil, nil, status.InvalidArgumentErrorf("Invalid URL")
-	}
-	return parsedURL, rn, nil
-}
-
 func (s *APIServer) GetFile(req *apipb.GetFileRequest, server apipb.ApiService_GetFileServer) error {
 	ctx := server.Context()
 	if _, err := s.env.GetAuthenticator().AuthenticatedUser(ctx); err != nil {
 		return err
 	}
 
-	parsedURL, err := url.Parse(req.GetUri())
+	parsedURI, err := digest.ParseByteStreamURI(req.GetUri())
 	if err != nil {
-		return status.InvalidArgumentErrorf("Invalid URL")
+		return err
 	}
 
 	writer := &getFileWriter{s: server}
 
-	return s.env.GetPooledByteStreamClient().StreamBytestreamFile(ctx, parsedURL, writer)
+	return s.env.GetPooledByteStreamClient().StreamBytestreamFile(ctx, parsedURI, writer)
 }
 
 func (s *APIServer) GetFileRange(ctx context.Context, req *apipb.GetFileRangeRequest) (*apipb.GetFileRangeResponse, error) {
@@ -615,11 +600,11 @@ func (s *APIServer) GetFileRange(ctx context.Context, req *apipb.GetFileRangeReq
 		return nil, status.InvalidArgumentError("end must be greater than start")
 	}
 
-	_, rn, err := parseBytestreamCASURI(req.GetUri())
+	parsedURI, err := digest.ParseByteStreamURI(req.GetUri())
 	if err != nil {
 		return nil, err
 	}
-	if end > rn.GetDigest().GetSizeBytes() {
+	if end > parsedURI.GetDigest().GetSizeBytes() {
 		return nil, status.InvalidArgumentError("end must not exceed digest size_bytes")
 	}
 
@@ -633,7 +618,7 @@ func (s *APIServer) GetFileRange(ctx context.Context, req *apipb.GetFileRangeReq
 		return nil, err
 	}
 
-	reader, err := s.env.GetCache().Reader(ctx, rn.ToProto(), start, limit)
+	reader, err := s.env.GetCache().Reader(ctx, parsedURI.ToProto(), start, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -709,13 +694,13 @@ func (s *APIServer) handleGetFileRequest(w http.ResponseWriter, r *http.Request)
 	req := apipb.GetFileRequest{}
 	protolet.ReadRequestToProto(r, &req)
 
-	parsedURL, err := url.Parse(req.GetUri())
+	parsedURI, err := digest.ParseByteStreamURI(req.GetUri())
 	if err != nil {
 		http.Error(w, "Invalid URI", http.StatusBadRequest)
 		return
 	}
 
-	err = s.env.GetPooledByteStreamClient().StreamBytestreamFile(r.Context(), parsedURL, w)
+	err = s.env.GetPooledByteStreamClient().StreamBytestreamFile(r.Context(), parsedURI, w)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
 	}

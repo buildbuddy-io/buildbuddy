@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"net/url"
-	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/flaghistory"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
@@ -82,11 +80,11 @@ func getInvocationResource(ctx context.Context, bbClient bbspb.BuildBuddyService
 	if file == nil {
 		return nil, fmt.Errorf("no %s found for invocation %s", description, invocationID)
 	}
-	resource, err := parseBytestreamURI(file.GetUri())
+	uri, err := digest.ParseByteStreamURI(file.GetUri())
 	if err != nil {
 		return nil, fmt.Errorf("invalid %s URI for %q: %w", description, file.GetName(), err)
 	}
-	return resource, nil
+	return &uri.CASResourceName, nil
 }
 
 func (d *byteStreamDownloader) GetBytestreamFile(ctx context.Context, uri string, w io.Writer) error {
@@ -95,24 +93,12 @@ func (d *byteStreamDownloader) GetBytestreamFile(ctx context.Context, uri string
 
 // GetBytestreamFile downloads the contents of a bytestream:// URI.
 func GetBytestreamFile(ctx context.Context, bsClient bspb.ByteStreamClient, uri string, w io.Writer) error {
-	resource, err := parseBytestreamURI(uri)
+	parsedURI, err := digest.ParseByteStreamURI(uri)
 	if err != nil {
 		return err
 	}
-	if err := cachetools.GetBlob(ctx, bsClient, resource, w); err != nil {
-		return fmt.Errorf("failed to download %s: %w", resource.DownloadString(), err)
+	if err := cachetools.GetBlob(ctx, bsClient, &parsedURI.CASResourceName, w); err != nil {
+		return fmt.Errorf("failed to download %s: %w", parsedURI.DownloadString(), err)
 	}
 	return nil
-}
-
-// parseBytestreamURI parses a bytestream:// URI into a CAS resource name.
-func parseBytestreamURI(uri string) (*digest.CASResourceName, error) {
-	if !strings.HasPrefix(uri, "bytestream://") {
-		return nil, fmt.Errorf("unsupported bytestream URI: %s", uri)
-	}
-	u, err := url.Parse(uri)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse bytestream URI: %w", err)
-	}
-	return digest.ParseDownloadResourceName(u.Path)
 }

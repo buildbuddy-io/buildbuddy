@@ -3,7 +3,6 @@ package common
 import (
 	"encoding/base64"
 	"fmt"
-	"net/url"
 	"slices"
 	"strings"
 
@@ -55,11 +54,9 @@ func FileFromBESFile(besFile *bespb.File) *apipb.File {
 }
 
 func fillFileDigestFromURI(f *apipb.File) {
-	if u, err := url.Parse(f.Uri); err == nil {
-		if r, err := digest.ParseDownloadResourceName(u.Path); err == nil {
-			f.Hash = r.GetDigest().GetHash()
-			f.SizeBytes = r.GetDigest().GetSizeBytes()
-		}
+	if parsedURI, err := digest.ParseByteStreamURI(f.Uri); err == nil {
+		f.Hash = parsedURI.GetDigest().GetHash()
+		f.SizeBytes = parsedURI.GetDigest().GetSizeBytes()
 	}
 }
 

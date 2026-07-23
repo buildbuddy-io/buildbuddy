@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "accumulator",
@@ -16,5 +16,17 @@ go_library(
         "//server/util/log",
         "//server/util/proto",
         "//server/util/timeutil",
+    ],
+)
+
+go_test(
+    name = "accumulator_test",
+    srcs = ["accumulator_test.go"],
+    deps = [
+        ":accumulator",
+        "//proto:build_event_stream_go_proto",
+        "//proto:invocation_go_proto",
+        "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
     ],
 )

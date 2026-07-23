@@ -128,6 +128,89 @@ func TestParseDownloadResourceName(t *testing.T) {
 	}
 }
 
+func TestParseByteStreamURI(t *testing.T) {
+	const hash = "072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d"
+
+	for _, testCase := range []struct {
+		name               string
+		uri                string
+		wantHost           string
+		wantInstanceName   string
+		wantDigestFunction repb.DigestFunction_Value
+		wantError          bool
+	}{
+		{
+			name:               "SHA256",
+			uri:                "bytestream://remote.buildbuddy.io:1985/blobs/" + hash + "/1234",
+			wantHost:           "remote.buildbuddy.io:1985",
+			wantDigestFunction: repb.DigestFunction_SHA256,
+		},
+		{
+			name:               "BLAKE3WithInstanceName",
+			uri:                "bytestream://remote.buildbuddy.io/buildbuddy/test/blobs/blake3/" + hash + "/1234",
+			wantHost:           "remote.buildbuddy.io",
+			wantInstanceName:   "buildbuddy/test",
+			wantDigestFunction: repb.DigestFunction_BLAKE3,
+		},
+		{
+			name:      "UnsupportedScheme",
+			uri:       "https://remote.buildbuddy.io/blobs/" + hash + "/1234",
+			wantError: true,
+		},
+		{
+			name:      "ActionCacheScheme",
+			uri:       "actioncache://remote.buildbuddy.io/blobs/ac/" + hash + "/1234",
+			wantError: true,
+		},
+		{
+			name:      "MissingHost",
+			uri:       "bytestream:///blobs/" + hash + "/1234",
+			wantError: true,
+		},
+		{
+			name:      "UserInfo",
+			uri:       "bytestream://user@remote.buildbuddy.io/blobs/" + hash + "/1234",
+			wantError: true,
+		},
+		{
+			name:      "QueryParameters",
+			uri:       "bytestream://remote.buildbuddy.io/blobs/" + hash + "/1234?foo=bar",
+			wantError: true,
+		},
+		{
+			name:      "Fragment",
+			uri:       "bytestream://remote.buildbuddy.io/blobs/" + hash + "/1234#foo",
+			wantError: true,
+		},
+		{
+			name:      "InvalidURI",
+			uri:       "bytestream://remote.buildbuddy.io/blobs/%zz/1234",
+			wantError: true,
+		},
+		{
+			name:      "InvalidResourceName",
+			uri:       "bytestream://remote.buildbuddy.io/blobs/blake3/not-a-digest/1234",
+			wantError: true,
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			// Parse the full URI into its host and CAS resource name components.
+			parsedURI, err := digest.ParseByteStreamURI(testCase.uri)
+			if testCase.wantError {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, testCase.wantHost, parsedURI.GetHost())
+			assert.Equal(t, testCase.uri, parsedURI.String())
+			assert.Equal(t, testCase.wantInstanceName, parsedURI.GetInstanceName())
+			assert.Equal(t, hash, parsedURI.GetDigest().GetHash())
+			assert.EqualValues(t, 1234, parsedURI.GetDigest().GetSizeBytes())
+			assert.Equal(t, testCase.wantDigestFunction, parsedURI.GetDigestFunction())
+		})
+	}
+}
+
 func FuzzParseDownloadResourceName(f *testing.F) {
 	f.Add("blobs/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49ac/1234")
 	f.Add("/compressed-blobs/zstd/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234")

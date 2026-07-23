@@ -7,7 +7,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"net/url"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -844,19 +843,6 @@ func lookupBazelInvocationOutputs(ctx context.Context, bbClient bbspb.BuildBuddy
 	return outputs, nil
 }
 
-func bytestreamURIToResourceName(uri string) (*digest.CASResourceName, error) {
-	u, err := url.Parse(uri)
-	if err != nil {
-		return nil, fmt.Errorf("parse bytestream uri %q: %w", uri, err)
-	}
-	r := strings.TrimPrefix(u.RequestURI(), "/")
-	rn, err := digest.ParseDownloadResourceName(r)
-	if err != nil {
-		return nil, fmt.Errorf("parse bytestream resource name %q: %w", r, err)
-	}
-	return rn, nil
-}
-
 // TODO(vadim): add interactive progress bar for downloads
 // TODO(vadim): parallelize downloads
 func downloadOutputs(ctx context.Context, env environment.Env, mainOutputs []*bespb.File, supportingOutputs []*bespb.File, supportingDirs []*bespb.Tree, outputBaseDir string) ([]string, error) {
@@ -864,7 +850,7 @@ func downloadOutputs(ctx context.Context, env environment.Env, mainOutputs []*be
 
 	var mainLocalArtifacts []string
 	download := func(f *bespb.File) (string, error) {
-		r, err := bytestreamURIToResourceName(f.GetUri())
+		uri, err := digest.ParseByteStreamURI(f.GetUri())
 		if err != nil {
 			return "", fmt.Errorf("resolve output uri for %q: %w", f.GetName(), err)
 		}
@@ -873,7 +859,7 @@ func downloadOutputs(ctx context.Context, env environment.Env, mainOutputs []*be
 			outFile = filepath.Join(outFile, p)
 		}
 		outFile = filepath.Join(outFile, f.GetName())
-		if err := downloadFile(ctx, bsClient, r, outFile); err != nil {
+		if err := downloadFile(ctx, bsClient, &uri.CASResourceName, outFile); err != nil {
 			return "", fmt.Errorf("download output %q: %w", f.GetName(), err)
 		}
 		return outFile, nil
@@ -892,19 +878,19 @@ func downloadOutputs(ctx context.Context, env environment.Env, mainOutputs []*be
 		}
 	}
 	for _, d := range supportingDirs {
-		rn, err := bytestreamURIToResourceName(d.GetUri())
+		uri, err := digest.ParseByteStreamURI(d.GetUri())
 		if err != nil {
 			return nil, fmt.Errorf("resolve supporting output dir uri %q: %w", d.GetName(), err)
 		}
 		tree := &repb.Tree{}
-		if err := cachetools.GetBlobAsProto(ctx, bsClient, rn, tree); err != nil {
+		if err := cachetools.GetBlobAsProto(ctx, bsClient, &uri.CASResourceName, tree); err != nil {
 			return nil, fmt.Errorf("download supporting output dir metadata %q: %w", d.GetName(), err)
 		}
 		outDir := filepath.Join(outputBaseDir, BuildBuddyArtifactDir, d.GetName())
 		if err := os.MkdirAll(outDir, 0755); err != nil {
 			return nil, fmt.Errorf("create supporting output dir %q: %w", outDir, err)
 		}
-		if _, err := dirtools.DownloadTree(ctx, env, rn.GetInstanceName(), rn.GetDigestFunction(), tree, &dirtools.DownloadTreeOpts{RootDir: outDir}); err != nil {
+		if _, err := dirtools.DownloadTree(ctx, env, uri.GetInstanceName(), uri.GetDigestFunction(), tree, &dirtools.DownloadTreeOpts{RootDir: outDir}); err != nil {
 			return nil, fmt.Errorf("download supporting output dir %q: %w", d.GetName(), err)
 		}
 	}

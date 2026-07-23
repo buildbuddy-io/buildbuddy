@@ -121,7 +121,7 @@ var (
 var cacheArtifactsBlobstorePath = path.Join("artifacts", "cache")
 
 type PersistArtifacts struct {
-	URIs              []*url.URL
+	URIs              []*digest.ByteStreamURI
 	TestActionOutputs bool
 }
 
@@ -525,27 +525,23 @@ func (r *statsRecorder) handleTask(ctx context.Context, task *recordStatsTask) {
 	for _, uri := range task.persist.URIs {
 		// Only persist artifacts from caches that are hosted on the BuildBuddy
 		// domain (but only if we know it).
-		if cache_api_url.String() != "" && urlutil.GetDomain(uri.Hostname()) != urlutil.GetDomain(cache_api_url.WithPath("").Hostname()) {
+		hostname := (&url.URL{Host: uri.GetHost()}).Hostname()
+		if cache_api_url.String() != "" && urlutil.GetDomain(hostname) != urlutil.GetDomain(cache_api_url.WithPath("").Hostname()) {
 			continue
 		}
-		rn, err := digest.ParseDownloadResourceName(uri.Path)
-		if err != nil {
-			log.CtxErrorf(ctx, "Unparseable artifact URI: %s", err)
+		if uri.IsEmpty() {
 			continue
 		}
-		if rn.IsEmpty() {
+		if _, seen := artifactsUploaded[uri.GetDigest().GetHash()]; seen {
 			continue
 		}
-		if _, seen := artifactsUploaded[rn.GetDigest().GetHash()]; seen {
-			continue
-		}
-		artifactsUploaded[rn.GetDigest().GetHash()] = struct{}{}
+		artifactsUploaded[uri.GetDigest().GetHash()] = struct{}{}
 		eg.Go(func() error {
 			// When persisting artifacts, make sure we associate the cache
 			// requests with the app, not bazel.
 			ctx := usageutil.WithLocalServerLabels(ctx)
 
-			fullPath := path.Join(task.invocationInfo.id, cacheArtifactsBlobstorePath, uri.Path)
+			fullPath := path.Join(task.invocationInfo.id, cacheArtifactsBlobstorePath, uri.DownloadString())
 			if err := persistArtifact(ctx, r.env, uri, fullPath); err != nil {
 				log.CtxError(ctx, err.Error())
 			}
@@ -580,7 +576,7 @@ func (r *statsRecorder) Stop() {
 	close(r.onStatsRecorded)
 }
 
-func persistArtifact(ctx context.Context, env environment.Env, uri *url.URL, path string) error {
+func persistArtifact(ctx context.Context, env environment.Env, uri *digest.ByteStreamURI, path string) error {
 	w, err := env.GetBlobstore().Writer(ctx, path)
 	if err != nil {
 		return status.WrapErrorf(

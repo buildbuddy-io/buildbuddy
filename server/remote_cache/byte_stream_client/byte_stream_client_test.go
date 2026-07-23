@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"io"
-	"net/url"
 	"os"
 	"strings"
 	"testing"
@@ -89,7 +88,7 @@ func TestManifest_TooManyFilesZip(t *testing.T) {
 }
 
 func createBytestreamer(b []byte) Bytestreamer {
-	return func(ctx context.Context, url *url.URL, offset int64, limit int64, writer io.Writer) error {
+	return func(ctx context.Context, offset int64, limit int64, writer io.Writer) error {
 		writer.Write(b[offset : offset+limit])
 		return nil
 	}
@@ -97,7 +96,7 @@ func createBytestreamer(b []byte) Bytestreamer {
 
 func validateZipContents(t *testing.T, ctx context.Context, entry *zipb.ManifestEntry, expectedContent string, streamer Bytestreamer) {
 	var buf bytes.Buffer
-	streamSingleFileFromBytestreamZipInternal(ctx, nil, entry, &buf, streamer)
+	streamSingleFileFromBytestreamZipInternal(ctx, entry, &buf, streamer)
 	out := make([]byte, entry.GetUncompressedSize())
 	_, err := io.ReadFull(&buf, out)
 	if err != nil {
