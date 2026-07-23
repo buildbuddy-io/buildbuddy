@@ -14,6 +14,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/storage"
+	"github.com/buildbuddy-io/buildbuddy/cli/terminal"
 )
 
 const (
@@ -56,7 +57,7 @@ func Setup(ctx context.Context) (*Installation, error) {
 		if err := addToPath(installation.BinaryPath); err != nil {
 			return nil, err
 		}
-		log.Printf("Using existing ztracing installation at %s", installationDir)
+		log.Printf("%sUsing existing ztracing installation at %s%s", terminal.Esc(90), installationDir, terminal.Esc())
 		return installation, nil
 	}
 
@@ -67,7 +68,7 @@ func Setup(ctx context.Context) (*Installation, error) {
 		return nil, fmt.Errorf("create ztracing installation directory: %w", err)
 	}
 
-	log.Printf("Downloading ztracing at commit %s for %s...", ztracingCommitSHA, platform)
+	log.Printf("%sDownloading ztracing at commit %s for %s...%s", terminal.Esc(90), ztracingCommitSHA, platform, terminal.Esc())
 	if err := downloadAndExtract(ctx, downloadURL, rootDir, installationDir); err != nil {
 		os.RemoveAll(installationDir)
 		return nil, err
@@ -79,7 +80,7 @@ func Setup(ctx context.Context) (*Installation, error) {
 	if err := addToPath(installation.BinaryPath); err != nil {
 		return nil, err
 	}
-	log.Printf("Using ztracing installation at %s", installationDir)
+	log.Printf("%sUsing ztracing installation at %s%s", terminal.Esc(90), installationDir, terminal.Esc())
 	return installation, nil
 }
 

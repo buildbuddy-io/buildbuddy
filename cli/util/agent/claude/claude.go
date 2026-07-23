@@ -2,10 +2,18 @@ package claude
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"os/exec"
 	"strings"
+
+	"github.com/buildbuddy-io/buildbuddy/cli/terminal"
 )
+
+type response struct {
+	Result    string `json:"result"`
+	SessionID string `json:"session_id"`
+}
 
 // Run sends prompt to Claude Code and returns its response. allowedToolsJSON
 // must be a JSON array of Claude tool permission rules, such as
@@ -31,14 +39,34 @@ func Run(prompt string, allowedTools []string) (string, error) {
 		}
 		return "", fmt.Errorf("claude failed: %w", err)
 	}
-	return strings.TrimRight(stdout.String(), "\n"), nil
+	return formatResponse(stdout.Bytes())
 }
 
 func commandArgs(allowedTools []string) ([]string, error) {
-	args := []string{"--print", "--permission-mode", "dontAsk"}
+	args := []string{"--print", "--permission-mode", "dontAsk", "--output-format", "json"}
 	if len(allowedTools) == 0 {
 		return args, nil
 	}
 	args = append(args, "--allowedTools")
 	return append(args, allowedTools...), nil
+}
+
+func formatResponse(output []byte) (string, error) {
+	claudeResponse := &response{}
+	if err := json.Unmarshal(output, claudeResponse); err != nil {
+		return "", fmt.Errorf("parse claude response: %w", err)
+	}
+	if claudeResponse.SessionID == "" {
+		return "", fmt.Errorf("parse claude response: session ID is missing")
+	}
+	if strings.TrimSpace(claudeResponse.Result) == "" {
+		return "", fmt.Errorf("parse claude response: result is empty")
+	}
+	result := strings.TrimRight(claudeResponse.Result, "\n")
+	resumeMessage := fmt.Sprintf(
+		"%sResume this Claude session with:%s\n%sclaude --resume %s%s",
+		terminal.Esc(90), terminal.Esc(),
+		terminal.Esc(36), claudeResponse.SessionID, terminal.Esc(),
+	)
+	return result + "\n\n" + resumeMessage, nil
 }

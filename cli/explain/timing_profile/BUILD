@@ -11,6 +11,7 @@ go_library(
         "//cli/explain/timing_profile/ztracing",
         "//cli/log",
         "//cli/login",
+        "//cli/terminal",
         "//cli/util/agent/claude",
         "//cli/util/download",
         "//proto:build_event_stream_go_proto",

@@ -13,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/explain/timing_profile/ztracing"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/login"
+	"github.com/buildbuddy-io/buildbuddy/cli/terminal"
 	"github.com/buildbuddy-io/buildbuddy/cli/util/agent/claude"
 	"github.com/buildbuddy-io/buildbuddy/cli/util/download"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
@@ -94,13 +95,10 @@ func analyzeTimingProfile(invocationIDOrURL string) (int, error) {
 	}
 
 	prompt := fmt.Sprintf(analysisPrompt, profilePath, skillContents)
-	log.Printf("Running claude (this may take a minute)...")
+	log.Printf("%sRunning claude (this may take a minute)...%s", terminal.Esc(90), terminal.Esc())
 	report, err := claude.Run(prompt, []string{"Bash(ztracing *)"})
 	if err != nil {
 		return -1, fmt.Errorf("analyze timing profile: %w", err)
-	}
-	if strings.TrimSpace(report) == "" {
-		return -1, fmt.Errorf("agent returned an empty timing profile report")
 	}
 	fmt.Println(report)
 
