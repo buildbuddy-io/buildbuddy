@@ -188,7 +188,7 @@ func benchmarkMarshal(b *testing.B, marshalFn marshalFunc, data []protoMessage) 
 	for _, pb := range data {
 		totalSize += pb.SizeVT()
 	}
-	b.SetBytes(int64(totalSize / len(data)))
+	b.SetBytes(int64((totalSize + len(data)/2) / len(data)))
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {

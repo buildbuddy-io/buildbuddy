@@ -36,7 +36,11 @@ go_deps.module_override(
     ],
     path = "github.com/planetscale/vtprotobuf",
 )
-# Add VT methods to the pre-generated Status type imported by our Go protos.
+
+# Add VT marshal methods to the pre-generated Status type imported by our Go
+# protos. This patch targets v0.0.0-20260401024825-9d38bb4040a9 and must be
+# regenerated when that module is upgraded. Any clone and unmarshal paths remain
+# reflective.
 go_deps.module_override(
     patch_strip = 1,
     patches = [
