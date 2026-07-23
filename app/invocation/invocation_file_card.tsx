@@ -1,4 +1,3 @@
-import Long from "long";
 import { Download, FileIcon, FileSymlink, Folder, FolderOpen } from "lucide-react";
 import React from "react";
 import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
@@ -9,6 +8,12 @@ import Link from "../components/link/link";
 import Select, { Option } from "../components/select/select";
 import error_service from "../errors/error_service";
 import format from "../format/format";
+import {
+  CompactExecLogDirectoryEntry,
+  CompactExecLogIndex,
+  getCompactExecLogDirectoryHash,
+  getCompactExecLogDirectorySize,
+} from "./compact_exec_log_index";
 import InvocationModel from "./invocation_model";
 
 interface Props {
@@ -24,7 +29,7 @@ interface State {
   fileLimit: number;
   directoryLimit: number;
   symlinkLimit: number;
-  log: tools.protos.ExecLogEntry[] | undefined;
+  index: CompactExecLogIndex | undefined;
   directoryToFileLimit: Map<string, number>;
 }
 
@@ -37,11 +42,12 @@ export default class InvocationFileCardComponent extends React.Component<Props, 
     fileLimit: pageSize,
     directoryLimit: pageSize,
     symlinkLimit: pageSize,
-    log: undefined,
+    index: undefined,
     directoryToFileLimit: new Map<string, number>(),
   };
 
   timeoutRef?: number;
+  fetchRequestId = 0;
 
   componentDidMount() {
     this.fetchLog();
@@ -49,11 +55,12 @@ export default class InvocationFileCardComponent extends React.Component<Props, 
 
   componentDidUpdate(prevProps: Props) {
     if (this.props.model !== prevProps.model) {
-      this.fetchLog();
+      this.setState({ index: undefined }, () => this.fetchLog());
     }
   }
 
   componentWillUnmount() {
+    this.fetchRequestId++;
     clearTimeout(this.timeoutRef);
   }
 
@@ -67,20 +74,25 @@ export default class InvocationFileCardComponent extends React.Component<Props, 
   }
 
   fetchLog() {
+    const requestId = ++this.fetchRequestId;
     if (!this.props.model.hasExecutionLog()) {
-      this.setState({ loading: false });
+      this.setState({ index: undefined, loading: false });
+      return;
     }
-
-    // Already fetched
-    if (this.state.log) return;
 
     this.setState({ loading: true });
 
-    this.props.model
-      .getExecutionLog()
-      .then((log) => this.setState({ log: log }))
+    const model = this.props.model;
+    model
+      .getExecutionLogIndex()
+      .then((index) => {
+        if (requestId !== this.fetchRequestId || this.props.model !== model) return;
+        this.setState({ index });
+      })
       .catch((e) => error_service.handleError(e))
-      .finally(() => this.setState({ loading: false }));
+      .finally(() => {
+        if (requestId === this.fetchRequestId) this.setState({ loading: false });
+      });
   }
 
   downloadLog() {
@@ -99,15 +111,15 @@ export default class InvocationFileCardComponent extends React.Component<Props, 
     }
   }
 
-  compareDirectories(a: tools.protos.ExecLogEntry, b: tools.protos.ExecLogEntry): number {
+  compareDirectories(a: CompactExecLogDirectoryEntry, b: CompactExecLogDirectoryEntry): number {
     let first = this.state.direction == "asc" ? a : b;
     let second = this.state.direction == "asc" ? b : a;
 
     switch (this.state.sort) {
       case "size":
-        return +this.sumFileSizes(first?.directory?.files) - +this.sumFileSizes(second?.directory?.files);
+        return getCompactExecLogDirectorySize(first).compare(getCompactExecLogDirectorySize(second));
       default:
-        return (first.directory?.path || "").localeCompare(second.directory?.path || "");
+        return (first.entry.directory?.path || "").localeCompare(second.entry.directory?.path || "");
     }
   }
 
@@ -116,26 +128,6 @@ export default class InvocationFileCardComponent extends React.Component<Props, 
     let second = this.state.direction == "asc" ? b : a;
 
     return (first.unresolvedSymlink?.path || "").localeCompare(second.unresolvedSymlink?.path || "");
-  }
-
-  sumFileSizes(files: Array<tools.protos.ExecLogEntry.File> | undefined) {
-    return (
-      (files || []).map((f) => f.digest?.sizeBytes || 0).reduce((a, b) => new Long(+a + +b), Long.ZERO) || Long.ZERO
-    );
-  }
-
-  hashFileHashes(files: Array<tools.protos.ExecLogEntry.File> | undefined) {
-    // Just do something simple here that gives us a unique string that changes when one file changes.
-    return (files || [])
-      .map((f) => f.digest?.hash || "")
-      .reduce((a, b) => {
-        var hash = "";
-        for (var i = 0; i < Math.max(a.length, b.length); i++) {
-          let char = (a.charCodeAt(i) + b.charCodeAt(i)) % 36;
-          hash += String.fromCharCode(char < 26 ? char + 97 : char + 22);
-        }
-        return hash;
-      }, "");
   }
 
   handleSortDirectionChange(event: React.ChangeEvent<HTMLInputElement>) {
@@ -188,7 +180,7 @@ export default class InvocationFileCardComponent extends React.Component<Props, 
     if (this.state.loading) {
       return <div className="loading" />;
     }
-    if (!this.state.log?.length) {
+    if (!this.state.index?.entries.length) {
       return (
         <div className="invocation-execution-empty-state">
           No files for this invocation{this.props.model.isInProgress() && <span> yet</span>}.
@@ -196,7 +188,7 @@ export default class InvocationFileCardComponent extends React.Component<Props, 
       );
     }
 
-    const files = this.state.log
+    const files = this.state.index.fileEntries
       .filter((l) => {
         if (l.type != "file") {
           return false;
@@ -213,8 +205,8 @@ export default class InvocationFileCardComponent extends React.Component<Props, 
       })
       .sort(this.compareFiles.bind(this));
 
-    const directories = this.state.log
-      .filter((l) => {
+    const directories = this.state.index.directoryEntries
+      .filter(({ entry: l }) => {
         if (l.type != "directory") {
           return false;
         }
@@ -233,7 +225,7 @@ export default class InvocationFileCardComponent extends React.Component<Props, 
       })
       .sort(this.compareDirectories.bind(this));
 
-    const symlinks = this.state.log
+    const symlinks = this.state.index.unresolvedSymlinkEntries
       .filter((l) => {
         if (l.type != "unresolvedSymlink") {
           return false;
@@ -361,7 +353,8 @@ export default class InvocationFileCardComponent extends React.Component<Props, 
             </div>
             <div>
               <div className="invocation-execution-table">
-                {directories.slice(0, this.state.directoryLimit).map((entry) => {
+                {directories.slice(0, this.state.directoryLimit).map((directory) => {
+                  const entry = directory.entry;
                   let path = entry.directory?.path || "";
                   let fileLimit = this.state.directoryToFileLimit.get(path) || 0;
                   return (
@@ -378,8 +371,8 @@ export default class InvocationFileCardComponent extends React.Component<Props, 
                             <div>
                               <DigestComponent
                                 digest={{
-                                  sizeBytes: this.sumFileSizes(entry.directory?.files),
-                                  hash: this.hashFileHashes(entry.directory?.files),
+                                  sizeBytes: getCompactExecLogDirectorySize(directory),
+                                  hash: getCompactExecLogDirectoryHash(directory),
                                 }}
                                 expanded={true}
                               />

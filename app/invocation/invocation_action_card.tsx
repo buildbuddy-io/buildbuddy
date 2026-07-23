@@ -54,6 +54,7 @@ import { MessageClass, timestampToDate } from "../util/proto";
 import { getErrorReason } from "../util/rpc";
 import { quote } from "../util/shlex";
 import ActionCompareButtonComponent from "./action_compare_button";
+import { findSpawnEntryByDigest } from "./compact_exec_log_index";
 import { ExecuteOperation, executionStatusLabel, waitExecution } from "./execution_status";
 import TreeNodeComponent, { TreeNode } from "./invocation_action_tree_node";
 import InvocationModel from "./invocation_model";
@@ -190,18 +191,13 @@ export default class InvocationActionCardComponent extends React.Component<Props
     }
 
     const model = this.props.model;
-    const actionDigestString = digestToString(actionDigest);
     const actionDigestHasSize = actionDigestParam.includes("/");
     model
-      .getExecutionLog()
-      .then((log) => {
+      .getExecutionLogIndex()
+      .then((index) => {
         if (this.props.model !== model || this.props.search.get("actionDigest") !== actionDigestParam) return;
 
-        const spawn = log.find((entry) => {
-          const spawnDigest = entry.spawn?.digest;
-          if (!spawnDigest || spawnDigest.hash !== actionDigest.hash) return false;
-          return !actionDigestHasSize || digestToString(spawnDigest) === actionDigestString;
-        });
+        const spawn = findSpawnEntryByDigest(index, actionDigest, actionDigestHasSize);
         this.setState({
           measuredMemoryPeakBytes: Number(spawn?.spawn?.metrics?.measuredMemoryPeakBytes || 0) || undefined,
         });
