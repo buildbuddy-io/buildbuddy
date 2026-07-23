@@ -26,7 +26,14 @@ func Run(prompt string, allowedTools []string) (string, error) {
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
-		return "", fmt.Errorf("claude failed: %s %s: %w", strings.TrimSpace(stderr.String()), strings.TrimSpace(stdout.String()), err)
+		errMsg := "claude failed"
+		if msg := strings.TrimSpace(stderr.String()); msg != "" {
+			errMsg += ": " + msg
+		}
+		if msg := strings.TrimSpace(stdout.String()); msg != "" {
+			errMsg += ": " + msg
+		}
+		return "", fmt.Errorf("%s: %w", errMsg, err)
 	}
 	return strings.TrimRight(stdout.String(), "\n"), nil
 }

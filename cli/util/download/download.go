@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/flaghistory"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
@@ -22,6 +23,8 @@ import (
 )
 
 type InvocationFileSelector func(inv *inpb.Invocation) *bespb.File
+
+const invocationFileDownloadTimeout = 10 * time.Minute
 
 type Downloader interface {
 	GetBytestreamFile(ctx context.Context, uri string, w io.Writer) error
@@ -70,7 +73,8 @@ func GetInvocationFile(ctx context.Context, bbClient bbspb.BuildBuddyServiceClie
 	// by net/http.
 	req.Header.Set("Accept-Encoding", "identity")
 
-	rsp, err := http.DefaultClient.Do(req)
+	client := &http.Client{Timeout: invocationFileDownloadTimeout}
+	rsp, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to download %s for invocation %s: %w", description, invocationID, err)
 	}
@@ -125,7 +129,7 @@ func fileDownloadURL(appURL, bytestreamURL, invocationID string) (string, error)
 	if err != nil {
 		return "", err
 	}
-	if (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+	if u.Scheme != "https" || u.Host == "" {
 		return "", fmt.Errorf("invalid BuildBuddy web URL %q", appURL)
 	}
 	u.Path = "/file/download"
