@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"os/exec"
 	"path"
 	"path/filepath"
 	"slices"
@@ -253,6 +254,15 @@ func (s *Server) AccessToken() string {
 func (s *Server) CreateProject(owner, repo string, settings *ProjectSettings) {
 	err := mockgitserver.CreateProject(s.gitProjectRoot, owner, repo, settings)
 	require.NoError(s.t, err)
+}
+
+// SetProjectConfig sets a Git config value in a project repository.
+func (s *Server) SetProjectConfig(owner, repo, key, value string) {
+	repoPath := filepath.Join(s.gitProjectRoot, owner, repo)
+	cmd := exec.Command("git", "config", key, value)
+	cmd.Dir = repoPath
+	output, err := cmd.CombinedOutput()
+	require.NoError(s.t, err, "git config failed: %s", output)
 }
 
 // Push pushes the local repo to a project created with CreateProject.

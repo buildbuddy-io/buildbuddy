@@ -2209,10 +2209,6 @@ func (ws *workspace) config(ctx context.Context) error {
 		{"user.name", "BuildBuddy"},
 		{"advice.detachedHead", "false"},
 		{"credential.interactive", "false"},
-		// With the version of git that we have installed in the CI runner
-		// image, --filter=blob:none requires the partialClone extension to be
-		// enabled.
-		{"extensions.partialClone", "true"},
 		// Disable this check for `git fetch` performance improvements
 		{"fetch.showForcedUpdates", "false"},
 		// Disable automatic gc - it can interfere with running `rm -rf .git` in
@@ -2235,6 +2231,9 @@ func (ws *workspace) config(ctx context.Context) error {
 			return err
 		}
 	}
+	if err := configurePartialClone(ctx); err != nil {
+		return err
+	}
 
 	// Set up global config (~/.gitconfig) but only on Linux for now since Linux
 	// workflows are isolated.
@@ -2250,6 +2249,45 @@ func (ws *workspace) config(ctx context.Context) error {
 		}
 	}
 
+	return nil
+}
+
+// configurePartialClone sets the promisor remote needed for filtered fetches
+// and repairs invalid partial clone configuration written by older versions of
+// ci_runner. extensions.partialClone contains the name of a promisor remote,
+// but ci_runner previously set it to "true", causing Git to try to fetch
+// missing objects from a remote named "true".
+func configurePartialClone(ctx context.Context) error {
+	trueRemoteURL, err := git(ctx, io.Discard, "config", "--get", "remote.true.url")
+	if err != nil && getExitCode(err) != 1 {
+		return fmt.Errorf("get remote.true.url: %w", err)
+	}
+	if strings.TrimSpace(trueRemoteURL) != "" {
+		// Preserve a legitimate remote named "true".
+		return nil
+	}
+
+	partialCloneRemote, err := git(ctx, io.Discard, "config", "--get", "extensions.partialClone")
+	if err != nil && getExitCode(err) != 1 {
+		return fmt.Errorf("get extensions.partialClone: %w", err)
+	}
+	partialCloneRemote = strings.TrimSpace(partialCloneRemote)
+	if partialCloneRemote == "true" || (partialCloneRemote == "" && len(*gitFetchFilters) > 0) {
+		if _, err := git(ctx, io.Discard, "config", "extensions.partialClone", gitRemoteName(*pushedRepoURL)); err != nil {
+			return fmt.Errorf("set extensions.partialClone: %w", err)
+		}
+	}
+
+	// A failed lazy fetch creates only these two config entries for the
+	// synthetic promisor remote.
+	for _, key := range []string{"remote.true.promisor", "remote.true.partialCloneFilter"} {
+		if _, err := git(ctx, io.Discard, "config", "--unset-all", key); err != nil {
+			if getExitCode(err) == 5 {
+				continue
+			}
+			return fmt.Errorf("unset %s: %w", key, err)
+		}
+	}
 	return nil
 }
 
