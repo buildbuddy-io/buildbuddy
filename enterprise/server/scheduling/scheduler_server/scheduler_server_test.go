@@ -1199,15 +1199,62 @@ func TestEnqueueTaskReservation_RoutingConfig(t *testing.T) {
 			},
 			expectRoutedToHosts: []string{"ex1", "ex2"},
 		},
+		{
+			name: "RequiredExecutorLabels_MatchesAllExecutors_ShouldRouteToAllExecutors",
+			routingConfig: &scpb.RoutingConfig{
+				Labels: map[string]string{"zone": "a"},
+				BestEffort:     false,
+			},
+			expectRoutedToHosts: []string{"ex1", "ex2"},
+		},
+		{
+			// Both executors have zone=a, but only ex1 has gen=v2, so
+			// requiring both labels should route only to ex1.
+			name: "RequiredExecutorLabels_AllLabelsMustMatch_ShouldRouteOnlyToSubset",
+			routingConfig: &scpb.RoutingConfig{
+				Labels: map[string]string{"zone": "a", "gen": "v2"},
+				BestEffort:     false,
+			},
+			expectRoutedToHosts: []string{"ex1"},
+		},
+		{
+			name: "RequiredExecutorLabels_MatchesNoExecutors_ShouldFail",
+			routingConfig: &scpb.RoutingConfig{
+				Labels: map[string]string{"zone": "nonexistent-zone"},
+				BestEffort:     false,
+			},
+			expectSchedulingError: true,
+		},
+		{
+			name: "BestEffortExecutorLabels_MatchesNoExecutors_ShouldRouteToAllExecutors",
+			routingConfig: &scpb.RoutingConfig{
+				Labels: map[string]string{"zone": "nonexistent-zone"},
+				BestEffort:     true,
+			},
+			expectRoutedToHosts: []string{"ex1", "ex2"},
+		},
+		{
+			// The hostname pattern matches only ex2 and the labels match only
+			// ex1, so no executor satisfies both requirements.
+			name: "RequiredHostnamePatternAndExecutorLabels_NoExecutorMatchesBoth_ShouldFail",
+			routingConfig: &scpb.RoutingConfig{
+				HostnamePattern: "ex2",
+				Labels:          map[string]string{"gen": "v2"},
+				BestEffort:      false,
+			},
+			expectSchedulingError: true,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			env, ctx := getEnv(t, &schedulerOpts{}, "user1")
 
 			ex1 := newFakeExecutor(ctx, t, env.GetSchedulerClient())
 			ex1.node.Host = "ex1"
+			ex1.node.Labels = map[string]string{"zone": "a", "gen": "v2"}
 			ex1.Register()
 			ex2 := newFakeExecutor(ctx, t, env.GetSchedulerClient())
 			ex2.node.Host = "ex2"
+			ex2.node.Labels = map[string]string{"zone": "a"}
 			ex2.Register()
 
 			req := newScheduleRequest(ctx, t, env, scheduleOpts{})
