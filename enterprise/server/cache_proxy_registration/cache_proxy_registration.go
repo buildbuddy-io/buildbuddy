@@ -121,6 +121,7 @@ func Register(env *real_environment.RealEnv) error {
 		Labels:               trimmedLabels,
 		AllocatedCpuMillis:   resources.GetAllocatedCPUMillis(),
 		AllocatedMemoryBytes: resources.GetAllocatedRAMBytes(),
+		ConfiguredFlags:      flag.ConfiguredFlags(),
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())

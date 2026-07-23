@@ -127,6 +127,16 @@ export default class CacheProxyCardComponent extends React.Component<Props> {
                 </div>
               </div>
             )}
+            {!this.props.summary && this.props.node.configuredFlags.length > 0 && (
+              <div className="cache-proxy-section">
+                <div className="cache-proxy-section-title">Configuration:</div>
+                <div className="cache-proxy-configured-flags">
+                  {this.props.node.configuredFlags.map((f) => (
+                    <div key={f}>{f}</div>
+                  ))}
+                </div>
+              </div>
+            )}
             {!this.props.summary && this.props.statistics && this.renderStatistics(this.props.statistics)}
           </div>
         </div>

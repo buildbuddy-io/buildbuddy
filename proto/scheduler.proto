@@ -626,6 +626,11 @@ message ExecutionNode {
 
   // The Xcode Simulator runtimes installed on this executor.
   repeated string xcode_simulator_runtimes = 23;
+
+  // The flags this executor was configured with (via the command line or
+  // config file), in "--name=value" form. Only flags set to non-default
+  // values are included, and the values of secret flags are redacted.
+  repeated string configured_flags = 25;
 }
 
 message GetExecutionNodesRequest {
