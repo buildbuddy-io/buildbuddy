@@ -178,6 +178,9 @@ const (
 	// Describes the type of cache request
 	CacheRequestType = "type"
 
+	// Why a migration copy happened: "read", "write", or "backfill".
+	MigrationCopyReason = "reason"
+
 	// Origin of the cache request (for usage tracking): should be "internal" or "external"
 	CacheRequestOrigin = "origin"
 
@@ -1038,6 +1041,7 @@ var (
 	}, []string{
 		CacheTypeLabel,
 		GroupID,
+		MigrationCopyReason,
 	})
 
 	MigrationBlobsCopied = promauto.NewCounterVec(prometheus.CounterOpts{
@@ -1048,6 +1052,26 @@ var (
 	}, []string{
 		CacheTypeLabel,
 		GroupID,
+		MigrationCopyReason,
+	})
+
+	MigrationBackfillCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "migration_backfill_count",
+		Help:      "Number of reads in dest-primary that missed the new (primary) cache and were served from the old cache (dest-primary fallback). Not every fallback enqueues a copy (e.g. AC is not backfilled); see migration_blobs_copied with reason=backfill for actual copies.",
+	}, []string{
+		CacheRequestType,
+		GroupID,
+	})
+
+	MigrationCopiesDropped = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "migration_copies_dropped",
+		Help:      "Number of migration copies dropped because the copy channel was full.",
+	}, []string{
+		MigrationCopyReason,
 	})
 
 	TreeCacheLookupCount = promauto.NewCounterVec(prometheus.CounterOpts{

@@ -268,6 +268,7 @@ const (
 	AsyncDestWriteField           = "async-dest-write"
 	DoubleReadPercentageField     = "double-read-percentage"
 	DecompressReadPercentageField = "decompress-read-percentage"
+	BackfillOnMissField           = "backfill-on-miss"
 
 	SrcOnly     = "src-only"
 	SrcPrimary  = "src-primary"
@@ -275,11 +276,23 @@ const (
 	DestPrimary = "dest-primary"
 )
 
+// Reasons a copy is enqueued, used as the "reason" label on copy metrics.
+const (
+	copyReasonRead     = "read"     // copy-on-read (double-read / forward migration / dest-primary copy-back)
+	copyReasonWrite    = "write"    // write-triggered dual-write completion
+	copyReasonBackfill = "backfill" // dest-primary miss served from old cache, backfilling the new cache
+)
+
 // config is the migration configuration for a single request. It defaults to
 // the global configuration, but can be overridden with values from the
 // experiment flag provider.
 type config struct {
-	src, dest                                  interfaces.Cache
+	src, dest interfaces.Cache
+	// state is the resolved migration state (e.g. src-primary, dest-primary).
+	state string
+	// backfillOnMiss serves+backfills on a primary miss; only true in
+	// dest-primary (see config()).
+	backfillOnMiss                             bool
 	asyncDestWrites                            bool
 	doubleReadPercentage, decompressPercentage float64
 }
@@ -303,6 +316,7 @@ func (mc *MigrationCache) config(ctx context.Context) (*config, error) {
 
 	if v, ok := m[MigrationStateField]; ok {
 		if state, ok := v.(string); ok {
+			c.state = state
 			switch state {
 			case SrcOnly:
 				c.src = mc.defaultConfigDoNotUseDirectly.src
@@ -349,7 +363,35 @@ func (mc *MigrationCache) config(ctx context.Context) (*config, error) {
 			return c, nil
 		}
 	}
+	if v, ok := m[BackfillOnMissField]; ok {
+		if backfillOnMiss, ok := v.(bool); ok {
+			// Only valid in dest-primary (conf.src is the new cache); hard-gate
+			// here so call sites only check conf.backfillOnMiss.
+			c.backfillOnMiss = backfillOnMiss && c.state == DestPrimary
+		} else {
+			alert.CtxUnexpectedEvent(ctx, "migration_cache_invalid_config", "BackfillOnMissField is not a bool: %T(%v)", v, v)
+			return c, nil
+		}
+	}
 	return c, nil
+}
+
+// backfillConfig returns a copy with src and dest swapped. Backfill only runs
+// in dest-primary, where config() already swapped so conf.src is the new cache
+// and conf.dest is the old cache. copy() flows src->dest and a backfill must go
+// old->new, so we swap back to {src: old, dest: new} — i.e. the normal
+// forward-migration direction.
+func (c *config) backfillConfig() *config {
+	bc := *c
+	bc.src, bc.dest = c.dest, c.src
+	return &bc
+}
+
+// shouldBackfill reports whether a dest-primary miss for r should backfill the
+// new cache. Only CAS (immutable) is backfilled: the async copy overwrites AC,
+// so it could clobber a concurrently-written fresh value with a stale one.
+func shouldBackfill(r *rspb.ResourceName) bool {
+	return r.GetCacheType() == rspb.CacheType_CAS
 }
 
 func (c *config) doubleRead() bool {
@@ -374,6 +416,23 @@ func (mc *MigrationCache) Contains(ctx context.Context, r *rspb.ResourceName) (b
 	}
 	srcContains, srcErr := conf.src.Contains(ctx, r)
 
+	if srcErr == nil && !srcContains && conf.backfillOnMiss && conf.dest != nil {
+		// dest-primary: report present (and backfill) if the old cache has it.
+		destContains, destErr := conf.dest.Contains(ctx, r)
+		if destErr != nil {
+			log.CtxWarningf(ctx, "Migration old-cache Contains for %v failed: %s", r.GetDigest(), destErr)
+		} else if destContains {
+			metrics.MigrationBackfillCount.With(prometheus.Labels{
+				metrics.CacheRequestType: "contains",
+				metrics.GroupID:          groupID(ctx),
+			}).Inc()
+			if shouldBackfill(r) {
+				mc.sendNonBlockingCopy(ctx, r, false /*=onlyCopyMissing*/, conf.backfillConfig(), copyReasonBackfill)
+			}
+			return true, nil
+		}
+	}
+
 	if srcErr == nil && srcContains && conf.dest != nil && conf.doubleRead() {
 		go func() {
 			// Timeout is slightly larger than p99.9 latency.
@@ -382,7 +441,7 @@ func (mc *MigrationCache) Contains(ctx context.Context, r *rspb.ResourceName) (b
 			dstContains, dstErr := conf.dest.Contains(ctx, r)
 			if dstErr != nil {
 				log.CtxWarningf(ctx, "Migration dest %v contains failed: %s", r.GetDigest(), dstErr)
-				mc.sendNonBlockingCopy(ctx, r, true /*=onlyCopyMissing*/, conf)
+				mc.sendNonBlockingCopy(ctx, r, true /*=onlyCopyMissing*/, conf, copyReasonRead)
 			} else if !dstContains {
 				metrics.MigrationNotFoundErrorCount.With(prometheus.Labels{
 					metrics.CacheRequestType: "contains",
@@ -391,7 +450,7 @@ func (mc *MigrationCache) Contains(ctx context.Context, r *rspb.ResourceName) (b
 				if mc.logNotFoundErrors {
 					log.CtxWarningf(ctx, "Migration digest %v src contains, dest does not", r.GetDigest())
 				}
-				mc.sendNonBlockingCopy(ctx, r, false /*=onlyCopyMissing*/, conf)
+				mc.sendNonBlockingCopy(ctx, r, false /*=onlyCopyMissing*/, conf, copyReasonRead)
 			} else {
 				metrics.MigrationDoubleReadHitCount.With(prometheus.Labels{
 					metrics.CacheRequestType: "contains",
@@ -410,6 +469,27 @@ func (mc *MigrationCache) Metadata(ctx context.Context, r *rspb.ResourceName) (*
 		return nil, err
 	}
 	srcMetadata, srcErr := conf.src.Metadata(ctx, r)
+
+	if srcErr != nil && conf.backfillOnMiss && conf.dest != nil && status.IsNotFoundError(srcErr) {
+		// dest-primary: serve from the old cache and backfill.
+		md, destErr := conf.dest.Metadata(ctx, r)
+		if destErr != nil {
+			if status.IsNotFoundError(destErr) {
+				return md, destErr
+			}
+			// Old cache errored; return the primary NotFound, not the infra error.
+			log.CtxWarningf(ctx, "Migration old-cache Metadata for %v failed: %s", r.GetDigest(), destErr)
+			return nil, srcErr
+		}
+		metrics.MigrationBackfillCount.With(prometheus.Labels{
+			metrics.CacheRequestType: "metadata",
+			metrics.GroupID:          groupID(ctx),
+		}).Inc()
+		if shouldBackfill(r) {
+			mc.sendNonBlockingCopy(ctx, r, false /*=onlyCopyMissing*/, conf.backfillConfig(), copyReasonBackfill)
+		}
+		return md, nil
+	}
 
 	if srcErr == nil && conf.dest != nil && conf.doubleRead() {
 		go func() {
@@ -448,6 +528,12 @@ func (mc *MigrationCache) FindMissing(ctx context.Context, resources []*rspb.Res
 	}
 	srcMissing, srcErr := conf.src.FindMissing(ctx, resources)
 
+	if srcErr == nil && conf.backfillOnMiss && conf.dest != nil && len(srcMissing) > 0 {
+		// dest-primary: report digests the old cache has as present and
+		// backfill; return only those missing from both.
+		return mc.findMissingWithBackfill(ctx, resources, srcMissing, conf), nil
+	}
+
 	if srcErr == nil && conf.dest != nil && conf.doubleRead() {
 		go func() {
 			// Timeout is slightly larger than p99.9 latency.
@@ -457,7 +543,7 @@ func (mc *MigrationCache) FindMissing(ctx context.Context, resources []*rspb.Res
 			if dstErr != nil {
 				log.CtxWarningf(ctx, "Migration dest FindMissing %v failed: %s", resources, dstErr)
 				for _, r := range resources {
-					mc.sendNonBlockingCopy(ctx, r, true /*=onlyCopyMissing*/, conf)
+					mc.sendNonBlockingCopy(ctx, r, true /*=onlyCopyMissing*/, conf, copyReasonRead)
 				}
 				return
 			}
@@ -481,13 +567,56 @@ func (mc *MigrationCache) FindMissing(ctx context.Context, resources []*rspb.Res
 				}
 				for _, r := range resources {
 					if _, missing := missingSet[r.GetDigest().GetHash()]; missing {
-						mc.sendNonBlockingCopy(ctx, r, false /*=onlyCopyMissing*/, conf)
+						mc.sendNonBlockingCopy(ctx, r, false /*=onlyCopyMissing*/, conf, copyReasonRead)
 					}
 				}
 			}
 		}()
 	}
 	return srcMissing, srcErr
+}
+
+// findMissingWithBackfill drops from srcMissing the digests the old cache has
+// (reporting them present and backfilling), returning those missing from both.
+// Only called in dest-primary.
+func (mc *MigrationCache) findMissingWithBackfill(ctx context.Context, resources []*rspb.ResourceName, srcMissing []*repb.Digest, conf *config) []*repb.Digest {
+	missingKeys := make(map[string]struct{}, len(srcMissing))
+	for _, d := range srcMissing {
+		missingKeys[digest.String(d)] = struct{}{}
+	}
+	var toCheck []*rspb.ResourceName
+	for _, r := range resources {
+		if _, ok := missingKeys[digest.String(r.GetDigest())]; ok {
+			toCheck = append(toCheck, r)
+		}
+	}
+	// Digests the old cache also lacks are missing from both; that set is
+	// exactly conf.dest.FindMissing(toCheck), already deduped.
+	oldMissing, err := conf.dest.FindMissing(ctx, toCheck)
+	if err != nil {
+		// Can't consult the old cache; report the new-cache missing set as-is.
+		log.CtxWarningf(ctx, "Migration old-cache FindMissing failed: %s", err)
+		return srcMissing
+	}
+	// Report-present and backfill the digests the old cache has.
+	oldMissingKeys := make(map[string]struct{}, len(oldMissing))
+	for _, d := range oldMissing {
+		oldMissingKeys[digest.String(d)] = struct{}{}
+	}
+	backfillConf := conf.backfillConfig()
+	for _, r := range toCheck {
+		if _, missing := oldMissingKeys[digest.String(r.GetDigest())]; missing {
+			continue
+		}
+		metrics.MigrationBackfillCount.With(prometheus.Labels{
+			metrics.CacheRequestType: "findMissing",
+			metrics.GroupID:          groupID(ctx),
+		}).Inc()
+		if shouldBackfill(r) {
+			mc.sendNonBlockingCopy(ctx, r, false /*=onlyCopyMissing*/, backfillConf, copyReasonBackfill)
+		}
+	}
+	return oldMissing
 }
 
 func (mc *MigrationCache) GetWithMetadata(ctx context.Context, r *rspb.ResourceName) ([]byte, *interfaces.CacheMetadata, error) {
@@ -508,6 +637,10 @@ func (mc *MigrationCache) GetMulti(ctx context.Context, resources []*rspb.Resour
 		return nil, err
 	}
 	srcData, srcErr := conf.src.GetMulti(ctx, resources)
+	if conf.backfillOnMiss && conf.dest != nil {
+		// dest-primary: fill misses from the old cache and backfill the new one.
+		return mc.getMultiAndBackfill(ctx, resources, srcData, srcErr, conf)
+	}
 	if conf.dest == nil || srcErr != nil {
 		return srcData, srcErr
 	}
@@ -542,20 +675,89 @@ func (mc *MigrationCache) GetMulti(ctx context.Context, resources []*rspb.Resour
 			for _, r := range resources {
 				if _, inDest := dstData[r.GetDigest()]; !inDest {
 					if srcErr != nil {
-						mc.sendNonBlockingCopy(ctx, r, true /*=onlyCopyMissing*/, conf)
+						mc.sendNonBlockingCopy(ctx, r, true /*=onlyCopyMissing*/, conf, copyReasonRead)
 					} else if _, inSrc := srcData[r.GetDigest()]; inSrc {
-						mc.sendNonBlockingCopy(ctx, r, false /*=onlyCopyMissing*/, conf)
+						mc.sendNonBlockingCopy(ctx, r, false /*=onlyCopyMissing*/, conf, copyReasonRead)
 					}
 				}
 			}
 		} else {
 			for _, r := range resources {
-				mc.sendNonBlockingCopy(ctx, r, true /*=onlyCopyMissing*/, conf)
+				mc.sendNonBlockingCopy(ctx, r, true /*=onlyCopyMissing*/, conf, copyReasonRead)
 			}
 		}
 	}()
 	// Return data from source cache
 	return srcData, srcErr
+}
+
+// getMultiAndBackfill fills new-cache misses from the old cache and backfills
+// the new cache. Only called in dest-primary.
+func (mc *MigrationCache) getMultiAndBackfill(ctx context.Context, resources []*rspb.ResourceName, srcData map[*repb.Digest][]byte, srcErr error, conf *config) (map[*repb.Digest][]byte, error) {
+	if srcErr != nil {
+		if !status.IsNotFoundError(srcErr) {
+			return srcData, srcErr
+		}
+		// A NotFound means the whole batch missed the new cache; treat every
+		// resource as missing.
+		srcData = nil
+	}
+	if srcData == nil {
+		srcData = make(map[*repb.Digest][]byte, len(resources))
+	}
+	var hits, missing []*rspb.ResourceName
+	for _, r := range resources {
+		if _, ok := srcData[r.GetDigest()]; ok {
+			hits = append(hits, r)
+		} else {
+			missing = append(missing, r)
+		}
+	}
+	// Copy new-cache hits back to the old cache (rollback safety). In the
+	// background: onlyCopyMissing does a sync Contains that must not block reads.
+	if len(hits) > 0 {
+		go func() {
+			ctx, cancel := background.ExtendContextForFinalization(ctx, 10*time.Second)
+			defer cancel()
+			for _, r := range hits {
+				mc.sendNonBlockingCopy(ctx, r, true /*=onlyCopyMissing*/, conf, copyReasonRead)
+			}
+		}()
+	}
+	if len(missing) == 0 {
+		return srcData, nil
+	}
+	destData, destErr := conf.dest.GetMulti(ctx, missing)
+	if destErr != nil && !status.IsNotFoundError(destErr) {
+		// Old cache errored; serve the new-cache hits rather than failing, but
+		// still preserve a whole-batch NotFound if there were none.
+		log.CtxWarningf(ctx, "Migration old-cache GetMulti for %d missing digests failed: %s", len(missing), destErr)
+		if len(srcData) == 0 && srcErr != nil {
+			return srcData, srcErr
+		}
+		return srcData, nil
+	}
+	backfillConf := conf.backfillConfig()
+	for _, r := range missing {
+		buf, ok := destData[r.GetDigest()]
+		if !ok {
+			// Genuine miss in the old cache too; leave it absent.
+			continue
+		}
+		srcData[r.GetDigest()] = buf
+		metrics.MigrationBackfillCount.With(prometheus.Labels{
+			metrics.CacheRequestType: "getMulti",
+			metrics.GroupID:          groupID(ctx),
+		}).Inc()
+		if shouldBackfill(r) {
+			mc.sendNonBlockingCopy(ctx, r, false /*=onlyCopyMissing*/, backfillConf, copyReasonBackfill)
+		}
+	}
+	// Preserve a whole-batch NotFound if the old cache filled nothing.
+	if len(srcData) == 0 && srcErr != nil {
+		return srcData, srcErr
+	}
+	return srcData, nil
 }
 
 func (mc *MigrationCache) SetMulti(ctx context.Context, kvs map[*rspb.ResourceName][]byte) error {
@@ -788,12 +990,36 @@ func (mc *MigrationCache) Reader(ctx context.Context, r *rspb.ResourceName, unco
 		return nil, err
 	}
 	srcReader, srcErr := conf.src.Reader(ctx, r, uncompressedOffset, limit)
-	if srcErr != nil || conf.dest == nil {
+	if srcErr != nil {
+		if conf.backfillOnMiss && conf.dest != nil && status.IsNotFoundError(srcErr) {
+			// dest-primary: serve the miss from the old cache and backfill.
+			destReader, destErr := conf.dest.Reader(ctx, r, uncompressedOffset, limit)
+			if destErr != nil {
+				if status.IsNotFoundError(destErr) {
+					// Genuine miss in both caches.
+					return destReader, destErr
+				}
+				// Old cache errored; return the primary NotFound, not the infra error.
+				log.CtxWarningf(ctx, "Migration old-cache Reader for %v failed: %s", r.GetDigest(), destErr)
+				return nil, srcErr
+			}
+			metrics.MigrationBackfillCount.With(prometheus.Labels{
+				metrics.CacheRequestType: "reader",
+				metrics.GroupID:          groupID(ctx),
+			}).Inc()
+			if shouldBackfill(r) {
+				mc.sendNonBlockingCopy(ctx, r, false /*=onlyCopyMissing*/, conf.backfillConfig(), copyReasonBackfill)
+			}
+			return destReader, nil
+		}
+		return srcReader, srcErr
+	}
+	if conf.dest == nil {
 		return srcReader, srcErr
 	}
 	if !conf.doubleRead() {
 		// We still want to copy if the source was successful.
-		mc.sendNonBlockingCopy(ctx, r, true /*=onlyCopyMissing*/, conf)
+		mc.sendNonBlockingCopy(ctx, r, true /*=onlyCopyMissing*/, conf, copyReasonRead)
 		return srcReader, srcErr
 	}
 
@@ -803,12 +1029,12 @@ func (mc *MigrationCache) Reader(ctx context.Context, r *rspb.ResourceName, unco
 			log.CtxWarningf(ctx, "Migration failed to get dest reader for %v: %s", r, dstErr)
 		}
 		if status.IsNotFoundError(dstErr) {
-			mc.sendNonBlockingCopy(ctx, r, false /*=onlyCopyMissing*/, conf)
+			mc.sendNonBlockingCopy(ctx, r, false /*=onlyCopyMissing*/, conf, copyReasonRead)
 			metrics.MigrationNotFoundErrorCount.With(prometheus.Labels{
 				metrics.CacheRequestType: "reader",
 				metrics.GroupID:          groupID(ctx)}).Inc()
 		} else {
-			mc.sendNonBlockingCopy(ctx, r, true /*=onlyCopyMissing*/, conf)
+			mc.sendNonBlockingCopy(ctx, r, true /*=onlyCopyMissing*/, conf, copyReasonRead)
 		}
 		return srcReader, srcErr
 	}
@@ -932,7 +1158,7 @@ func (mc *MigrationCache) Writer(ctx context.Context, r *rspb.ResourceName) (int
 		w.SetCommitFn(func(int64) error {
 			// This is only called when the source writer is successfully committed.
 			// We will force a write to the destination cache in the background.
-			mc.sendNonBlockingCopy(ctx, r, false /*=onlyCopyMissing*/, conf)
+			mc.sendNonBlockingCopy(ctx, r, false /*=onlyCopyMissing*/, conf, copyReasonWrite)
 			return nil
 		})
 		return w, nil
@@ -956,7 +1182,14 @@ func (mc *MigrationCache) Get(ctx context.Context, r *rspb.ResourceName) ([]byte
 		return nil, err
 	}
 	srcBuf, srcErr := conf.src.Get(ctx, r)
-	if conf.dest == nil || srcErr != nil {
+	if srcErr != nil {
+		if conf.backfillOnMiss && conf.dest != nil && status.IsNotFoundError(srcErr) {
+			// dest-primary: serve the miss from the old cache and backfill.
+			return mc.getAndBackfill(ctx, r, srcErr, conf)
+		}
+		return srcBuf, srcErr
+	}
+	if conf.dest == nil {
 		return srcBuf, srcErr
 	}
 
@@ -977,10 +1210,10 @@ func (mc *MigrationCache) Get(ctx context.Context, r *rspb.ResourceName) ([]byte
 					if mc.logNotFoundErrors {
 						log.CtxWarningf(ctx, "Migration dest read of %q not found", r)
 					}
-					mc.sendNonBlockingCopy(ctx, r, false /*=onlyCopyMissing*/, conf)
+					mc.sendNonBlockingCopy(ctx, r, false /*=onlyCopyMissing*/, conf, copyReasonRead)
 				} else {
 					log.CtxWarningf(ctx, "Double read of %q failed. src err %s, dest err %s", r, srcErr, dstErr)
-					mc.sendNonBlockingCopy(ctx, r, true /*=onlyCopyMissing*/, conf)
+					mc.sendNonBlockingCopy(ctx, r, true /*=onlyCopyMissing*/, conf, copyReasonRead)
 				}
 			} else {
 				metrics.MigrationDoubleReadHitCount.With(prometheus.Labels{
@@ -989,7 +1222,7 @@ func (mc *MigrationCache) Get(ctx context.Context, r *rspb.ResourceName) ([]byte
 				}).Inc()
 			}
 		} else {
-			mc.sendNonBlockingCopy(ctx, r, true /*=onlyCopyMissing*/, conf)
+			mc.sendNonBlockingCopy(ctx, r, true /*=onlyCopyMissing*/, conf, copyReasonRead)
 		}
 	}()
 
@@ -997,7 +1230,32 @@ func (mc *MigrationCache) Get(ctx context.Context, r *rspb.ResourceName) ([]byte
 	return srcBuf, srcErr
 }
 
-func (mc *MigrationCache) sendNonBlockingCopy(ctx context.Context, r *rspb.ResourceName, onlyCopyMissing bool, conf *config) {
+// getAndBackfill serves a dest-primary miss from the old cache and backfills
+// the new cache. srcErr is the primary NotFound that triggered the fallback. AC
+// is served too (accepting narrow staleness); only CAS is backfilled.
+func (mc *MigrationCache) getAndBackfill(ctx context.Context, r *rspb.ResourceName, srcErr error, conf *config) ([]byte, error) {
+	buf, err := conf.dest.Get(ctx, r)
+	if err != nil {
+		if status.IsNotFoundError(err) {
+			// Genuine miss in both caches.
+			return buf, err
+		}
+		// Old cache errored; return the primary NotFound, not the infra error.
+		log.CtxWarningf(ctx, "Migration old-cache Get for %v failed: %s", r.GetDigest(), err)
+		return nil, srcErr
+	}
+	metrics.MigrationBackfillCount.With(prometheus.Labels{
+		metrics.CacheRequestType: "get",
+		metrics.GroupID:          groupID(ctx),
+	}).Inc()
+	if shouldBackfill(r) {
+		mc.sendNonBlockingCopy(ctx, r, false /*=onlyCopyMissing*/, conf.backfillConfig(), copyReasonBackfill)
+	}
+	return buf, nil
+}
+
+// reason is the copy's "reason" metric label (copyReason* constant).
+func (mc *MigrationCache) sendNonBlockingCopy(ctx context.Context, r *rspb.ResourceName, onlyCopyMissing bool, conf *config, reason string) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 	if onlyCopyMissing {
@@ -1015,13 +1273,17 @@ func (mc *MigrationCache) sendNonBlockingCopy(ctx context.Context, r *rspb.Resou
 	log.Debugf("Migration attempting copy digest %v, instance %s, cache %v", r.GetDigest(), r.GetInstanceName(), r.GetCacheType())
 	select {
 	case mc.copyChan <- &copyData{
-		d:    r,
-		ctx:  ctx,
-		conf: conf,
+		d:      r,
+		ctx:    ctx,
+		conf:   conf,
+		reason: reason,
 	}:
 	default:
 		log.Debugf("Migration dropping copy digest %v, instance %s, cache %v", r.GetDigest(), r.GetInstanceName(), r.GetCacheType())
 		mc.numCopiesDropped.Add(1)
+		metrics.MigrationCopiesDropped.With(prometheus.Labels{
+			metrics.MigrationCopyReason: reason,
+		}).Inc()
 	}
 }
 
@@ -1042,6 +1304,8 @@ type copyData struct {
 	ctx context.Context
 	// Configuration for the request that triggered the copy
 	conf *config
+	// reason is the copy's "reason" metric label (copyReason* constant).
+	reason string
 }
 
 func (mc *MigrationCache) copyDataInBackground() error {
@@ -1155,8 +1419,9 @@ func (mc *MigrationCache) copy(c *copyData) {
 	}
 
 	labels := prometheus.Labels{
-		metrics.CacheTypeLabel: cacheTypeLabel(c.d.GetCacheType()),
-		metrics.GroupID:        groupID(ctx),
+		metrics.CacheTypeLabel:      cacheTypeLabel(c.d.GetCacheType()),
+		metrics.GroupID:             groupID(ctx),
+		metrics.MigrationCopyReason: c.reason,
 	}
 	metrics.MigrationBlobsCopied.With(labels).Inc()
 	metrics.MigrationBytesCopied.With(labels).Add(float64(n))
