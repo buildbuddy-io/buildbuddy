@@ -34,10 +34,14 @@ func Run(prompt string, allowedTools []string) (string, error) {
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
-		if message := strings.TrimSpace(stderr.String()); message != "" {
-			return "", fmt.Errorf("claude failed: %w: %s", err, message)
+		errMsg := "claude failed"
+		if msg := strings.TrimSpace(stderr.String()); msg != "" {
+			errMsg += ": " + msg
 		}
-		return "", fmt.Errorf("claude failed: %w", err)
+		if msg := strings.TrimSpace(stdout.String()); msg != "" {
+			errMsg += ": " + msg
+		}
+		return "", fmt.Errorf("%s: %w", errMsg, err)
 	}
 	return formatResponse(stdout.Bytes())
 }

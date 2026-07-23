@@ -19,6 +19,5 @@ go_library(
         "//proto:invocation_go_proto",
         "//server/util/grpc_client",
         "//server/util/uuid",
-        "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
     ],
 )

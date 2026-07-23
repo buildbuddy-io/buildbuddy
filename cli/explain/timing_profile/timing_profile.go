@@ -22,7 +22,6 @@ import (
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
-	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
 const profileUsage = `
@@ -36,8 +35,9 @@ Analyzes the timing profile for the given invocation.
 `
 
 var (
-	profileFlags  = flag.NewFlagSet("profile", flag.ContinueOnError)
-	profileTarget = profileFlags.String("target", login.DefaultApiTarget, "The API target to use for fetching the timing profile.")
+	profileFlags      = flag.NewFlagSet("profile", flag.ContinueOnError)
+	profileAPITarget  = profileFlags.String("target", login.DefaultApiTarget, "The API target to use for fetching the timing profile.")
+	profileHTTPTarget = profileFlags.String("url", login.DefaultHTTPTarget, "The BuildBuddy web URL to use for downloading the timing profile.")
 )
 
 const analysisPrompt = `Use ztracing to analyze the Bazel timing profile at %q.
@@ -106,7 +106,7 @@ func analyzeTimingProfile(invocationIDOrURL string) (int, error) {
 }
 
 func downloadTimingProfile(ctx context.Context, invocationID string) (string, error) {
-	target, err := download.ResolveTarget(*profileTarget)
+	target, err := download.ResolveTarget(*profileAPITarget)
 	if err != nil {
 		return "", err
 	}
@@ -115,7 +115,6 @@ func downloadTimingProfile(ctx context.Context, invocationID string) (string, er
 		return "", err
 	}
 	defer conn.Close()
-	bsClient := bspb.NewByteStreamClient(conn)
 	bbClient := bbspb.NewBuildBuddyServiceClient(conn)
 
 	profile, err := os.CreateTemp("", "bb-timing-profile-*.profile")
@@ -123,7 +122,7 @@ func downloadTimingProfile(ctx context.Context, invocationID string) (string, er
 		return "", fmt.Errorf("create temporary timing profile: %w", err)
 	}
 	profilePath := profile.Name()
-	if err := download.GetInvocationFile(ctx, bsClient, bbClient, profile, invocationID, "timing profile", findTimingProfileLog); err != nil {
+	if err := download.GetInvocationFile(ctx, bbClient, profile, *profileHTTPTarget, invocationID, "timing profile", findTimingProfileLog); err != nil {
 		profile.Close()
 		os.Remove(profilePath)
 		return "", err

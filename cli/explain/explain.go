@@ -19,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/explain/timing_profile"
 	"github.com/buildbuddy-io/buildbuddy/cli/flaghistory"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
+	"github.com/buildbuddy-io/buildbuddy/cli/login"
 	"github.com/buildbuddy-io/buildbuddy/cli/util/download"
 	"github.com/buildbuddy-io/buildbuddy/proto/spawn"
 	"github.com/buildbuddy-io/buildbuddy/proto/spawn_diff"
@@ -32,7 +33,6 @@ import (
 	bbpb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	gocmp "github.com/google/go-cmp/cmp"
-	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
 const (
@@ -93,6 +93,7 @@ var (
 	newLog           = explainCmd.String("new", "", "Path to a compact execution log or invocation ID of a build to compare against the baseline.")
 	verbose          = explainCmd.Bool("verbose", false, "Print more detailed execution information.")
 	apiTarget        = explainCmd.String("target", "", "The API target to use for fetching logs instead of the last --bes_backend.")
+	httpTarget       = explainCmd.String("url", login.DefaultHTTPTarget, "The BuildBuddy web URL to use for downloading the execution log.")
 	outputFormat     = explainCmd.String("output_format", "text", "Output format: text, json, or proto.")
 	nondeterministic = explainCmd.Bool("nondeterministic_only", false, "Only show non-deterministic spawns, i.e. spawns whose outputs or exit code changed even though their inputs didn't.")
 
@@ -282,13 +283,12 @@ func openLog(pathOrId string) (io.ReadCloser, error) {
 	if err != nil {
 		return nil, err
 	}
-	bsClient := bspb.NewByteStreamClient(conn)
 	bbClient := bbpb.NewBuildBuddyServiceClient(conn)
 
 	// Avoid reading the entire log into memory at once.
 	in, out := io.Pipe()
 	go func() {
-		err := download.GetInvocationFile(ctx, bsClient, bbClient, out, invocationId, "execution log", findExecutionLog)
+		err := download.GetInvocationFile(ctx, bbClient, out, *httpTarget, invocationId, "execution log", findExecutionLog)
 		conn.Close()
 		out.CloseWithError(err)
 	}()
