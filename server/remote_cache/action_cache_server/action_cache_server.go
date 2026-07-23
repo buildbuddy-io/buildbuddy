@@ -93,7 +93,7 @@ func checkFilesExist(ctx context.Context, cache interfaces.Cache, instanceName s
 	eg.SetLimit(chunkCheckConcurrency)
 	for _, d := range missing {
 		eg.Go(func() error {
-			manifest, err := chunking.LoadManifest(egCtx, cache, d, instanceName, digestFunction)
+			manifest, err := chunking.LoadManifest(egCtx, cache, d, instanceName, digestFunction, repb.ChunkingFunction_UNKNOWN, efp)
 			if err != nil {
 				return status.WrapErrorf(err, "ActionResult output file %q: load chunk manifest", digest.String(d))
 			}

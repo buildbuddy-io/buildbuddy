@@ -165,7 +165,7 @@ func (s *ContentAddressableStorageServer) FindMissingBlobs(ctx context.Context, 
 				continue
 			}
 			eg.Go(func() error {
-				manifest, err := chunking.LoadManifest(egCtx, s.cache, d, req.GetInstanceName(), req.GetDigestFunction())
+				manifest, err := chunking.LoadManifest(egCtx, s.cache, d, req.GetInstanceName(), req.GetDigestFunction(), repb.ChunkingFunction_UNKNOWN, efp)
 				if err != nil {
 					// Not stored as a chunked manifest, so it's genuinely missing.
 					markMissing(d)
@@ -1236,7 +1236,7 @@ func (s *ContentAddressableStorageServer) spliceBlob(ctx context.Context, req *r
 		return nil, status.UnimplementedErrorf("SpliceBlob RPC is not currently enabled")
 	}
 
-	if cf := req.GetChunkingFunction(); cf != repb.ChunkingFunction_UNKNOWN && cf != repb.ChunkingFunction_FAST_CDC_2020 {
+	if cf := req.GetChunkingFunction(); cf != repb.ChunkingFunction_UNKNOWN && cf != repb.ChunkingFunction_FAST_CDC_2020 && cf != repb.ChunkingFunction_REP_MAX_CDC {
 		return nil, status.InvalidArgumentErrorf("unsupported chunking function %v in request %s", cf, req)
 	}
 
@@ -1250,13 +1250,14 @@ func (s *ContentAddressableStorageServer) spliceBlob(ctx context.Context, req *r
 	}
 
 	manifest := &chunking.Manifest{
-		BlobDigest:     req.GetBlobDigest(),
-		ChunkDigests:   req.GetChunkDigests(),
-		InstanceName:   req.GetInstanceName(),
-		DigestFunction: req.GetDigestFunction(),
+		BlobDigest:       req.GetBlobDigest(),
+		ChunkDigests:     req.GetChunkDigests(),
+		InstanceName:     req.GetInstanceName(),
+		DigestFunction:   req.GetDigestFunction(),
+		ChunkingFunction: req.GetChunkingFunction(),
 	}
 
-	if err := manifest.Store(ctx, s.cache); err != nil {
+	if err := manifest.Store(ctx, s.cache, s.env.GetExperimentFlagProvider()); err != nil {
 		return nil, err
 	}
 
@@ -1269,7 +1270,7 @@ func (s *ContentAddressableStorageServer) readChunkedBlob(ctx context.Context, b
 	if blobDigest.GetSizeBytes() > rpcutil.GRPCMaxSizeBytes {
 		return nil, status.NotFoundErrorf("blob %s not found", blobDigest.GetHash())
 	}
-	manifest, err := chunking.LoadManifest(ctx, s.cache, blobDigest, instanceName, digestFunction)
+	manifest, err := chunking.LoadManifest(ctx, s.cache, blobDigest, instanceName, digestFunction, repb.ChunkingFunction_UNKNOWN, s.env.GetExperimentFlagProvider())
 	if err != nil {
 		return nil, err
 	}
@@ -1317,7 +1318,7 @@ func (s *ContentAddressableStorageServer) splitBlob(ctx context.Context, req *re
 	}
 
 	cf := req.GetChunkingFunction()
-	if cf != repb.ChunkingFunction_UNKNOWN && cf != repb.ChunkingFunction_FAST_CDC_2020 {
+	if cf != repb.ChunkingFunction_UNKNOWN && cf != repb.ChunkingFunction_FAST_CDC_2020 && cf != repb.ChunkingFunction_REP_MAX_CDC {
 		return nil, status.InvalidArgumentErrorf("unsupported chunking function %v in request %s", cf, req)
 	}
 
@@ -1325,7 +1326,7 @@ func (s *ContentAddressableStorageServer) splitBlob(ctx context.Context, req *re
 		return nil, status.InvalidArgumentErrorf("blob_digest is required in request %s", req)
 	}
 
-	manifest, err := chunking.LoadManifest(ctx, s.cache, req.GetBlobDigest(), req.GetInstanceName(), req.GetDigestFunction())
+	manifest, err := chunking.LoadManifest(ctx, s.cache, req.GetBlobDigest(), req.GetInstanceName(), req.GetDigestFunction(), req.GetChunkingFunction(), s.env.GetExperimentFlagProvider())
 	if err != nil {
 		return nil, err
 	}

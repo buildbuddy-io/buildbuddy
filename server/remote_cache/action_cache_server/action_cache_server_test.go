@@ -676,7 +676,7 @@ func TestValidateActionResult_ChunkedOutputFile(t *testing.T) {
 		InstanceName:   "",
 		DigestFunction: repb.DigestFunction_SHA256,
 	}
-	require.NoError(t, cm.Store(ctx, cache))
+	require.NoError(t, cm.Store(ctx, cache, te.GetExperimentFlagProvider()))
 
 	ar := &repb.ActionResult{
 		OutputFiles: []*repb.OutputFile{
@@ -718,7 +718,7 @@ func TestValidateActionResult_ManyChunkedOutputFiles(t *testing.T) {
 			InstanceName:   "",
 			DigestFunction: repb.DigestFunction_SHA256,
 		}
-		require.NoError(t, cm.Store(ctx, cache))
+		require.NoError(t, cm.Store(ctx, cache, te.GetExperimentFlagProvider()))
 
 		ar.OutputFiles = append(ar.OutputFiles, &repb.OutputFile{
 			Path:   fmt.Sprintf("output_%d.bin", i),
@@ -763,7 +763,7 @@ func TestValidateActionResult_DiscardsLegacyChunkedOutputFileForAvgChunkSizeOver
 		InstanceName:   "",
 		DigestFunction: repb.DigestFunction_SHA256,
 	}
-	require.NoError(t, cm.Store(ctx, cache))
+	require.NoError(t, cm.Store(ctx, cache, te.GetExperimentFlagProvider()))
 
 	ar := &repb.ActionResult{
 		OutputFiles: []*repb.OutputFile{

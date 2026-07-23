@@ -833,7 +833,7 @@ func TestReadChunked(t *testing.T) {
 		InstanceName:   "",
 		DigestFunction: repb.DigestFunction_SHA256,
 	}
-	require.NoError(t, manifest.Store(ctx, te.GetCache()))
+	require.NoError(t, manifest.Store(ctx, te.GetCache(), te.GetExperimentFlagProvider()))
 
 	blobRN := digest.NewCASResourceName(blobDigest, "", repb.DigestFunction_SHA256)
 	var buf bytes.Buffer
@@ -887,7 +887,7 @@ func TestReadChunked_NonZeroOffset(t *testing.T) {
 		InstanceName:   "",
 		DigestFunction: repb.DigestFunction_SHA256,
 	}
-	require.NoError(t, manifest.Store(ctx, te.GetCache()))
+	require.NoError(t, manifest.Store(ctx, te.GetCache(), te.GetExperimentFlagProvider()))
 
 	blobRN := digest.NewCASResourceName(blobDigest, "", repb.DigestFunction_SHA256)
 
@@ -984,7 +984,7 @@ func TestReadChunked_NonZeroOffset_ZstdBLAKE3(t *testing.T) {
 		InstanceName:   "",
 		DigestFunction: repb.DigestFunction_BLAKE3,
 	}
-	require.NoError(t, manifest.Store(ctx, te.GetCache()))
+	require.NoError(t, manifest.Store(ctx, te.GetCache(), te.GetExperimentFlagProvider()))
 
 	blobRN := digest.NewCASResourceName(blobDigest, "", repb.DigestFunction_BLAKE3)
 	blobRN.SetCompressor(repb.Compressor_ZSTD)
@@ -1266,7 +1266,7 @@ func TestReadChunked_ZstdBLAKE3_PassthroughIncompressible(t *testing.T) {
 		InstanceName:   "",
 		DigestFunction: repb.DigestFunction_BLAKE3,
 	}
-	require.NoError(t, manifest.Store(ctx, baseCache))
+	require.NoError(t, manifest.Store(ctx, baseCache, te.GetExperimentFlagProvider()))
 
 	blobRN := digest.NewCASResourceName(blobDigest, "", repb.DigestFunction_BLAKE3)
 	blobRN.SetCompressor(repb.Compressor_ZSTD)
@@ -1352,7 +1352,7 @@ func TestReadChunked_ZstdPassthroughCompressedChunkLargerThanCompressBound(t *te
 		InstanceName:   "",
 		DigestFunction: repb.DigestFunction_BLAKE3,
 	}
-	require.NoError(t, manifest.Store(ctx, te.GetCache()))
+	require.NoError(t, manifest.Store(ctx, te.GetCache(), te.GetExperimentFlagProvider()))
 
 	blobRN := digest.NewCASResourceName(blobDigest, "", repb.DigestFunction_BLAKE3)
 	blobRN.SetCompressor(repb.Compressor_ZSTD)
@@ -1505,7 +1505,7 @@ func TestReadChunked_UsesParallelReads(t *testing.T) {
 				InstanceName:   "",
 				DigestFunction: repb.DigestFunction_SHA256,
 			}
-			require.NoError(t, manifest.Store(ctx, cache))
+			require.NoError(t, manifest.Store(ctx, cache, te.GetExperimentFlagProvider()))
 
 			blobRN := digest.NewCASResourceName(blobDigest, "", repb.DigestFunction_SHA256)
 			errCh := make(chan error, 1)

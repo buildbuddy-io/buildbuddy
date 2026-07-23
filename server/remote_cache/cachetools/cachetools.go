@@ -647,10 +647,11 @@ func uploadFromReaderWithChunking(ctx context.Context, env environment.Env, r *d
 	}
 
 	manifest := &chunking.Manifest{
-		BlobDigest:     r.GetDigest(),
-		ChunkDigests:   chunkDigests,
-		InstanceName:   r.GetInstanceName(),
-		DigestFunction: r.GetDigestFunction(),
+		BlobDigest:       r.GetDigest(),
+		ChunkDigests:     chunkDigests,
+		InstanceName:     r.GetInstanceName(),
+		DigestFunction:   r.GetDigestFunction(),
+		ChunkingFunction: repb.ChunkingFunction_FAST_CDC_2020,
 	}
 	// Tag all outgoing calls for individual chunks so the server skips the
 	// chunked-manifest fallback lookup on FindMissingBlobs (safe even during

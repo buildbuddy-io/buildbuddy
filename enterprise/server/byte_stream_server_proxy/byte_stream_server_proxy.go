@@ -422,13 +422,13 @@ func (s *ByteStreamServerProxy) chunkDigests(ctx context.Context, rn *digest.CAS
 	}
 	chunkDigests := splitResp.GetChunkDigests()
 	if !remoteOnly {
-		s.storeLocalChunkedManifest(ctx, rn, chunkDigests)
+		s.storeLocalChunkedManifest(ctx, rn, chunkDigests, splitResp.GetChunkingFunction())
 	}
 	return chunkDigests, nil
 }
 
 func (s *ByteStreamServerProxy) localChunkDigests(ctx context.Context, rn *digest.CASResourceName) ([]*repb.Digest, bool) {
-	manifest, err := chunking.LoadManifest(ctx, s.localCache, rn.GetDigest(), rn.GetInstanceName(), rn.GetDigestFunction())
+	manifest, err := chunking.LoadManifest(ctx, s.localCache, rn.GetDigest(), rn.GetInstanceName(), rn.GetDigestFunction(), repb.ChunkingFunction_UNKNOWN, s.efp)
 	if err != nil {
 		outcome := "manifest_error"
 		if status.IsNotFoundError(err) {
@@ -454,14 +454,15 @@ func (s *ByteStreamServerProxy) localChunkDigests(ctx context.Context, rn *diges
 	return manifest.ChunkDigests, true
 }
 
-func (s *ByteStreamServerProxy) storeLocalChunkedManifest(ctx context.Context, rn *digest.CASResourceName, chunkDigests []*repb.Digest) {
+func (s *ByteStreamServerProxy) storeLocalChunkedManifest(ctx context.Context, rn *digest.CASResourceName, chunkDigests []*repb.Digest, chunkingFunction repb.ChunkingFunction_Value) {
 	manifest := &chunking.Manifest{
-		BlobDigest:     rn.GetDigest(),
-		ChunkDigests:   chunkDigests,
-		InstanceName:   rn.GetInstanceName(),
-		DigestFunction: rn.GetDigestFunction(),
+		BlobDigest:       rn.GetDigest(),
+		ChunkDigests:     chunkDigests,
+		InstanceName:     rn.GetInstanceName(),
+		DigestFunction:   rn.GetDigestFunction(),
+		ChunkingFunction: chunkingFunction,
 	}
-	err := manifest.StoreWithoutVerification(ctx, s.localCache)
+	err := manifest.StoreWithoutVerification(ctx, s.localCache, s.efp)
 	metrics.ByteStreamChunkedReadLocalManifestStoreAttempts.With(prometheus.Labels{
 		metrics.StatusHumanReadableLabel: status.MetricsLabel(err),
 	}).Inc()
@@ -1405,10 +1406,11 @@ func (s *ByteStreamServerProxy) writeChunked(ctx context.Context, stream bspb.By
 	}
 
 	manifest := &chunking.Manifest{
-		BlobDigest:     rn.GetDigest(),
-		ChunkDigests:   chunkDigests,
-		InstanceName:   instanceName,
-		DigestFunction: digestFunction,
+		BlobDigest:       rn.GetDigest(),
+		ChunkDigests:     chunkDigests,
+		InstanceName:     instanceName,
+		DigestFunction:   digestFunction,
+		ChunkingFunction: repb.ChunkingFunction_FAST_CDC_2020,
 	}
 
 	remoteStart := time.Now()
