@@ -469,7 +469,9 @@ func BenchmarkLRUAdd(b *testing.B) {
 }
 
 // BenchmarkLRUAddWithEviction measures insertion (distinct keys, eviction on
-// every insert).
+// every insert). It should be faster and allocate less than BenchmarkLRUAdd,
+// since it doesn't grow the nodes slice during the benchmark loop. It might
+// still allocate occasionaly because of the items map.
 func BenchmarkLRUAddWithEviction(b *testing.B) {
 	for _, ttl := range []time.Duration{0, time.Minute} {
 		b.Run("ttl="+ttl.String(), func(b *testing.B) {
@@ -482,8 +484,8 @@ func BenchmarkLRUAddWithEviction(b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
 			// Add the next N keys, which will evict the first N keys.
-			for i := b.N; i < 2*b.N; i++ {
-				l.Add(keys[i], struct{}{})
+			for _, k := range keys[b.N:] {
+				l.Add(k, struct{}{})
 			}
 			runtime.KeepAlive(l)
 		})
