@@ -468,6 +468,28 @@ func BenchmarkLRUAdd(b *testing.B) {
 	}
 }
 
+// BenchmarkLRUAddWithEviction measures insertion (distinct keys, eviction on
+// every insert).
+func BenchmarkLRUAddWithEviction(b *testing.B) {
+	for _, ttl := range []time.Duration{0, time.Minute} {
+		b.Run("ttl="+ttl.String(), func(b *testing.B) {
+			keys := benchKeys(2 * b.N)
+			l := newBenchLRU(int64(b.N), ttl)
+			// Fill the cache with the first N keys.
+			for _, k := range keys[:b.N] {
+				l.Add(k, struct{}{})
+			}
+			b.ReportAllocs()
+			b.ResetTimer()
+			// Add the next N keys, which will evict the first N keys.
+			for i := b.N; i < 2*b.N; i++ {
+				l.Add(keys[i], struct{}{})
+			}
+			runtime.KeepAlive(l)
+		})
+	}
+}
+
 // BenchmarkLRUGet measures hot reads (all hits) against a full cache.
 func BenchmarkLRUGet(b *testing.B) {
 	const n = 100_000
