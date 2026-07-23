@@ -196,6 +196,32 @@ func spliceBlobDurationPanel() *heatmap.PanelBuilder {
 	)
 }
 
+func spliceValidationSkipRatePanel() *timeseries.PanelBuilder {
+	skipped := sumRate("buildbuddy_remote_cache_splice_blob_count", appFilter+`, splice_validation="skipped"`)
+	total := sumRate("buildbuddy_remote_cache_splice_blob_count", appFilter)
+
+	return dash.Timeseries("SpliceBlob Validation Skip Rate [app]", dash.UnitPercentUnit).
+		Description("Share of SpliceBlob requests that stored a manifest without verifying chunk contents against the blob digest.").
+		Min(0).
+		Max(1).
+		LineWidth(2).
+		FillOpacity(10).
+		WithTarget(q(skipped+` / `+total, "validation skipped").RefId("A"))
+}
+
+func spliceValidationSkipRateByGroupPanel() *timeseries.PanelBuilder {
+	skipped := sumRateBy("group_id", "buildbuddy_remote_cache_splice_blob_count", appFilter+`, splice_validation="skipped"`)
+	total := sumRateBy("group_id", "buildbuddy_remote_cache_splice_blob_count", appFilter)
+
+	return dash.Timeseries("SpliceBlob Validation Skip Rate by Group [app]", dash.UnitPercentUnit).
+		Description("Share of SpliceBlob requests skipping content verification, by group ID. Groups outside the splice-without-validation experiment have no skipped requests and so do not appear.").
+		Min(0).
+		Max(1).
+		LineWidth(2).
+		FillOpacity(10).
+		WithTarget(q(skipped+` / `+total, "{{group_id}}").RefId("A"))
+}
+
 func writeDeduplicationRatioPanel() *timeseries.PanelBuilder {
 	dedupedBytes := sumRateByName("buildbuddy_cache_client_chunked_upload_chunk_bytes_deduped|buildbuddy_proxy_byte_stream_chunked_write_chunk_bytes_deduped")
 	totalBytes := sumRateByName("buildbuddy_cache_client_chunked_upload_chunk_bytes_total|buildbuddy_proxy_byte_stream_chunked_write_chunk_bytes_total")
@@ -431,7 +457,9 @@ func build() (dashboard.Dashboard, error) {
 			WithPanel(chunkReadsBySourcePanel())).
 		WithRow(rowAt("Server APIs", collapsedRowsStartY+1).
 			WithPanel(splitBlobDurationPanel()).
-			WithPanel(spliceBlobDurationPanel())).
+			WithPanel(spliceBlobDurationPanel()).
+			WithPanel(spliceValidationSkipRatePanel()).
+			WithPanel(spliceValidationSkipRateByGroupPanel())).
 		WithRow(rowAt("Deduplication", collapsedRowsStartY+2).
 			WithPanel(writeDeduplicationRatioPanel()).
 			WithPanel(deduplicationSavingsPanel()).

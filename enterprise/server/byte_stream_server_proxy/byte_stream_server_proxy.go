@@ -3,8 +3,10 @@ package byte_stream_server_proxy
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"flag"
 	"fmt"
+	"hash"
 	"io"
 	"strconv"
 	"sync"
@@ -1270,6 +1272,15 @@ func (s *ByteStreamServerProxy) writeChunked(ctx context.Context, stream bspb.By
 	if err != nil {
 		return writeChunkedResult{}, err
 	}
+	// The downstream SpliceBlob skips content verification for these writes,
+	// so verify the recomposed blob digest here instead.
+	var blobHasher hash.Hash
+	if cdc.IsSpliceWithoutValidation(ctx) {
+		blobHasher, err = digest.HashForDigestType(digestFunction)
+		if err != nil {
+			return writeChunkedResult{}, err
+		}
+	}
 
 	// chunkWriteFn is called on each new chunk once it's available through the chunker's pipe.
 	// Chunks are stored and read compressed with ZSTD.
@@ -1277,6 +1288,11 @@ func (s *ByteStreamServerProxy) writeChunked(ctx context.Context, stream bspb.By
 		chunkCtx, chunkSpn := tracing.StartNamedSpan(ctx, "chunkWriteFn")
 		defer chunkSpn.End()
 
+		if blobHasher != nil {
+			if _, err := blobHasher.Write(chunkData); err != nil {
+				return err
+			}
+		}
 		chunkDigest, err := digest.Compute(bytes.NewReader(chunkData), digestFunction)
 		if err != nil {
 			return status.InternalErrorf("computing chunked digest for Write: %s", err)
@@ -1377,12 +1393,20 @@ func (s *ByteStreamServerProxy) writeChunked(ctx context.Context, stream bspb.By
 	if err != nil {
 		return writeChunkedResult{}, status.InternalErrorf("closing chunker: %s", err)
 	}
-	chunkingDuration := time.Since(chunkingStart)
-
 	var chunkBytesTotal int64
 	for _, d := range chunkDigests {
 		chunkBytesTotal += d.GetSizeBytes()
 	}
+	if blobHasher != nil {
+		blobDigest := &repb.Digest{
+			Hash:      hex.EncodeToString(blobHasher.Sum(nil)),
+			SizeBytes: chunkBytesTotal,
+		}
+		if !digest.Equal(blobDigest, rn.GetDigest()) {
+			return writeChunkedResult{}, status.InvalidArgumentErrorf("computed chunked blob digest %s does not match expected %s", digest.String(blobDigest), digest.String(rn.GetDigest()))
+		}
+	}
+	chunkingDuration := time.Since(chunkingStart)
 
 	result := writeChunkedResult{
 		blobBytes:        blobSize,

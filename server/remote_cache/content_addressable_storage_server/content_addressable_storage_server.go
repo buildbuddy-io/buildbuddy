@@ -56,6 +56,10 @@ const (
 	// parallel. Each lookup issues independent cache reads, so the work is
 	// I/O-bound.
 	defaultFindMissingChunkFallbackConcurrency = 8
+
+	// Values for the metrics.SpliceBlobValidation label.
+	spliceValidationFull    = "full"
+	spliceValidationSkipped = "skipped"
 )
 
 var (
@@ -1256,13 +1260,57 @@ func (s *ContentAddressableStorageServer) spliceBlob(ctx context.Context, req *r
 		DigestFunction: req.GetDigestFunction(),
 	}
 
-	if err := manifest.Store(ctx, s.cache); err != nil {
+	efp := s.env.GetExperimentFlagProvider()
+	skipValidation := cdc.IsSpliceWithoutValidation(ctx) &&
+		s.isTrustedSpliceClient(ctx) &&
+		efp != nil &&
+		efp.Boolean(ctx, cdc.SpliceWithoutValidationExperiment, false)
+
+	validation := spliceValidationFull
+	if skipValidation {
+		validation = spliceValidationSkipped
+	}
+	metrics.SpliceBlobCount.With(prometheus.Labels{
+		metrics.SpliceBlobValidation: validation,
+		metrics.GroupID:              s.groupIDForMetrics(ctx),
+	}).Inc()
+
+	if skipValidation {
+		err = manifest.StoreWithoutContentVerification(ctx, s.cache)
+	} else {
+		err = manifest.Store(ctx, s.cache)
+	}
+	if err != nil {
 		return nil, err
 	}
 
 	return &repb.SpliceBlobResponse{
 		BlobDigest: req.GetBlobDigest(),
 	}, nil
+}
+
+func (s *ContentAddressableStorageServer) groupIDForMetrics(ctx context.Context) string {
+	if a := s.env.GetAuthenticator(); a != nil {
+		if u, err := a.AuthenticatedUser(ctx); err == nil {
+			return u.GetGroupID()
+		}
+	}
+	return interfaces.AuthAnonymousUser
+}
+
+// isTrustedSpliceClient reports whether the caller presented a validated
+// executor or cache-proxy client identity.
+func (s *ContentAddressableStorageServer) isTrustedSpliceClient(ctx context.Context) bool {
+	cis := s.env.GetClientIdentityService()
+	if cis == nil {
+		return false
+	}
+	identity, err := cis.IdentityFromContext(ctx)
+	if err != nil || identity == nil {
+		return false
+	}
+	return identity.Client == interfaces.ClientIdentityExecutor ||
+		identity.Client == interfaces.ClientIdentityCacheProxy
 }
 
 func (s *ContentAddressableStorageServer) readChunkedBlob(ctx context.Context, blobDigest *repb.Digest, instanceName string, digestFunction repb.DigestFunction_Value, readZstd bool) ([]byte, error) {

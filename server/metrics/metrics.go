@@ -332,6 +332,10 @@ const (
 	// - Or "uncacheable" (for e.g. encrypted resources)
 	CacheHitMissStatus = "cache_status"
 
+	// Whether a SpliceBlob request hashed the referenced chunks to verify
+	// the blob digest (`full`) or skipped that check (`skipped`).
+	SpliceBlobValidation = "splice_validation"
+
 	// TreeCache directory depth: 0 for the root dir, 1 for a direct child of
 	// the root dir, and so on.
 	TreeCacheLookupLevel = "level"
@@ -1102,6 +1106,16 @@ var (
 		Help:      "Duration of the full SpliceBlob RPC handler, in **microseconds**.",
 	}, []string{
 		StatusLabel,
+	})
+
+	SpliceBlobCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "splice_blob_count",
+		Help:      "Number of SpliceBlob requests that reached the manifest store step, labeled by whether chunk contents were verified against the blob digest.",
+	}, []string{
+		SpliceBlobValidation,
+		GroupID,
 	})
 
 	ChunkedManifestValidationCount = promauto.NewCounterVec(prometheus.CounterOpts{

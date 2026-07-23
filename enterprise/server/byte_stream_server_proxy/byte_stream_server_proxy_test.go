@@ -161,6 +161,35 @@ func TestWriteChunkedFallsBackAboveMaxSize(t *testing.T) {
 	require.NotNil(t, result.firstReq)
 }
 
+func TestWriteChunkedValidatesBlobForUnvalidatedSplice(t *testing.T) {
+	env := testenv.GetTestEnv(t)
+	ctx := metadata.NewIncomingContext(t.Context(), metadata.Pairs(cdc.SpliceWithoutValidationHeaderName, "true"))
+	_, casClient, _, _ := runRemoteServices(ctx, env, t)
+	local, err := byte_stream_server.NewByteStreamServer(env)
+	require.NoError(t, err)
+	s := &ByteStreamServerProxy{
+		authenticator: env.GetAuthenticator(),
+		local:         local,
+		localCache:    env.GetCache(),
+		remoteCAS:     casClient,
+		bufPool:       bytebufferpool.VariableSize(int(chunking.MaxCompressedChunkReadSizeBytes())),
+	}
+
+	data := make([]byte, 5*1024*1024)
+	d, err := digest.Compute(bytes.NewReader(data), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+	data[0] = 'x'
+	rn := digest.NewCASResourceName(d, "", repb.DigestFunction_SHA256)
+	_, err = s.writeChunked(ctx, &rawWriteStream{
+		ctx:          ctx,
+		resourceName: rn.NewUploadString(),
+		data:         data,
+	})
+	require.Error(t, err)
+	require.True(t, status.IsInvalidArgumentError(err), "want InvalidArgumentError, got %+#v", err)
+	require.Contains(t, err.Error(), "computed chunked blob digest")
+}
+
 func TestWriteChunkingEnabledSkipsBESUpload(t *testing.T) {
 	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
 		"cache_proxy.intercept_and_chunk_large_writes": {
