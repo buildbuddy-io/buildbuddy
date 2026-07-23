@@ -6,5 +6,5 @@ go_library(
     name = "claude",
     srcs = ["claude.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/util/agent/claude",
-    deps = ["//cli/terminal"],
+    deps = ["//cli/util/agent/agentutil"],
 )

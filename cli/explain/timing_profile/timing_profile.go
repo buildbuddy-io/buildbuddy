@@ -14,7 +14,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/login"
 	"github.com/buildbuddy-io/buildbuddy/cli/terminal"
-	"github.com/buildbuddy-io/buildbuddy/cli/util/agent/claude"
+	"github.com/buildbuddy-io/buildbuddy/cli/util/agent"
+	"github.com/buildbuddy-io/buildbuddy/cli/util/agent/agentutil"
 	"github.com/buildbuddy-io/buildbuddy/cli/util/download"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
@@ -25,7 +26,7 @@ import (
 )
 
 const profileUsage = `
-usage: bb explain profile [--target API_TARGET] {INVOCATION_ID | INVOCATION_URL}
+usage: bb explain profile [--target API_TARGET] [--url BUILD_BUDDY_URL] [--agent AGENT] [--model MODEL] [--effort EFFORT] {INVOCATION_ID | INVOCATION_URL}
 
 Examples:
   bb explain profile 5e4e42d1-f545-4a21-8135-0e308d9f247a
@@ -38,6 +39,9 @@ var (
 	profileFlags      = flag.NewFlagSet("profile", flag.ContinueOnError)
 	profileAPITarget  = profileFlags.String("target", login.DefaultApiTarget, "The API target to use for fetching the timing profile.")
 	profileHTTPTarget = profileFlags.String("url", login.DefaultHTTPTarget, "The BuildBuddy web URL to use for downloading the timing profile.")
+	profileAgent      = profileFlags.String("agent", agentutil.Claude, "The agent to use for analyzing the timing profile.")
+	profileModel      = profileFlags.String("model", "", "The agent model to use (Ex. gpt-5.4 or claude-opus-4-8). Defaults to the selected agent's default.")
+	profileEffort     = profileFlags.String("effort", "", "The agent reasoning effort to use. Defaults to the selected agent's default.")
 )
 
 const analysisPrompt = `Use ztracing to analyze the Bazel timing profile at %q.
@@ -95,12 +99,23 @@ func analyzeTimingProfile(invocationIDOrURL string) (int, error) {
 	}
 
 	prompt := fmt.Sprintf(analysisPrompt, profilePath, skillContents)
-	log.Printf("%sRunning claude (this may take a minute)...%s", terminal.Esc(90), terminal.Esc())
-	report, err := claude.Run(prompt, []string{"Bash(ztracing *)"})
+	log.Printf("%sRunning agent (this may take a minute)...%s", terminal.Esc(90), terminal.Esc())
+	rsp, err := agent.Run(ctx, &agentutil.RunRequest{
+		Agent:           *profileAgent,
+		Model:           *profileModel,
+		ReasoningEffort: *profileEffort,
+		Prompt:          prompt,
+		AllowedTools:    []string{"Bash(ztracing *)"},
+	})
 	if err != nil {
 		return -1, fmt.Errorf("analyze timing profile: %w", err)
 	}
-	fmt.Println(report)
+	fmt.Println(rsp.Output)
+	fmt.Printf(
+		"%sResume this agent session with:%s\n%s%s%s\n",
+		terminal.Esc(90), terminal.Esc(),
+		terminal.Esc(36), rsp.ResumeCommand, terminal.Esc(),
+	)
 
 	return 0, nil
 }
