@@ -1018,6 +1018,15 @@ func (*IPRule) TableName() string {
 	return "IPRules"
 }
 
+type BillingExportState struct {
+	Model
+	LastSuccessfulPeriodEndUsec int64
+}
+
+func (*BillingExportState) TableName() string {
+	return "BillingExportState"
+}
+
 type PostAutoMigrateLogic func() error
 
 // Manual migration called before auto-migration.
@@ -1532,4 +1541,5 @@ func RegisterTables() {
 	registerTable("UM", &UserListGroup{})
 	registerTable("UR", &UsageAlertingRule{})
 	registerTable("WF", &Workflow{})
+	registerTable("BE", &BillingExportState{})
 }
