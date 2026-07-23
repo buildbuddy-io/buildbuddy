@@ -16,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/codesearch/github"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/index"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/indexprofile"
+	"github.com/buildbuddy-io/buildbuddy/codesearch/navindex"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/performance"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/query"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/schema"
@@ -26,14 +27,22 @@ import (
 )
 
 var (
-	indexCmd  = flag.NewFlagSet("index", flag.ExitOnError)
-	searchCmd = flag.NewFlagSet("search", flag.ExitOnError)
-	squeryCmd = flag.NewFlagSet("squery", flag.ExitOnError)
+	indexCmd       = flag.NewFlagSet("index", flag.ExitOnError)
+	searchCmd      = flag.NewFlagSet("search", flag.ExitOnError)
+	squeryCmd      = flag.NewFlagSet("squery", flag.ExitOnError)
+	decorationsCmd = flag.NewFlagSet("decorations", flag.ExitOnError)
+	lookupCmd      = flag.NewFlagSet("lookup", flag.ExitOnError)
+	docsCmd        = flag.NewFlagSet("docs", flag.ExitOnError)
+	xrefsCmd       = flag.NewFlagSet("xrefs", flag.ExitOnError)
 
 	subcommands = map[string]*flag.FlagSet{
-		indexCmd.Name():  indexCmd,
-		searchCmd.Name(): searchCmd,
-		squeryCmd.Name(): squeryCmd,
+		indexCmd.Name():       indexCmd,
+		searchCmd.Name():      searchCmd,
+		squeryCmd.Name():      squeryCmd,
+		decorationsCmd.Name(): decorationsCmd,
+		lookupCmd.Name():      lookupCmd,
+		docsCmd.Name():        docsCmd,
+		xrefsCmd.Name():       xrefsCmd,
 	}
 
 	indexDir     string
@@ -42,10 +51,11 @@ var (
 	indexProfile bool
 	namespace    string
 
-	reset    = indexCmd.Bool("reset", false, "Delete the index and start fresh")
-	results  = searchCmd.Int("results", 100, "Print this many results")
-	offset   = searchCmd.Int("offset", 0, "Start printing results this far in")
-	snippets = searchCmd.Int("snippets", 5, "Print this many snippets per result")
+	reset       = indexCmd.Bool("reset", false, "Delete the index and start fresh")
+	results     = searchCmd.Int("results", 100, "Print this many results")
+	offset      = searchCmd.Int("offset", 0, "Start printing results this far in")
+	snippets    = searchCmd.Int("snippets", 5, "Print this many snippets per result")
+	resolveRefs = decorationsCmd.Bool("resolve", false, "Also resolve each reference's ticket to its definition location")
 )
 
 func printMainHelpAndDie() {
@@ -60,7 +70,7 @@ func printMainHelpAndDie() {
 func setupCommonFlags() {
 	for cmdName, flagset := range subcommands {
 		switch cmdName {
-		case indexCmd.Name(), searchCmd.Name(), squeryCmd.Name():
+		case indexCmd.Name(), searchCmd.Name(), squeryCmd.Name(), decorationsCmd.Name(), lookupCmd.Name(), docsCmd.Name(), xrefsCmd.Name():
 			flagset.StringVar(&indexDir, "index_dir", "", "Path to Index Directory")
 			flagset.StringVar(&cpuProfile, "cpu_profile", "", "Path to dump a CPU profile")
 			flagset.StringVar(&heapProfile, "heap_profile", "", "Path to dump a heap profile")
@@ -122,6 +132,14 @@ func main() {
 		handleSearch(ctx, cmd.Args())
 	case squeryCmd.Name():
 		handleSquery(ctx, cmd.Args())
+	case decorationsCmd.Name():
+		handleDecorations(ctx, cmd.Args())
+	case lookupCmd.Name():
+		handleLookup(ctx, cmd.Args())
+	case docsCmd.Name():
+		handleDocs(ctx, cmd.Args())
+	case xrefsCmd.Name():
+		handleXrefs(ctx, cmd.Args())
 	default:
 		log.Fatalf("no handler for command %q", cmd.Name())
 	}
@@ -176,7 +194,11 @@ func handleIndex(args []string) {
 		// the repo root (absent/unparsable -> "", which disables Go import
 		// identities).
 		goMod, _ := os.ReadFile(filepath.Join(dir, "go.mod"))
-		rctx := annotations.NewRepoContext(dir, annotations.GoModulePath(goMod))
+		// Filenames are stored repo-relative (relative to dir), matching the
+		// server's convention so path-based identities (TS/JS import_id) join.
+		// The RepoContext therefore takes an empty root — the filenames handed
+		// to Extract are already relative.
+		rctx := annotations.NewRepoContext("", annotations.GoModulePath(goMod))
 		log.Printf("indexing dir: %q", dir)
 		stopWalk := indexprofile.Timer(indexprofile.PhaseWalk)
 		walkErr := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
@@ -206,8 +228,14 @@ func handleIndex(args []string) {
 				indexprofile.Add(indexprofile.CounterFilesRead, 1)
 				indexprofile.Add(indexprofile.CounterBytesRead, int64(len(buf)))
 
-				if err := github.AddFileToIndex(iw, rctx, repoURL, commitSHA, path, buf); err != nil {
-					log.Infof("Skipping file %s: %s", path, err)
+				// Store the repo-relative, slash-separated path as the filename
+				// so it shares a coordinate system with import_id terms.
+				relPath := path
+				if rel, err := filepath.Rel(dir, path); err == nil {
+					relPath = filepath.ToSlash(rel)
+				}
+				if err := github.AddFileToIndex(iw, rctx, repoURL, commitSHA, relPath, buf); err != nil {
+					log.Infof("Skipping file %s: %s", relPath, err)
 				}
 			}
 			return nil
@@ -332,5 +360,162 @@ func handleSquery(ctx context.Context, args []string) {
 		doc := ir.GetStoredDocument(docID)
 		filename := doc.Field(schema.FilenameField).Contents()
 		fmt.Printf("%d (%q) matched fields: %s\n", docID, filename, strings.Join(docFields[docID], ", "))
+	}
+}
+
+// handleDecorations prints the click-through references in an indexed file
+// (the tree-sitter nav Decorations flow). With -resolve, each reference's
+// ticket is also resolved to its definition location, exercising the full
+// decorate -> go-to-definition round trip from the command line.
+func handleDecorations(ctx context.Context, args []string) {
+	if len(args) != 1 {
+		log.Fatalf("usage: decorations [-resolve] <file>")
+	}
+	path := args[0]
+
+	db, err := index.OpenPebbleDB(indexDir)
+	if err != nil {
+		log.Fatal(err.Error())
+	}
+	defer db.Close()
+	// A plain reader context: nav runs several queries and doesn't need the
+	// per-query performance tracker (which warns on repeated metric keys).
+	r := index.NewReader(context.Background(), db, getNamespace(), schema.GitHubFileSchema())
+
+	f, ok := navindex.FindFile(ctx, r, path)
+	if !ok {
+		log.Fatalf("file %q not found in namespace %q", path, getNamespace())
+	}
+	refs, err := annotations.Decorate(ctx, f.Lang, f.Content, annotations.NavOptions{
+		SelfImportID: f.SelfImportID,
+		Path:         path,
+		InRepo:       f.InRepo,
+	})
+	if err != nil {
+		log.Fatal(err.Error())
+	}
+	if len(refs) == 0 {
+		fmt.Println("no references found")
+		return
+	}
+
+	lk := &navindex.DefLookup{R: r}
+	for _, ref := range refs {
+		text := string(f.Content[ref.Start.Byte:ref.End.Byte])
+		fmt.Printf("%d:%d-%d:%d\t%-16s\t%s\n",
+			ref.Start.Line, ref.Start.Col, ref.End.Line, ref.End.Col, text, ref.TargetTicket)
+		if !*resolveRefs {
+			continue
+		}
+		locs, err := annotations.Resolve(ctx, lk, ref.TargetTicket)
+		if err != nil {
+			log.Fatal(err.Error())
+		}
+		if len(locs) == 0 {
+			fmt.Println("\t-> (no definition)")
+			continue
+		}
+		for _, loc := range locs {
+			fmt.Printf("\t-> %s:%d:%d\n", loc.Path, loc.Start.Line, loc.Start.Col)
+		}
+	}
+}
+
+// handleLookup resolves a single tree-sitter nav ticket to its definition
+// location(s) (the CrossReferences / go-to-definition flow).
+func handleLookup(ctx context.Context, args []string) {
+	if len(args) != 1 {
+		log.Fatalf("usage: lookup <ticket>")
+	}
+	ticket := args[0]
+
+	db, err := index.OpenPebbleDB(indexDir)
+	if err != nil {
+		log.Fatal(err.Error())
+	}
+	defer db.Close()
+	r := index.NewReader(context.Background(), db, getNamespace(), schema.GitHubFileSchema())
+
+	locs, err := annotations.Resolve(ctx, &navindex.DefLookup{R: r}, ticket)
+	if err != nil {
+		log.Fatal(err.Error())
+	}
+	if len(locs) == 0 {
+		fmt.Println("no definition found")
+		return
+	}
+	for _, loc := range locs {
+		fmt.Printf("%s:%d:%d\n", loc.Path, loc.Start.Line, loc.Start.Col)
+	}
+}
+
+// handleDocs prints the hover documentation a ticket resolves to: the
+// declaration kind, location, signature, and leading doc comment.
+func handleDocs(ctx context.Context, args []string) {
+	if len(args) != 1 {
+		log.Fatalf("usage: docs <ticket>")
+	}
+	ticket := args[0]
+
+	db, err := index.OpenPebbleDB(indexDir)
+	if err != nil {
+		log.Fatal(err.Error())
+	}
+	defer db.Close()
+	r := index.NewReader(context.Background(), db, getNamespace(), schema.GitHubFileSchema())
+
+	defs, err := annotations.Describe(ctx, &navindex.DefLookup{R: r}, ticket)
+	if err != nil {
+		log.Fatal(err.Error())
+	}
+	if len(defs) == 0 {
+		fmt.Println("no definition found")
+		return
+	}
+	for _, d := range defs {
+		fmt.Printf("%s\t%s:%d:%d\n", d.Kind, d.Path, d.Start.Line, d.Start.Col)
+		if d.Signature != "" {
+			fmt.Printf("  %s\n", d.Signature)
+		}
+		for line := range strings.SplitSeq(d.Doc, "\n") {
+			if line != "" {
+				fmt.Printf("  // %s\n", line)
+			}
+		}
+	}
+}
+
+// handleXrefs prints the references-panel data for a ticket: its definition(s)
+// and every use site (the find-usages flow).
+func handleXrefs(ctx context.Context, args []string) {
+	if len(args) != 1 {
+		log.Fatalf("usage: xrefs <ticket>")
+	}
+	ticket := args[0]
+
+	db, err := index.OpenPebbleDB(indexDir)
+	if err != nil {
+		log.Fatal(err.Error())
+	}
+	defer db.Close()
+	r := index.NewReader(context.Background(), db, getNamespace(), schema.GitHubFileSchema())
+	lk := &navindex.DefLookup{R: r}
+
+	defs, err := annotations.Describe(ctx, lk, ticket)
+	if err != nil {
+		log.Fatal(err.Error())
+	}
+	fmt.Printf("Definitions (%d):\n", len(defs))
+	for _, d := range defs {
+		fmt.Printf("  %s:%d:%d\t%s\n", d.Path, d.Start.Line, d.Start.Col, d.Signature)
+	}
+
+	refs, err := annotations.FindReferences(ctx, lk, ticket)
+	if err != nil {
+		log.Fatal(err.Error())
+	}
+	fmt.Printf("References (%d):\n", len(refs))
+	for _, rf := range refs {
+		fmt.Printf("  %s:%d:%d\t%s\n", rf.Path, rf.Start.Line, rf.Start.Col, rf.Snippet)
 	}
 }
