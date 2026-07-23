@@ -19,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
 	hitpb "github.com/buildbuddy-io/buildbuddy/proto/hit_tracker"
@@ -75,6 +76,7 @@ type testHitTracker struct {
 	casBytesUploaded   map[string]*atomic.Int64
 	acDownloads        map[string]*atomic.Int64
 	acBytesDownloaded  map[string]*atomic.Int64
+	acCachedExecUsec   map[string]*atomic.Int64
 	acUploads          map[string]*atomic.Int64
 	acBytesUploaded    map[string]*atomic.Int64
 }
@@ -89,6 +91,7 @@ func newTestHitTracker(t testing.TB, authenticator interfaces.Authenticator) *te
 		casBytesUploaded:   map[string]*atomic.Int64{},
 		acDownloads:        map[string]*atomic.Int64{},
 		acBytesDownloaded:  map[string]*atomic.Int64{},
+		acCachedExecUsec:   map[string]*atomic.Int64{},
 		acUploads:          map[string]*atomic.Int64{},
 		acBytesUploaded:    map[string]*atomic.Int64{},
 	}
@@ -99,6 +102,7 @@ func newTestHitTracker(t testing.TB, authenticator interfaces.Authenticator) *te
 		out.casBytesUploaded[k] = &atomic.Int64{}
 		out.acDownloads[k] = &atomic.Int64{}
 		out.acBytesDownloaded[k] = &atomic.Int64{}
+		out.acCachedExecUsec[k] = &atomic.Int64{}
 		out.acUploads[k] = &atomic.Int64{}
 		out.acBytesUploaded[k] = &atomic.Int64{}
 	}
@@ -115,6 +119,10 @@ func (ht *testHitTracker) Track(ctx context.Context, req *hitpb.TrackRequest) (*
 			if hit.GetResource().GetCacheType() == rspb.CacheType_AC {
 				ht.acDownloads[key].Add(1)
 				ht.acBytesDownloaded[key].Add(hit.GetSizeBytes())
+				if md := hit.GetExecutedActionMetadata(); md != nil {
+					execDuration := md.GetExecutionCompletedTimestamp().AsTime().Sub(md.GetExecutionStartTimestamp().AsTime())
+					ht.acCachedExecUsec[key].Add(execDuration.Microseconds())
+				}
 			} else {
 				ht.casDownloads[key].Add(1)
 				ht.casBytesDownloaded[key].Add(hit.GetSizeBytes())
@@ -210,12 +218,20 @@ func TestACHitTracker_SkipRemote(t *testing.T) {
 	ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs(proxy_util.SkipRemoteKey, "true"))
 	hitTracker := hitTrackerFactory.NewACHitTracker(ctx, &repb.RequestMetadata{})
 	hitTracker.TrackMiss(aDigest)
-	hitTracker.TrackDownload(bDigest).CloseWithBytesTransferred(1000, 2000, repb.Compressor_IDENTITY, "test")
+	// Metadata is set after the timer starts, as in action_cache_server.
+	download := hitTracker.TrackDownload(bDigest)
+	execStart := time.Unix(1000, 0)
+	hitTracker.SetExecutedActionMetadata(&repb.ExecutedActionMetadata{
+		ExecutionStartTimestamp:     timestamppb.New(execStart),
+		ExecutionCompletedTimestamp: timestamppb.New(execStart.Add(90 * time.Second)),
+	})
+	download.CloseWithBytesTransferred(1000, 2000, repb.Compressor_IDENTITY, "test")
 	hitTracker.TrackUpload(cDigest).CloseWithBytesTransferred(3000, 4000, repb.Compressor_IDENTITY, "test")
 
 	expectation := hitTrackerService.acDownloadExpectation(anonKey, 1)
 	require.Eventually(t, expectation, 10*time.Second, 100*time.Millisecond)
 	require.Equal(t, int64(2000), hitTrackerService.acBytesDownloaded[anonKey].Load())
+	require.Equal(t, (90 * time.Second).Microseconds(), hitTrackerService.acCachedExecUsec[anonKey].Load())
 	require.Equal(t, int64(1), hitTrackerService.acUploads[anonKey].Load())
 	require.Equal(t, int64(4000), hitTrackerService.acBytesUploaded[anonKey].Load())
 	require.Equal(t, int64(0), hitTrackerService.casDownloads[anonKey].Load())
