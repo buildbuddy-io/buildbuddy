@@ -105,6 +105,23 @@ func setAsyncWrite(t *testing.T, asyncWrite bool) {
 	require.NoError(t, openfeature.SetProviderAndWait(testProvider))
 }
 
+func setBackfillOnMiss(t *testing.T, migrationState string, backfillOnMiss bool) {
+	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
+		migration_cache.MigrationCacheConfigFlag: {
+			State:          memprovider.Enabled,
+			DefaultVariant: "singleton",
+			Variants: map[string]any{"singleton": map[string]any{
+				migration_cache.MigrationStateField:           migrationState,
+				migration_cache.AsyncDestWriteField:           false,
+				migration_cache.DoubleReadPercentageField:     0.0,
+				migration_cache.DecompressReadPercentageField: 0.0,
+				migration_cache.BackfillOnMissField:           backfillOnMiss,
+			}},
+		},
+	})
+	require.NoError(t, openfeature.SetProviderAndWait(testProvider))
+}
+
 func getAnonContext(t *testing.T, env environment.Env) context.Context {
 	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), env.GetAuthenticator())
 	require.NoError(t, err, "error ataching user prefix")
@@ -1735,4 +1752,230 @@ func TestValidateCacheConfig(t *testing.T) {
 			}
 		})
 	}
+}
+
+// newBackfillTestCache wires old cache as src, new as dest; in dest-primary the
+// new cache is the read primary, so a seed only in oldCache is a primary miss.
+func newBackfillTestCache(t *testing.T) (*migration_cache.MigrationCache, interfaces.Cache, interfaces.Cache, context.Context) {
+	te := getTestEnv(t, emptyUserMap)
+	ctx := getAnonContext(t, te)
+	maxSizeBytes := int64(1_000_000_000) // 1GB
+	oldCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: testfs.MakeTempDir(t)}, maxSizeBytes)
+	require.NoError(t, err)
+	newCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: testfs.MakeTempDir(t)}, maxSizeBytes)
+	require.NoError(t, err)
+
+	config := &cache_config.MigrationConfig{CopyChanBufferSize: 10, NumCopyWorkers: 1}
+	config.SetConfigDefaults()
+	mc := migration_cache.NewMigrationCache(te, config, oldCache, newCache)
+	require.NoError(t, mc.Start())
+	t.Cleanup(func() { mc.Stop() })
+	return mc, oldCache, newCache, ctx
+}
+
+func TestGet_DestPrimaryBackfillOnMiss(t *testing.T) {
+	mc, oldCache, newCache, ctx := newBackfillTestCache(t)
+	setBackfillOnMiss(t, migration_cache.DestPrimary, true)
+
+	// Seed data only in the old cache; the new (primary) cache is empty.
+	r, buf := testdigest.RandomCASResourceBuf(t, 100)
+	require.NoError(t, oldCache.Set(ctx, r, buf))
+
+	// The primary (new cache) misses, so backfill-on-miss serves from the old
+	// cache...
+	data, err := mc.Get(ctx, r)
+	require.NoError(t, err)
+	require.True(t, bytes.Equal(buf, data))
+
+	// ...and backfills the new cache.
+	waitForCopy(t, ctx, newCache, r)
+}
+
+func TestGet_DestPrimaryBackfillOnMissDisabled(t *testing.T) {
+	mc, oldCache, _, ctx := newBackfillTestCache(t)
+	// backfill-on-miss off: a primary miss must not fall back to the old cache.
+	setBackfillOnMiss(t, migration_cache.DestPrimary, false)
+
+	r, buf := testdigest.RandomCASResourceBuf(t, 100)
+	require.NoError(t, oldCache.Set(ctx, r, buf))
+
+	_, err := mc.Get(ctx, r)
+	require.True(t, status.IsNotFoundError(err), "expected NotFound, got %v", err)
+}
+
+func TestGetMulti_DestPrimaryBackfillOnMiss(t *testing.T) {
+	mc, oldCache, newCache, ctx := newBackfillTestCache(t)
+	setBackfillOnMiss(t, migration_cache.DestPrimary, true)
+
+	r, buf := testdigest.RandomCASResourceBuf(t, 100)
+	require.NoError(t, oldCache.Set(ctx, r, buf))
+
+	data, err := mc.GetMulti(ctx, []*rspb.ResourceName{r})
+	require.NoError(t, err)
+	require.True(t, bytes.Equal(buf, data[r.GetDigest()]))
+
+	waitForCopy(t, ctx, newCache, r)
+}
+
+func TestReader_DestPrimaryBackfillOnMiss(t *testing.T) {
+	mc, oldCache, newCache, ctx := newBackfillTestCache(t)
+	setBackfillOnMiss(t, migration_cache.DestPrimary, true)
+
+	r, buf := testdigest.RandomCASResourceBuf(t, 100)
+	require.NoError(t, oldCache.Set(ctx, r, buf))
+
+	// The primary (new cache) misses, so backfill-on-miss serves a reader from
+	// the old cache...
+	reader, err := mc.Reader(ctx, r, 0, 0)
+	require.NoError(t, err)
+	data, err := io.ReadAll(reader)
+	require.NoError(t, err)
+	require.NoError(t, reader.Close())
+	require.True(t, bytes.Equal(buf, data))
+
+	// ...and backfills the new cache.
+	waitForCopy(t, ctx, newCache, r)
+}
+
+func TestContains_DestPrimaryBackfillOnMiss(t *testing.T) {
+	mc, oldCache, newCache, ctx := newBackfillTestCache(t)
+	setBackfillOnMiss(t, migration_cache.DestPrimary, true)
+
+	// Blob only in the old cache; the new (primary) cache lacks it.
+	r, buf := testdigest.RandomCASResourceBuf(t, 100)
+	require.NoError(t, oldCache.Set(ctx, r, buf))
+
+	// Contains must agree with reads: report present because the old cache has
+	// it, and backfill the new cache.
+	contains, err := mc.Contains(ctx, r)
+	require.NoError(t, err)
+	require.True(t, contains)
+	waitForCopy(t, ctx, newCache, r)
+}
+
+func TestFindMissing_DestPrimaryBackfillOnMiss(t *testing.T) {
+	mc, oldCache, newCache, ctx := newBackfillTestCache(t)
+	setBackfillOnMiss(t, migration_cache.DestPrimary, true)
+
+	// r1 only in old cache; r2 in neither.
+	r1, buf1 := testdigest.RandomCASResourceBuf(t, 100)
+	require.NoError(t, oldCache.Set(ctx, r1, buf1))
+	r2, _ := testdigest.RandomCASResourceBuf(t, 100)
+
+	missing, err := mc.FindMissing(ctx, []*rspb.ResourceName{r1, r2})
+	require.NoError(t, err)
+	// r1 is present in the old cache -> not missing; r2 is missing from both.
+	require.Equal(t, []*repb.Digest{r2.GetDigest()}, missing)
+	waitForCopy(t, ctx, newCache, r1)
+}
+
+func TestGet_DestPrimaryBackfillOldCacheError(t *testing.T) {
+	te := getTestEnv(t, emptyUserMap)
+	ctx := getAnonContext(t, te)
+	newCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: testfs.MakeTempDir(t)}, int64(1_000_000_000))
+	require.NoError(t, err)
+	oldCache := &errorCache{} // returns a non-NotFound error on Get
+	config := &cache_config.MigrationConfig{CopyChanBufferSize: 10, NumCopyWorkers: 1}
+	config.SetConfigDefaults()
+	mc := migration_cache.NewMigrationCache(te, config, oldCache, newCache)
+	require.NoError(t, mc.Start())
+	t.Cleanup(func() { mc.Stop() })
+	setBackfillOnMiss(t, migration_cache.DestPrimary, true)
+
+	// New cache misses (NotFound); old cache errors (non-NotFound). The read
+	// should surface a clean NotFound, not the infra error.
+	r, _ := testdigest.RandomCASResourceBuf(t, 100)
+	_, err = mc.Get(ctx, r)
+	require.True(t, status.IsNotFoundError(err), "expected NotFound, got %v", err)
+}
+
+func TestGetMulti_DestPrimaryKeepsOldCacheWarm(t *testing.T) {
+	mc, oldCache, newCache, ctx := newBackfillTestCache(t)
+	setBackfillOnMiss(t, migration_cache.DestPrimary, true)
+
+	// Blob only in the NEW (primary) cache, e.g. a post-cutover write.
+	r, buf := testdigest.RandomCASResourceBuf(t, 100)
+	require.NoError(t, newCache.Set(ctx, r, buf))
+
+	data, err := mc.GetMulti(ctx, []*rspb.ResourceName{r})
+	require.NoError(t, err)
+	require.True(t, bytes.Equal(buf, data[r.GetDigest()]))
+
+	// A new-cache hit is copied back to the old cache for rollback safety.
+	waitForCopy(t, ctx, oldCache, r)
+}
+
+func TestGetMulti_DestPrimaryMixedHit(t *testing.T) {
+	mc, oldCache, newCache, ctx := newBackfillTestCache(t)
+	setBackfillOnMiss(t, migration_cache.DestPrimary, true)
+
+	// r1 in the new (primary) cache; r2 only in the old cache.
+	r1, buf1 := testdigest.RandomCASResourceBuf(t, 100)
+	require.NoError(t, newCache.Set(ctx, r1, buf1))
+	r2, buf2 := testdigest.RandomCASResourceBuf(t, 100)
+	require.NoError(t, oldCache.Set(ctx, r2, buf2))
+
+	data, err := mc.GetMulti(ctx, []*rspb.ResourceName{r1, r2})
+	require.NoError(t, err)
+	require.True(t, bytes.Equal(buf1, data[r1.GetDigest()]))
+	require.True(t, bytes.Equal(buf2, data[r2.GetDigest()]))
+
+	// r2 (miss) is backfilled to the new cache; r1 (hit) is copied back to old.
+	waitForCopy(t, ctx, newCache, r2)
+	waitForCopy(t, ctx, oldCache, r1)
+}
+
+func TestMetadata_DestPrimaryBackfillOnMiss(t *testing.T) {
+	mc, oldCache, newCache, ctx := newBackfillTestCache(t)
+	setBackfillOnMiss(t, migration_cache.DestPrimary, true)
+
+	r, buf := testdigest.RandomCASResourceBuf(t, 100)
+	require.NoError(t, oldCache.Set(ctx, r, buf))
+
+	md, err := mc.Metadata(ctx, r)
+	require.NoError(t, err)
+	require.Equal(t, int64(len(buf)), md.DigestSizeBytes)
+	waitForCopy(t, ctx, newCache, r)
+}
+
+func TestGet_DestPrimaryDoesNotBackfillAC(t *testing.T) {
+	mc, oldCache, newCache, ctx := newBackfillTestCache(t)
+	setBackfillOnMiss(t, migration_cache.DestPrimary, true)
+
+	// AC blob only in the old cache.
+	r, buf := testdigest.RandomACResourceBuf(t, 100)
+	require.NoError(t, oldCache.Set(ctx, r, buf))
+
+	// Served from the old cache...
+	data, err := mc.Get(ctx, r)
+	require.NoError(t, err)
+	require.True(t, bytes.Equal(buf, data))
+
+	// ...but AC is never enqueued for backfill (shouldBackfill is CAS-only).
+	// Drive a CAS backfill and wait for it to drain the single copy worker,
+	// then confirm the AC blob was not copied to the new cache.
+	casR, casBuf := testdigest.RandomCASResourceBuf(t, 100)
+	require.NoError(t, oldCache.Set(ctx, casR, casBuf))
+	_, err = mc.Get(ctx, casR)
+	require.NoError(t, err)
+	waitForCopy(t, ctx, newCache, casR)
+
+	contains, err := newCache.Contains(ctx, r)
+	require.NoError(t, err)
+	require.False(t, contains, "AC blob must not be backfilled to the new cache")
+}
+
+func TestGet_SrcPrimaryBackfillOnMissIgnored(t *testing.T) {
+	mc, _, newCache, ctx := newBackfillTestCache(t)
+	// backfill-on-miss set true but state is src-primary: the hard-gate keeps
+	// it off, so a src miss must not fall back to the other cache.
+	setBackfillOnMiss(t, migration_cache.SrcPrimary, true)
+
+	// In src-primary conf.src is the old cache. Seed only the new cache; the
+	// old cache misses and there is no fallback, so Get returns NotFound.
+	r, buf := testdigest.RandomCASResourceBuf(t, 100)
+	require.NoError(t, newCache.Set(ctx, r, buf))
+
+	_, err := mc.Get(ctx, r)
+	require.True(t, status.IsNotFoundError(err), "src-primary must not backfill-fall-back, got %v", err)
 }
