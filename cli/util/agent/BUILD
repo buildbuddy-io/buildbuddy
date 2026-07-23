@@ -9,5 +9,6 @@ go_library(
     deps = [
         "//cli/util/agent/agentutil",
         "//cli/util/agent/claude",
+        "//cli/util/agent/codex",
     ],
 )
