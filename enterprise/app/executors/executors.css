@@ -96,7 +96,6 @@
 .executors-page .self-hosted-executors-banner {
   margin-top: 32px;
   margin-bottom: 32px;
-  max-width: 600px;
 }
 
 .executors-page .executor-details {
@@ -114,5 +113,4 @@
 
 .executors-page .pool-size-warning {
   margin-top: 16px;
-  display: inline-flex;
 }
