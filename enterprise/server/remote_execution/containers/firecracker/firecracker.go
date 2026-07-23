@@ -1844,7 +1844,10 @@ func (c *FirecrackerContainer) getJailerConfig(ctx context.Context, kernelImageP
 		ChrootStrategy: fcclient.NewNaiveChrootStrategy(kernelImagePath),
 		Stdout:         c.vmLogWriter(),
 		Stderr:         c.vmLogWriter(),
-		CgroupVersion:  cgroupVersion,
+		// Set pgid so that we don't immediately kill the VM when the executor
+		// begins graceful shutdown.
+		SysProcAttr:   &syscall.SysProcAttr{Setpgid: true},
+		CgroupVersion: cgroupVersion,
 		// We normally set cpuset.cpus in cgroup.Setup(), but the go
 		// SDK clobbers our setting when applying the NUMA node setting.
 		// Override this manually for now.
