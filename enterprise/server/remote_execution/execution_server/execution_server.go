@@ -1043,6 +1043,7 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 		ExecutorGroupId:   pool.GroupID,
 		TaskGroupId:       taskGroupID,
 		Priority:          req.GetExecutionPolicy().GetPriority(),
+		IsolationType:     props.WorkloadIsolationType,
 	}
 	serializedTask, err := proto.Marshal(executionTask)
 	if err != nil {

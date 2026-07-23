@@ -748,14 +748,19 @@ func newScheduleRequest(ctx context.Context, t *testing.T, env environment.Env, 
 		task.Command.Platform.Properties = append(task.Command.Platform.Properties, &repb.Platform_Property{Name: k, Value: v})
 	}
 	size := tasksize.Override(tasksize.Default(task), tasksize.Requested(task))
+	// Populate scheduling metadata from the parsed task properties, mirroring
+	// what the execution server does when scheduling a real task.
+	parsed, err := platform.ParseProperties(task)
+	require.NoError(t, err)
 	taskBytes, err := proto.Marshal(task)
 	require.NoError(t, err)
 	return &scpb.ScheduleTaskRequest{
 		TaskId: taskID,
 		Metadata: &scpb.SchedulingMetadata{
-			Os:       defaultOS,
-			Arch:     defaultArch,
-			TaskSize: size,
+			Os:            defaultOS,
+			Arch:          defaultArch,
+			TaskSize:      size,
+			IsolationType: parsed.WorkloadIsolationType,
 		},
 		SerializedTask: taskBytes,
 	}
@@ -1231,6 +1236,141 @@ func TestEnqueueTaskReservation_RoutingConfig(t *testing.T) {
 	}
 }
 
+func TestEnqueueTaskReservation_IsolationType(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+
+		ex1IsolationTypes  []string
+		ex2IsolationTypes  []string
+		requestedIsolation string
+
+		expectRoutedToHosts   []string
+		expectSchedulingError bool
+	}{
+		{
+			// Only ex1 advertises support for the requested isolation type, so
+			// the task should be routed only to ex1.
+			name:                "RequestedTypeSupportedByOneExecutor_RoutesOnlyToThatExecutor",
+			ex1IsolationTypes:   []string{"firecracker", "oci"},
+			ex2IsolationTypes:   []string{"oci"},
+			requestedIsolation:  "firecracker",
+			expectRoutedToHosts: []string{"ex1"},
+		},
+		{
+			// Both executors advertise support for the requested isolation type,
+			// so the task is eligible to be routed to either.
+			name:                "RequestedTypeSupportedByBothExecutors_RoutesToBoth",
+			ex1IsolationTypes:   []string{"oci"},
+			ex2IsolationTypes:   []string{"oci"},
+			requestedIsolation:  "oci",
+			expectRoutedToHosts: []string{"ex1", "ex2"},
+		},
+		{
+			// The task doesn't explicitly request an isolation type, so no
+			// isolation filtering happens and both executors are eligible even
+			// though they support different types.
+			name:                "NoRequestedType_RoutesToBothRegardlessOfSupport",
+			ex1IsolationTypes:   []string{"firecracker"},
+			ex2IsolationTypes:   []string{"oci"},
+			requestedIsolation:  "",
+			expectRoutedToHosts: []string{"ex1", "ex2"},
+		},
+		{
+			// ex2 is an older executor that doesn't advertise its supported
+			// isolation types. We can't tell what it supports, so it remains a
+			// candidate for backwards compatibility.
+			name:                "ExecutorDoesNotAdvertiseTypes_TreatedAsSupportingRequestedType",
+			ex1IsolationTypes:   []string{"firecracker"},
+			ex2IsolationTypes:   nil,
+			requestedIsolation:  "firecracker",
+			expectRoutedToHosts: []string{"ex1", "ex2"},
+		},
+		{
+			// No executor advertises support for the requested isolation type,
+			// so scheduling should fail.
+			name:                  "RequestedTypeSupportedByNoExecutor_FailsToSchedule",
+			ex1IsolationTypes:     []string{"oci"},
+			ex2IsolationTypes:     []string{"oci"},
+			requestedIsolation:    "firecracker",
+			expectSchedulingError: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			env, ctx := getEnv(t, &schedulerOpts{}, "user1")
+
+			ex1 := newFakeExecutor(ctx, t, env.GetSchedulerClient())
+			ex1.node.Host = "ex1"
+			ex1.node.SupportedIsolationTypes = tc.ex1IsolationTypes
+			ex1.Register()
+			ex2 := newFakeExecutor(ctx, t, env.GetSchedulerClient())
+			ex2.node.Host = "ex2"
+			ex2.node.SupportedIsolationTypes = tc.ex2IsolationTypes
+			ex2.Register()
+
+			props := map[string]string{}
+			if tc.requestedIsolation != "" {
+				props["workload-isolation-type"] = tc.requestedIsolation
+			}
+			req := newScheduleRequest(ctx, t, env, scheduleOpts{props: props})
+			_, err := env.GetSchedulerService().ScheduleTask(ctx, req)
+			if tc.expectSchedulingError {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+
+			for _, ex := range []*fakeExecutor{ex1, ex2} {
+				if slices.Contains(tc.expectRoutedToHosts, ex.node.GetHost()) {
+					msg := ex.NextSchedulerMessage()
+					require.Equal(t, req.GetTaskId(), msg.GetEnqueueTaskReservationRequest().GetTaskId())
+				} else {
+					ex.EnsureNoSchedulerMessage()
+				}
+			}
+		})
+	}
+}
+
+// EnqueueTaskReservation is also invoked directly as an RPC when one scheduler
+// forwards a reservation to another. In that path the full ExecutionTask isn't
+// available -- only the scheduling metadata -- so isolation-type filtering must
+// work from the metadata alone.
+func TestEnqueueTaskReservation_IsolationTypeWithoutTask(t *testing.T) {
+	env, ctx := getEnv(t, &schedulerOpts{}, "user1")
+
+	// ex1 supports firecracker; ex2 only supports oci.
+	ex1 := newFakeExecutorWithId(ctx, t, "n1", env.GetSchedulerClient())
+	ex1.node.SupportedIsolationTypes = []string{"firecracker"}
+	ex1.Register()
+	ex2 := newFakeExecutorWithId(ctx, t, "n2", env.GetSchedulerClient())
+	ex2.node.SupportedIsolationTypes = []string{"oci"}
+	ex2.Register()
+
+	// Enqueue a reservation that requests firecracker isolation via the
+	// scheduling metadata only (no serialized task), as happens when a
+	// reservation is forwarded between schedulers.
+	id, err := uuid.NewRandom()
+	require.NoError(t, err)
+	taskID := id.String()
+	_, err = env.GetSchedulerService().EnqueueTaskReservation(ctx, &scpb.EnqueueTaskReservationRequest{
+		TaskId:   taskID,
+		TaskSize: &scpb.TaskSize{EstimatedMemoryBytes: 100, EstimatedMilliCpu: 100, EstimatedFreeDiskBytes: 100},
+		SchedulingMetadata: &scpb.SchedulingMetadata{
+			Os:            defaultOS,
+			Arch:          defaultArch,
+			TaskSize:      &scpb.TaskSize{EstimatedMemoryBytes: 100, EstimatedMilliCpu: 100, EstimatedFreeDiskBytes: 100},
+			IsolationType: "firecracker",
+		},
+	})
+	require.NoError(t, err)
+
+	// Only ex1 supports firecracker, so it must receive the reservation and ex2
+	// must not -- even though the full task isn't available on this path.
+	msg := ex1.NextSchedulerMessage()
+	require.Equal(t, taskID, msg.GetEnqueueTaskReservationRequest().GetTaskId())
+	ex2.EnsureNoSchedulerMessage()
+}
+
 func TestAskForMoreWork_OnlyEnqueuesTasksThatFitOnNode(t *testing.T) {
 	// Disable unclaimedTasks cache to simulate the TTL expiring immediately
 	// for the purposes of this test.
@@ -1309,6 +1449,44 @@ func TestAskForMoreWork_RespectRequestedExecutorID(t *testing.T) {
 	// schedule any work on executor2 because the task specifically requested
 	// executor1. It should only reply with an AskForMoreWorkResponse to increase
 	// the client backoff.
+	executor2.Send(&scpb.RegisterAndStreamWorkRequest{
+		AskForMoreWorkRequest: &scpb.AskForMoreWorkRequest{},
+	})
+	rsp = <-executor2.schedulerMessages
+	require.Greater(t, rsp.GetAskForMoreWorkResponse().GetDelay().AsDuration(), time.Duration(0))
+}
+
+func TestAskForMoreWork_RespectIsolationType(t *testing.T) {
+	// Disable the unclaimed-tasks cache so each AskForMoreWork request samples
+	// the live unclaimed task set rather than a stale snapshot.
+	flags.Set(t, "remote_execution.unclaimed_tasks_cache_ttl", 0*time.Second)
+
+	clock := clockwork.NewFakeClock()
+	env, ctx := getEnv(t, &schedulerOpts{options: Options{Clock: clock}}, "user1")
+
+	// Register two nodes that support different isolation types: executor1
+	// supports firecracker, executor2 only supports oci.
+	executor1 := newFakeExecutorWithId(ctx, t, "n1", env.GetSchedulerClient())
+	executor1.node.AssignableMilliCpu = 1000
+	executor1.node.SupportedIsolationTypes = []string{"firecracker"}
+	executor1.Register()
+
+	executor2 := newFakeExecutorWithId(ctx, t, "n2", env.GetSchedulerClient())
+	executor2.node.AssignableMilliCpu = 1000
+	executor2.node.SupportedIsolationTypes = []string{"oci"}
+	executor2.Register()
+
+	// Schedule a task that explicitly requests firecracker isolation. Only
+	// executor1 supports it, so the task is enqueued there. executor1
+	// acknowledges the reservation but doesn't lease the task, so it stays
+	// unclaimed and eligible to be stolen via AskForMoreWork.
+	taskID := scheduleTask(ctx, t, env, map[string]string{"workload-isolation-type": "firecracker"})
+	rsp := <-executor1.schedulerMessages
+	require.Equal(t, taskID, rsp.GetEnqueueTaskReservationRequest().GetTaskId())
+
+	// executor2 asks for more work. Because it doesn't support firecracker, the
+	// scheduler must not let it steal the unclaimed task; it should only reply
+	// with an AskForMoreWorkResponse to increase the client backoff.
 	executor2.Send(&scpb.RegisterAndStreamWorkRequest{
 		AskForMoreWorkRequest: &scpb.AskForMoreWorkRequest{},
 	})
