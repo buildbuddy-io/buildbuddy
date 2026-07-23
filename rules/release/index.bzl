@@ -1,3 +1,5 @@
+load("@rules_multirun//:defs.bzl", "multirun")
+
 # Creates a release step that depends on another release step.
 #
 # When run, it will run the target specified by the `run` argument
@@ -27,12 +29,11 @@ def release(name, run, after, enable_actions = True, **kwargs):
         actions = [".apply", ".diff", ".delete"]
 
     for action in actions:
-        native.genrule(
+        multirun(
             name = name + action,
-            tools = [run + action, after + action],
-            outs = [name + action + ".out"],
-            cmd = "echo \"bash $(location %s) && bash $(location %s);\" > $@" % (after + action, run + action),
-            local = 1,
-            executable = 1,
+            commands = [
+                after + action,
+                run + action,
+            ],
             **kwargs
         )
