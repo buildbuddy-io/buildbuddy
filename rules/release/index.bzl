@@ -24,7 +24,7 @@
 def release(name, run, after, enable_actions = True, **kwargs):
     actions = [""]
     if enable_actions:
-        actions = [".apply", ".diff", ".delete"]
+        actions = [".apply", ".diff", ".delete", ".push_only", ".apply_only"]
 
     for action in actions:
         native.genrule(

@@ -47,6 +47,28 @@ def gcs(name, srcs, bucket, gsutil = "gsutil", prefix = "", sha_prefix = "", zip
         **kwargs
     )
 
+    # Generate a .push_only rule for uploading without a later apply phase.
+    native.genrule(
+        name = name + ".push_only",
+        srcs = srcs,
+        outs = [name + ".push_only.out"],
+        cmd = "echo \"%s -m %s cp %s $(SRCS) gs://%s/%s\" > $@" % (gsutil, util_options, copy_options, bucket, prefix),
+        local = 1,
+        executable = 1,
+        **kwargs
+    )
+
+    # Uploading is the only deployment operation for a GCS bundle, so there
+    # is nothing left to do during the apply-only phase.
+    native.genrule(
+        name = name + ".apply_only",
+        outs = [name + ".apply_only.out"],
+        cmd = "echo \"true\" > $@",
+        local = 1,
+        executable = 1,
+        **kwargs
+    )
+
     # Generate a .diff rule for diffing.
     native.genrule(
         name = name + ".diff",
