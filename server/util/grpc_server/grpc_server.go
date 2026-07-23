@@ -30,6 +30,8 @@ import (
 	"google.golang.org/grpc/reflection"
 	"google.golang.org/grpc/stats"
 
+	"golang.org/x/net/netutil"
+
 	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-middleware/providers/prometheus"
 	_ "google.golang.org/grpc/encoding/gzip" // imported for side effects; DO NOT REMOVE.
 	hlpb "google.golang.org/grpc/health/grpc_health_v1"
@@ -51,6 +53,13 @@ var (
 	enablePrometheusHistograms = flag.Bool("app.enable_prometheus_histograms", true, "If true, collect prometheus histograms for all RPCs")
 
 	serverWorkerMultiplier = flag.Int("grpc_server_worker_multiplier", 2, "Multiplier applied to GOMAXPROCS to determine the number of gRPC server workers. 0 disables workers")
+
+	maxConnections = flag.Int("grpc_server_max_connections", 0, "Maximum number of concurrent connections the gRPC server will accept. Connections beyond this limit wait in the kernel accept backlog. 0 means unlimited.")
+
+	// Explicitly setting either window size disables gRPC's BDP-based window
+	// auto-tuning, which can otherwise grow windows up to 16MB per stream.
+	initialWindowSizeBytes     = flag.Int("grpc_server_initial_window_size_bytes", 0, "Initial HTTP/2 flow-control window size [bytes] for each server stream; caps unconsumed buffered data per stream. gRPC ignores values below 64KB. 0 uses the gRPC default with auto-tuning.")
+	initialConnWindowSizeBytes = flag.Int("grpc_server_initial_conn_window_size_bytes", 0, "Initial HTTP/2 flow-control window size [bytes] for each server connection; caps unconsumed buffered data across all streams on a connection. gRPC ignores values below 64KB. 0 uses the gRPC default with auto-tuning.")
 )
 
 func GRPCPort() int {
@@ -141,6 +150,9 @@ func (b *GRPCServer) Start() error {
 	lis, err := net.Listen("tcp", b.hostPort)
 	if err != nil {
 		return status.InternalErrorf("Failed to listen: %s", err)
+	}
+	if *maxConnections > 0 {
+		lis = netutil.LimitListener(lis, *maxConnections)
 	}
 
 	go func() {
@@ -241,6 +253,12 @@ func CommonGRPCServerOptionsWithConfig(env environment.Env, config GRPCServerCon
 		grpc.MaxRecvMsgSize(MaxRecvMsgSizeBytes()),
 		grpc.NumStreamWorkers(uint32(runtime.GOMAXPROCS(0)) * workerMultiplier),
 		KeepaliveEnforcementPolicy(),
+	}
+	if *initialWindowSizeBytes > 0 {
+		opts = append(opts, grpc.InitialWindowSize(int32(*initialWindowSizeBytes)))
+	}
+	if *initialConnWindowSizeBytes > 0 {
+		opts = append(opts, grpc.InitialConnWindowSize(int32(*initialConnWindowSizeBytes)))
 	}
 	for _, h := range config.ExtraStatsHandlers {
 		opts = append(opts, grpc.StatsHandler(h))
