@@ -73,6 +73,7 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	sipb "github.com/buildbuddy-io/buildbuddy/proto/stored_invocation"
+	usagepb "github.com/buildbuddy-io/buildbuddy/proto/usage"
 	remote_execution_config "github.com/buildbuddy-io/buildbuddy/server/remote_execution/config"
 	gcodes "google.golang.org/grpc/codes"
 	gstatus "google.golang.org/grpc/status"
@@ -1004,6 +1005,14 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 	if err != nil {
 		return nil, status.WrapError(err, "get executor pool info")
 	}
+	if !opts.teedRequest && !pool.IsSelfHosted {
+		if ul := s.env.GetUsageLimiter(); ul != nil {
+			// Use 1ns check to verify some quota is available before starting.
+			if err := ul.Check(ctx, usagepb.UsageAlertingMetric_CLOUD_CPU_NANOS, 1 /* CPU ns */); err != nil {
+				return nil, err
+			}
+		}
+	}
 	var hostnamePattern string
 	var routingConfig *scpb.RoutingConfig
 	if exp := s.env.GetExperimentFlagProvider(); exp != nil {
@@ -1110,11 +1119,10 @@ func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) e
 	if op == action_merger.New {
 		log.CtxInfof(ctx, "Scheduling new execution %s for %q for invocation %q", executionID, downloadString, invocationID)
 
-		// Check CPU time quota before dispatching execution.
-		// Use a 1ns check to verify quota is available before starting.
 		if qm := s.env.GetQuotaManager(); qm != nil {
 			namespace := quota.GetSKUKey(sku.RemoteExecutionExecuteWorkerCPUNanos)
-			if err := qm.Allow(ctx, namespace, 1); err != nil {
+			// Use 1ns check to verify some quota is available before starting.
+			if err := qm.Allow(ctx, namespace, 1 /* CPU ns */); err != nil {
 				return err
 			}
 		}
@@ -1742,7 +1750,6 @@ func (s *ExecutionServer) updateUsage(ctx context.Context, executeResponse *repb
 	if !pool.IsSelfHosted && usg.GetCpuNanos() > 0 {
 		counts.CPUNanos = usg.GetCpuNanos()
 
-		// If quota is exceeded, the next execution will be blocked.
 		if qm := s.env.GetQuotaManager(); qm != nil {
 			namespace := quota.GetSKUKey(sku.RemoteExecutionExecuteWorkerCPUNanos)
 			if err := qm.Allow(ctx, namespace, counts.CPUNanos); err != nil {

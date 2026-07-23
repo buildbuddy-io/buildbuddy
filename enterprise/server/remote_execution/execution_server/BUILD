@@ -22,6 +22,7 @@ go_library(
         "//proto:remote_execution_go_proto",
         "//proto:scheduler_go_proto",
         "//proto:stored_invocation_go_proto",
+        "//proto:usage_go_proto",
         "//server/environment",
         "//server/interfaces",
         "//server/metrics",

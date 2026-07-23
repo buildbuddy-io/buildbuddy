@@ -187,6 +187,9 @@ const (
 	// Whether or not billable usage was recorded for this request ("true", "false")
 	UsageTracked = "tracked"
 
+	// Stable usage field associated with a usage metric.
+	UsageField = "usage_field"
+
 	// Describes the name of the server that handles a client request, such as "byte_stream_server" or "cas_server"
 	ServerName = "server_name"
 
@@ -2400,6 +2403,16 @@ var (
 		Subsystem: "usage_tracker",
 		Name:      "missing_collection_counts_count",
 		Help:      "The number of times the usage tracking system was missing counts for a particular collection period. This may happen if there are transient redis errors.",
+	})
+
+	UsageLimitExceeded = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "usage_limits",
+		Name:      "usage_limit_exceeded_count",
+		Help:      "The number of requests blocked by usage limits.",
+	}, []string{
+		GroupID,
+		UsageField,
 	})
 
 	// ### Webhooks

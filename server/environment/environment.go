@@ -94,6 +94,7 @@ type Env interface {
 	GetUsageService() interfaces.UsageService
 	GetNotificationService() interfaces.NotificationService
 	GetUsageTracker() interfaces.UsageTracker
+	GetUsageLimiter() interfaces.UsageLimiter
 	GetXcodeLocator() interfaces.XcodeLocator
 	GetQuotaManager() interfaces.QuotaManager
 	GetMux() interfaces.HttpServeMux
