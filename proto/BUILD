@@ -209,9 +209,20 @@ proto_library(
         "distributed_cache.proto",
     ],
     deps = [
+        ":reference_proto",
         ":remote_execution_proto",
         ":resource_proto",
         "@com_github_planetscale_vtprotobuf//include/github.com/planetscale/vtprotobuf/vtproto:vtproto_proto",
+    ],
+)
+
+proto_library(
+    name = "reference_proto",
+    srcs = [
+        "reference.proto",
+    ],
+    deps = [
+        ":storage_proto",
     ],
 )
 
@@ -1704,9 +1715,19 @@ go_proto_library(
     mode = "messages_and_services",
     proto = ":distributed_cache_proto",
     deps = [
+        ":reference_go_proto",
         ":remote_execution_go_proto",
         ":resource_go_proto",
         "@com_github_planetscale_vtprotobuf//include/github.com/planetscale/vtprotobuf/vtproto:vtproto_go_proto",
+    ],
+)
+
+go_proto_library(
+    name = "reference_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/reference",
+    proto = ":reference_proto",
+    deps = [
+        ":storage_go_proto",
     ],
 )
 
