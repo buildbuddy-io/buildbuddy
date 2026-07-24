@@ -234,10 +234,26 @@ func (r *RoutingCASClient) SpliceBlob(ctx context.Context, req *repb.SpliceBlobR
 	return primaryClient.SpliceBlob(ctx, req, opts...)
 }
 
+func (r *RoutingCASClient) SpliceChunks(ctx context.Context, opts ...grpc.CallOption) (repb.ContentAddressableStorage_SpliceChunksClient, error) {
+	primaryClient, _, err := r.router.GetCASClients(ctx)
+	if err != nil {
+		return nil, status.InternalErrorf("Failed to get primary CAS client: %s", err)
+	}
+	return primaryClient.SpliceChunks(ctx, opts...)
+}
+
 func (r *RoutingCASClient) SplitBlob(ctx context.Context, req *repb.SplitBlobRequest, opts ...grpc.CallOption) (*repb.SplitBlobResponse, error) {
 	primaryClient, _, err := r.router.GetCASClients(ctx)
 	if err != nil {
 		return nil, status.InternalErrorf("Failed to get primary CAS client: %s", err)
 	}
 	return primaryClient.SplitBlob(ctx, req, opts...)
+}
+
+func (r *RoutingCASClient) SplitChunks(ctx context.Context, req *repb.SplitBlobRequest, opts ...grpc.CallOption) (repb.ContentAddressableStorage_SplitChunksClient, error) {
+	primaryClient, _, err := r.router.GetCASClients(ctx)
+	if err != nil {
+		return nil, status.InternalErrorf("Failed to get primary CAS client: %s", err)
+	}
+	return primaryClient.SplitChunks(ctx, req, opts...)
 }

@@ -1104,6 +1104,16 @@ var (
 		StatusLabel,
 	})
 
+	SpliceChunksDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "splice_chunks_duration_usec",
+		Buckets:   durationUsecBuckets(20*time.Millisecond, 10*time.Minute, 1.4),
+		Help:      "Duration of the full SpliceChunks RPC handler, in **microseconds**.",
+	}, []string{
+		StatusLabel,
+	})
+
 	ChunkedManifestValidationCount = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_cache",
