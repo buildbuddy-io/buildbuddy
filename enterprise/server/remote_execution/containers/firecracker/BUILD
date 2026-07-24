@@ -2,11 +2,17 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 package(default_visibility = ["//enterprise:__subpackages__"])
 
+# Tell gazelle to make each file a separate test target,
+# so that tests that don't need firecracker don't have to be run on the special pool.
+# gazelle:go_test file
+
 go_library(
     name = "firecracker",
     srcs = [
         "containeropts.go",
         "firecracker.go",
+        "memory_snapshot_export_monitor.go",
+        "sequential_chunk_write_monitor.go",
     ],
     data = select({
         "//platforms/configs:linux_x86_64": [
@@ -193,5 +199,26 @@ go_test(
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_protobuf//testing/protocmp",
         "@org_golang_x_sync//errgroup",
+    ],
+)
+
+go_test(
+    name = "sequential_chunk_write_monitor_test",
+    srcs = ["sequential_chunk_write_monitor_test.go"],
+    embed = [":firecracker"],
+    deps = [
+        "//enterprise/server/remote_execution/copy_on_write",
+        "@com_github_stretchr_testify//require",
+    ],
+)
+
+go_test(
+    name = "memory_snapshot_export_monitor_test",
+    srcs = ["memory_snapshot_export_monitor_test.go"],
+    embed = [":firecracker"],
+    deps = [
+        "//enterprise/server/remote_execution/copy_on_write",
+        "//proto:remote_execution_go_proto",
+        "@com_github_stretchr_testify//require",
     ],
 )
