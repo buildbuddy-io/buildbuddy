@@ -225,7 +225,12 @@ func expectAtimeUpdate(t *testing.T, clock *clockwork.FakeClock, requestCount *a
 		clock.Advance(atimeUpdatePeriod + time.Second)
 		time.Sleep(wait)
 		wait = wait * 2
-		if requestCount.Load() == 1 {
+		// A single read can enqueue multiple digests (e.g. read(foo, baz)
+		// updates the atime of both). If the batcher splits them across
+		// pending batches, they may flush on separate ticks, so more than one
+		// update RPC can be observed here. Accept >= 1 rather than == 1 so we
+		// don't spuriously fail when a second flush has already landed.
+		if requestCount.Load() >= 1 {
 			requestCount.Store(0)
 			return
 		}
