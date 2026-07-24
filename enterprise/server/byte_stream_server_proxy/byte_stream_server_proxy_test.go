@@ -2130,18 +2130,18 @@ type faultyCache struct {
 	failErr     error
 }
 
-func (c *faultyCache) Reader(ctx context.Context, r *rspb.ResourceName, uncompressedOffset, limit int64) (io.ReadCloser, error) {
-	reader, err := c.Cache.Reader(ctx, r, uncompressedOffset, limit)
+func (c *faultyCache) Reader(ctx context.Context, r *rspb.ResourceName, uncompressedOffset, limit int64) (interfaces.CacheArtifact, error) {
+	artifact, err := c.Cache.Reader(ctx, r, uncompressedOffset, limit)
 	if err != nil {
-		return nil, err
+		return interfaces.CacheArtifact{}, err
 	}
 	shouldFault := c.faultDigest == r.GetDigest().GetHash()
 	failAfter := c.failAfter
 	failErr := c.failErr
 	if shouldFault {
-		return &faultyReader{ReadCloser: reader, failAfter: failAfter, failErr: failErr}, nil
+		return interfaces.CacheArtifact{ReadCloser: &faultyReader{ReadCloser: artifact.ReadCloser, failAfter: failAfter, failErr: failErr}}, nil
 	}
-	return reader, nil
+	return artifact, nil
 }
 
 type faultyReader struct {

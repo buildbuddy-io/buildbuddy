@@ -782,22 +782,25 @@ func (d *doubleReader) Close() error {
 	return srcErr
 }
 
-func (mc *MigrationCache) Reader(ctx context.Context, r *rspb.ResourceName, uncompressedOffset, limit int64) (io.ReadCloser, error) {
+func (mc *MigrationCache) Reader(ctx context.Context, r *rspb.ResourceName, uncompressedOffset, limit int64) (interfaces.CacheArtifact, error) {
 	conf, err := mc.config(ctx)
 	if err != nil {
-		return nil, err
+		return interfaces.CacheArtifact{}, err
 	}
-	srcReader, srcErr := conf.src.Reader(ctx, r, uncompressedOffset, limit)
-	if srcErr != nil || conf.dest == nil {
-		return srcReader, srcErr
+	srcArtifact, srcErr := conf.src.Reader(ctx, r, uncompressedOffset, limit)
+	srcReader := srcArtifact.ReadCloser
+	// TODO: support migrating references.
+	if srcErr != nil || conf.dest == nil || srcReader == nil {
+		return srcArtifact, srcErr
 	}
 	if !conf.doubleRead() {
 		// We still want to copy if the source was successful.
 		mc.sendNonBlockingCopy(ctx, r, true /*=onlyCopyMissing*/, conf)
-		return srcReader, srcErr
+		return srcArtifact, srcErr
 	}
 
-	destReader, dstErr := conf.dest.Reader(ctx, r, uncompressedOffset, limit)
+	destArtifact, dstErr := conf.dest.Reader(ctx, r, uncompressedOffset, limit)
+	destReader := destArtifact.ReadCloser
 	if dstErr != nil {
 		if mc.logNotFoundErrors || !status.IsNotFoundError(dstErr) {
 			log.CtxWarningf(ctx, "Migration failed to get dest reader for %v: %s", r, dstErr)
@@ -810,12 +813,15 @@ func (mc *MigrationCache) Reader(ctx context.Context, r *rspb.ResourceName, unco
 		} else {
 			mc.sendNonBlockingCopy(ctx, r, true /*=onlyCopyMissing*/, conf)
 		}
-		return srcReader, srcErr
+		return srcArtifact, srcErr
 	}
 	metrics.MigrationDoubleReadHitCount.With(prometheus.Labels{
 		metrics.CacheRequestType: "reader",
 		metrics.GroupID:          groupID(ctx),
 	}).Inc()
+	if destReader == nil {
+		return srcArtifact, srcErr
+	}
 
 	var decompressor io.WriteCloser
 	pr, pw := io.Pipe()
@@ -862,7 +868,7 @@ func (mc *MigrationCache) Reader(ctx context.Context, r *rspb.ResourceName, unco
 		}()
 	}
 
-	return dr, nil
+	return interfaces.CacheArtifact{ReadCloser: dr}, nil
 }
 
 type doubleWriter struct {
@@ -1127,11 +1133,16 @@ func (mc *MigrationCache) copy(c *copyData) {
 		c.d.Compressor = repb.Compressor_ZSTD
 	}
 
-	srcReader, err := c.conf.src.Reader(c.ctx, c.d, 0, 0)
+	srcArtifact, err := c.conf.src.Reader(c.ctx, c.d, 0, 0)
 	if err != nil {
 		if !status.IsNotFoundError(err) {
 			log.CtxWarningf(ctx, "Migration copy err: Could not create %v reader from src cache: %s", c.d, err)
 		}
+		return
+	}
+	srcReader := srcArtifact.ReadCloser
+	if srcReader == nil {
+		log.CtxWarningf(ctx, "Migration copy err: src cache returned a reference for %v", c.d)
 		return
 	}
 	defer srcReader.Close()

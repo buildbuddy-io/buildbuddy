@@ -281,17 +281,17 @@ func (c *Cache) Delete(ctx context.Context, r *rspb.ResourceName) error {
 }
 
 // Low level interface used for seeking and stream-writing.
-func (c *Cache) Reader(ctx context.Context, rn *rspb.ResourceName, uncompressedOffset, limit int64) (io.ReadCloser, error) {
+func (c *Cache) Reader(ctx context.Context, rn *rspb.ResourceName, uncompressedOffset, limit int64) (interfaces.CacheArtifact, error) {
 	if !eligibleForMc(rn.GetDigest()) {
-		return nil, status.ResourceExhaustedErrorf("Reader: Digest %v too big for memcache", rn.GetDigest())
+		return interfaces.CacheArtifact{}, status.ResourceExhaustedErrorf("Reader: Digest %v too big for memcache", rn.GetDigest())
 	}
 	k, err := c.key(ctx, rn)
 	if err != nil {
-		return nil, err
+		return interfaces.CacheArtifact{}, err
 	}
 	buf, err := c.mcGet(k)
 	if err != nil {
-		return nil, err
+		return interfaces.CacheArtifact{}, err
 	}
 
 	r := bytes.NewReader(buf)
@@ -301,9 +301,9 @@ func (c *Cache) Reader(ctx context.Context, rn *rspb.ResourceName, uncompressedO
 		length = limit
 	}
 	if length > 0 {
-		return io.NopCloser(io.LimitReader(r, length)), nil
+		return interfaces.CacheArtifact{ReadCloser: io.NopCloser(io.LimitReader(r, length))}, nil
 	}
-	return io.NopCloser(r), nil
+	return interfaces.CacheArtifact{ReadCloser: io.NopCloser(r)}, nil
 }
 
 func (c *Cache) Writer(ctx context.Context, r *rspb.ResourceName) (interfaces.CommittedWriteCloser, error) {

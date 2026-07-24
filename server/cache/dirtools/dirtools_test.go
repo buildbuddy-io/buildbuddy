@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -1483,7 +1482,7 @@ type controlledCache struct {
 	getMultiCalls chan struct{}
 }
 
-func (cc *controlledCache) Reader(ctx context.Context, r *rspb.ResourceName, uncompressedOffset, limit int64) (io.ReadCloser, error) {
+func (cc *controlledCache) Reader(ctx context.Context, r *rspb.ResourceName, uncompressedOffset, limit int64) (interfaces.CacheArtifact, error) {
 	dk := digest.NewKey(r.GetDigest())
 	cc.mu.Lock()
 	delay, ok := cc.readerDelay[dk]

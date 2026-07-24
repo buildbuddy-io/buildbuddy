@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"io/ioutil"
 	"sync"
 	"sync/atomic"
@@ -197,9 +196,9 @@ func (c *errorCache) Writer(ctx context.Context, r *rspb.ResourceName) (interfac
 	return nil, errors.New("error cache writer err")
 }
 
-func (c *errorCache) Reader(ctx context.Context, r *rspb.ResourceName, offset, limit int64) (io.ReadCloser, error) {
+func (c *errorCache) Reader(ctx context.Context, r *rspb.ResourceName, offset, limit int64) (interfaces.CacheArtifact, error) {
 	c.calls.Add(1)
-	return nil, errors.New("error cache reader err")
+	return interfaces.CacheArtifact{}, errors.New("error cache reader err")
 }
 
 func TestACIsolation(t *testing.T) {
@@ -1362,9 +1361,9 @@ func TestReadsCopyData(t *testing.T) {
 	t.Run("Reader", func(t *testing.T) {
 		r, buf := testdigest.RandomCASResourceBuf(t, 10)
 		require.NoError(t, srcCache.Set(ctx, r, buf))
-		reader, err := mc.Reader(ctx, r, 0, 0)
+		artifact, err := mc.Reader(ctx, r, 0, 0)
 		require.NoError(t, err)
-		reader.Close()
+		artifact.ReadCloser.Close()
 		waitForCopy(t, ctx, destCache, r)
 	})
 	t.Run("Get", func(t *testing.T) {
@@ -1418,8 +1417,9 @@ func TestReadWrite(t *testing.T) {
 			err = w.Close()
 			require.NoError(t, err)
 
-			reader, err := mc.Reader(ctx, r, 0, 0)
+			artifact, err := mc.Reader(ctx, r, 0, 0)
 			require.NoError(t, err)
+			reader := artifact.ReadCloser
 
 			actualBuf := make([]byte, len(buf))
 			n, err := reader.Read(actualBuf)
@@ -1431,8 +1431,9 @@ func TestReadWrite(t *testing.T) {
 			require.NoError(t, err)
 
 			// Verify data was written to both caches
-			srcReader, err := srcCache.Reader(ctx, r, 0, 0)
+			srcArtifact, err := srcCache.Reader(ctx, r, 0, 0)
 			require.NoError(t, err)
+			srcReader := srcArtifact.ReadCloser
 
 			actualBuf, err = ioutil.ReadAll(srcReader)
 			require.NoError(t, err)
@@ -1442,8 +1443,9 @@ func TestReadWrite(t *testing.T) {
 			err = srcReader.Close()
 			require.NoError(t, err)
 
-			destReader, err := destCache.Reader(ctx, r, 0, 0)
+			destArtifact, err := destCache.Reader(ctx, r, 0, 0)
 			require.NoError(t, err)
+			destReader := destArtifact.ReadCloser
 
 			actualBuf, err = ioutil.ReadAll(destReader)
 			require.NoError(t, err)
@@ -1488,12 +1490,12 @@ func TestReaderWriter_DestFails(t *testing.T) {
 	require.NoError(t, err)
 
 	// Will fail to set a dest reader
-	reader, err := mc.Reader(ctx, r, 0, 0)
+	artifact, err := mc.Reader(ctx, r, 0, 0)
 	require.NoError(t, err)
 
 	// Should still read from src cache without error
 	actualBuf := make([]byte, len(buf))
-	n, err := reader.Read(actualBuf)
+	n, err := artifact.ReadCloser.Read(actualBuf)
 	require.NoError(t, err)
 	require.Equal(t, 100, n)
 	require.True(t, bytes.Equal(buf, actualBuf))
@@ -1555,8 +1557,9 @@ func testOnlyOneCache(t *testing.T, reverse bool) {
 	require.NoError(t, err)
 	require.Equal(t, map[*repb.Digest][]byte{r.GetDigest(): buf}, dataMulti)
 	// reader
-	reader, err := mc.Reader(ctx, r, 0, 0)
+	artifact, err := mc.Reader(ctx, r, 0, 0)
 	require.NoError(t, err)
+	reader := artifact.ReadCloser
 	readBuf := make([]byte, len(buf))
 	_, err = reader.Read(readBuf)
 	require.NoError(t, err)

@@ -242,11 +242,11 @@ func TestReadWrite(t *testing.T) {
 			t.Fatalf("Error closing writer: %s", err.Error())
 		}
 		// Use Reader() to get the bytes from the cache.
-		reader, err := mc.Reader(ctx, rn, 0, 0)
+		artifact, err := mc.Reader(ctx, rn, 0, 0)
 		if err != nil {
 			t.Fatalf("Error getting %q reader: %s", rn.GetDigest().GetHash(), err.Error())
 		}
-		d2 := testdigest.ReadDigestAndClose(t, reader)
+		d2 := testdigest.ReadDigestAndClose(t, artifact.ReadCloser)
 		if rn.GetDigest().GetHash() != d2.GetHash() {
 			t.Fatalf("Returned digest %q did not match set value: %q", d2.GetHash(), rn.GetDigest().GetHash())
 		}
@@ -265,11 +265,11 @@ func TestReadOffsetLimit(t *testing.T) {
 
 	offset := int64(2)
 	limit := int64(3)
-	reader, err := mc.Reader(ctx, r, offset, limit)
+	artifact, err := mc.Reader(ctx, r, offset, limit)
 	require.NoError(t, err)
 
 	readBuf := make([]byte, size)
-	n, err := reader.Read(readBuf)
+	n, err := artifact.ReadCloser.Read(readBuf)
 	require.NoError(t, err)
 	require.EqualValues(t, limit, n)
 	require.Equal(t, buf[offset:offset+limit], readBuf[:limit])

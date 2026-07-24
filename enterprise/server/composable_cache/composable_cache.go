@@ -193,18 +193,20 @@ func (m *MultiCloser) Close() error {
 	return nil
 }
 
-func (c *ComposableCache) Reader(ctx context.Context, r *rspb.ResourceName, uncompressedOffset, limit int64) (io.ReadCloser, error) {
-	if outerReader, err := c.outer.Reader(ctx, r, uncompressedOffset, limit); err == nil {
-		return outerReader, nil
+func (c *ComposableCache) Reader(ctx context.Context, r *rspb.ResourceName, uncompressedOffset, limit int64) (interfaces.CacheArtifact, error) {
+	if outerArtifact, err := c.outer.Reader(ctx, r, uncompressedOffset, limit); err == nil {
+		return outerArtifact, nil
 	}
 
-	innerReader, err := c.inner.Reader(ctx, r, uncompressedOffset, limit)
+	innerArtifact, err := c.inner.Reader(ctx, r, uncompressedOffset, limit)
 	if err != nil {
-		return nil, err
+		return interfaces.CacheArtifact{}, err
 	}
 
-	if c.mode&ModeReadThrough == 0 || uncompressedOffset != 0 {
-		return innerReader, nil
+	// TODO: support copying references.
+	innerReader := innerArtifact.ReadCloser
+	if innerReader == nil || c.mode&ModeReadThrough == 0 || uncompressedOffset != 0 {
+		return innerArtifact, nil
 	}
 
 	// Copy the digest over to the outer cache.
@@ -212,23 +214,23 @@ func (c *ComposableCache) Reader(ctx context.Context, r *rspb.ResourceName, unco
 	// Directly return the inner reader if the outer cache doesn't want the
 	// blob.
 	if err != nil {
-		return innerReader, nil
+		return innerArtifact, nil
 	}
 	defer outerWriter.Close()
 	if _, err := io.Copy(outerWriter, innerReader); err != nil {
-		return nil, err
+		return interfaces.CacheArtifact{}, err
 	}
 	// We're done with the inner reader at this point, we'll create a new
 	// reader below.
 	innerReader.Close()
 	if err := outerWriter.Commit(); err != nil {
-		return nil, err
+		return interfaces.CacheArtifact{}, err
 	}
-	outerReader, err := c.outer.Reader(ctx, r, uncompressedOffset, limit)
+	outerArtifact, err := c.outer.Reader(ctx, r, uncompressedOffset, limit)
 	if err != nil {
-		return nil, err
+		return interfaces.CacheArtifact{}, err
 	}
-	return outerReader, nil
+	return outerArtifact, nil
 }
 
 type doubleWriter struct {

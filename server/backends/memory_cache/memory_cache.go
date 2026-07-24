@@ -228,11 +228,11 @@ func (m *MemoryCache) Delete(ctx context.Context, r *rspb.ResourceName) error {
 }
 
 // Low level interface used for seeking and stream-writing.
-func (m *MemoryCache) Reader(ctx context.Context, rn *rspb.ResourceName, uncompressedOffset, limit int64) (io.ReadCloser, error) {
+func (m *MemoryCache) Reader(ctx context.Context, rn *rspb.ResourceName, uncompressedOffset, limit int64) (interfaces.CacheArtifact, error) {
 	// Locking and key prefixing are handled in Get.
 	buf, err := m.Get(ctx, rn)
 	if err != nil {
-		return nil, err
+		return interfaces.CacheArtifact{}, err
 	}
 	r := bytes.NewReader(buf)
 	r.Seek(uncompressedOffset, 0)
@@ -241,9 +241,9 @@ func (m *MemoryCache) Reader(ctx context.Context, rn *rspb.ResourceName, uncompr
 		length = limit
 	}
 	if length > 0 {
-		return io.NopCloser(io.LimitReader(r, length)), nil
+		return interfaces.CacheArtifact{ReadCloser: io.NopCloser(io.LimitReader(r, length))}, nil
 	}
-	return io.NopCloser(r), nil
+	return interfaces.CacheArtifact{ReadCloser: io.NopCloser(r)}, nil
 }
 
 func (m *MemoryCache) Writer(ctx context.Context, r *rspb.ResourceName) (interfaces.CommittedWriteCloser, error) {

@@ -589,9 +589,13 @@ func (c *Cache) Get(ctx context.Context, r *rspb.ResourceName) (res []byte, resu
 	defer spn.End()
 	setSingleResourceTraceAttributes(spn, r)
 
-	rc, err := c.Reader(ctx, r, 0, 0)
+	artifact, err := c.Reader(ctx, r, 0, 0)
 	if err != nil {
 		return nil, err
+	}
+	rc := artifact.ReadCloser
+	if rc == nil {
+		return nil, status.InternalError("metacache does not support references")
 	}
 	defer rc.Close()
 
@@ -856,27 +860,27 @@ func (c *Cache) reader(ctx context.Context, md *sgpb.FileMetadata, r *rspb.Resou
 }
 
 // Low level interface used for seeking and stream-writing.
-func (c *Cache) Reader(ctx context.Context, r *rspb.ResourceName, uncompressedOffset, uncompressedLimit int64) (rc io.ReadCloser, resultErr error) {
+func (c *Cache) Reader(ctx context.Context, r *rspb.ResourceName, uncompressedOffset, uncompressedLimit int64) (interfaces.CacheArtifact, error) {
 	ctx, spn := tracing.StartSpan(ctx)
 	defer spn.End()
 	setSingleResourceTraceAttributes(spn, r)
 
 	encryption, err := c.activeEncryption(ctx)
 	if err != nil {
-		return nil, err
+		return interfaces.CacheArtifact{}, err
 	}
 	fileRecord, err := c.makeFileRecord(c.userGroupID(ctx), encryption, r)
 	if err != nil {
-		return nil, err
+		return interfaces.CacheArtifact{}, err
 	}
 
 	mds, err := c.lookupMetadatas(ctx, fileRecord)
 	if err != nil {
-		return nil, err
+		return interfaces.CacheArtifact{}, err
 	}
 	if len(mds) != 1 {
 		log.CtxErrorf(ctx, "File record %v found multiple metadatas: %v", fileRecord, mds)
-		return nil, status.InternalError("only one metadata record should match query")
+		return interfaces.CacheArtifact{}, status.InternalError("only one metadata record should match query")
 	}
 	md := mds[0]
 	if md.GetFileRecord() == nil {
@@ -886,9 +890,13 @@ func (c *Cache) Reader(ctx context.Context, r *rspb.ResourceName, uncompressedOf
 		// with nils into a repeated field with empty structs, we need to check
 		// if the proto is empty rather than nil. The easiest way to do this is
 		// check if a field that should always be set is nil.
-		return nil, status.NotFoundErrorf("File metadata not found for %v", r)
+		return interfaces.CacheArtifact{}, status.NotFoundErrorf("File metadata not found for %v", r)
 	}
-	return c.reader(ctx, md, r, uncompressedOffset, uncompressedLimit, encryption)
+	rc, err := c.reader(ctx, md, r, uncompressedOffset, uncompressedLimit, encryption)
+	if err != nil {
+		return interfaces.CacheArtifact{}, err
+	}
+	return interfaces.CacheArtifact{ReadCloser: rc}, nil
 }
 
 func (c *Cache) Writer(ctx context.Context, r *rspb.ResourceName) (cwc interfaces.CommittedWriteCloser, resultErr error) {

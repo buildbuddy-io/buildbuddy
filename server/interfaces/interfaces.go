@@ -43,6 +43,7 @@ import (
 	irpb "github.com/buildbuddy-io/buildbuddy/proto/iprules"
 	npb "github.com/buildbuddy-io/buildbuddy/proto/notification"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
+	refpb "github.com/buildbuddy-io/buildbuddy/proto/reference"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rppb "github.com/buildbuddy-io/buildbuddy/proto/repo"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
@@ -288,6 +289,15 @@ type CacheMetadata struct {
 	LastModifyTimeUsec int64
 }
 
+// An artifact stored in the cache. Every valid Artifact will have either a
+// ReadCloser or Reference but not both. If ReadCloser is set, the artifact is
+// being streamed from the cache. If Reference is set, the artifact is being
+// provided as a reference to data stored in another location.
+type CacheArtifact struct {
+	ReadCloser io.ReadCloser
+	Reference  *refpb.Reference
+}
+
 // Similar to a blobstore, a cache allows for reading and writing data, but
 // additionally it is responsible for deleting data that is past TTL to keep to
 // a manageable size.
@@ -306,7 +316,7 @@ type Cache interface {
 	Delete(ctx context.Context, r *rspb.ResourceName) error
 
 	// Low level interface used for seeking and stream-writing.
-	Reader(ctx context.Context, r *rspb.ResourceName, uncompressedOffset, limit int64) (io.ReadCloser, error)
+	Reader(ctx context.Context, r *rspb.ResourceName, uncompressedOffset, limit int64) (CacheArtifact, error)
 	Writer(ctx context.Context, r *rspb.ResourceName) (CommittedWriteCloser, error)
 
 	// Returns the partition ID for the given context and remote instance name.

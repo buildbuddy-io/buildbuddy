@@ -633,9 +633,13 @@ func (s *APIServer) GetFileRange(ctx context.Context, req *apipb.GetFileRangeReq
 		return nil, err
 	}
 
-	reader, err := s.env.GetCache().Reader(ctx, rn.ToProto(), start, limit)
+	artifact, err := s.env.GetCache().Reader(ctx, rn.ToProto(), start, limit)
 	if err != nil {
 		return nil, err
+	}
+	reader := artifact.ReadCloser
+	if reader == nil {
+		return nil, status.InternalError("the API server does not support cache references")
 	}
 	data, readErr := io.ReadAll(reader)
 	closeErr := reader.Close()

@@ -24,6 +24,7 @@ go_library(
         "//proto:iprules_go_proto",
         "//proto:notification_go_proto",
         "//proto:publish_build_event_go_proto",
+        "//proto:reference_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:repo_go_proto",
         "//proto:resource_go_proto",

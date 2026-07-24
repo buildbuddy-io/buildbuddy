@@ -103,11 +103,11 @@ func startNewDCache(t *testing.T, te environment.Env, config Options, baseCache 
 }
 
 func readAndCompareDigest(t *testing.T, ctx context.Context, c interfaces.Cache, r *rspb.ResourceName) {
-	reader, err := c.Reader(ctx, r, 0, 0)
+	artifact, err := c.Reader(ctx, r, 0, 0)
 	if err != nil {
 		assert.FailNow(t, fmt.Sprintf("cache: %+v", c), err)
 	}
-	d1 := testdigest.ReadDigestAndClose(t, reader)
+	d1 := testdigest.ReadDigestAndClose(t, artifact.ReadCloser)
 	assert.Equal(t, r.GetDigest().GetHash(), d1.GetHash())
 }
 
@@ -444,11 +444,11 @@ func TestReadMaxOffset(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	reader, err := distributedCaches[1].Reader(ctx, rn, rn.GetDigest().GetSizeBytes(), 0)
+	artifact, err := distributedCaches[1].Reader(ctx, rn, rn.GetDigest().GetSizeBytes(), 0)
 	if err != nil {
 		assert.FailNow(t, fmt.Sprintf("cache: %+v", distributedCaches[1]), err)
 	}
-	d1 := testdigest.ReadDigestAndClose(t, reader)
+	d1 := testdigest.ReadDigestAndClose(t, artifact.ReadCloser)
 	assert.Equal(t, "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", d1.GetHash())
 }
 
@@ -494,11 +494,11 @@ func TestReadOffsetLimit(t *testing.T) {
 
 	offset := int64(2)
 	limit := int64(3)
-	reader, err := distributedCaches[1].Reader(ctx, rn, offset, limit)
+	artifact, err := distributedCaches[1].Reader(ctx, rn, offset, limit)
 	require.NoError(t, err)
 
 	readBuf := make([]byte, rn.GetDigest().GetSizeBytes())
-	n, err := io.ReadFull(reader, readBuf)
+	n, err := io.ReadFull(artifact.ReadCloser, readBuf)
 	require.Error(t, err)
 	require.Equal(t, "unexpected EOF", err.Error())
 	require.EqualValues(t, limit, n)
@@ -2126,8 +2126,9 @@ func TestAbandonedReadDoesntWriteToLookaside(t *testing.T) {
 	}
 
 	// Read just the first 3 bytes
-	r, err := dc.Reader(ctx, rn, 0, 0)
+	artifact, err := dc.Reader(ctx, rn, 0, 0)
 	require.NoError(t, err)
+	r := artifact.ReadCloser
 	readBuf := make([]byte, 3)
 	n, err := r.Read(readBuf)
 	assert.Equal(t, 3, n)
@@ -3199,8 +3200,9 @@ func TestLookasidePartitionIsolation(t *testing.T) {
 
 	// Read from partition A multiple times to populate the lookaside cache.
 	for i := 0; i < 5; i++ {
-		reader, err := dc.Reader(ctx1, rnA, 0, 0)
+		readerArtifact, err := dc.Reader(ctx1, rnA, 0, 0)
 		require.NoError(t, err)
+		reader := readerArtifact.ReadCloser
 		gotA, err := io.ReadAll(reader)
 		require.NoError(t, err)
 		require.NoError(t, reader.Close())
@@ -3326,7 +3328,7 @@ func (t *tracedCache) Delete(ctx context.Context, r *rspb.ResourceName) error {
 	t.addOps(Delete, r)
 	return t.Cache.Delete(ctx, r)
 }
-func (t *tracedCache) Reader(ctx context.Context, r *rspb.ResourceName, uncompressedOffset, limit int64) (io.ReadCloser, error) {
+func (t *tracedCache) Reader(ctx context.Context, r *rspb.ResourceName, uncompressedOffset, limit int64) (interfaces.CacheArtifact, error) {
 	t.addOps(Read, r)
 	return t.Cache.Reader(ctx, r, uncompressedOffset, limit)
 }
@@ -3374,7 +3376,7 @@ func (pc *partitionedCache) SetMulti(ctx context.Context, kvs map[*rspb.Resource
 func (pc *partitionedCache) Delete(ctx context.Context, r *rspb.ResourceName) error {
 	return pc.partition(ctx).Delete(ctx, r)
 }
-func (pc *partitionedCache) Reader(ctx context.Context, r *rspb.ResourceName, uncompressedOffset, limit int64) (io.ReadCloser, error) {
+func (pc *partitionedCache) Reader(ctx context.Context, r *rspb.ResourceName, uncompressedOffset, limit int64) (interfaces.CacheArtifact, error) {
 	return pc.partition(ctx).Reader(ctx, r, uncompressedOffset, limit)
 }
 func (pc *partitionedCache) Writer(ctx context.Context, r *rspb.ResourceName) (interfaces.CommittedWriteCloser, error) {

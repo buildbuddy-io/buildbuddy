@@ -197,7 +197,8 @@ func (s *ByteStreamServer) ReadCASResource(ctx context.Context, r *digest.CASRes
 	if passthroughCompressionEnabled {
 		cacheRN.SetCompressor(r.GetCompressor())
 	}
-	reader, err := s.cache.Reader(ctx, cacheRN.ToProto(), offset, limit)
+	artifact, err := s.cache.Reader(ctx, cacheRN.ToProto(), offset, limit)
+	reader := artifact.ReadCloser
 	if err != nil {
 		if status.IsNotFoundError(err) && chunking.ShouldReadChunked(ctx, s.env.GetExperimentFlagProvider(), cacheRN.GetDigest().GetSizeBytes(), offset, limit) {
 			reader, err = s.attemptReadChunked(ctx, cacheRN, offset)
@@ -208,6 +209,9 @@ func (s *ByteStreamServer) ReadCASResource(ctx context.Context, r *digest.CASRes
 			}
 			return err
 		}
+	}
+	if reader == nil {
+		return status.InternalError("ByteStreamServer does not support cache references")
 	}
 	defer reader.Close()
 
@@ -428,9 +432,13 @@ func (r *chunkedBlobReader) spawn(index int) {
 }
 
 func (r *chunkedBlobReader) readChunk(rn *rspb.ResourceName, offset int64, buf []byte) chunkReadResult {
-	rc, err := r.cache.Reader(r.ctx, rn, offset, 0)
+	artifact, err := r.cache.Reader(r.ctx, rn, offset, 0)
 	if err != nil {
 		return chunkReadResult{data: buf, err: err}
+	}
+	rc := artifact.ReadCloser
+	if rc == nil {
+		return chunkReadResult{data: buf, err: status.InternalError("chunked reads do not support cache references")}
 	}
 	defer rc.Close()
 

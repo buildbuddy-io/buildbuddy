@@ -109,7 +109,7 @@ type gatedReadCache struct {
 	maxRead    int
 }
 
-func (c *gatedReadCache) Reader(ctx context.Context, r *rspb.ResourceName, uncompressedOffset, limit int64) (io.ReadCloser, error) {
+func (c *gatedReadCache) Reader(ctx context.Context, r *rspb.ResourceName, uncompressedOffset, limit int64) (interfaces.CacheArtifact, error) {
 	if r.GetDigest().GetSizeBytes() != c.gateSize {
 		return c.Cache.Reader(ctx, r, uncompressedOffset, limit)
 	}
@@ -124,12 +124,12 @@ func (c *gatedReadCache) Reader(ctx context.Context, r *rspb.ResourceName, uncom
 	}()
 	select {
 	case <-ctx.Done():
-		return nil, ctx.Err()
+		return interfaces.CacheArtifact{}, ctx.Err()
 	case c.started <- struct{}{}:
 	}
 	select {
 	case <-ctx.Done():
-		return nil, ctx.Err()
+		return interfaces.CacheArtifact{}, ctx.Err()
 	case <-c.release:
 	}
 	return c.Cache.Reader(ctx, r, uncompressedOffset, limit)
@@ -171,8 +171,12 @@ type readerFuncCache struct {
 	reader func(ctx context.Context, r *rspb.ResourceName, offset, limit int64) (io.ReadCloser, error)
 }
 
-func (c *readerFuncCache) Reader(ctx context.Context, r *rspb.ResourceName, offset, limit int64) (io.ReadCloser, error) {
-	return c.reader(ctx, r, offset, limit)
+func (c *readerFuncCache) Reader(ctx context.Context, r *rspb.ResourceName, offset, limit int64) (interfaces.CacheArtifact, error) {
+	rc, err := c.reader(ctx, r, offset, limit)
+	if err != nil {
+		return interfaces.CacheArtifact{}, err
+	}
+	return interfaces.CacheArtifact{ReadCloser: rc}, nil
 }
 
 type casCompressionCache struct {
@@ -186,7 +190,7 @@ func (c *casCompressionCache) Get(ctx context.Context, r *rspb.ResourceName) ([]
 	return (&testcompression.CompressionCache{Cache: c.Cache}).Get(ctx, r)
 }
 
-func (c *casCompressionCache) Reader(ctx context.Context, r *rspb.ResourceName, offset, limit int64) (io.ReadCloser, error) {
+func (c *casCompressionCache) Reader(ctx context.Context, r *rspb.ResourceName, offset, limit int64) (interfaces.CacheArtifact, error) {
 	if r.GetCacheType() != rspb.CacheType_CAS {
 		return c.Cache.Reader(ctx, r, offset, limit)
 	}

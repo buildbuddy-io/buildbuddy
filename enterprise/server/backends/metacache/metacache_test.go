@@ -114,9 +114,9 @@ func TestReadWrite(t *testing.T) {
 			require.NoError(t, err)
 
 			// Use Reader() to get the bytes from the cache.
-			reader, err := bc.Reader(ctx, rn, 0, 0)
+			artifact, err := bc.Reader(ctx, rn, 0, 0)
 			require.NoError(t, err, "Error getting %q reader", rn.GetDigest().GetHash())
-			d2 := testdigest.ReadDigestAndClose(t, reader)
+			d2 := testdigest.ReadDigestAndClose(t, artifact.ReadCloser)
 			require.Equal(t, rn.GetDigest().GetHash(), d2.GetHash())
 		})
 	}

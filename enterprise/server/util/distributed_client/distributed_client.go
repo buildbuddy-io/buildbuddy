@@ -321,10 +321,14 @@ func (c *Proxy) Read(req *dcpb.ReadRequest, stream dcpb.DistributedCache_ReadSer
 	}
 	up, _ := prefix.UserPrefixFromContext(ctx)
 	rn := req.GetResource()
-	reader, err := c.cache.Reader(ctx, rn, req.GetOffset(), req.GetLimit())
+	artifact, err := c.cache.Reader(ctx, rn, req.GetOffset(), req.GetLimit())
 	if err != nil {
 		c.log.Debugf("Read(%q) failed (user prefix: %s), err: %s", ResourceIsolationString(rn), up, err)
 		return err
+	}
+	reader := artifact.ReadCloser
+	if reader == nil {
+		return status.InternalErrorf("cache type %T does not support references", c.cache)
 	}
 	defer reader.Close()
 

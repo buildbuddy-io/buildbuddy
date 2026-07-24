@@ -708,18 +708,18 @@ type slowReaderOpenAndReadCache struct {
 	readDelay time.Duration
 }
 
-func (c *slowReaderOpenAndReadCache) Reader(ctx context.Context, r *rspb.ResourceName, uncompressedOffset, limit int64) (io.ReadCloser, error) {
+func (c *slowReaderOpenAndReadCache) Reader(ctx context.Context, r *rspb.ResourceName, uncompressedOffset, limit int64) (interfaces.CacheArtifact, error) {
 	if err := sleepWithContext(ctx, c.openDelay); err != nil {
-		return nil, err
+		return interfaces.CacheArtifact{}, err
 	}
-	reader, err := c.Cache.Reader(ctx, r, uncompressedOffset, limit)
+	artifact, err := c.Cache.Reader(ctx, r, uncompressedOffset, limit)
 	if err != nil {
-		return nil, err
+		return interfaces.CacheArtifact{}, err
 	}
-	return &slowReadCloser{
-		ReadCloser: reader,
+	return interfaces.CacheArtifact{ReadCloser: &slowReadCloser{
+		ReadCloser: artifact.ReadCloser,
 		readDelay:  c.readDelay,
-	}, nil
+	}}, nil
 }
 
 func (c *slowReaderOpenAndReadCache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (map[*repb.Digest][]byte, error) {

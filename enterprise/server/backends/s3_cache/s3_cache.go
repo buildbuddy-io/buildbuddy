@@ -527,10 +527,10 @@ func (s3c *S3Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceN
 	return missing, nil
 }
 
-func (s3c *S3Cache) Reader(ctx context.Context, r *rspb.ResourceName, uncompressedOffset, limit int64) (io.ReadCloser, error) {
+func (s3c *S3Cache) Reader(ctx context.Context, r *rspb.ResourceName, uncompressedOffset, limit int64) (interfaces.CacheArtifact, error) {
 	k, err := s3c.key(ctx, r)
 	if err != nil {
-		return nil, err
+		return interfaces.CacheArtifact{}, err
 	}
 	ctx, spn := tracing.StartSpan(ctx)
 	// TODO(bduffany): track this as a contains() request, or find a way to
@@ -551,12 +551,12 @@ func (s3c *S3Cache) Reader(ctx context.Context, r *rspb.ResourceName, uncompress
 	spn.End()
 	if isNotFoundErr(err) {
 		d := r.GetDigest()
-		return nil, status.NotFoundErrorf("Digest '%s/%d' not found in cache", d.GetHash(), d.GetSizeBytes())
+		return interfaces.CacheArtifact{}, status.NotFoundErrorf("Digest '%s/%d' not found in cache", d.GetHash(), d.GetSizeBytes())
 	} else if err != nil {
-		return nil, status.InternalErrorf("Error getting s3 object at key %s for cache: %v", k, err)
+		return interfaces.CacheArtifact{}, status.InternalErrorf("Error getting s3 object at key %s for cache: %v", k, err)
 	}
 	timer := cache_metrics.NewCacheTimer(cacheLabels)
-	return io.NopCloser(timer.NewInstrumentedReader(result.Body, r.GetDigest().GetSizeBytes())), err
+	return interfaces.CacheArtifact{ReadCloser: io.NopCloser(timer.NewInstrumentedReader(result.Body, r.GetDigest().GetSizeBytes()))}, nil
 }
 
 type waitForUploadWriteCloser struct {

@@ -893,9 +893,9 @@ func TestReadWrite(t *testing.T) {
 			require.NoError(t, err)
 
 			// Use Reader() to get the bytes from the cache.
-			reader, err := pc.Reader(ctx, rn, 0, 0)
+			artifact, err := pc.Reader(ctx, rn, 0, 0)
 			require.NoError(t, err, "Error getting %q reader", rn.GetDigest().GetHash())
-			d2 := testdigest.ReadDigestAndClose(t, reader)
+			d2 := testdigest.ReadDigestAndClose(t, artifact.ReadCloser)
 			require.Equal(t, rn.GetDigest().GetHash(), d2.GetHash())
 
 			contains, err := pc.Contains(ctx, rn)
@@ -995,8 +995,9 @@ func writeResource(t *testing.T, ctx context.Context, pc *pebble_cache.PebbleCac
 }
 
 func readResource(t *testing.T, ctx context.Context, pc *pebble_cache.PebbleCache, r *rspb.ResourceName, offset, limit int64) []byte {
-	reader, err := pc.Reader(ctx, r, offset, limit)
+	artifact, err := pc.Reader(ctx, r, offset, limit)
 	require.NoError(t, err)
+	reader := artifact.ReadCloser
 	defer reader.Close()
 	data, err := io.ReadAll(reader)
 	require.NoError(t, err)
@@ -3467,8 +3468,9 @@ func expectContentPresent(t *testing.T, ctx context.Context, c interfaces.Cache,
 	require.NoError(t, err, "GetMulti")
 	require.Equal(t, data, multi[rn.GetDigest()], "GetMulti")
 
-	rc, err := c.Reader(ctx, rn, 0, 0)
+	artifact, err := c.Reader(ctx, rn, 0, 0)
 	require.NoError(t, err, "Reader")
+	rc := artifact.ReadCloser
 	got, err = io.ReadAll(rc)
 	require.NoError(t, err, "Reader.ReadAll")
 	require.NoError(t, rc.Close(), "Reader.Close")
@@ -3489,9 +3491,9 @@ func expectContentNotFound(t *testing.T, ctx context.Context, c interfaces.Cache
 	require.NoError(t, err, "GetMulti")
 	require.Nil(t, multi[rn.GetDigest()], "GetMulti")
 
-	rc, err := c.Reader(ctx, rn, 0, 0)
+	artifact, err := c.Reader(ctx, rn, 0, 0)
 	require.True(t, status.IsNotFoundError(err), "Reader: %v", err)
-	require.Nil(t, rc, "Reader")
+	require.Nil(t, artifact.ReadCloser, "Reader")
 }
 
 // expectContentError asserts that the content-returning read methods all fail
@@ -3511,10 +3513,10 @@ func expectContentError(t *testing.T, ctx context.Context, c interfaces.Cache, r
 	require.ErrorContains(t, err, wantErr, "GetMulti")
 	require.False(t, status.IsNotFoundError(err), "GetMulti: %v", err)
 
-	rc, err := c.Reader(ctx, rn, 0, 0)
+	artifact, err := c.Reader(ctx, rn, 0, 0)
 	require.ErrorContains(t, err, wantErr, "Reader")
 	require.False(t, status.IsNotFoundError(err), "Reader: %v", err)
-	require.Nil(t, rc, "Reader")
+	require.Nil(t, artifact.ReadCloser, "Reader")
 }
 
 func TestPebbleGCSBlobPresent(t *testing.T) {

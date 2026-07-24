@@ -73,18 +73,19 @@ func (c *slowCache) Writer(ctx context.Context, r *rspb.ResourceName) (interface
 	}, nil
 }
 
-func (c *slowCache) Reader(ctx context.Context, rn *rspb.ResourceName, uncompressedOffset, limit int64) (io.ReadCloser, error) {
-	r, err := c.Cache.Reader(ctx, rn, uncompressedOffset, limit)
+func (c *slowCache) Reader(ctx context.Context, rn *rspb.ResourceName, uncompressedOffset, limit int64) (interfaces.CacheArtifact, error) {
+	artifact, err := c.Cache.Reader(ctx, rn, uncompressedOffset, limit)
 	if err != nil {
-		return nil, err
+		return interfaces.CacheArtifact{}, err
 	}
+	r := artifact.ReadCloser
 	if writerTo, ok := r.(io.WriterTo); ok {
-		return &slowReaderWriterTo{
+		return interfaces.CacheArtifact{ReadCloser: &slowReaderWriterTo{
 			slowReader: slowReader{r},
 			WriterTo:   writerTo,
-		}, nil
+		}}, nil
 	}
-	return &slowReader{r}, nil
+	return interfaces.CacheArtifact{ReadCloser: &slowReader{r}}, nil
 }
 
 type slowWriter struct {

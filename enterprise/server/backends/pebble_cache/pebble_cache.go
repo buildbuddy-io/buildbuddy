@@ -2013,9 +2013,13 @@ func (p *PebbleCache) lookupFileMetadataBytes(db pebble.IPebbleDB, key filestore
 }
 
 func (p *PebbleCache) Get(ctx context.Context, r *rspb.ResourceName) ([]byte, error) {
-	rc, err := p.Reader(ctx, r, 0, 0)
+	artifact, err := p.Reader(ctx, r, 0, 0)
 	if err != nil {
 		return nil, err
+	}
+	rc := artifact.ReadCloser
+	if rc == nil {
+		return nil, status.InternalError("pebble_cache.Get does not support references")
 	}
 	defer rc.Close()
 	bufSize := digest.SafeBufferSize(r, maxReadBufferSize)
@@ -2299,7 +2303,7 @@ func (p *PebbleCache) Delete(ctx context.Context, r *rspb.ResourceName) error {
 	return nil
 }
 
-func (p *PebbleCache) Reader(ctx context.Context, r *rspb.ResourceName, uncompressedOffset, limit int64) (io.ReadCloser, error) {
+func (p *PebbleCache) Reader(ctx context.Context, r *rspb.ResourceName, uncompressedOffset, limit int64) (interfaces.CacheArtifact, error) {
 	ctx, spn := tracing.StartSpan(ctx)
 	defer spn.End()
 	if spn.IsRecording() {
@@ -2309,26 +2313,26 @@ func (p *PebbleCache) Reader(ctx context.Context, r *rspb.ResourceName, uncompre
 	}
 	db, err := p.leaser.DB()
 	if err != nil {
-		return nil, err
+		return interfaces.CacheArtifact{}, err
 	}
 	defer db.Close()
 
 	encryption, err := p.activeEncryption(ctx)
 	if err != nil {
-		return nil, err
+		return interfaces.CacheArtifact{}, err
 	}
 	rc, err := p.reader(ctx, db, p.userGroupID(ctx), encryption, r, uncompressedOffset, limit)
 	if err != nil {
-		return nil, err
+		return interfaces.CacheArtifact{}, err
 	}
 
 	// Grab another lease and pass the Close function to the reader
 	// so it will be closed when the reader is.
 	db, err = p.leaser.DB()
 	if err != nil {
-		return nil, err
+		return interfaces.CacheArtifact{}, err
 	}
-	return pebble.ReadCloserWithFunc(rc, db.Close), nil
+	return interfaces.CacheArtifact{ReadCloser: pebble.ReadCloserWithFunc(rc, db.Close)}, nil
 }
 
 func (p *PebbleCache) Writer(ctx context.Context, r *rspb.ResourceName) (interfaces.CommittedWriteCloser, error) {

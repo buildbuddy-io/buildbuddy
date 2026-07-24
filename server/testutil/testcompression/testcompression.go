@@ -32,10 +32,10 @@ func (c *CompressionCache) Get(ctx context.Context, r *rspb.ResourceName) ([]byt
 	return cachedDataWithCompression, nil
 }
 
-func (c *CompressionCache) Reader(ctx context.Context, rn *rspb.ResourceName, offset, limit int64) (io.ReadCloser, error) {
+func (c *CompressionCache) Reader(ctx context.Context, rn *rspb.ResourceName, offset, limit int64) (interfaces.CacheArtifact, error) {
 	buf, err := c.Get(ctx, rn)
 	if err != nil {
-		return nil, err
+		return interfaces.CacheArtifact{}, err
 	}
 	r := bytes.NewReader(buf)
 	r.Seek(offset, 0)
@@ -44,9 +44,9 @@ func (c *CompressionCache) Reader(ctx context.Context, rn *rspb.ResourceName, of
 		length = limit
 	}
 	if length > 0 {
-		return io.NopCloser(io.LimitReader(r, length)), nil
+		return interfaces.CacheArtifact{ReadCloser: io.NopCloser(io.LimitReader(r, length))}, nil
 	}
-	return io.NopCloser(r), nil
+	return interfaces.CacheArtifact{ReadCloser: io.NopCloser(r)}, nil
 }
 
 func (c *CompressionCache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (map[*repb.Digest][]byte, error) {

@@ -429,10 +429,10 @@ func (g *GCSCache) FindMissing(ctx context.Context, resources []*rspb.ResourceNa
 	return missing, nil
 }
 
-func (g *GCSCache) Reader(ctx context.Context, r *rspb.ResourceName, uncompressedOffset, limit int64) (io.ReadCloser, error) {
+func (g *GCSCache) Reader(ctx context.Context, r *rspb.ResourceName, uncompressedOffset, limit int64) (interfaces.CacheArtifact, error) {
 	k, err := g.key(ctx, r)
 	if err != nil {
-		return nil, err
+		return interfaces.CacheArtifact{}, err
 	}
 	ctx, spn := tracing.StartSpan(ctx)
 	if limit == 0 {
@@ -443,13 +443,13 @@ func (g *GCSCache) Reader(ctx context.Context, r *rspb.ResourceName, uncompresse
 	if err != nil {
 		if err == storage.ErrObjectNotExist {
 			d := r.GetDigest()
-			return nil, status.NotFoundErrorf("Digest '%s/%d' not found in cache", d.GetHash(), d.GetSizeBytes())
+			return interfaces.CacheArtifact{}, status.NotFoundErrorf("Digest '%s/%d' not found in cache", d.GetHash(), d.GetSizeBytes())
 		}
-		return nil, err
+		return interfaces.CacheArtifact{}, err
 	}
 	timer := cache_metrics.NewCacheTimer(cacheLabels)
 	// rely on google's internal tracing to capture read calls from the returned reader
-	return io.NopCloser(timer.NewInstrumentedReader(reader, r.GetDigest().GetSizeBytes())), nil
+	return interfaces.CacheArtifact{ReadCloser: io.NopCloser(timer.NewInstrumentedReader(reader, r.GetDigest().GetSizeBytes()))}, nil
 }
 
 func isRetryableGCSError(err error) bool {

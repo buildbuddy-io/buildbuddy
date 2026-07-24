@@ -458,12 +458,16 @@ func (c *DiskCache) Delete(ctx context.Context, r *rspb.ResourceName) error {
 	return p.delete(ctx, r)
 }
 
-func (c *DiskCache) Reader(ctx context.Context, r *rspb.ResourceName, uncompressedOffset, limit int64) (io.ReadCloser, error) {
+func (c *DiskCache) Reader(ctx context.Context, r *rspb.ResourceName, uncompressedOffset, limit int64) (interfaces.CacheArtifact, error) {
 	p, err := c.getPartition(ctx, r.GetInstanceName())
 	if err != nil {
-		return nil, err
+		return interfaces.CacheArtifact{}, err
 	}
-	return p.reader(ctx, r, uncompressedOffset, limit)
+	rc, err := p.reader(ctx, r, uncompressedOffset, limit)
+	if err != nil {
+		return interfaces.CacheArtifact{}, err
+	}
+	return interfaces.CacheArtifact{ReadCloser: rc}, nil
 }
 
 func (c *DiskCache) Writer(ctx context.Context, r *rspb.ResourceName) (interfaces.CommittedWriteCloser, error) {

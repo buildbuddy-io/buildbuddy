@@ -42,8 +42,9 @@ func writeDigest(ctx context.Context, t *testing.T, c interfaces.Cache, sizeByte
 }
 
 func readAndVerifyDigest(ctx context.Context, t *testing.T, c interfaces.Cache, d *rspb.ResourceName) {
-	r, err := c.Reader(ctx, d, 0, 0)
+	artifact, err := c.Reader(ctx, d, 0, 0)
 	require.NoError(t, err)
+	r := artifact.ReadCloser
 	rd, err := digest.Compute(r, repb.DigestFunction_SHA256)
 	require.NoError(t, err)
 	err = r.Close()
@@ -87,8 +88,9 @@ func TestReadThrough(t *testing.T) {
 	{
 		rn := writeDigest(ctx, t, inner, 99)
 
-		r, err := c.Reader(ctx, rn, 0, 0)
+		artifact, err := c.Reader(ctx, rn, 0, 0)
 		require.NoError(t, err)
+		r := artifact.ReadCloser
 
 		buf := make([]byte, 50)
 		_, err = r.Read(buf)

@@ -47,7 +47,7 @@ type spyCache struct {
 	getMultiCompressors map[string]repb.Compressor_Value
 }
 
-func (s *spyCache) Reader(ctx context.Context, rn *rspb.ResourceName, offset, limit int64) (io.ReadCloser, error) {
+func (s *spyCache) Reader(ctx context.Context, rn *rspb.ResourceName, offset, limit int64) (interfaces.CacheArtifact, error) {
 	s.mu.Lock()
 	s.readerCompressors = append(s.readerCompressors, rn.GetCompressor())
 	s.mu.Unlock()
@@ -447,11 +447,11 @@ func TestWriter(t *testing.T) {
 
 		// Read the bytes back directly from the cache and check that
 		// they match..
-		r, err := te.GetCache().Reader(ctx, rn, 0, 0)
+		artifact, err := te.GetCache().Reader(ctx, rn, 0, 0)
 		if err != nil {
 			t.Fatal(err)
 		}
-		d2 := testdigest.ReadDigestAndClose(t, r)
+		d2 := testdigest.ReadDigestAndClose(t, artifact.ReadCloser)
 		if d.GetHash() != d2.GetHash() {
 			t.Fatalf("Digest uploaded %q != %q downloaded", d.GetHash(), d2.GetHash())
 		}

@@ -1007,7 +1007,14 @@ func (c *Cache) remoteGetMulti(ctx context.Context, peer string, rns []*rspb.Res
 
 func (c *Cache) remoteReader(ctx context.Context, peer string, r *rspb.ResourceName, offset, limit int64) (io.ReadCloser, error) {
 	if !c.opts.DisableLocalLookup && peer == c.opts.ListenAddr {
-		return c.local.Reader(ctx, r, offset, limit)
+		artifact, err := c.local.Reader(ctx, r, offset, limit)
+		if err != nil {
+			return nil, err
+		}
+		if artifact.ReadCloser == nil {
+			return nil, status.InternalErrorf("cache type %T does not support references", c.local)
+		}
+		return artifact.ReadCloser, nil
 	}
 	cacheable := offset == 0 && limit == 0
 	var lookasideWriter, localWriter interfaces.CommittedWriteCloser
@@ -1034,9 +1041,11 @@ func (c *Cache) remoteReader(ctx context.Context, peer string, r *rspb.ResourceN
 	// feature is enabled. If not, configure localWriter so the blob can be
 	// written to the local cache as it is read.
 	if c.localReadthroughEnabled() && isLocalReadthroughCacheableResource(r) {
-		if rc, err := c.local.Reader(ctx, r, offset, limit); err == nil {
+		if artifact, err := c.local.Reader(ctx, r, offset, limit); err == nil && artifact.ReadCloser != nil {
 			c.log.CtxDebugf(ctx, "Reader(%q) found locally", distributed_client.ResourceIsolationString(r))
-			readCloser = rc
+			readCloser = artifact.ReadCloser
+		} else if artifact.Reference != nil {
+			return nil, status.InternalErrorf("cache type %T does not support references", c.local)
 		} else if cacheable {
 			if local, err := c.local.Writer(ctx, r); err == nil {
 				localWriter = local
@@ -1092,9 +1101,13 @@ func (c *Cache) sendFile(ctx context.Context, rn *rspb.ResourceName, dest string
 		return nil
 	}
 
-	r, err := c.local.Reader(ctx, rn, 0, 0)
+	artifact, err := c.local.Reader(ctx, rn, 0, 0)
 	if err != nil {
 		return err
+	}
+	r := artifact.ReadCloser
+	if r == nil {
+		return status.InternalErrorf("cache type %T does not support references", c.local)
 	}
 	defer r.Close()
 	rwc, err := c.distributedProxy.RemoteWriter(ctx, dest, "", rn)
@@ -1754,8 +1767,12 @@ func (c *Cache) Delete(ctx context.Context, r *rspb.ResourceName) error {
 	return nil
 }
 
-func (c *Cache) Reader(ctx context.Context, r *rspb.ResourceName, uncompressedOffset, limit int64) (io.ReadCloser, error) {
-	return c.distributedReader(ctx, r, uncompressedOffset, limit, "Reader" /*=metricsLabel*/)
+func (c *Cache) Reader(ctx context.Context, r *rspb.ResourceName, uncompressedOffset, limit int64) (interfaces.CacheArtifact, error) {
+	rc, err := c.distributedReader(ctx, r, uncompressedOffset, limit, "Reader" /*=metricsLabel*/)
+	if err != nil {
+		return interfaces.CacheArtifact{}, err
+	}
+	return interfaces.CacheArtifact{ReadCloser: rc}, nil
 }
 
 func (c *Cache) Writer(ctx context.Context, r *rspb.ResourceName) (interfaces.CommittedWriteCloser, error) {

@@ -283,10 +283,11 @@ func benchmarkRead(ctx context.Context, c interfaces.Cache, digestSizeBytes int6
 	for b.Loop() {
 		dbuf := digestBufs[i%len(digestBufs)]
 		i++
-		r, err := c.Reader(ctx, dbuf.d, 0, 0)
+		artifact, err := c.Reader(ctx, dbuf.d, 0, 0)
 		if err != nil {
 			b.Fatal(err)
 		}
+		r := artifact.ReadCloser
 		n, err := readBuf.ReadFrom(r)
 		r.Close()
 		if err != nil {
@@ -498,8 +499,9 @@ func BenchmarkParallel(b *testing.B) {
 						}
 
 						// Read the digest from the cache.
-						r, err := cache.Cache.Reader(ctx, dbuf.d, 0, 0)
+						artifact, err := cache.Cache.Reader(ctx, dbuf.d, 0, 0)
 						require.NoError(b, err)
+						r := artifact.ReadCloser
 						n, err := io.Copy(io.Discard, r)
 						require.NoError(b, err)
 						require.Equal(b, size, n)
