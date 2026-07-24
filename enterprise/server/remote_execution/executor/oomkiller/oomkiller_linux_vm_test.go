@@ -82,6 +82,39 @@ func TestVMCgroupMemoryMonitorExcludesPageCache(t *testing.T) {
 	require.Less(t, snapshot.UsedBytes, int64(50<<20))
 }
 
+func TestVMCgroupMemoryMonitorExcludesActiveFileCache(t *testing.T) {
+	cgroupDir := setupTestCgroup(t)
+
+	// This test needs a disk-backed scratch directory so that file writes
+	// produce page cache rather than tmpfs memory.
+	scratchDir := t.TempDir()
+	var st unix.Statfs_t
+	require.NoError(t, unix.Statfs(scratchDir, &st))
+	require.NotEqual(t, int64(unix.TMPFS_MAGIC), st.Type, "scratch dir %s is on tmpfs; expected a disk-backed filesystem", scratchDir)
+
+	// Write a 100MB file to disk from inside the cgroup, syncing so the cached
+	// pages are clean, then continuously re-read the file so the kernel
+	// promotes the pages to the active file LRU list and keeps them there.
+	cacheFile := filepath.Join(scratchDir, "f")
+	cmd, _ := startBashInCgroup(t, cgroupDir, fmt.Sprintf("dd if=/dev/zero of=%s bs=1M count=100 conv=fsync", cacheFile))
+	require.NoError(t, cmd.Wait())
+	startBashInCgroup(t, cgroupDir, fmt.Sprintf("while true; do cat %s >/dev/null; done", cacheFile))
+	require.Eventually(t, func() bool {
+		activeFileBytes, err := cgroup.ReadMemoryStatField(cgroupDir, "active_file")
+		return err == nil && activeFileBytes >= 90<<20
+	}, 30*time.Second, 100*time.Millisecond, "active file cache did not reach 90MB")
+
+	// Active file pages are still reclaimable under memory pressure, so the
+	// monitor should exclude them from the reported usage. The kernel only
+	// moves pages back to the inactive list when reclaim runs, so a monitor
+	// that only excludes inactive_file would count this cache as used and
+	// cause false OOM kills.
+	monitor := &cgroupMemoryMonitor{dir: cgroupDir, limitBytes: 1 << 30}
+	snapshot, err := monitor.Snapshot(t.Context())
+	require.NoError(t, err)
+	require.Less(t, snapshot.UsedBytes, int64(50<<20))
+}
+
 func TestVMKillerKillsTaskWhenCgroupMemoryIsExhausted(t *testing.T) {
 	cgroupDir := setupTestCgroup(t)
 	ctx := t.Context()

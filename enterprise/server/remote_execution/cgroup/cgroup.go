@@ -503,6 +503,13 @@ func ReadMemoryStatField(dir, field string) (int64, error) {
 	return readCgroupInt64Field(filepath.Join(dir, "memory.stat"), field)
 }
 
+// ReadMemoryStat reads the "memory.stat" file under the given cgroup directory
+// and returns the field values as a map. The directory should be an absolute
+// path, including the /sys/fs/cgroup prefix.
+func ReadMemoryStat(dir string) (map[string]int64, error) {
+	return readAllInt64Fields(filepath.Join(dir, "memory.stat"))
+}
+
 // ReadPidsEvents reads the "pids.events" file under the given cgroup
 // directory and returns the counter values as a map. The directory should be an
 // absolute path, including the /sys/fs/cgroup prefix.

@@ -67,7 +67,7 @@ type cgroupMemoryMonitor struct {
 }
 
 func (m *cgroupMemoryMonitor) Snapshot(_ context.Context) (*MemorySnapshot, error) {
-	usedBytes, err := getCgroupWorkingSetMemoryBytes(m.dir)
+	usedBytes, err := getCgroupUnreclaimableMemoryBytes(m.dir)
 	if err != nil {
 		return nil, fmt.Errorf("read executor cgroup memory: %w", err)
 	}
@@ -78,12 +78,22 @@ func (m *cgroupMemoryMonitor) Snapshot(_ context.Context) (*MemorySnapshot, erro
 	}, nil
 }
 
-// getCgroupWorkingSetMemoryBytes returns the memory usage of the cgroup at the
-// given cgroupfs directory, excluding inactive page cache, which the kernel
-// reclaims under memory pressure instead of OOM killing. This matches the
-// "working set" definition that the kubelet uses for eviction decisions. See
-// https://kubernetes.io/docs/concepts/scheduling-eviction/node-pressure-eviction/#memory-signals
-func getCgroupWorkingSetMemoryBytes(dir string) (int64, error) {
+// getCgroupUnreclaimableMemoryBytes returns the memory usage of the cgroup at
+// the given cgroupfs directory, excluding file page cache, which the kernel
+// reclaims under memory pressure instead of OOM killing.
+//
+// Everything else is counted: anon memory, shmem/tmpfs pages (which are tracked
+// by the anon LRU lists, not the file lists), unevictable pages, and kernel
+// memory. Without swap enabled (which for now we assume is the case), the
+// kernel cannot reclaim any of these, so they determine how close the cgroup is
+// to a kernel OOM kill.
+//
+// The exception is reclaimable slab (dentry and inode caches), which the kernel
+// can shrink under memory pressure but which is deliberately still counted:
+// slab reclaim only frees pages when whole slabs empty out, making it less
+// dependable than dropping clean file pages, and counting it errs toward
+// killing tasks early instead of letting the kernel OOM kill the executor.
+func getCgroupUnreclaimableMemoryBytes(dir string) (int64, error) {
 	currentBytes, err := cgroup.ReadMemoryCurrent(dir)
 	if err != nil {
 		return 0, err
@@ -91,11 +101,19 @@ func getCgroupWorkingSetMemoryBytes(dir string) (int64, error) {
 	if currentBytes < 0 {
 		return 0, fmt.Errorf("cgroup memory.current is negative (%d)", currentBytes)
 	}
-	inactiveFileBytes, err := cgroup.ReadMemoryStatField(dir, "inactive_file")
+	memoryStat, err := cgroup.ReadMemoryStat(dir)
 	if err != nil {
 		return 0, fmt.Errorf("read memory stats: %w", err)
 	}
+	var fileBytes int64
+	for _, field := range []string{"inactive_file", "active_file"} {
+		value, ok := memoryStat[field]
+		if !ok {
+			return 0, fmt.Errorf("memory.stat is missing field %q", field)
+		}
+		fileBytes += value
+	}
 	// memory.current and memory.stat are read separately, so the subtraction
 	// can skew slightly negative under concurrent cache growth.
-	return max(int64(0), currentBytes-inactiveFileBytes), nil
+	return max(int64(0), currentBytes-fileBytes), nil
 }
