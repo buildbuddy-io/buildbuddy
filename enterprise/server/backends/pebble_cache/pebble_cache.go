@@ -271,6 +271,10 @@ type PebbleCache struct {
 	maxDBVersion     filestore.PebbleKeyVersion
 	migrators        []keyMigrator
 
+	// migrating is true while the background data migration runs; it gates a
+	// retry in the read path (see lookupFileMetadataAndVersion).
+	migrating atomic.Bool
+
 	env    environment.Env
 	db     pebble.IPebbleDB
 	leaser pebble.Leaser
@@ -367,6 +371,13 @@ func (m *v5ToV6Migrator) FromVersion() filestore.PebbleKeyVersion {
 	return filestore.Version5
 }
 func (m *v5ToV6Migrator) ToVersion() filestore.PebbleKeyVersion { return filestore.Version6 }
+
+type v6ToV7Migrator struct{}
+
+func (m *v6ToV7Migrator) FromVersion() filestore.PebbleKeyVersion {
+	return filestore.Version6
+}
+func (m *v6ToV7Migrator) ToVersion() filestore.PebbleKeyVersion { return filestore.Version7 }
 
 // Register creates a new PebbleCache from the configured flags and sets it in
 // the provided env.
@@ -798,6 +809,14 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 			// Migrate keys from 5->6.
 			pc.migrators = append(pc.migrators, &v5ToV6Migrator{})
 		}
+		if pc.activeDatabaseVersion() >= filestore.Version7 {
+			// Migrate keys from 6->7. v7 is a raft-only, group-prefixed layout;
+			// pebble_cache never sets its active version to v7, so this migrator
+			// is only exercised by tests. The generic migrator rebuilds the key
+			// from the value's FileRecord, so the discarded groupID/digest is
+			// recovered.
+			pc.migrators = append(pc.migrators, &v6ToV7Migrator{})
+		}
 	}
 
 	// Check that there is a migrator enabled to update us to (or past) the
@@ -1221,6 +1240,11 @@ func (p *PebbleCache) migrateData(quitChan chan struct{}) error {
 		log.Debugf("No migrations necessary")
 		return nil
 	}
+
+	// Signal the read path that keys may be moving between versions, so that it
+	// retries a total miss (see lookupFileMetadataAndVersion).
+	p.migrating.Store(true)
+	defer p.migrating.Store(false)
 
 	limiter := rate.NewLimiter(rate.Limit(*migrationQPSLimit), 1)
 	db, err := p.leaser.DB()
@@ -1794,6 +1818,21 @@ func (p *PebbleCache) makeFileRecord(groupID string, encryption *sgpb.Encryption
 }
 
 func (p *PebbleCache) lookupFileMetadataAndVersion(ctx context.Context, db pebble.IPebbleDB, key filestore.PebbleKey, fileMetadata *sgpb.FileMetadata) (filestore.PebbleKeyVersion, error) {
+	// The migrator writes the new-version key before deleting the old one and
+	// never deletes the new one, so a key is always present at some version.
+	// Our non-atomic descending probe can still straddle a key's (one-time)
+	// migration and miss both versions. Sampling migrating before and after the
+	// probe brackets the migration window: if it was ever set, re-probe once
+	// (the migration has settled by now). A still-missing key doesn't exist.
+	migrating := p.migrating.Load()
+	version, err := p.probeFileMetadataVersions(db, key, fileMetadata)
+	if status.IsNotFoundError(err) && (migrating || p.migrating.Load()) {
+		version, err = p.probeFileMetadataVersions(db, key, fileMetadata)
+	}
+	return version, err
+}
+
+func (p *PebbleCache) probeFileMetadataVersions(db pebble.IPebbleDB, key filestore.PebbleKey, fileMetadata *sgpb.FileMetadata) (filestore.PebbleKeyVersion, error) {
 	var lastErr error
 	for minVersion, version := p.minAndMaxDatabaseVersions(); version >= minVersion; version-- {
 		keyBytes, err := key.Bytes(version)
@@ -1979,6 +2018,18 @@ func (p *PebbleCache) findMissing(ctx context.Context, db pebble.IPebbleDB, grou
 // unmarshalling it. The returned buffer is only valid until the returned
 // closer is closed; on success the caller must close it.
 func (p *PebbleCache) lookupFileMetadataBytes(db pebble.IPebbleDB, key filestore.PebbleKey) ([]byte, io.Closer, error) {
+	// See lookupFileMetadataAndVersion: a concurrent migration can make a
+	// non-atomic multi-version probe miss a key that is in fact always present.
+	// Re-probe once if a migration overlapped this probe.
+	migrating := p.migrating.Load()
+	buf, closer, err := p.probeFileMetadataBytes(db, key)
+	if status.IsNotFoundError(err) && (migrating || p.migrating.Load()) {
+		buf, closer, err = p.probeFileMetadataBytes(db, key)
+	}
+	return buf, closer, err
+}
+
+func (p *PebbleCache) probeFileMetadataBytes(db pebble.IPebbleDB, key filestore.PebbleKey) ([]byte, io.Closer, error) {
 	var lastErr error
 	for minVersion, version := p.minAndMaxDatabaseVersions(); version >= minVersion; version-- {
 		keyBytes, err := key.Bytes(version)

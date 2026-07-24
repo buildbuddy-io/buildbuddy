@@ -41,7 +41,7 @@ import (
 )
 
 var (
-	userMap = testauth.TestUsers("user1", "group1", "user2", "group2")
+	userMap = testauth.TestUsers("user1", "GR1", "user2", "GR2")
 )
 
 type testConfig struct {
@@ -244,7 +244,7 @@ func TestGetAndSet(t *testing.T) {
 	require.NoError(t, err)
 
 	for i := 0; i < 10; i++ {
-		md := randomFileMetadata(t, 100, "group1")
+		md := randomFileMetadata(t, 100, "GR1")
 
 		// Should be able to Set a record.
 		_, err := rc1.Set(ctxUser1, &mdpb.SetRequest{
@@ -272,7 +272,7 @@ func TestGetAndSet(t *testing.T) {
 		// User 2 should not be able to fetch User 1's record even when setting to
 		// its own group id.
 		fr2 := md.GetFileRecord().CloneVT()
-		fr2.GetIsolation().GroupId = "group2"
+		fr2.GetIsolation().GroupId = "GR2"
 		getRsp, err = rc1.Get(ctxUser2, &mdpb.GetRequest{
 			FileRecords: []*sgpb.FileRecord{fr2},
 		})
@@ -480,13 +480,12 @@ func TestLRU(t *testing.T) {
 	// and (2) stale-atime samples making recently-Find()'d records appear
 	// old enough to evict.
 	flags.Set(t, "cache.raft.min_eviction_age", 18*time.Minute)
-	// Read a small batch forward per random seek instead of refreshing the
-	// iterator on every single read. The records this test evicts (18-24) are
-	// never Find()'d, so their atimes are set once and never change -- a short
-	// batch keeps them fresh while avoiding the per-record db.NewIter churn
-	// that, under the race detector, starves the evictor and makes the sampler
-	// take far too long to randomly land on the last few eligible records.
-	flags.Set(t, "cache.raft.samples_per_batch", 10)
+	// Small batch so the sampler rotates ranges and reaches the last eligible
+	// records quickly.
+	flags.Set(t, "cache.raft.samples_per_range", 10)
+	// Short refresh (wall time) so the reused iterator promptly picks up writes,
+	// atime updates, and deletions instead of re-sampling a stale snapshot.
+	flags.Set(t, "cache.raft.sampler_iter_refresh_period", time.Millisecond)
 	// Disable the sampler's idle sleep. In production the sampler sleeps when
 	// it can't find an eligible entry (e.g. a random key landing past the end
 	// of a small partition) to avoid wasting CPU. That sleep uses the fake
