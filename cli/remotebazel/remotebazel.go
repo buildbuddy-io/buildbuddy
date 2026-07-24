@@ -932,6 +932,23 @@ func findExecutableOutput(outputs []string, outputBaseDir, executablePath string
 	return "", fmt.Errorf("run executable %q not found among downloaded artifacts", executablePath)
 }
 
+// For runs that are build-remotely-run-locally, envWithRunfilesDir ensures the locally-run target resolves runfiles from the
+// downloaded runfiles directory. The runfiles manifest contains absolute paths from the
+// remote runner, and inherited runfiles variables may refer to the bb binary's
+// own runfiles, so remove those settings and explicitly set the runfiles directory.
+func envWithRunfilesDir(env []string, runfilesDir string) []string {
+	filteredEnv := make([]string, 0, len(env)+1)
+	for _, entry := range env {
+		name, _, _ := strings.Cut(entry, "=")
+		switch name {
+		case "RUNFILES_DIR", "RUNFILES_MANIFEST_FILE", "RUNFILES_MANIFEST_ONLY", "RUNFILES_REPO_MAPPING":
+			continue
+		}
+		filteredEnv = append(filteredEnv, entry)
+	}
+	return append(filteredEnv, "RUNFILES_DIR="+runfilesDir)
+}
+
 func getWorkingDirectory(workspaceFilePath string) (string, error) {
 	repoRootPath, err := storage.RepoRootPath()
 	if err != nil {
@@ -1196,6 +1213,11 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 				log.Debugf("Executing %q with arguments %s", binPath, execArgs)
 				cmd := exec.CommandContext(ctx, binPath, execArgs...)
 				cmd.Dir = filepath.Join(outputsBaseDir, BuildBuddyArtifactDir, runfilesRoot)
+				runfilesDir, err := filepath.Abs(binPath + ".runfiles")
+				if err != nil {
+					return 1, fmt.Errorf("compute runfiles directory for %q: %w", binPath, err)
+				}
+				cmd.Env = envWithRunfilesDir(os.Environ(), runfilesDir)
 				cmd.Stdout = os.Stdout
 				cmd.Stderr = os.Stderr
 				err = cmd.Run()
