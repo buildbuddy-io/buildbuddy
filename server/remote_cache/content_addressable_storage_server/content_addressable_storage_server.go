@@ -1256,8 +1256,18 @@ func (s *ContentAddressableStorageServer) spliceBlob(ctx context.Context, req *r
 		DigestFunction: req.GetDigestFunction(),
 	}
 
-	if err := manifest.Store(ctx, s.cache); err != nil {
-		return nil, err
+	efp := s.env.GetExperimentFlagProvider()
+	skipValidation := cdc.IsSpliceWithoutValidation(ctx) &&
+		efp != nil &&
+		efp.Boolean(ctx, cdc.SpliceWithoutValidationExperiment, false)
+	var storeErr error
+	if skipValidation {
+		storeErr = manifest.StoreWithoutContentVerification(ctx, s.cache)
+	} else {
+		storeErr = manifest.Store(ctx, s.cache)
+	}
+	if storeErr != nil {
+		return nil, storeErr
 	}
 
 	return &repb.SpliceBlobResponse{

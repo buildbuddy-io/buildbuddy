@@ -28,6 +28,7 @@ var (
 		usageutil.OriginHeaderName,
 		bazel_request.RequestMetadataKey,
 		cdc.ChunkedHeaderName,
+		cdc.SpliceWithoutValidationHeaderName,
 		// Forward the client's opt-in for local AC caching so it survives
 		// proxy-to-proxy hops and every proxy in the chain honors it.
 		platform.OverrideHeaderPrefix + platform.CacheProxyActionCacheTTLPropertyName,

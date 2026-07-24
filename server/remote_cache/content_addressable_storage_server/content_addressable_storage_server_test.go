@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_metrics_collector"
@@ -25,6 +26,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcompression"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/cdc"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
@@ -33,12 +36,14 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/buildbuddy-io/fastcdc2020/fastcdc"
 	"github.com/google/uuid"
+	flagd "github.com/open-feature/go-sdk-contrib/providers/flagd/pkg"
 	"github.com/open-feature/go-sdk/openfeature"
 	"github.com/open-feature/go-sdk/openfeature/memprovider"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
 
 	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
@@ -980,6 +985,167 @@ func TestSpliceAndSplitBlob(t *testing.T) {
 		actualDigest := splitResp.ChunkDigests[i]
 		assert.Equal(t, expectedDigest.Hash, actualDigest.Hash)
 		assert.Equal(t, expectedDigest.SizeBytes, actualDigest.SizeBytes)
+	}
+}
+
+func TestSpliceBlobWithoutValidation(t *testing.T) {
+	for _, tc := range []struct {
+		name           string
+		groupID        string
+		clientIdentity string
+		sendHeader     bool
+		missingChunk   bool
+		wrongBlobSize  bool
+		wantSuccess    bool
+	}{
+		{
+			name:           "trusted executor in experiment",
+			groupID:        "GR_ALLOWED",
+			clientIdentity: interfaces.ClientIdentityExecutor,
+			sendHeader:     true,
+			wantSuccess:    true,
+		},
+		{
+			name:           "trusted cache proxy forwards experiment",
+			groupID:        "GR_ALLOWED",
+			clientIdentity: interfaces.ClientIdentityCacheProxy,
+			sendHeader:     true,
+			wantSuccess:    true,
+		},
+		{
+			name:           "trusted executor without experiment header",
+			groupID:        "GR_ALLOWED",
+			clientIdentity: interfaces.ClientIdentityExecutor,
+		},
+		{
+			name:           "trusted executor cannot reference a missing chunk",
+			groupID:        "GR_ALLOWED",
+			clientIdentity: interfaces.ClientIdentityExecutor,
+			sendHeader:     true,
+			missingChunk:   true,
+		},
+		{
+			name:           "trusted executor cannot claim wrong blob size",
+			groupID:        "GR_ALLOWED",
+			clientIdentity: interfaces.ClientIdentityExecutor,
+			sendHeader:     true,
+			wrongBlobSize:  true,
+		},
+		{
+			name:           "trusted executor from group outside experiment",
+			groupID:        "GR_OTHER",
+			clientIdentity: interfaces.ClientIdentityExecutor,
+			sendHeader:     true,
+		},
+		{
+			name:       "untrusted caller cannot spoof experiment header",
+			groupID:    "GR_ALLOWED",
+			sendHeader: true,
+		},
+		{
+			name:           "signed unknown client cannot spoof experiment header",
+			groupID:        "GR_ALLOWED",
+			clientIdentity: "unknown-client",
+			sendHeader:     true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			env := testenv.GetTestEnv(t)
+			user := testauth.User("US1", tc.groupID)
+			env.SetAuthenticator(testauth.NewTestAuthenticator(t, map[string]interfaces.UserInfo{
+				user.GetUserID(): user,
+			}))
+
+			flags.Set(t, "app.client_identity.key", "test-client-identity-key")
+			identityService, err := clientidentity.New(env.GetClock())
+			require.NoError(t, err)
+			env.SetClientIdentityService(identityService)
+
+			tmp := testfs.MakeTempDir(t)
+			offlineFlagPath := testfs.WriteFile(t, tmp, "config.flagd.json", `
+{
+  "$schema": "https://flagd.dev/schema/v0/flags.json",
+  "flags": {
+    "cache.chunking_enabled": {
+      "state": "ENABLED",
+      "variants": {"enabled": true},
+      "defaultVariant": "enabled"
+    },
+    "splice-without-validation": {
+      "state": "ENABLED",
+      "variants": {"enabled": true, "disabled": false},
+      "defaultVariant": "disabled",
+      "targeting": {
+        "if": [
+          {"==": [{"var": "group_id"}, "GR_ALLOWED"]},
+          "enabled",
+          "disabled"
+        ]
+      }
+    }
+  }
+}
+`)
+			provider, err := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(offlineFlagPath))
+			require.NoError(t, err)
+			require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), provider))
+			fp, err := experiments.NewFlagProvider(t.Name())
+			require.NoError(t, err)
+			env.SetExperimentFlagProvider(fp)
+
+			ctx := testauth.WithAuthenticatedUserInfo(t.Context(), user)
+			ctx, err = prefix.AttachUserPrefixToContext(ctx, env.GetAuthenticator())
+			require.NoError(t, err)
+			if tc.sendHeader {
+				ctx = cdc.ContextWithSpliceWithoutValidation(ctx)
+			}
+			if tc.clientIdentity != "" {
+				identityHeader, err := identityService.NewIdentityHeader(&interfaces.ClientIdentity{
+					Origin: interfaces.ClientIdentityInternalOrigin,
+					Client: tc.clientIdentity,
+				}, clientidentity.DefaultExpiration)
+				require.NoError(t, err)
+				ctx = metadata.AppendToOutgoingContext(ctx, authutil.ClientIdentityHeaderName, identityHeader)
+			}
+
+			chunks := [][]byte{[]byte("chunk one"), []byte("chunk two")}
+			chunkDigests := make([]*repb.Digest, 0, len(chunks))
+			var blobSize int
+			for _, chunk := range chunks {
+				d, err := digest.Compute(bytes.NewReader(chunk), repb.DigestFunction_SHA256)
+				require.NoError(t, err)
+				chunkDigests = append(chunkDigests, d)
+				blobSize += len(chunk)
+				if !tc.missingChunk {
+					rn := digest.NewCASResourceName(d, "", repb.DigestFunction_SHA256)
+					require.NoError(t, env.GetCache().Set(ctx, rn.ToProto(), chunk))
+				}
+			}
+			if tc.wrongBlobSize {
+				blobSize++
+			}
+			blobDigest, err := digest.Compute(strings.NewReader(strings.Repeat("x", blobSize)), repb.DigestFunction_SHA256)
+			require.NoError(t, err)
+
+			clientConn := runCASServer(ctx, t, env)
+			t.Cleanup(func() { clientConn.Close() })
+			client := repb.NewContentAddressableStorageClient(clientConn)
+			_, err = client.SpliceBlob(ctx, &repb.SpliceBlobRequest{
+				BlobDigest:     blobDigest,
+				ChunkDigests:   chunkDigests,
+				DigestFunction: repb.DigestFunction_SHA256,
+			})
+			if !tc.wantSuccess {
+				require.Error(t, err)
+				require.True(t, status.IsInvalidArgumentError(err), "expected InvalidArgumentError, got %v", err)
+				return
+			}
+			require.NoError(t, err)
+
+			manifest, err := chunking.LoadManifest(ctx, env.GetCache(), blobDigest, "", repb.DigestFunction_SHA256)
+			require.NoError(t, err)
+			require.Equal(t, chunkDigests, manifest.ChunkDigests)
+		})
 	}
 }
 
