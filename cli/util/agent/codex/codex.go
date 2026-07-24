@@ -22,6 +22,10 @@ type event struct {
 	} `json:"item"`
 }
 
+// Run executes a Codex agent command.
+//
+// Codex doesn't support a tool allowlist, so request.AllowedTools is ignored.
+// Instead, commands are run in a read-only sandbox.
 func Run(ctx context.Context, request *agentutil.RunRequest) (*agentutil.RunResponse, error) {
 	if _, err := exec.LookPath("codex"); err != nil {
 		return nil, fmt.Errorf("codex is not installed or not in PATH")
@@ -34,10 +38,14 @@ func Run(ctx context.Context, request *agentutil.RunRequest) (*agentutil.RunResp
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
-		if message := strings.TrimSpace(stderr.String()); message != "" {
-			return nil, fmt.Errorf("codex failed: %w: %s", err, message)
+		errMsg := "codex failed"
+		if msg := strings.TrimSpace(stderr.String()); msg != "" {
+			errMsg += ": " + msg
 		}
-		return nil, fmt.Errorf("codex failed: %w", err)
+		if msg := strings.TrimSpace(stdout.String()); msg != "" {
+			errMsg += ": " + msg
+		}
+		return nil, fmt.Errorf("%s: %w", errMsg, err)
 	}
 	return parseResponse(stdout.Bytes())
 }
@@ -90,6 +98,6 @@ func parseResponse(rawOutput []byte) (*agentutil.RunResponse, error) {
 	return &agentutil.RunResponse{
 		Output:        output,
 		SessionID:     sessionID,
-		ResumeCommand: fmt.Sprintf("codex exec resume %s", sessionID),
+		ResumeCommand: fmt.Sprintf("codex resume %s", sessionID),
 	}, nil
 }

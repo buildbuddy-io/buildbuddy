@@ -22,5 +22,5 @@ func TestParseResponse(t *testing.T) {
 	// If there are multiple agent messages, return only the last one.
 	require.Equal(t, "Analysis complete.", got.Output)
 	require.Equal(t, "1234", got.SessionID)
-	require.Equal(t, "codex exec resume 1234", got.ResumeCommand)
+	require.Equal(t, "codex resume 1234", got.ResumeCommand)
 }
