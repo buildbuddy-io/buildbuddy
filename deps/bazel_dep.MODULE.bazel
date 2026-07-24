@@ -28,18 +28,13 @@ single_version_override(
     version = "6.7.3",
 )
 
-bazel_dep(name = "rules_go", version = "0.61.0", repo_name = "io_bazel_rules_go")
-
-# Carry Bazel 9 and race-mode proto fixes until they land in a rules_go release
-# we can consume.
+bazel_dep(name = "rules_go", version = "0.62.0", repo_name = "io_bazel_rules_go")
 single_version_override(
     module_name = "rules_go",
     patch_strip = 1,
     patches = [
-        "//buildpatches/bazel_dep:rules_go_4623.patch",
-        "//buildpatches/bazel_dep:rules_go_proto_aspect_cgo.patch",
+        "//buildpatches:rules_go_pathmap.patch",
     ],
-    version = "0.61.0",
 )
 
 bazel_dep(name = "rules_webtesting")
@@ -88,7 +83,7 @@ bazel_dep(name = "aspect_rules_swc", version = "2.5.0")
 bazel_dep(name = "aspect_rules_ts", version = "3.9.1")
 bazel_dep(name = "bazel_skylib", version = "1.9.0")
 bazel_dep(name = "bazel_worker_api", version = "0.0.10")
-bazel_dep(name = "llvm", version = "0.8.11")
+bazel_dep(name = "llvm", version = "0.8.14")
 bazel_dep(name = "platforms", version = "1.1.0")
 bazel_dep(name = "redis", version = "5.0.4.bcr.1")
 bazel_dep(name = "rules_cc", version = "0.2.20")
@@ -115,7 +110,6 @@ bazel_dep(name = "rules_bazel_integration_test", version = "0.37.1")
 # - docs/rbe-github-actions.md
 # - tools/dev_qa_test/BUILD
 bazel_dep(name = "toolchains_buildbuddy", version = "0.0.4")
-bazel_dep(name = "toolchains_musl", version = "0.1.27")
 bazel_dep(name = "zlib", version = "1.3.2")
 bazel_dep(name = "rules_multirun", version = "0.13.0")
 bazel_dep(name = "with_cfg.bzl", version = "0.14.5")
