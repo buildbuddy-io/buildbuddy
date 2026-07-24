@@ -5,16 +5,88 @@ import (
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
+
+	tpb "github.com/buildbuddy-io/buildbuddy/proto/trace"
 )
+
+const (
+	// A Datadog-style trace ID: 32-bit unix timestamp, 32 zero bits, 64
+	// random bits — as propagated by dd-trace clients.
+	externalTraceID    = "6a629a3d000000004bef9c17468ee658"
+	externalSpanID     = "61f914d398b5dab8"
+	externalTraceState = "dd=s:2;p:61f914d398b5dab8;t.dm:-4"
+)
+
+func externalTraceParent() string {
+	return "00-" + externalTraceID + "-" + externalSpanID + "-01"
+}
 
 func init() {
 	*log.LogLevel = "error"
 	*log.IncludeShortFileName = true
 	log.Configure()
+}
+
+func setupTracing(t *testing.T) {
+	flags.Set(t, "app.trace_fraction", 1.0)
+	require.NoError(t, tracing.ConfigureWithNoopExporter(testenv.GetTestEnv(t)))
+}
+
+func externalCarrier(extraHeaders map[string]string) propagation.MapCarrier {
+	c := propagation.MapCarrier{
+		"traceparent": externalTraceParent(),
+		"tracestate":  externalTraceState,
+	}
+	for k, v := range extraHeaders {
+		c[k] = v
+	}
+	return c
+}
+
+func TestExternalParentContextIgnored(t *testing.T) {
+	setupTracing(t)
+
+	// No client-identity header: the inbound context must not be adopted.
+	ctx := otel.GetTextMapPropagator().Extract(context.Background(), externalCarrier(nil))
+	require.False(t, trace.SpanContextFromContext(ctx).IsValid())
+
+	// New spans become roots of a fresh trace, sampled by our own sampler.
+	_, span := tracing.StartNamedSpan(ctx, "test")
+	defer span.End()
+	require.NotEqual(t, externalTraceID, span.SpanContext().TraceID().String())
+	require.True(t, span.SpanContext().IsSampled())
+}
+
+func TestInternalParentContextHonored(t *testing.T) {
+	setupTracing(t)
+
+	// A caller presenting a client-identity header has its context adopted.
+	carrier := externalCarrier(map[string]string{authutil.ClientIdentityHeaderName: "some-identity-header"})
+	ctx := otel.GetTextMapPropagator().Extract(context.Background(), carrier)
+	sc := trace.SpanContextFromContext(ctx)
+	require.True(t, sc.IsValid())
+	require.True(t, sc.IsRemote())
+	require.Equal(t, externalTraceID, sc.TraceID().String())
+}
+
+func TestExtractProtoTraceMetadataBypassesGate(t *testing.T) {
+	// Trace metadata embedded in internal protos (e.g. queued execution
+	// tasks) has no client-identity header; it must still be extracted.
+	setupTracing(t)
+
+	md := &tpb.Metadata{Entries: map[string]string{"traceparent": externalTraceParent()}}
+	ctx := tracing.ExtractProtoTraceMetadata(context.Background(), md)
+	sc := trace.SpanContextFromContext(ctx)
+	require.True(t, sc.IsValid())
+	require.Equal(t, externalTraceID, sc.TraceID().String())
 }
 
 func setupBench(b *testing.B) {
