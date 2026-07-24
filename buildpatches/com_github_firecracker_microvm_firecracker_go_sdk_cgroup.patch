@@ -1,5 +1,5 @@
 diff --git a/jailer.go b/jailer.go
-index 208de67..eddd8f1 100644
+index ff3a35a..41a21bc 100644
 --- a/jailer.go
 +++ b/jailer.go
 @@ -85,6 +85,14 @@ type JailerConfig struct {
@@ -26,22 +26,30 @@ index 208de67..eddd8f1 100644
  
  	stdin  io.Reader
  	stdout io.Writer
-@@ -143,6 +153,14 @@ func (b JailerCommandBuilder) Args() []string {
- 		args = append(args, "--cgroup", fmt.Sprintf("cpuset.cpus=%s", cpulist))
- 	}
+@@ -138,9 +148,19 @@ func (b JailerCommandBuilder) Args() []string {
+ 	args = append(args, "--gid", strconv.Itoa(b.gid))
+ 	args = append(args, "--exec-file", b.execFile)
  
+-	if cpulist := getNumaCpuset(b.node); len(cpulist) > 0 {
+-		args = append(args, "--cgroup", fmt.Sprintf("cpuset.mems=%d", b.node))
+-		args = append(args, "--cgroup", fmt.Sprintf("cpuset.cpus=%s", cpulist))
++	if b.node >= 0 {
++		if cpulist := getNumaCpuset(b.node); len(cpulist) > 0 {
++			args = append(args, "--cgroup", fmt.Sprintf("cpuset.mems=%d", b.node))
++			args = append(args, "--cgroup", fmt.Sprintf("cpuset.cpus=%s", cpulist))
++		}
++	}
++
 +	for _, cgroupArg := range b.cgroupArgs {
 +		args = append(args, "--cgroup", cgroupArg)
 +	}
 +
 +	if b.parentCgroup != nil {
 +		args = append(args, "--parent-cgroup", *b.parentCgroup)
-+	}
-+
- 	if len(b.cgroupVersion) > 0 {
- 		args = append(args, "--cgroup-version", b.cgroupVersion)
  	}
-@@ -204,13 +222,38 @@ func (b JailerCommandBuilder) WithExecFile(path string) JailerCommandBuilder {
+ 
+ 	if len(b.cgroupVersion) > 0 {
+@@ -204,13 +224,40 @@ func (b JailerCommandBuilder) WithExecFile(path string) JailerCommandBuilder {
  	return b
  }
  
@@ -52,6 +60,8 @@ index 208de67..eddd8f1 100644
 +// files "cpuset.mems" and "cpuset.cpus".
 +// If those files are also configured using WithCgroupArgs, the values passed to
 +// WithCgroupArgs will take precedence.
++// A negative node means the cpuset files are left unset, so the process is not
++// assigned to any NUMA node or pinned to any CPU.
  func (b JailerCommandBuilder) WithNumaNode(node int) JailerCommandBuilder {
  	b.node = node
  	return b
@@ -81,7 +91,7 @@ index 208de67..eddd8f1 100644
  // WithChrootBaseDir will set the given path as the chroot base directory. This
  // specifies where chroot jails are built and defaults to /srv/jailer.
  func (b JailerCommandBuilder) WithChrootBaseDir(path string) JailerCommandBuilder {
-@@ -348,6 +391,8 @@ func jail(ctx context.Context, m *Machine, cfg *Config) error {
+@@ -348,6 +395,8 @@ func jail(ctx context.Context, m *Machine, cfg *Config) error {
  		WithChrootBaseDir(cfg.JailerCfg.ChrootBaseDir).
  		WithDaemonize(cfg.JailerCfg.Daemonize).
  		WithCgroupVersion(cfg.JailerCfg.CgroupVersion).
