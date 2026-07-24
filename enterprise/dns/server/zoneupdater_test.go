@@ -1,26 +1,35 @@
 package server
 
 import (
+	"fmt"
 	"sort"
 	"strings"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/dns/watcher"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/miekg/dns"
 )
 
-// zoneFileWithA returns the bytes of a minimal valid zone file for apex, whose
-// apex A record points at addr (so different versions of the same file can be
-// told apart).
-func zoneFileWithA(apex, addr string) []byte {
+// zoneFileWithSerial returns the bytes of a minimal valid zone file for apex
+// with the given SOA serial, whose apex A record points at addr (so different
+// versions of the same file can be told apart).
+func zoneFileWithSerial(apex, addr string, soaSerial uint32) []byte {
 	lines := []string{
-		apex + " 60 IN SOA ns1.example. host.example. 1 21600 3600 259200 300",
+		fmt.Sprintf("%s 60 IN SOA ns1.example. host.example. %d 21600 3600 259200 300", apex, soaSerial),
 		apex + " 60 IN A " + addr,
 	}
 	return []byte(strings.Join(lines, "\n") + "\n")
+}
+
+// zoneFileWithA is zoneFileWithSerial with a fixed serial of 1.
+func zoneFileWithA(apex, addr string) []byte {
+	return zoneFileWithSerial(apex, addr, 1)
 }
 
 // servedApexes returns the sorted apexes of the zones the handler currently
@@ -112,6 +121,29 @@ func TestZoneUpdater_DropsRemovedObject(t *testing.T) {
 	u.apply(watcher.Update{Removed: []string{"b.zone"}})
 
 	assert.Equal(t, []string{"a.example."}, servedApexes(h))
+}
+
+func TestZoneUpdater_ExportsZoneSerials(t *testing.T) {
+	_, u := newUpdater()
+	u.apply(changedUpdate(map[string][]byte{
+		"a.zone": zoneFileWithSerial("a.example.", "1.1.1.1", 7),
+		"b.zone": zoneFileWithSerial("b.example.", "2.2.2.2", 42),
+	}))
+
+	serialOf := func(apex string) float64 {
+		return testutil.ToFloat64(metrics.DNSServerZoneSerial.With(prometheus.Labels{metrics.DNSZoneLabel: apex}))
+	}
+	assert.Equal(t, 7.0, serialOf("a.example."))
+	assert.Equal(t, 42.0, serialOf("b.example."))
+
+	// A new version of a zone updates its serial.
+	u.apply(changedUpdate(map[string][]byte{"a.zone": zoneFileWithSerial("a.example.", "1.1.1.1", 8)}))
+	assert.Equal(t, 8.0, serialOf("a.example."))
+
+	// A removed zone drops off the metric entirely.
+	u.apply(watcher.Update{Removed: []string{"b.zone"}})
+	assert.Equal(t, 1, testutil.CollectAndCount(metrics.DNSServerZoneSerial))
+	assert.Equal(t, 8.0, serialOf("a.example."))
 }
 
 func TestZoneUpdater_RemovingUnknownObjectIsNoop(t *testing.T) {

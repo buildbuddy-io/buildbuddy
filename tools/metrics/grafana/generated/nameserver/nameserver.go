@@ -17,6 +17,7 @@ const (
 	filter = `region=~"` + region + `"`
 	reqs   = "buildbuddy_dns_server_request_count"
 	dur    = "buildbuddy_dns_server_handler_duration_usec"
+	serial = "buildbuddy_dns_server_zone_serial"
 )
 
 func q(expr, legend string) *prometheus.DataqueryBuilder {
@@ -106,6 +107,25 @@ func durationHeatmapPanel() *heatmap.PanelBuilder {
 		WithTarget(dash.PromHeatmapQuery(`sum by (le) (rate(` + dur + `_bucket{` + filter + `}[` + window + `]))`).Interval(window).RefId("A"))
 }
 
+// zoneSerialsStat shows one stat per served zone with its current SOA serial,
+// so the set of zones being served and their versions is visible at a glance.
+func zoneSerialsStat() *stat.PanelBuilder {
+	return dash.Stat("Zones Served", "none").
+		Description("SOA serial of each zone currently served (max across replicas). A zone missing here is not being served at all.").
+		GridPos(grid(8, 12, 0, 24)).
+		WithTarget(q(`max by (zone) (`+serial+`{`+filter+`})`, "{{zone}}"))
+}
+
+// zoneSerialByReplicaPanel plots each zone's serial per replica. All replicas
+// of a zone should sit on the same line; a replica stuck on an old serial
+// after a zone-file push shows up as a diverging line.
+func zoneSerialByReplicaPanel() *timeseries.PanelBuilder {
+	return dash.Timeseries("Zone Serial by Replica", "none").
+		Description("SOA serial of each served zone, per replica. Divergence between replicas of the same zone means a stale or failed zone reload.").
+		GridPos(grid(8, 12, 12, 24)).
+		WithTarget(q(`max by (zone, instance) (`+serial+`{`+filter+`})`, "{{zone}} {{instance}}"))
+}
+
 func regionVariable() *dashboard.QueryVariableBuilder {
 	query := `label_values(up, region)`
 	return dash.QueryVar("region", query).
@@ -146,6 +166,9 @@ func build() (dashboard.Dashboard, error) {
 		WithRow(rowAt("Latency", 14)).
 		WithPanel(latencyPanel()).
 		WithPanel(durationHeatmapPanel()).
+		WithRow(rowAt("Zones", 23)).
+		WithPanel(zoneSerialsStat()).
+		WithPanel(zoneSerialByReplicaPanel()).
 		Build()
 }
 

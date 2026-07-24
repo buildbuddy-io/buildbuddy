@@ -110,7 +110,16 @@ type zone struct {
 // takes effect for requests that load the snapshot after this returns, while
 // in-flight requests finish against the snapshot they already loaded.
 func (h *Handler) Update(resources []dns.RR) {
-	h.data.Store(buildZoneData(resources))
+	d := buildZoneData(resources)
+	h.data.Store(d)
+	// Re-export the per-zone serial gauge from the new snapshot. The Reset
+	// drops zones that are no longer served.
+	metrics.DNSServerZoneSerial.Reset()
+	for _, z := range d.zones {
+		metrics.DNSServerZoneSerial.With(prometheus.Labels{
+			metrics.DNSZoneLabel: z.apex,
+		}).Set(float64(z.soa.(*dns.SOA).Serial))
+	}
 }
 
 // zoneFor returns the zone most specifically enclosing name (the longest apex
@@ -627,7 +636,7 @@ func NewHandler(env environment.Env, resources []dns.RR, acme *Challenges) *Hand
 		acme: acme,
 		env:  env,
 	}
-	h.data.Store(buildZoneData(resources))
+	h.Update(resources)
 	return h
 }
 
