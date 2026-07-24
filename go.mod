@@ -64,7 +64,7 @@ require (
 	github.com/bazelbuild/bazel-gazelle v0.51.3
 	github.com/bazelbuild/bazelisk v1.25.1-0.20250219134847-cdb99bfb1b7d
 	github.com/bazelbuild/buildtools v0.0.0-20260211083412-859bfffeef82
-	github.com/bazelbuild/rules_go v0.61.0
+	github.com/bazelbuild/rules_go v0.62.0
 	github.com/bazelbuild/rules_webtesting v0.2.1-0.20250911195827-e09c04b7d4d1
 	github.com/bduffany/godemon v0.0.0-20221115232931-09721d48e30e
 	github.com/beevik/etree v1.6.0
@@ -207,6 +207,11 @@ require (
 	k8s.io/client-go v0.35.3
 	kythe.io v0.0.72
 	tags.cncf.io/container-device-interface v1.1.0
+)
+
+require (
+	github.com/golang/mock v1.7.0-rc.1 // indirect
+	google.golang.org/grpc/cmd/protoc-gen-go-grpc v1.5.1 // indirect
 )
 
 require (
