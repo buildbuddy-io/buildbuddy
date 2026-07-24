@@ -17,10 +17,7 @@ buildbuddy.msvc_toolchain(
 # TODO: Switch when hermetic-llvm supports Windows a bit better
 register_toolchains("@toolchains_buildbuddy//toolchains/cc:windows_msvc_x86_64")
 
-llvm_toolchain = use_extension("@llvm//extensions:toolchain.bzl", "toolchain")
-use_repo(llvm_toolchain, "llvm_toolchains")
-
-register_toolchains("@llvm_toolchains//:all")
+register_toolchains("@llvm//toolchain:all")
 
 # Specify only the frameworks we actually link
 osx = use_extension("@llvm//extensions:osx.bzl", "osx")

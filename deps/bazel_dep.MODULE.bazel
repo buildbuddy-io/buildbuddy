@@ -28,22 +28,7 @@ single_version_override(
     version = "6.7.3",
 )
 
-bazel_dep(name = "rules_go", version = "0.61.1", repo_name = "io_bazel_rules_go")
-
-# TODO: Remove once >0.61.1 is released
-archive_override(
-    module_name = "rules_go",
-    integrity = "sha256-bmrXqyDJ3AEdVIcyUAeh/k7k6NQxlWmvHsM+aK8Kh/g=",
-    patch_strip = 1,
-    patches = [
-        "//buildpatches:rules_go_pathmap.patch",
-    ],
-    strip_prefix = "rules_go-3615c2c28d73fb4f71b37ec729069a7e06399474",
-    urls = [
-        "https://github.com/bazelbuild/rules_go/archive/3615c2c28d73fb4f71b37ec729069a7e06399474.tar.gz",
-    ],
-)
-
+bazel_dep(name = "rules_go", version = "0.62.0", repo_name = "io_bazel_rules_go")
 bazel_dep(name = "rules_webtesting")
 archive_override(
     module_name = "rules_webtesting",
@@ -90,7 +75,7 @@ bazel_dep(name = "aspect_rules_swc", version = "2.5.0")
 bazel_dep(name = "aspect_rules_ts", version = "3.9.1")
 bazel_dep(name = "bazel_skylib", version = "1.9.0")
 bazel_dep(name = "bazel_worker_api", version = "0.0.10")
-bazel_dep(name = "llvm", version = "0.8.11")
+bazel_dep(name = "llvm", version = "0.8.14")
 bazel_dep(name = "platforms", version = "1.1.0")
 bazel_dep(name = "redis", version = "5.0.4.bcr.1")
 bazel_dep(name = "rules_cc", version = "0.2.20")
@@ -117,18 +102,6 @@ bazel_dep(name = "rules_bazel_integration_test", version = "0.37.1")
 # - docs/rbe-github-actions.md
 # - tools/dev_qa_test/BUILD
 bazel_dep(name = "toolchains_buildbuddy", version = "0.0.4")
-bazel_dep(name = "llvm", version = "0.8.11")
-
-# TODO: Remove once >0.8.11 is released
-archive_override(
-    module_name = "llvm",
-    integrity = "sha256-BaD5NdlllG5o2TJTwp52e6sRg7YZ+n2CYMYQPk+4cws=",
-    strip_prefix = "hermetic-llvm-fa1bf3cc8546ade84d01a54bb74f292a0dcfcc02",
-    urls = [
-        "https://github.com/hermeticbuild/hermetic-llvm/archive/fa1bf3cc8546ade84d01a54bb74f292a0dcfcc02.tar.gz",
-    ],
-)
-
 bazel_dep(name = "zlib", version = "1.3.2")
 bazel_dep(name = "rules_multirun", version = "0.13.0")
 bazel_dep(name = "with_cfg.bzl", version = "0.14.5")
