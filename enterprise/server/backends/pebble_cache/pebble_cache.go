@@ -23,6 +23,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/gcsutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebble"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/proxy_util"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore/gcs"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -242,6 +243,9 @@ type sizeUpdate struct {
 type accessTimeUpdate struct {
 	key         filestore.PebbleKey
 	authHeaders map[string][]string
+	// If true, the read that triggered this update opted out of remote atime
+	// propagation, so the external atime updater is not called.
+	skipRemoteUpdate bool
 }
 
 // PebbleCache implements the cache interface by storing metadata in a pebble
@@ -1205,8 +1209,9 @@ func (p *PebbleCache) updateAtime(update *accessTimeUpdate) error {
 		return err
 	}
 
-	// Call the external atime updater, if registered.
-	if p.atimeUpdater != nil {
+	// Call the external atime updater, if registered, unless the caller
+	// opted out of remote atime propagation updates.
+	if p.atimeUpdater != nil && !update.skipRemoteUpdate {
 		d := md.GetFileRecord().GetDigest()
 		instanceName := md.GetFileRecord().GetIsolation().GetRemoteInstanceName()
 		digestFunction := md.GetFileRecord().GetDigestFunction()
@@ -2132,14 +2137,16 @@ func (p *PebbleCache) sendAtimeUpdate(ctx context.Context, key filestore.PebbleK
 		return
 	}
 
+	skipRemoteUpdate := proxy_util.SkipRemoteAtimeUpdate(ctx)
 	authHeaders := map[string][]string{}
-	if p.atimeUpdater != nil {
+	if p.atimeUpdater != nil && !skipRemoteUpdate {
 		// Only copy auth headers if they will be used by an atime updater.
 		authHeaders = authutil.GetAuthHeaders(ctx)
 	}
 	up := &accessTimeUpdate{
-		key:         key,
-		authHeaders: authHeaders,
+		key:              key,
+		authHeaders:      authHeaders,
+		skipRemoteUpdate: skipRemoteUpdate,
 	}
 
 	// If the atimeBufferSize is 0, non-blocking writes do not make sense,

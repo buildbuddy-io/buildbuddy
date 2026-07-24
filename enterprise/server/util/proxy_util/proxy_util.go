@@ -43,6 +43,17 @@ func SetSkipRemote(ctx context.Context) context.Context {
 	return metadata.AppendToOutgoingContext(ctx, SkipRemoteKey, "true")
 }
 
+type skipRemoteAtimeUpdateContextKey struct{}
+
+func SetSkipRemoteAtimeUpdate(ctx context.Context) context.Context {
+	return context.WithValue(ctx, skipRemoteAtimeUpdateContextKey{}, true)
+}
+
+func SkipRemoteAtimeUpdate(ctx context.Context) bool {
+	v, _ := ctx.Value(skipRemoteAtimeUpdateContextKey{}).(bool)
+	return v
+}
+
 func RequestTypeLabelFromContext(ctx context.Context) string {
 	if SkipRemote(ctx) {
 		return metrics.LocalOnlyCacheProxyRequestLabel
