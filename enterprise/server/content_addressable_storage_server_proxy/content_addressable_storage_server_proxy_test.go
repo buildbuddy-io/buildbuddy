@@ -215,9 +215,14 @@ func TestBatchUpdateBlobsCompressorMetricsLabelsAreBounded(t *testing.T) {
 
 func expectAtimeUpdate(t *testing.T, clock *clockwork.FakeClock, requestCount *atomic.Int32) {
 	requestCount.Store(0)
-	clock.Advance(atimeUpdatePeriod + time.Second)
 	wait := time.Millisecond
-	for i := 0; i < 7; i++ {
+	for i := 0; i < 10; i++ {
+		// The read that enqueued this atime update is processed asynchronously
+		// by the batcher goroutine, so the pending batch may not be ready when
+		// the sender's flush fires. Advance the clock on every iteration (rather
+		// than only once up front) so that a later tick still flushes the update
+		// once the batcher has caught up.
+		clock.Advance(atimeUpdatePeriod + time.Second)
 		time.Sleep(wait)
 		wait = wait * 2
 		if requestCount.Load() == 1 {
