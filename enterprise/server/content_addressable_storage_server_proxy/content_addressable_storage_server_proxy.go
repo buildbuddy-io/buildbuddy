@@ -585,6 +585,44 @@ func (s *CASServerProxy) SpliceBlob(ctx context.Context, req *repb.SpliceBlobReq
 	return s.remote.SpliceBlob(ctx, req)
 }
 
+func (s *CASServerProxy) SpliceChunks(stream repb.ContentAddressableStorage_SpliceChunksServer) error {
+	ctx := stream.Context()
+	if proxy_util.SkipRemote(ctx) {
+		return status.UnimplementedErrorf("SpliceChunks RPC is not supported for skipping remote")
+	}
+
+	ctx, spn := tracing.StartSpan(ctx)
+	defer spn.End()
+
+	remoteStream, err := s.remote.SpliceChunks(ctx)
+	if err != nil {
+		return err
+	}
+	finish := func() error {
+		resp, err := remoteStream.CloseAndRecv()
+		if err != nil {
+			return err
+		}
+		return stream.SendAndClose(resp)
+	}
+	for {
+		req, err := stream.Recv()
+		if err == io.EOF {
+			return finish()
+		}
+		if err != nil {
+			return err
+		}
+		if err := remoteStream.Send(req); err != nil {
+			if err == io.EOF {
+				// Read the final response to return the remote status.
+				return finish()
+			}
+			return err
+		}
+	}
+}
+
 func (s *CASServerProxy) SplitBlob(ctx context.Context, req *repb.SplitBlobRequest) (*repb.SplitBlobResponse, error) {
 	ctx, spn := tracing.StartSpan(ctx)
 	defer spn.End()
@@ -594,4 +632,31 @@ func (s *CASServerProxy) SplitBlob(ctx context.Context, req *repb.SplitBlobReque
 	}
 
 	return s.remote.SplitBlob(ctx, req)
+}
+
+func (s *CASServerProxy) SplitChunks(req *repb.SplitBlobRequest, stream repb.ContentAddressableStorage_SplitChunksServer) error {
+	ctx := stream.Context()
+	if proxy_util.SkipRemote(ctx) {
+		return status.UnimplementedErrorf("SplitChunks RPC is not supported for skipping remote")
+	}
+
+	ctx, spn := tracing.StartSpan(ctx)
+	defer spn.End()
+
+	remoteStream, err := s.remote.SplitChunks(ctx, req)
+	if err != nil {
+		return err
+	}
+	for {
+		resp, err := remoteStream.Recv()
+		if err == io.EOF {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if err := stream.Send(resp); err != nil {
+			return err
+		}
+	}
 }

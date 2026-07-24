@@ -72,6 +72,423 @@ func runCASServer(ctx context.Context, t *testing.T, env *testenv.TestEnv) *grpc
 	return clientConn
 }
 
+func TestSpliceChunks(t *testing.T) {
+	for _, tc := range []struct {
+		name             string
+		digestFunction   repb.DigestFunction_Value
+		compressionCache bool
+	}{
+		{
+			name:           "Identity",
+			digestFunction: repb.DigestFunction_SHA256,
+		},
+		{
+			name:           "InferredDigestFunction",
+			digestFunction: repb.DigestFunction_UNKNOWN,
+		},
+		{
+			name:             "Zstd",
+			digestFunction:   repb.DigestFunction_SHA256,
+			compressionCache: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			env := testenv.GetTestEnv(t)
+			if tc.compressionCache {
+				env.SetCache(&casCompressionCache{
+					Cache:       env.GetCache(),
+					requireZstd: true,
+				})
+			}
+
+			ctx := context.Background()
+			ctx, err := prefix.AttachUserPrefixToContext(ctx, env.GetAuthenticator())
+			require.NoError(t, err)
+
+			clientConn := runCASServer(ctx, t, env)
+			t.Cleanup(func() { clientConn.Close() })
+			client := repb.NewContentAddressableStorageClient(clientConn)
+
+			chunks := [][]byte{
+				[]byte("chunk one "),
+				[]byte("chunk two "),
+				[]byte("chunk three"),
+			}
+			blob := bytes.Join(chunks, nil)
+			blobDigest, err := digest.Compute(bytes.NewReader(blob), repb.DigestFunction_SHA256)
+			require.NoError(t, err)
+
+			var chunkDigests []*repb.Digest
+			for _, chunk := range chunks {
+				chunkDigest, err := digest.Compute(bytes.NewReader(chunk), repb.DigestFunction_SHA256)
+				require.NoError(t, err)
+				chunkRN := digest.NewCASResourceName(chunkDigest, "", repb.DigestFunction_SHA256)
+				require.NoError(t, env.GetCache().Set(ctx, chunkRN.ToProto(), chunk))
+				chunkDigests = append(chunkDigests, chunkDigest)
+			}
+
+			stream, err := client.SpliceChunks(ctx)
+			require.NoError(t, err)
+			require.NoError(t, stream.Send(&repb.SpliceChunksRequest{
+				ChunkDigests:     chunkDigests[:1],
+				DigestFunction:   tc.digestFunction,
+				ChunkingFunction: repb.ChunkingFunction_FAST_CDC_2020,
+			}))
+			require.NoError(t, stream.Send(&repb.SpliceChunksRequest{
+				ChunkDigests: chunkDigests[1:],
+				BlobDigest:   blobDigest,
+			}))
+			resp, err := stream.CloseAndRecv()
+			require.NoError(t, err)
+			require.True(t, digest.Equal(blobDigest, resp.GetBlobDigest()))
+
+			manifest, err := chunking.LoadManifest(ctx, env.GetCache(), blobDigest, "", repb.DigestFunction_SHA256)
+			require.NoError(t, err)
+			require.Equal(t, chunkDigests, manifest.ChunkDigests)
+		})
+	}
+}
+
+func TestSpliceChunksRejectsSizeMismatch(t *testing.T) {
+	env := testenv.GetTestEnv(t)
+
+	ctx := context.Background()
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, env.GetAuthenticator())
+	require.NoError(t, err)
+
+	clientConn := runCASServer(ctx, t, env)
+	t.Cleanup(func() { clientConn.Close() })
+	client := repb.NewContentAddressableStorageClient(clientConn)
+
+	chunks := [][]byte{
+		[]byte("chunk one "),
+		[]byte("chunk two"),
+	}
+	blob := bytes.Join(chunks, nil)
+	blobDigest, err := digest.Compute(bytes.NewReader(blob), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+	blobDigest.SizeBytes++
+
+	var chunkDigests []*repb.Digest
+	for _, chunk := range chunks {
+		chunkDigest, err := digest.Compute(bytes.NewReader(chunk), repb.DigestFunction_SHA256)
+		require.NoError(t, err)
+		chunkRN := digest.NewCASResourceName(chunkDigest, "", repb.DigestFunction_SHA256)
+		require.NoError(t, env.GetCache().Set(ctx, chunkRN.ToProto(), chunk))
+		chunkDigests = append(chunkDigests, chunkDigest)
+	}
+
+	stream, err := client.SpliceChunks(ctx)
+	require.NoError(t, err)
+	require.NoError(t, stream.Send(&repb.SpliceChunksRequest{
+		ChunkDigests:     chunkDigests[:1],
+		DigestFunction:   repb.DigestFunction_SHA256,
+		ChunkingFunction: repb.ChunkingFunction_FAST_CDC_2020,
+	}))
+	require.NoError(t, stream.Send(&repb.SpliceChunksRequest{
+		ChunkDigests: chunkDigests[1:],
+		BlobDigest:   blobDigest,
+	}))
+	_, err = stream.CloseAndRecv()
+	require.Equal(t, gcodes.InvalidArgument, gstatus.Code(err))
+	require.Contains(t, err.Error(), "spliced chunks size mismatch")
+}
+
+func TestSpliceChunksMissingChunk(t *testing.T) {
+	env := testenv.GetTestEnv(t)
+
+	ctx := context.Background()
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, env.GetAuthenticator())
+	require.NoError(t, err)
+
+	clientConn := runCASServer(ctx, t, env)
+	t.Cleanup(func() { clientConn.Close() })
+	client := repb.NewContentAddressableStorageClient(clientConn)
+
+	stored := []byte("chunk one ")
+	missing := []byte("chunk two")
+	blobDigest, err := digest.Compute(bytes.NewReader(append(append([]byte{}, stored...), missing...)), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+
+	storedDigest, err := digest.Compute(bytes.NewReader(stored), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+	storedRN := digest.NewCASResourceName(storedDigest, "", repb.DigestFunction_SHA256)
+	require.NoError(t, env.GetCache().Set(ctx, storedRN.ToProto(), stored))
+	missingDigest, err := digest.Compute(bytes.NewReader(missing), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+
+	stream, err := client.SpliceChunks(ctx)
+	require.NoError(t, err)
+	require.NoError(t, stream.Send(&repb.SpliceChunksRequest{
+		ChunkDigests:     []*repb.Digest{storedDigest, missingDigest},
+		BlobDigest:       blobDigest,
+		DigestFunction:   repb.DigestFunction_SHA256,
+		ChunkingFunction: repb.ChunkingFunction_FAST_CDC_2020,
+	}))
+	_, err = stream.CloseAndRecv()
+	require.Equal(t, gcodes.NotFound, gstatus.Code(err))
+}
+
+func TestSpliceChunksRejectsContentHashMismatch(t *testing.T) {
+	env := testenv.GetTestEnv(t)
+
+	ctx := context.Background()
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, env.GetAuthenticator())
+	require.NoError(t, err)
+
+	clientConn := runCASServer(ctx, t, env)
+	t.Cleanup(func() { clientConn.Close() })
+	client := repb.NewContentAddressableStorageClient(clientConn)
+
+	// The size matches. Only the final digest can detect the changed content.
+	chunks := [][]byte{
+		[]byte("chunk one "),
+		[]byte("chunk twX"),
+	}
+	expectedBlob := []byte("chunk one chunk two")
+	blobDigest, err := digest.Compute(bytes.NewReader(expectedBlob), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+
+	var chunkDigests []*repb.Digest
+	for _, chunk := range chunks {
+		chunkDigest, err := digest.Compute(bytes.NewReader(chunk), repb.DigestFunction_SHA256)
+		require.NoError(t, err)
+		chunkRN := digest.NewCASResourceName(chunkDigest, "", repb.DigestFunction_SHA256)
+		require.NoError(t, env.GetCache().Set(ctx, chunkRN.ToProto(), chunk))
+		chunkDigests = append(chunkDigests, chunkDigest)
+	}
+
+	stream, err := client.SpliceChunks(ctx)
+	require.NoError(t, err)
+	require.NoError(t, stream.Send(&repb.SpliceChunksRequest{
+		ChunkDigests:     chunkDigests,
+		BlobDigest:       blobDigest,
+		DigestFunction:   repb.DigestFunction_SHA256,
+		ChunkingFunction: repb.ChunkingFunction_FAST_CDC_2020,
+	}))
+	_, err = stream.CloseAndRecv()
+	require.Equal(t, gcodes.InvalidArgument, gstatus.Code(err))
+	require.Contains(t, err.Error(), "computed digest")
+}
+
+func TestSpliceChunksRejectsZeroSizeChunk(t *testing.T) {
+	env := testenv.GetTestEnv(t)
+
+	ctx := context.Background()
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, env.GetAuthenticator())
+	require.NoError(t, err)
+
+	clientConn := runCASServer(ctx, t, env)
+	t.Cleanup(func() { clientConn.Close() })
+	client := repb.NewContentAddressableStorageClient(clientConn)
+
+	chunks := [][]byte{
+		[]byte("chunk one "),
+		[]byte("chunk two"),
+	}
+	blob := bytes.Join(chunks, nil)
+	blobDigest, err := digest.Compute(bytes.NewReader(blob), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+
+	var chunkDigests []*repb.Digest
+	for _, chunk := range chunks {
+		chunkDigest, err := digest.Compute(bytes.NewReader(chunk), repb.DigestFunction_SHA256)
+		require.NoError(t, err)
+		chunkRN := digest.NewCASResourceName(chunkDigest, "", repb.DigestFunction_SHA256)
+		require.NoError(t, env.GetCache().Set(ctx, chunkRN.ToProto(), chunk))
+		chunkDigests = append(chunkDigests, chunkDigest)
+	}
+	emptyDigest, err := digest.Compute(bytes.NewReader(nil), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+
+	stream, err := client.SpliceChunks(ctx)
+	require.NoError(t, err)
+	require.NoError(t, stream.Send(&repb.SpliceChunksRequest{
+		ChunkDigests:     []*repb.Digest{chunkDigests[0], emptyDigest, chunkDigests[1]},
+		BlobDigest:       blobDigest,
+		DigestFunction:   repb.DigestFunction_SHA256,
+		ChunkingFunction: repb.ChunkingFunction_FAST_CDC_2020,
+	}))
+	_, err = stream.CloseAndRecv()
+	require.Equal(t, gcodes.InvalidArgument, gstatus.Code(err))
+	require.Contains(t, err.Error(), "zero-size chunk")
+}
+
+func TestSpliceChunksFailsWhenChunksExceedBlobSize(t *testing.T) {
+	env := testenv.GetTestEnv(t)
+
+	ctx := context.Background()
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, env.GetAuthenticator())
+	require.NoError(t, err)
+
+	clientConn := runCASServer(ctx, t, env)
+	t.Cleanup(func() { clientConn.Close() })
+	client := repb.NewContentAddressableStorageClient(clientConn)
+
+	chunks := [][]byte{
+		[]byte("chunk one "),
+		[]byte("chunk two"),
+	}
+	blob := bytes.Join(chunks, nil)
+	blobDigest, err := digest.Compute(bytes.NewReader(blob), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+	blobDigest.SizeBytes--
+
+	var chunkDigests []*repb.Digest
+	for _, chunk := range chunks {
+		chunkDigest, err := digest.Compute(bytes.NewReader(chunk), repb.DigestFunction_SHA256)
+		require.NoError(t, err)
+		chunkRN := digest.NewCASResourceName(chunkDigest, "", repb.DigestFunction_SHA256)
+		require.NoError(t, env.GetCache().Set(ctx, chunkRN.ToProto(), chunk))
+		chunkDigests = append(chunkDigests, chunkDigest)
+	}
+
+	stream, err := client.SpliceChunks(ctx)
+	require.NoError(t, err)
+	require.NoError(t, stream.Send(&repb.SpliceChunksRequest{
+		ChunkDigests:     chunkDigests,
+		BlobDigest:       blobDigest,
+		DigestFunction:   repb.DigestFunction_SHA256,
+		ChunkingFunction: repb.ChunkingFunction_FAST_CDC_2020,
+	}))
+	_, err = stream.CloseAndRecv()
+	require.Equal(t, gcodes.InvalidArgument, gstatus.Code(err))
+	require.Contains(t, err.Error(), "spliced chunks size mismatch")
+}
+
+func TestSpliceChunksSingleChunk(t *testing.T) {
+	env := testenv.GetTestEnv(t)
+
+	ctx := context.Background()
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, env.GetAuthenticator())
+	require.NoError(t, err)
+
+	clientConn := runCASServer(ctx, t, env)
+	t.Cleanup(func() { clientConn.Close() })
+	client := repb.NewContentAddressableStorageClient(clientConn)
+
+	chunk := []byte("the only chunk")
+	chunkDigest, err := digest.Compute(bytes.NewReader(chunk), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+	chunkRN := digest.NewCASResourceName(chunkDigest, "", repb.DigestFunction_SHA256)
+	require.NoError(t, env.GetCache().Set(ctx, chunkRN.ToProto(), chunk))
+
+	stream, err := client.SpliceChunks(ctx)
+	require.NoError(t, err)
+	require.NoError(t, stream.Send(&repb.SpliceChunksRequest{
+		ChunkDigests:     []*repb.Digest{chunkDigest},
+		BlobDigest:       chunkDigest,
+		DigestFunction:   repb.DigestFunction_SHA256,
+		ChunkingFunction: repb.ChunkingFunction_FAST_CDC_2020,
+	}))
+	_, err = stream.CloseAndRecv()
+	require.Equal(t, gcodes.Unimplemented, gstatus.Code(err))
+}
+
+func TestSpliceChunksMetadataOnlyFirstRequest(t *testing.T) {
+	env := testenv.GetTestEnv(t)
+
+	ctx := context.Background()
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, env.GetAuthenticator())
+	require.NoError(t, err)
+
+	clientConn := runCASServer(ctx, t, env)
+	t.Cleanup(func() { clientConn.Close() })
+	client := repb.NewContentAddressableStorageClient(clientConn)
+
+	chunks := [][]byte{
+		[]byte("chunk one "),
+		[]byte("chunk two "),
+		[]byte("chunk three"),
+	}
+	blob := bytes.Join(chunks, nil)
+	blobDigest, err := digest.Compute(bytes.NewReader(blob), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+
+	var chunkDigests []*repb.Digest
+	for _, chunk := range chunks {
+		chunkDigest, err := digest.Compute(bytes.NewReader(chunk), repb.DigestFunction_SHA256)
+		require.NoError(t, err)
+		chunkRN := digest.NewCASResourceName(chunkDigest, "", repb.DigestFunction_SHA256)
+		require.NoError(t, env.GetCache().Set(ctx, chunkRN.ToProto(), chunk))
+		chunkDigests = append(chunkDigests, chunkDigest)
+	}
+
+	stream, err := client.SpliceChunks(ctx)
+	require.NoError(t, err)
+	require.NoError(t, stream.Send(&repb.SpliceChunksRequest{
+		DigestFunction:   repb.DigestFunction_SHA256,
+		ChunkingFunction: repb.ChunkingFunction_FAST_CDC_2020,
+	}))
+	require.NoError(t, stream.Send(&repb.SpliceChunksRequest{
+		ChunkDigests: chunkDigests[:2],
+	}))
+	require.NoError(t, stream.Send(&repb.SpliceChunksRequest{
+		ChunkDigests: chunkDigests[2:],
+		BlobDigest:   blobDigest,
+	}))
+	resp, err := stream.CloseAndRecv()
+	require.NoError(t, err)
+	require.True(t, digest.Equal(blobDigest, resp.GetBlobDigest()))
+
+	manifest, err := chunking.LoadManifest(ctx, env.GetCache(), blobDigest, "", repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+	require.Equal(t, chunkDigests, manifest.ChunkDigests)
+}
+
+func TestSpliceChunksReadOnlyKey(t *testing.T) {
+	env := testenv.GetTestEnv(t)
+
+	readOnlyUser := &testauth.TestUser{
+		UserID:       "US1",
+		GroupID:      "GR1",
+		Capabilities: []cappb.Capability{},
+	}
+	ta := testauth.NewTestAuthenticator(t, map[string]interfaces.UserInfo{readOnlyUser.UserID: readOnlyUser})
+	env.SetAuthenticator(ta)
+
+	ctx := testauth.WithAuthenticatedUserInfo(context.Background(), readOnlyUser)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, env.GetAuthenticator())
+	require.NoError(t, err)
+
+	clientConn := runCASServer(ctx, t, env)
+	t.Cleanup(func() { clientConn.Close() })
+	client := repb.NewContentAddressableStorageClient(clientConn)
+
+	chunks := [][]byte{
+		[]byte("chunk one "),
+		[]byte("chunk two"),
+	}
+	blob := bytes.Join(chunks, nil)
+	blobDigest, err := digest.Compute(bytes.NewReader(blob), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+	var chunkDigests []*repb.Digest
+	for _, chunk := range chunks {
+		chunkDigest, err := digest.Compute(bytes.NewReader(chunk), repb.DigestFunction_SHA256)
+		require.NoError(t, err)
+		chunkDigests = append(chunkDigests, chunkDigest)
+	}
+
+	// Read only keys get the same no op success as other cache writes.
+	stream, err := client.SpliceChunks(ctx)
+	require.NoError(t, err)
+	require.NoError(t, stream.Send(&repb.SpliceChunksRequest{
+		ChunkDigests:     chunkDigests[:1],
+		DigestFunction:   repb.DigestFunction_SHA256,
+		ChunkingFunction: repb.ChunkingFunction_FAST_CDC_2020,
+	}))
+	require.NoError(t, stream.Send(&repb.SpliceChunksRequest{
+		ChunkDigests: chunkDigests[1:],
+		BlobDigest:   blobDigest,
+	}))
+	resp, err := stream.CloseAndRecv()
+	require.NoError(t, err)
+	require.True(t, digest.Equal(blobDigest, resp.GetBlobDigest()))
+
+	_, err = chunking.LoadManifest(ctx, env.GetCache(), blobDigest, "", repb.DigestFunction_SHA256)
+	require.True(t, status.IsNotFoundError(err))
+}
+
 type evilCache struct {
 	interfaces.Cache
 }
@@ -86,6 +503,7 @@ func (e *evilCache) GetMulti(ctx context.Context, resources []*rspb.ResourceName
 
 type casCompressionCache struct {
 	interfaces.Cache
+	requireZstd bool
 }
 
 func (c *casCompressionCache) Get(ctx context.Context, r *rspb.ResourceName) ([]byte, error) {
@@ -98,6 +516,9 @@ func (c *casCompressionCache) Get(ctx context.Context, r *rspb.ResourceName) ([]
 func (c *casCompressionCache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (map[*repb.Digest][]byte, error) {
 	foundMap := make(map[*repb.Digest][]byte, len(resources))
 	for _, r := range resources {
+		if c.requireZstd && r.GetCacheType() == rspb.CacheType_CAS && r.GetCompressor() != repb.Compressor_ZSTD {
+			return nil, status.InternalError("expected zstd CAS read")
+		}
 		data, err := c.Get(ctx, r)
 		if status.IsNotFoundError(err) {
 			continue
@@ -981,6 +1402,19 @@ func TestSpliceAndSplitBlob(t *testing.T) {
 		assert.Equal(t, expectedDigest.Hash, actualDigest.Hash)
 		assert.Equal(t, expectedDigest.SizeBytes, actualDigest.SizeBytes)
 	}
+
+	splitChunksStream, err := casClient.SplitChunks(ctx, splitReq)
+	require.NoError(t, err)
+	var streamedChunkDigests []*repb.Digest
+	for {
+		resp, err := splitChunksStream.Recv()
+		if err == io.EOF {
+			break
+		}
+		require.NoError(t, err)
+		streamedChunkDigests = append(streamedChunkDigests, resp.GetChunkDigests()...)
+	}
+	require.Equal(t, chunkDigests, streamedChunkDigests)
 }
 
 func TestSplitBlobNotFound(t *testing.T) {

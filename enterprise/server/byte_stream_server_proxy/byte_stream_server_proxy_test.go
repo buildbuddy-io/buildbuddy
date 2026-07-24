@@ -126,9 +126,18 @@ func (c *noOpCAS) SpliceBlob(ctx context.Context, req *repb.SpliceBlobRequest) (
 	return nil, status.InternalError("SpliceBlob RPC is not currently implemented")
 }
 
+func (c *noOpCAS) SpliceChunks(stream repb.ContentAddressableStorage_SpliceChunksServer) error {
+	return status.UnimplementedError("SpliceChunks not implemented")
+}
+
 func (c *noOpCAS) SplitBlob(ctx context.Context, req *repb.SplitBlobRequest) (*repb.SplitBlobResponse, error) {
 	c.t.Fatal("Unexpected call to SplitBlob")
 	return nil, status.InternalError("SplitBlob RPC is not currently implemented")
+}
+
+func (c *noOpCAS) SplitChunks(req *repb.SplitBlobRequest, stream repb.ContentAddressableStorage_SplitChunksServer) error {
+	c.t.Fatal("Unexpected call to SplitChunks")
+	return status.InternalError("SplitChunks RPC is not currently implemented")
 }
 
 func TestWriteChunkedFallsBackAboveMaxSize(t *testing.T) {
@@ -269,6 +278,283 @@ func TestWriteChunkingEnabledRequiresExperimentInterceptFlag(t *testing.T) {
 	}
 }
 
+type unexpectedSpliceCAS struct {
+	repb.ContentAddressableStorageClient
+	t *testing.T
+}
+
+func (c *unexpectedSpliceCAS) SpliceBlob(ctx context.Context, req *repb.SpliceBlobRequest, opts ...grpc.CallOption) (*repb.SpliceBlobResponse, error) {
+	c.t.Fatal("Unexpected call to SpliceBlob")
+	return nil, status.InternalError("Unexpected call to SpliceBlob")
+}
+
+type failingSpliceChunksCAS struct {
+	repb.ContentAddressableStorageClient
+	err             error
+	spliceBlobCalls atomic.Int64
+}
+
+func (c *failingSpliceChunksCAS) SpliceBlob(ctx context.Context, req *repb.SpliceBlobRequest, opts ...grpc.CallOption) (*repb.SpliceBlobResponse, error) {
+	c.spliceBlobCalls.Add(1)
+	return c.ContentAddressableStorageClient.SpliceBlob(ctx, req, opts...)
+}
+
+func (c *failingSpliceChunksCAS) SpliceChunks(ctx context.Context, opts ...grpc.CallOption) (repb.ContentAddressableStorage_SpliceChunksClient, error) {
+	return &failingSpliceChunksClient{err: c.err}, nil
+}
+
+type failingSpliceChunksClient struct {
+	grpc.ClientStream
+	err error
+}
+
+func (c *failingSpliceChunksClient) Send(req *repb.SpliceChunksRequest) error {
+	return c.err
+}
+
+func (c *failingSpliceChunksClient) CloseAndRecv() (*repb.SpliceBlobResponse, error) {
+	return nil, c.err
+}
+
+type recordingSpliceChunksCAS struct {
+	repb.ContentAddressableStorageClient
+	stream *recordingSpliceChunksClient
+}
+
+func (c *recordingSpliceChunksCAS) SpliceChunks(ctx context.Context, opts ...grpc.CallOption) (repb.ContentAddressableStorage_SpliceChunksClient, error) {
+	return c.stream, nil
+}
+
+type recordingSpliceChunksClient struct {
+	grpc.ClientStream
+	sendErr error
+
+	mu       sync.Mutex
+	requests []*repb.SpliceChunksRequest
+	closed   bool
+}
+
+func (c *recordingSpliceChunksClient) Send(req *repb.SpliceChunksRequest) error {
+	if c.sendErr != nil {
+		return c.sendErr
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.requests = append(c.requests, req)
+	return nil
+}
+
+func (c *recordingSpliceChunksClient) CloseAndRecv() (*repb.SpliceBlobResponse, error) {
+	if c.sendErr != nil {
+		return nil, c.sendErr
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.closed = true
+	return &repb.SpliceBlobResponse{}, nil
+}
+
+func (c *recordingSpliceChunksClient) recordedRequests() []*repb.SpliceChunksRequest {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return append([]*repb.SpliceChunksRequest(nil), c.requests...)
+}
+
+func testSplicerResourceName(t *testing.T) *digest.CASResourceName {
+	return digest.NewCASResourceName(
+		&repb.Digest{Hash: strings.Repeat("a", 64), SizeBytes: 100},
+		"test-instance",
+		repb.DigestFunction_SHA256,
+	)
+}
+
+func testSplicerChunkDigests(n int) []*repb.Digest {
+	digests := make([]*repb.Digest, n)
+	for i := range digests {
+		digests[i] = &repb.Digest{Hash: fmt.Sprintf("%064d", i), SizeBytes: 10}
+	}
+	return digests
+}
+
+func requireSplicedInOrder(t *testing.T, fake *recordingSpliceChunksClient, want []*repb.Digest, rn *digest.CASResourceName) {
+	t.Helper()
+	requests := fake.recordedRequests()
+	require.GreaterOrEqual(t, len(requests), 2)
+	firstRequest := requests[0]
+	lastRequest := requests[len(requests)-1]
+	require.Equal(t, rn.GetInstanceName(), firstRequest.GetInstanceName())
+	require.Equal(t, repb.DigestFunction_SHA256, firstRequest.GetDigestFunction())
+	require.Equal(t, repb.ChunkingFunction_FAST_CDC_2020, firstRequest.GetChunkingFunction())
+	require.True(t, digest.Equal(rn.GetDigest(), lastRequest.GetBlobDigest()))
+	for _, req := range requests[:len(requests)-1] {
+		require.Nil(t, req.GetBlobDigest(), "blob digest must only be set on the final request")
+	}
+	for _, req := range requests[1:] {
+		require.Empty(t, req.GetInstanceName(), "metadata must only be set on the first request")
+	}
+	var sent []*repb.Digest
+	for _, req := range requests {
+		require.LessOrEqual(t, len(req.GetChunkDigests()), streamedSpliceMaxDigestsPerRequest)
+		sent = append(sent, req.GetChunkDigests()...)
+	}
+	require.Equal(t, len(want), len(sent))
+	for i := range want {
+		require.True(t, digest.Equal(want[i], sent[i]), "chunk %d out of order", i)
+	}
+	require.True(t, fake.closed)
+}
+
+func TestStreamedSplicerSendsChunksInOrder(t *testing.T) {
+	fake := &recordingSpliceChunksClient{}
+	rn := testSplicerResourceName(t)
+	splicer, err := newStreamedSplicer(context.Background(), &recordingSpliceChunksCAS{stream: fake}, rn, repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+
+	digests := testSplicerChunkDigests(5)
+	for _, d := range digests {
+		require.NoError(t, splicer.addChunk(d))
+	}
+	// Chunks must keep their original order when availability is reported out of order.
+	require.NoError(t, splicer.markRemoteAvailable([]*repb.Digest{digests[3], digests[4]}))
+	require.NoError(t, splicer.markRemoteAvailable([]*repb.Digest{digests[0], digests[2]}))
+	require.NoError(t, splicer.markRemoteAvailable([]*repb.Digest{digests[1]}))
+
+	spliced, err := splicer.commit(context.Background())
+	require.NoError(t, err)
+	require.True(t, spliced)
+	requireSplicedInOrder(t, fake, digests, rn)
+}
+
+func TestStreamedSplicerRepeatsDuplicateChunks(t *testing.T) {
+	fake := &recordingSpliceChunksClient{}
+	rn := testSplicerResourceName(t)
+	splicer, err := newStreamedSplicer(context.Background(), &recordingSpliceChunksCAS{stream: fake}, rn, repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+
+	digests := testSplicerChunkDigests(2)
+	// One availability report must unblock every use of the same chunk.
+	require.NoError(t, splicer.addChunk(digests[0]))
+	require.NoError(t, splicer.addChunk(digests[1]))
+	require.NoError(t, splicer.addChunk(digests[0]))
+	require.NoError(t, splicer.markRemoteAvailable(digests))
+
+	spliced, err := splicer.commit(context.Background())
+	require.NoError(t, err)
+	require.True(t, spliced)
+	requireSplicedInOrder(t, fake, []*repb.Digest{digests[0], digests[1], digests[0]}, rn)
+}
+
+func TestStreamedSplicerBatchesLargeDigestLists(t *testing.T) {
+	fake := &recordingSpliceChunksClient{}
+	rn := testSplicerResourceName(t)
+	splicer, err := newStreamedSplicer(context.Background(), &recordingSpliceChunksCAS{stream: fake}, rn, repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+
+	digests := testSplicerChunkDigests(streamedSpliceMaxDigestsPerRequest + 1)
+	require.NoError(t, splicer.markRemoteAvailable(digests))
+	for _, d := range digests {
+		require.NoError(t, splicer.addChunk(d))
+	}
+
+	spliced, err := splicer.commit(context.Background())
+	require.NoError(t, err)
+	require.True(t, spliced)
+	requireSplicedInOrder(t, fake, digests, rn)
+	require.GreaterOrEqual(t, len(fake.recordedRequests()), 3)
+}
+
+func TestStreamedSplicerCommitFailsWhenChunksNeverAvailable(t *testing.T) {
+	fake := &recordingSpliceChunksClient{}
+	rn := testSplicerResourceName(t)
+	splicer, err := newStreamedSplicer(context.Background(), &recordingSpliceChunksCAS{stream: fake}, rn, repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+
+	digests := testSplicerChunkDigests(1)
+	require.NoError(t, splicer.addChunk(digests[0]))
+
+	spliced, err := splicer.commit(context.Background())
+	require.False(t, spliced)
+	require.True(t, status.IsInternalError(err))
+	require.Contains(t, err.Error(), "streamed splice has sent")
+}
+
+func TestStreamedSplicerSurfacesFatalErrorsAtCommit(t *testing.T) {
+	fake := &recordingSpliceChunksClient{sendErr: status.InternalError("stream broken")}
+	rn := testSplicerResourceName(t)
+	splicer, err := newStreamedSplicer(context.Background(), &recordingSpliceChunksCAS{stream: fake}, rn, repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+
+	digests := testSplicerChunkDigests(2)
+	for _, d := range digests {
+		require.NoError(t, splicer.addChunk(d))
+	}
+	// The send can fail before or after this call returns. The final result must
+	// always report the failure.
+	_ = splicer.markRemoteAvailable(digests)
+
+	spliced, err := splicer.commit(context.Background())
+	require.False(t, spliced)
+	require.True(t, status.IsInternalError(err))
+}
+
+func TestStreamedSplicerReturnsFatalErrorAfterStopping(t *testing.T) {
+	fake := &recordingSpliceChunksClient{sendErr: status.InternalError("stream broken")}
+	rn := testSplicerResourceName(t)
+	splicer, err := newStreamedSplicer(context.Background(), &recordingSpliceChunksCAS{stream: fake}, rn, repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+
+	digests := testSplicerChunkDigests(2)
+	require.NoError(t, splicer.addChunk(digests[0]))
+	_ = splicer.markRemoteAvailable(digests[:1])
+	<-splicer.done
+
+	require.True(t, status.IsInternalError(splicer.addChunk(digests[1])))
+	require.True(t, status.IsInternalError(splicer.markRemoteAvailable(digests)))
+	spliced, err := splicer.commit(context.Background())
+	require.False(t, spliced)
+	require.True(t, status.IsInternalError(err))
+}
+
+func TestStreamedSplicerBlockedEnqueueStopsOnError(t *testing.T) {
+	splicer := &streamedSplicer{
+		events: make(chan streamedSpliceEvent, 1),
+		done:   make(chan struct{}),
+	}
+	require.NoError(t, splicer.enqueue(streamedSpliceEvent{commit: true}))
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- splicer.enqueue(streamedSpliceEvent{commit: true})
+	}()
+	select {
+	case <-errCh:
+		t.Fatal("enqueue should wait while the event buffer is full")
+	default:
+	}
+
+	splicer.closeWithErr(status.InternalError("stream broken"))
+	require.True(t, status.IsInternalError(<-errCh))
+}
+
+func TestStreamedSplicerAbsorbsFallbackErrors(t *testing.T) {
+	fake := &recordingSpliceChunksClient{sendErr: status.UnimplementedError("SpliceChunks not implemented")}
+	rn := testSplicerResourceName(t)
+	splicer, err := newStreamedSplicer(context.Background(), &recordingSpliceChunksCAS{stream: fake}, rn, repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+
+	digests := testSplicerChunkDigests(2)
+	require.NoError(t, splicer.addChunk(digests[0]))
+	require.NoError(t, splicer.markRemoteAvailable(digests))
+	// Fallback errors stay hidden until commit.
+	<-splicer.done
+	require.NoError(t, splicer.addChunk(digests[1]))
+	require.NoError(t, splicer.markRemoteAvailable(digests))
+
+	spliced, err := splicer.commit(context.Background())
+	require.NoError(t, err)
+	require.False(t, spliced)
+}
+
 type casRPCRecorder struct {
 	mu           sync.Mutex
 	fmbGroups    [][]string
@@ -341,7 +627,7 @@ func TestChunkUploaderGroupsFindMissingAndDedupesWithinBlob(t *testing.T) {
 		bufPool:   bytebufferpool.VariableSize(int(compression.ZstdCompressBound(chunking.MaxSupportedChunkSizeBytes()))),
 		efp:       fp,
 	}
-	uploader, err := newChunkUploader(context.Background(), s, "instance", repb.DigestFunction_BLAKE3)
+	uploader, err := newChunkUploader(context.Background(), s, "instance", repb.DigestFunction_BLAKE3, nil)
 	require.NoError(t, err)
 
 	type chunkData struct {
@@ -383,10 +669,10 @@ func TestChunkUploaderGroupsFindMissingAndDedupesWithinBlob(t *testing.T) {
 		require.NotNil(t, rawData)
 		buf := s.bufPool.Get(int64(len(rawData)))
 		compressedData := compression.CompressZstd(buf, rawData)
-		uploader.addChunk(compressedData, buf, d)
+		require.NoError(t, uploader.addChunk(compressedData, buf, d))
 	}
 
-	require.NoError(t, uploader.flush())
+	require.NoError(t, uploader.flushUploads())
 
 	rec.mu.Lock()
 	defer rec.mu.Unlock()
@@ -2620,6 +2906,13 @@ func TestWriteChunked(t *testing.T) {
 				"false": false,
 			},
 		},
+		"cache_proxy.splice_stream_threshold_bytes": {
+			State:          memprovider.Enabled,
+			DefaultVariant: "zero",
+			Variants: map[string]any{
+				"zero": 0,
+			},
+		},
 	})
 	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
 
@@ -2665,6 +2958,7 @@ func TestWriteChunked(t *testing.T) {
 	proxyEnv.SetLocalByteStreamServer(proxyBSS)
 	proxyServer, err := New(proxyEnv)
 	require.NoError(t, err)
+	proxyServer.remoteCAS = &unexpectedSpliceCAS{ContentAddressableStorageClient: casClient, t: t}
 	proxyGRPC, proxyRun, proxyLis := testenv.RegisterLocalGRPCServer(t, proxyEnv)
 	bspb.RegisterByteStreamServer(proxyGRPC, proxyServer)
 	go proxyRun()
@@ -2769,6 +3063,145 @@ func TestWriteChunked(t *testing.T) {
 		reconstructedData = append(reconstructedData, res.Data...)
 	}
 
+	require.Equal(t, originalData, reconstructedData)
+}
+
+func TestWriteChunkedFallsBackToSpliceBlobWhenSpliceChunksUnsupported(t *testing.T) {
+	for name, spliceErr := range map[string]error{
+		"Unimplemented": status.UnimplementedError("SpliceChunks not implemented"),
+		"Unavailable":   status.UnavailableError("SpliceChunks unavailable"),
+	} {
+		t.Run(name, func(t *testing.T) {
+			testWriteChunkedFallsBackToSpliceBlob(t, spliceErr)
+		})
+	}
+}
+
+func testWriteChunkedFallsBackToSpliceBlob(t *testing.T, spliceErr error) {
+	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
+		"cache.chunking_enabled": {
+			State:          memprovider.Enabled,
+			DefaultVariant: "true",
+			Variants: map[string]any{
+				"true":  true,
+				"false": false,
+			},
+		},
+		"cache_proxy.intercept_and_chunk_large_writes": {
+			State:          memprovider.Enabled,
+			DefaultVariant: "true",
+			Variants: map[string]any{
+				"true":  true,
+				"false": false,
+			},
+		},
+		"cache_proxy.splice_stream_threshold_bytes": {
+			State:          memprovider.Enabled,
+			DefaultVariant: "zero",
+			Variants: map[string]any{
+				"zero": 0,
+			},
+		},
+	})
+	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
+
+	flags.Set(t, "cache.zstd_transcoding_enabled", true)
+
+	ctx := testContext()
+	remoteEnv := testenv.GetTestEnv(t)
+	proxyEnv := testenv.GetTestEnv(t)
+
+	fp, err := experiments.NewFlagProvider(t.Name())
+	require.NoError(t, err)
+	remoteEnv.SetExperimentFlagProvider(fp)
+	proxyEnv.SetExperimentFlagProvider(fp)
+
+	pc, err := pebble_cache.NewPebbleCache(proxyEnv, &pebble_cache.Options{
+		RootDirectory: testfs.MakeTempDir(t),
+		MaxSizeBytes:  1_000_000_000,
+	})
+	require.NoError(t, err)
+	require.NoError(t, pc.Start())
+	t.Cleanup(func() { pc.Stop() })
+	proxyEnv.SetCache(pc)
+
+	remoteBSS, err := byte_stream_server.NewByteStreamServer(remoteEnv)
+	require.NoError(t, err)
+	remoteCAS, err := content_addressable_storage_server.NewContentAddressableStorageServer(remoteEnv)
+	require.NoError(t, err)
+	remoteGRPC, remoteRun, remoteLis := testenv.RegisterLocalGRPCServer(t, remoteEnv)
+	bspb.RegisterByteStreamServer(remoteGRPC, remoteBSS)
+	repb.RegisterContentAddressableStorageServer(remoteGRPC, remoteCAS)
+	go remoteRun()
+	remoteConn, err := testenv.LocalGRPCConn(ctx, remoteLis)
+	require.NoError(t, err)
+	t.Cleanup(func() { remoteConn.Close() })
+	bsClient := bspb.NewByteStreamClient(remoteConn)
+	casClient := repb.NewContentAddressableStorageClient(remoteConn)
+
+	proxyEnv.SetByteStreamClient(bsClient)
+	proxyEnv.SetContentAddressableStorageClient(casClient)
+	proxyBSS, err := byte_stream_server.NewByteStreamServer(proxyEnv)
+	require.NoError(t, err)
+	proxyEnv.SetLocalByteStreamServer(proxyBSS)
+	proxyServer, err := New(proxyEnv)
+	require.NoError(t, err)
+	failingCAS := &failingSpliceChunksCAS{
+		ContentAddressableStorageClient: casClient,
+		err:                             spliceErr,
+	}
+	proxyServer.remoteCAS = failingCAS
+	proxyGRPC, proxyRun, proxyLis := testenv.RegisterLocalGRPCServer(t, proxyEnv)
+	bspb.RegisterByteStreamServer(proxyGRPC, proxyServer)
+	go proxyRun()
+	proxyConn, err := testenv.LocalGRPCConn(ctx, proxyLis)
+	require.NoError(t, err)
+	t.Cleanup(func() { proxyConn.Close() })
+	proxy := bspb.NewByteStreamClient(proxyConn)
+
+	ctx, err = prefix.AttachUserPrefixToContext(ctx, proxyEnv.GetAuthenticator())
+	require.NoError(t, err)
+
+	_, originalData := testdigest.RandomCASResourceBuf(t, 10*1024*1024)
+	blobDigest, err := digest.Compute(bytes.NewReader(originalData), repb.DigestFunction_BLAKE3)
+	require.NoError(t, err)
+
+	compressedData := compression.CompressZstd(nil, originalData)
+	blobRN := digest.NewCASResourceName(blobDigest, "", repb.DigestFunction_BLAKE3)
+	blobRN.SetCompressor(repb.Compressor_ZSTD)
+
+	uploadStream, err := proxy.Write(ctx)
+	require.NoError(t, err)
+	remaining := compressedData
+	written := int64(0)
+	for len(remaining) > 0 {
+		chunkSize := min(1_000_000, len(remaining))
+		require.NoError(t, uploadStream.Send(&bspb.WriteRequest{
+			ResourceName: blobRN.NewUploadString(),
+			WriteOffset:  written,
+			Data:         remaining[:chunkSize],
+			FinishWrite:  chunkSize == len(remaining),
+		}))
+		written += int64(chunkSize)
+		remaining = remaining[chunkSize:]
+	}
+	_, err = uploadStream.CloseAndRecv()
+	require.NoError(t, err)
+	require.Equal(t, int64(1), failingCAS.spliceBlobCalls.Load())
+
+	downloadRN := digest.NewCASResourceName(blobDigest, "", repb.DigestFunction_BLAKE3)
+	downloadStream, err := proxy.Read(ctx, &bspb.ReadRequest{ResourceName: downloadRN.DownloadString()})
+	require.NoError(t, err)
+
+	var reconstructedData []byte
+	for {
+		res, err := downloadStream.Recv()
+		if err == io.EOF {
+			break
+		}
+		require.NoError(t, err)
+		reconstructedData = append(reconstructedData, res.Data...)
+	}
 	require.Equal(t, originalData, reconstructedData)
 }
 

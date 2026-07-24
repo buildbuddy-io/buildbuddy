@@ -353,8 +353,16 @@ func (m *mockCASClient) SpliceBlob(ctx context.Context, req *repb.SpliceBlobRequ
 	return nil, status.UnimplementedError("SpliceBlob not implemented")
 }
 
+func (m *mockCASClient) SpliceChunks(ctx context.Context, opts ...grpc.CallOption) (repb.ContentAddressableStorage_SpliceChunksClient, error) {
+	return nil, status.UnimplementedError("SpliceChunks not implemented")
+}
+
 func (m *mockCASClient) SplitBlob(ctx context.Context, req *repb.SplitBlobRequest, opts ...grpc.CallOption) (*repb.SplitBlobResponse, error) {
 	return nil, status.UnimplementedError("SplitBlob not implemented")
+}
+
+func (m *mockCASClient) SplitChunks(ctx context.Context, req *repb.SplitBlobRequest, opts ...grpc.CallOption) (repb.ContentAddressableStorage_SplitChunksClient, error) {
+	return nil, status.UnimplementedError("SplitChunks not implemented")
 }
 
 type mockACClient struct {
