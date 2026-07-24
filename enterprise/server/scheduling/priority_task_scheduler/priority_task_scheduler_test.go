@@ -18,6 +18,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
@@ -97,6 +98,47 @@ func TestTaskQueue_MultipleGroups(t *testing.T) {
 	require.Equal(t, "group1Task2", q.Dequeue().GetTaskId())
 	require.Equal(t, "group3Task2", q.Dequeue().GetTaskId())
 	require.Equal(t, "group1Task3", q.Dequeue().GetTaskId())
+	require.Nil(t, q.Dequeue())
+}
+
+func TestTaskQueue_PrioritizesByAppQueuedTimestamp(t *testing.T) {
+	ctx := t.Context()
+	startTime := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	clock := clockwork.NewFakeClockAt(startTime)
+	q := newTaskQueue(clock)
+
+	// Enqueue a task that was first enqueued on the app just now.
+	fresh := newTaskReservationRequest("fresh", testGroupID1, 0)
+	fresh.SchedulingMetadata.QueuedTimestamp = timestamppb.New(clock.Now())
+	q.Enqueue(ctx, fresh)
+
+	clock.Advance(time.Second)
+
+	// Enqueue a task that was first enqueued on the app a minute before the
+	// other tasks, simulating a task that was retried on this executor after
+	// originally being queued elsewhere. Even though it arrives at this
+	// executor last, it has been waiting the longest overall, so it should be
+	// dequeued before the other same-priority tasks.
+	retried := newTaskReservationRequest("retried", testGroupID1, 0)
+	retried.SchedulingMetadata.QueuedTimestamp = timestamppb.New(startTime.Add(-time.Minute))
+	q.Enqueue(ctx, retried)
+
+	// Enqueue a task with no app queued timestamp, simulating an app that
+	// doesn't set the field yet. It should fall back to the local enqueue
+	// time, placing it after the tasks queued on the app earlier.
+	legacy := newTaskReservationRequest("legacy", testGroupID1, 0)
+	q.Enqueue(ctx, legacy)
+
+	// Enqueue a task with a higher priority; explicit priority should take
+	// precedence over queued timestamps.
+	urgent := newTaskReservationRequest("urgent", testGroupID1, -1000)
+	urgent.SchedulingMetadata.QueuedTimestamp = timestamppb.New(clock.Now())
+	q.Enqueue(ctx, urgent)
+
+	require.Equal(t, "urgent", q.Dequeue().GetTaskId())
+	require.Equal(t, "retried", q.Dequeue().GetTaskId())
+	require.Equal(t, "fresh", q.Dequeue().GetTaskId())
+	require.Equal(t, "legacy", q.Dequeue().GetTaskId())
 	require.Nil(t, q.Dequeue())
 }
 
