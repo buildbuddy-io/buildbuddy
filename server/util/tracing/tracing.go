@@ -31,6 +31,7 @@ import (
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/resource"
 	"go.opentelemetry.io/otel/trace"
+	"go.opentelemetry.io/otel/trace/embedded"
 	"google.golang.org/grpc/metadata"
 
 	tpb "github.com/buildbuddy-io/buildbuddy/proto/trace"
@@ -49,6 +50,7 @@ var (
 	traceFraction             = flag.Float64("app.trace_fraction", 0, "Fraction of requests to sample for tracing.")
 	traceFractionOverrides    = flag.Slice("app.trace_fraction_overrides", []string{}, "Tracing fraction override based on name in format name=fraction.")
 	ignoreForcedTracingHeader = flag.Bool("app.ignore_forced_tracing_header", false, "If set, we will not honor the forced tracing header.")
+	traceSamplingShortcut     = flag.Bool("app.trace_sampling_shortcut", true, "If set, skip span creation for child spans whose local parent was not sampled (a performance optimization). Disable to always run the sampler.")
 )
 
 // Re-initialized in Configure. Set here so tests that don't call Configure
@@ -95,12 +97,17 @@ func newFractionSampler(fraction float64, fractionOverrides map[string]float64, 
 }
 
 func (s *fractionSampler) checkForcedTrace(parameters sdktrace.SamplingParameters) bool {
+	return s.forcedFromContext(parameters.ParentContext)
+}
+
+// forcedFromContext reports whether tracing is being forced via the
+// x-buildbuddy-trace header on the incoming request metadata.
+func (s *fractionSampler) forcedFromContext(ctx context.Context) bool {
 	if s.ignoreForcedTracingHeader {
 		return false
 	}
-	hdrs := metadata.ValueFromIncomingContext(parameters.ParentContext, traceHeader)
-	forced := len(hdrs) > 0 && hdrs[0] == forceTraceHeaderValue
-	return forced
+	hdrs := metadata.ValueFromIncomingContext(ctx, traceHeader)
+	return len(hdrs) > 0 && hdrs[0] == forceTraceHeaderValue
 }
 
 func (s *fractionSampler) ShouldSample(parameters sdktrace.SamplingParameters) sdktrace.SamplingResult {
@@ -134,6 +141,45 @@ func (s *fractionSampler) ShouldSample(parameters sdktrace.SamplingParameters) s
 
 func (s *fractionSampler) Description() string {
 	return s.description
+}
+
+// shortcutTracerProvider wraps the real TracerProvider so a child of an
+// unsampled local parent skips span creation + the sampler (ParentBased
+// leaves local-not-sampled at AlwaysOff, so the child is dropped anyway).
+// Installed globally, so it covers both StartNamedSpan and the otelgrpc
+// handlers. Remote parents and forced traces are excluded (see Start);
+// breaks if the sampler stops dropping local-not-sampled children (see
+// Configure).
+type shortcutTracerProvider struct {
+	embedded.TracerProvider
+	delegate trace.TracerProvider
+	sampler  *fractionSampler
+}
+
+func newShortcutTracerProvider(delegate trace.TracerProvider, sampler *fractionSampler) *shortcutTracerProvider {
+	return &shortcutTracerProvider{delegate: delegate, sampler: sampler}
+}
+
+func (p *shortcutTracerProvider) Tracer(name string, opts ...trace.TracerOption) trace.Tracer {
+	return &shortcutTracer{delegate: p.delegate.Tracer(name, opts...), sampler: p.sampler}
+}
+
+type shortcutTracer struct {
+	embedded.Tracer
+	delegate trace.Tracer
+	sampler  *fractionSampler
+}
+
+func (t *shortcutTracer) Start(ctx context.Context, spanName string, opts ...trace.SpanStartOption) (context.Context, trace.Span) {
+	parent := trace.SpanFromContext(ctx)
+	psc := parent.SpanContext()
+	// Return the parent for a child that ParentBased would drop anyway (valid,
+	// local, not sampled, not recording). Remote parents are re-sampled and
+	// forced traces can override, so those go through the real tracer.
+	if psc.IsValid() && !psc.IsRemote() && !psc.IsSampled() && !parent.IsRecording() && !t.sampler.forcedFromContext(ctx) {
+		return ctx, parent
+	}
+	return t.delegate.Start(ctx, spanName, opts...)
 }
 
 // noopExporter is a span exporter that does nothing, used for testing/benchmarking.
@@ -283,11 +329,17 @@ func setupTracingWithExporter(env environment.Env, traceExporter sdktrace.SpanEx
 		res = resource.NewSchemaless(resourceAttrs...)
 	}
 
+	// Leaves local-not-sampled at the ParentBased default (AlwaysOff), which
+	// shortcutTracer.Start relies on; revisit it if that's ever overridden.
 	tp := sdktrace.NewTracerProvider(
 		sdktrace.WithSpanProcessor(bsp),
 		sdktrace.WithSampler(sdktrace.ParentBased(sampler, sdktrace.WithRemoteParentNotSampled(sampler))),
 		sdktrace.WithResource(res))
-	otel.SetTracerProvider(tp)
+	var provider trace.TracerProvider = tp
+	if *traceSamplingShortcut {
+		provider = newShortcutTracerProvider(tp, sampler)
+	}
+	otel.SetTracerProvider(provider)
 	// Re-enable this if GCS tracing is fixed to not include blob names in span names
 	// Necessary imports: "go.opentelemetry.io/otel/bridge/opencensus"
 	//                    octrace "go.opencensus.io/trace"
