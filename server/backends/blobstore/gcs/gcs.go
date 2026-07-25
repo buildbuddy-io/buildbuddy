@@ -12,6 +12,7 @@ import (
 	"cloud.google.com/go/storage"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore/util"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/rpc/interceptors"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
@@ -27,6 +28,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 
+	refpb "github.com/buildbuddy-io/buildbuddy/proto/reference"
 	gstatus "google.golang.org/grpc/status"
 )
 
@@ -51,6 +53,18 @@ type GCSBlobStore struct {
 
 func UseGCSBlobStore() bool {
 	return *gcsBucket != ""
+}
+
+func Register(env *real_environment.RealEnv) error {
+	if !UseGCSBlobStore() {
+		return nil
+	}
+	gcsBlobStore, err := NewGCSBlobStoreFromFlags(env.GetServerContext())
+	if err != nil {
+		return err
+	}
+	env.SetDereferencer(gcsBlobStore)
+	return nil
 }
 
 func NewGCSBlobStoreFromFlags(ctx context.Context) (*GCSBlobStore, error) {
@@ -460,6 +474,14 @@ func (g *GCSBlobStore) Reader(ctx context.Context, blobName string, offset, limi
 	} else {
 		return reader, nil
 	}
+}
+
+func (g *GCSBlobStore) Dereference(ctx context.Context, ref *refpb.Reference, offset, limit int64) (io.ReadCloser, error) {
+	blobName := ref.GetMetadata().GetStorageMetadata().GetGcsMetadata().GetBlobName()
+	if blobName == "" {
+		return nil, status.InvalidArgumentError("Malformed reference")
+	}
+	return g.Reader(ctx, blobName, offset, limit)
 }
 
 func (g *GCSBlobStore) SetBucketCustomTimeTTL(ctx context.Context, ageInDays int64) error {

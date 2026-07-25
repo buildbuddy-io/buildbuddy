@@ -66,6 +66,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/bitbucket"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/github"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workspace"
+	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore/gcs"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/janitor"
@@ -208,6 +209,9 @@ func main() {
 		log.Fatalf("%v", err)
 	}
 	if err := crypter_service.Register(realEnv); err != nil {
+		log.Fatalf("%v", err)
+	}
+	if err := gcs.Register(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
 	if err := gcs_cache.Register(realEnv); err != nil {

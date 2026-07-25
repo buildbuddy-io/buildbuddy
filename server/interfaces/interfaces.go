@@ -43,6 +43,7 @@ import (
 	irpb "github.com/buildbuddy-io/buildbuddy/proto/iprules"
 	npb "github.com/buildbuddy-io/buildbuddy/proto/notification"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
+	refpb "github.com/buildbuddy-io/buildbuddy/proto/reference"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rppb "github.com/buildbuddy-io/buildbuddy/proto/repo"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
@@ -1505,6 +1506,11 @@ type MetadataWriteCloser interface {
 	io.Writer
 	io.Closer
 	Metadater
+}
+
+// Dereferences references into the bytes stored in the referenced location.
+type Dereferencer interface {
+	Dereference(ctx context.Context, ref *refpb.Reference, offset, limit int64) (io.ReadCloser, error)
 }
 
 type CommittedMetadataWriteCloser interface {

@@ -60,6 +60,7 @@ type RealEnv struct {
 	executionService                     interfaces.ExecutionService
 	executionSearchService               interfaces.ExecutionSearchService
 	cache                                interfaces.Cache
+	dereferencer                         interfaces.Dereferencer
 	userDB                               interfaces.UserDB
 	authDB                               interfaces.AuthDB
 	buildEventHandler                    interfaces.BuildEventHandler
@@ -267,6 +268,13 @@ func (r *RealEnv) GetCache() interfaces.Cache {
 }
 func (r *RealEnv) SetCache(c interfaces.Cache) {
 	r.cache = c
+}
+
+func (r *RealEnv) GetDereferencer() interfaces.Dereferencer {
+	return r.dereferencer
+}
+func (r *RealEnv) SetDereferencer(d interfaces.Dereferencer) {
+	r.dereferencer = d
 }
 
 func (r *RealEnv) GetAuthenticator() interfaces.Authenticator {
