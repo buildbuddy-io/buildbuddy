@@ -36,6 +36,7 @@ go_test(
     deps = [
         ":tracing",
         "//proto:trace_go_proto",
+        "//server/interfaces",
         "//server/testutil/testenv",
         "//server/util/authutil",
         "//server/util/log",

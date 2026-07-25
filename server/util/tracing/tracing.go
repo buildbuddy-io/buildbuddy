@@ -140,6 +140,7 @@ func (s *fractionSampler) Description() string {
 // identityGatedPropagator only propagates tracing metadata internally.
 type identityGatedPropagator struct {
 	inner propagation.TextMapPropagator
+	env   environment.Env
 }
 
 func (p *identityGatedPropagator) Inject(ctx context.Context, carrier propagation.TextMapCarrier) {
@@ -151,6 +152,9 @@ func (p *identityGatedPropagator) Fields() []string {
 }
 
 func (p *identityGatedPropagator) Extract(ctx context.Context, carrier propagation.TextMapCarrier) context.Context {
+	if p.env.GetClientIdentityService() == nil {
+		return p.inner.Extract(ctx, carrier)
+	}
 	// Only propagate if client identity header is present.
 	if carrier.Get(authutil.ClientIdentityHeaderName) != "" {
 		return p.inner.Extract(ctx, carrier)
@@ -317,7 +321,7 @@ func setupTracingWithExporter(env environment.Env, traceExporter sdktrace.SpanEx
 	// tracer := otel.GetTracerProvider().Tracer(buildBuddyInstrumentationName)
 	// octrace.DefaultTracer = opencensus.NewTracer(tracer)
 	inner := propagation.NewCompositeTextMapPropagator(propagation.Baggage{}, propagation.TraceContext{})
-	otel.SetTextMapPropagator(&identityGatedPropagator{inner: inner})
+	otel.SetTextMapPropagator(&identityGatedPropagator{inner: inner, env: env})
 	log.Infof("Tracing enabled with sampler: %s, resource detectors: %s", sampler.Description(), strings.Join(*traceResourceDetectors, ", "))
 	tracer = otel.GetTracerProvider().Tracer(buildBuddyInstrumentationName)
 	return nil

@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -35,9 +36,20 @@ func init() {
 	log.Configure()
 }
 
-func setupTracing(t *testing.T) {
+// fakeClientIdentityService is never called by the propagator gate, which
+// only checks whether a client-identity service is registered; embedding the
+// interface satisfies it without implementing any methods.
+type fakeClientIdentityService struct {
+	interfaces.ClientIdentityService
+}
+
+func setupTracing(t *testing.T, cis interfaces.ClientIdentityService) {
 	flags.Set(t, "app.trace_fraction", 1.0)
-	require.NoError(t, tracing.ConfigureWithNoopExporter(testenv.GetTestEnv(t)))
+	te := testenv.GetTestEnv(t)
+	if cis != nil {
+		te.SetClientIdentityService(cis)
+	}
+	require.NoError(t, tracing.ConfigureWithNoopExporter(te))
 }
 
 func externalCarrier(extraHeaders map[string]string) propagation.MapCarrier {
@@ -52,7 +64,7 @@ func externalCarrier(extraHeaders map[string]string) propagation.MapCarrier {
 }
 
 func TestExternalParentContextIgnored(t *testing.T) {
-	setupTracing(t)
+	setupTracing(t, &fakeClientIdentityService{})
 
 	// No client-identity header: the inbound context must not be adopted.
 	ctx := otel.GetTextMapPropagator().Extract(context.Background(), externalCarrier(nil))
@@ -66,7 +78,7 @@ func TestExternalParentContextIgnored(t *testing.T) {
 }
 
 func TestInternalParentContextHonored(t *testing.T) {
-	setupTracing(t)
+	setupTracing(t, &fakeClientIdentityService{})
 
 	// A caller presenting a client-identity header has its context adopted.
 	carrier := externalCarrier(map[string]string{authutil.ClientIdentityHeaderName: "some-identity-header"})
@@ -77,10 +89,21 @@ func TestInternalParentContextHonored(t *testing.T) {
 	require.Equal(t, externalTraceID, sc.TraceID().String())
 }
 
+func TestExternalParentContextHonoredWithoutClientIdentityService(t *testing.T) {
+	// Deployments without client identity configured retain the historical
+	// behavior of honoring all inbound trace context.
+	setupTracing(t, nil)
+
+	ctx := otel.GetTextMapPropagator().Extract(context.Background(), externalCarrier(nil))
+	sc := trace.SpanContextFromContext(ctx)
+	require.True(t, sc.IsValid())
+	require.Equal(t, externalTraceID, sc.TraceID().String())
+}
+
 func TestExtractProtoTraceMetadataBypassesGate(t *testing.T) {
 	// Trace metadata embedded in internal protos (e.g. queued execution
 	// tasks) has no client-identity header; it must still be extracted.
-	setupTracing(t)
+	setupTracing(t, &fakeClientIdentityService{})
 
 	md := &tpb.Metadata{Entries: map[string]string{"traceparent": externalTraceParent()}}
 	ctx := tracing.ExtractProtoTraceMetadata(context.Background(), md)
