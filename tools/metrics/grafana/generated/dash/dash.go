@@ -23,6 +23,7 @@ const (
 	UnitPacketsPerSec = "pps"
 	UnitEventsPerSec  = "eps"
 	UnitMicroseconds  = "µs"
+	UnitNone          = "none"
 	UnitOps           = "ops"
 	UnitPercent       = "percent"
 	UnitPercentUnit   = "percentunit"

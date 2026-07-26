@@ -437,8 +437,9 @@ const (
 	DNSResponseCodeLabel = "rcode"
 
 	// The apex of a served DNS zone, such as "buildbuddy.io.". Zones come from
-	// operator-controlled zone files, so cardinality is bounded.
-	DNSZoneLabel = "zone"
+	// operator-controlled zone files, so cardinality is bounded. Named
+	// "dns_zone" because ZoneLabel ("zone") is the availability zone of a node.
+	DNSZoneLabel = "dns_zone"
 )
 
 // Label value constants
@@ -4531,12 +4532,12 @@ var (
 	//
 	// ```promql
 	// # Zones currently served, with their versions
-	// max by (zone) (buildbuddy_dns_server_zone_serial)
+	// max by (dns_zone) (buildbuddy_dns_server_zone_serial)
 	//
 	// # Zones where replicas disagree on the served version
-	// max by (zone) (buildbuddy_dns_server_zone_serial)
+	// max by (dns_zone) (buildbuddy_dns_server_zone_serial)
 	//   !=
-	// min by (zone) (buildbuddy_dns_server_zone_serial)
+	// min by (dns_zone) (buildbuddy_dns_server_zone_serial)
 	// ```
 )
 

@@ -78,14 +78,14 @@ func p99Stat() *stat.PanelBuilder {
 }
 
 func qpsByTypePanel() *timeseries.PanelBuilder {
-	return dash.StackedTimeseries("Queries/sec by Record Type", dash.UnitOps).
+	return dash.Timeseries("Queries/sec by Record Type", dash.UnitOps).
 		Description("DNS query rate broken down by record type (A, AAAA, TXT, UPDATE, …).").
 		GridPos(grid(8, 12, 0, 6)).
 		WithTarget(q(rateBy("record_type"), "{{record_type}}"))
 }
 
 func qpsByRcodePanel() *timeseries.PanelBuilder {
-	return dash.StackedTimeseries("Queries/sec by Response Code", dash.UnitOps).
+	return dash.Timeseries("Queries/sec by Response Code", dash.UnitOps).
 		Description("DNS query rate broken down by response code (NOERROR, NXDOMAIN, REFUSED, …).").
 		GridPos(grid(8, 12, 12, 6)).
 		WithTarget(q(rateBy("rcode"), "{{rcode}}"))
@@ -110,20 +110,20 @@ func durationHeatmapPanel() *heatmap.PanelBuilder {
 // zoneSerialsStat shows one stat per served zone with its current SOA serial,
 // so the set of zones being served and their versions is visible at a glance.
 func zoneSerialsStat() *stat.PanelBuilder {
-	return dash.Stat("Zones Served", "none").
+	return dash.Stat("Zones Served", dash.UnitNone).
 		Description("SOA serial of each zone currently served (max across replicas). A zone missing here is not being served at all.").
 		GridPos(grid(8, 12, 0, 24)).
-		WithTarget(q(`max by (zone) (`+serial+`{`+filter+`})`, "{{zone}}"))
+		WithTarget(q(`max by (dns_zone) (`+serial+`{`+filter+`})`, "{{dns_zone}}"))
 }
 
 // zoneSerialByReplicaPanel plots each zone's serial per replica. All replicas
 // of a zone should sit on the same line; a replica stuck on an old serial
 // after a zone-file push shows up as a diverging line.
 func zoneSerialByReplicaPanel() *timeseries.PanelBuilder {
-	return dash.Timeseries("Zone Serial by Replica", "none").
+	return dash.Timeseries("Zone Serial by Replica", dash.UnitNone).
 		Description("SOA serial of each served zone, per replica. Divergence between replicas of the same zone means a stale or failed zone reload.").
 		GridPos(grid(8, 12, 12, 24)).
-		WithTarget(q(`max by (zone, instance) (`+serial+`{`+filter+`})`, "{{zone}} {{instance}}"))
+		WithTarget(q(`max by (dns_zone, instance) (`+serial+`{`+filter+`})`, "{{dns_zone}} {{instance}}"))
 }
 
 func regionVariable() *dashboard.QueryVariableBuilder {

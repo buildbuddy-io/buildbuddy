@@ -146,6 +146,46 @@ func TestZoneUpdater_ExportsZoneSerials(t *testing.T) {
 	assert.Equal(t, 8.0, serialOf("a.example."))
 }
 
+func TestNewHandler_ExportsZoneSerials(t *testing.T) {
+	records, err := ParseAndVerifyZone(zoneFileWithSerial("boot.example.", "1.1.1.1", 5), "boot.zone")
+	require.NoError(t, err)
+	metrics.DNSServerZoneSerial.Reset()
+
+	NewHandler(nil /*=env*/, records, nil /*=acme*/)
+
+	got := testutil.ToFloat64(metrics.DNSServerZoneSerial.With(prometheus.Labels{metrics.DNSZoneLabel: "boot.example."}))
+	assert.Equal(t, 5.0, got, "constructing a handler should export serials without waiting for a watcher update")
+}
+
+func TestZoneUpdater_KeepsLastGoodSerialWhenFileBecomesInvalid(t *testing.T) {
+	_, u := newUpdater()
+	u.apply(changedUpdate(map[string][]byte{
+		"a.zone": zoneFileWithSerial("a.example.", "1.1.1.1", 7),
+		"b.zone": zoneFileWithSerial("b.example.", "2.2.2.2", 42),
+	}))
+
+	serialOf := func(apex string) float64 {
+		return testutil.ToFloat64(metrics.DNSServerZoneSerial.With(prometheus.Labels{metrics.DNSZoneLabel: apex}))
+	}
+	require.Equal(t, 7.0, serialOf("a.example."))
+
+	// a.zone's new version is invalid while b.zone advances: the swap
+	// re-exports a.example. from its last-good records, so its serial holds
+	// steady instead of disappearing or moving.
+	u.apply(changedUpdate(map[string][]byte{
+		"a.zone": []byte("@@@ not a zone @@@\n"),
+		"b.zone": zoneFileWithSerial("b.example.", "2.2.2.2", 43),
+	}))
+	assert.Equal(t, 7.0, serialOf("a.example."), "invalid update should keep the last-good serial")
+	assert.Equal(t, 43.0, serialOf("b.example."))
+
+	// An update where every changed file is rejected doesn't swap at all; the
+	// exported serials are untouched.
+	u.apply(changedUpdate(map[string][]byte{"a.zone": []byte("still broken\n")}))
+	assert.Equal(t, 7.0, serialOf("a.example."))
+	assert.Equal(t, 43.0, serialOf("b.example."))
+}
+
 func TestZoneUpdater_RemovingUnknownObjectIsNoop(t *testing.T) {
 	h, u := newUpdater()
 	u.apply(changedUpdate(map[string][]byte{"a.zone": zoneFileWithA("a.example.", "1.1.1.1")}))

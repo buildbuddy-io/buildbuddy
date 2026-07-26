@@ -116,9 +116,13 @@ func (h *Handler) Update(resources []dns.RR) {
 	// drops zones that are no longer served.
 	metrics.DNSServerZoneSerial.Reset()
 	for _, z := range d.zones {
+		soa, ok := z.soa.(*dns.SOA)
+		if !ok {
+			continue
+		}
 		metrics.DNSServerZoneSerial.With(prometheus.Labels{
 			metrics.DNSZoneLabel: z.apex,
-		}).Set(float64(z.soa.(*dns.SOA).Serial))
+		}).Set(float64(soa.Serial))
 	}
 }
 
