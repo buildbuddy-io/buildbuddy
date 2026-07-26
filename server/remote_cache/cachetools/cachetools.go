@@ -623,8 +623,17 @@ func uploadFromReaderWithChunking(ctx context.Context, env environment.Env, r *d
 		return nil, 0, status.UnavailableErrorf("seek input: %s", err)
 	}
 
+	blobHasher, err := digest.HashForDigestType(r.GetDigestFunction())
+	if err != nil {
+		return nil, 0, err
+	}
+	var chunkedBlobSize int64
 	var chunkDigests []*repb.Digest
 	chunker, err := chunking.NewChunker(ctx, int(chunkingParams.GetAvgChunkSizeBytes()), func(chunkData []byte) error {
+		if _, err := blobHasher.Write(chunkData); err != nil {
+			return err
+		}
+		chunkedBlobSize += int64(len(chunkData))
 		d, err := digest.Compute(bytes.NewReader(chunkData), r.GetDigestFunction())
 		if err != nil {
 			return err
@@ -641,6 +650,13 @@ func uploadFromReaderWithChunking(ctx context.Context, env environment.Env, r *d
 	}
 	if err := chunker.Close(); err != nil {
 		return nil, 0, status.UnavailableErrorf("finalize chunking: %s", err)
+	}
+	chunkedBlobDigest := &repb.Digest{
+		Hash:      hex.EncodeToString(blobHasher.Sum(nil)),
+		SizeBytes: chunkedBlobSize,
+	}
+	if !digest.Equal(chunkedBlobDigest, r.GetDigest()) {
+		return nil, 0, status.InvalidArgumentErrorf("possible concurrent mutation detected while chunking: digest changed from %s to %s", digest.String(r.GetDigest()), digest.String(chunkedBlobDigest))
 	}
 	if len(chunkDigests) <= 1 {
 		return nil, 0, status.InternalErrorf("chunking produced %d chunk(s) for blob size %d", len(chunkDigests), r.GetDigest().GetSizeBytes())

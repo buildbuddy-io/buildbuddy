@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/rpc/interceptors"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
@@ -28,11 +29,13 @@ import (
 type pingServer struct {
 	lastClientIP   string
 	lastIncomingMD metadata.MD
+	lastOutgoingMD metadata.MD
 }
 
 func (p *pingServer) Ping(ctx context.Context, req *pspb.PingRequest) (*pspb.PingResponse, error) {
 	p.lastClientIP = clientip.Get(ctx)
 	p.lastIncomingMD, _ = metadata.FromIncomingContext(ctx)
+	p.lastOutgoingMD, _ = metadata.FromOutgoingContext(ctx)
 	return &pspb.PingResponse{
 		Tag: req.GetTag(),
 	}, nil
@@ -346,7 +349,7 @@ func TestTrustedClientIPInterceptor(t *testing.T) {
 	}
 }
 
-func TestStripsInternalHeadersFromUntrustedCallers(t *testing.T) {
+func TestInternalHeadersAreStrippedBeforePropagation(t *testing.T) {
 	const internalHeader = authutil.InternalHeaderPrefix + "test"
 
 	for _, tc := range []struct {
@@ -374,6 +377,16 @@ func TestStripsInternalHeadersFromUntrustedCallers(t *testing.T) {
 			clientIdentity: interfaces.ClientIdentityApp,
 			wantStripped:   false,
 		},
+		{
+			name:           "executor identity is preserved",
+			clientIdentity: interfaces.ClientIdentityExecutor,
+			wantStripped:   false,
+		},
+		{
+			name:           "cache proxy identity is preserved",
+			clientIdentity: interfaces.ClientIdentityCacheProxy,
+			wantStripped:   false,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			listenAddr := fmt.Sprintf("localhost:%d", testport.FindFree(t))
@@ -381,7 +394,11 @@ func TestStripsInternalHeadersFromUntrustedCallers(t *testing.T) {
 			env := testenv.GetTestEnv(t)
 			env.SetClientIdentityService(&fakeClientIdentityService{})
 
-			grpcServer := grpc.NewServer(grpc_server.CommonGRPCServerOptions(env)...)
+			grpcServer := grpc.NewServer(grpc_server.CommonGRPCServerOptionsWithConfig(env, grpc_server.GRPCServerConfig{
+				ExtraChainedUnaryInterceptors: []grpc.UnaryServerInterceptor{
+					interceptors.PropagateMetadataUnaryInterceptor(internalHeader),
+				},
+			})...)
 			ps := &pingServer{}
 			pspb.RegisterApiServer(grpcServer, ps)
 
@@ -403,8 +420,10 @@ func TestStripsInternalHeadersFromUntrustedCallers(t *testing.T) {
 
 			if tc.wantStripped {
 				assert.Empty(t, ps.lastIncomingMD.Get(internalHeader))
+				assert.Empty(t, ps.lastOutgoingMD.Get(internalHeader))
 			} else {
 				assert.Equal(t, []string{"spoofed"}, ps.lastIncomingMD.Get(internalHeader))
+				assert.Equal(t, []string{"spoofed"}, ps.lastOutgoingMD.Get(internalHeader))
 			}
 		})
 	}

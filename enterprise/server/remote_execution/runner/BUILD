@@ -39,6 +39,7 @@ go_library(
         "//server/util/alert",
         "//server/util/authutil",
         "//server/util/background",
+        "//server/util/cdc",
         "//server/util/disk",
         "//server/util/flag",
         "//server/util/fspath",
