@@ -439,6 +439,11 @@ const (
 
 	// The DNS response code, such as "NOERROR", "NXDOMAIN", or "FORMERR".
 	DNSResponseCodeLabel = "rcode"
+
+	// The apex of a served DNS zone, such as "buildbuddy.io.". Zones come from
+	// operator-controlled zone files, so cardinality is bounded. Named
+	// "dns_zone" because ZoneLabel ("zone") is the availability zone of a node.
+	DNSZoneLabel = "dns_zone"
 )
 
 // Label value constants
@@ -4526,6 +4531,27 @@ var (
 	//   0.5,
 	//   sum(rate(buildbuddy_dns_server_handler_duration_usec_bucket[5m])) by (le)
 	// )
+	// ```
+
+	DNSServerZoneSerial = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "dns",
+		Name:      "server_zone_serial",
+		Help:      "The SOA serial of each DNS zone currently served, by zone apex. A zone that stops being served drops off the metric.",
+	}, []string{
+		DNSZoneLabel,
+	})
+
+	// #### Examples
+	//
+	// ```promql
+	// # Zones currently served, with their versions
+	// max by (dns_zone) (buildbuddy_dns_server_zone_serial)
+	//
+	// # Zones where replicas disagree on the served version
+	// max by (dns_zone) (buildbuddy_dns_server_zone_serial)
+	//   !=
+	// min by (dns_zone) (buildbuddy_dns_server_zone_serial)
 	// ```
 )
 
