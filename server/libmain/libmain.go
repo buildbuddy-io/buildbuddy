@@ -42,6 +42,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/ssl"
 	"github.com/buildbuddy-io/buildbuddy/server/static"
 	"github.com/buildbuddy-io/buildbuddy/server/util/channelz_metrics"
+	"github.com/buildbuddy-io/buildbuddy/server/util/cpusampler"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
@@ -422,6 +423,8 @@ func StartAndRunServices(env *real_environment.RealEnv, grpcConfig grpc_server.G
 	if err := rlimit.MaxRLimit(); err != nil {
 		log.Printf("Error raising open files limit: %s", err)
 	}
+
+	cpusampler.Start(env)
 
 	appBundleHash, err := static.AppBundleHash(env.GetAppFilesystem())
 	if err != nil {

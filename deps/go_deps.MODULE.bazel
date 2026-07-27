@@ -256,6 +256,7 @@ use_repo(
     "com_github_google_go_cmp",
     "com_github_google_go_containerregistry",
     "com_github_google_go_github_v59",
+    "com_github_google_pprof",
     "com_github_google_shlex",
     "com_github_google_uuid",
     "com_github_googlecloudplatform_cloudsql_proxy",
