@@ -38,6 +38,27 @@ func TestCollectRunfiles_RelativeDirectorySymlink(t *testing.T) {
 	assert.Equal(t, map[string]string{linkPath: targetDir}, dirs)
 }
 
+func TestCollectRunfiles_ExecutableMetadata(t *testing.T) {
+	runfilesDir := t.TempDir()
+	executablePath := filepath.Join(runfilesDir, "executable")
+	require.NoError(t, os.WriteFile(executablePath, []byte("executable"), 0644))
+	require.NoError(t, os.Chmod(executablePath, 0755))
+	nonExecutablePath := filepath.Join(runfilesDir, "non-executable")
+	require.NoError(t, os.WriteFile(nonExecutablePath, []byte("non-executable"), 0644))
+
+	files, _, err := collectRunfiles(runfilesDir)
+	require.NoError(t, err)
+
+	executableByPath := make(map[string]bool, len(files))
+	for _, runfile := range files {
+		executableByPath[runfile.path] = runfile.isExecutable
+	}
+	assert.Equal(t, map[string]bool{
+		executablePath:    true,
+		nonExecutablePath: false,
+	}, executableByPath)
+}
+
 type stallingReadCloser struct {
 	ctx context.Context
 	io.ReadCloser
