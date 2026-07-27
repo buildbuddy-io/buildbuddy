@@ -1318,6 +1318,7 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 							Runfiles:           runScriptInfo.runfiles,
 							RunfileDirectories: runScriptInfo.runfileDirs,
 							ExecutablePath:     runScriptInfo.executablePath,
+							ExecutableRunfiles: runScriptInfo.executableRunfiles,
 						}},
 					}
 					ar.reporter.Publish(e)
@@ -1433,11 +1434,12 @@ func deserializeAction(actionString string) (*config.Action, error) {
 }
 
 type runInfo struct {
-	args           []string
-	runfiles       []*bespb.File
-	runfileDirs    []*bespb.Tree
-	runfilesRoot   string
-	executablePath string
+	args               []string
+	runfiles           []*bespb.File
+	runfileDirs        []*bespb.Tree
+	runfilesRoot       string
+	executablePath     string
+	executableRunfiles []string
 }
 
 func collectRunfiles(runfilesDir string) (map[digest.Key]string, map[string]string, error) {
@@ -1481,17 +1483,17 @@ func collectRunfiles(runfilesDir string) (map[digest.Key]string, map[string]stri
 	return fileDigestMap, dirsToUpload, err
 }
 
-func uploadRunfiles(ctx context.Context, workspaceRoot, runfilesDir string) ([]*bespb.File, []*bespb.Tree, error) {
+func uploadRunfiles(ctx context.Context, workspaceRoot, runfilesDir string) ([]*bespb.File, []*bespb.Tree, []string, error) {
 	healthChecker := healthcheck.NewHealthChecker("ci-runner")
 	env := real_environment.NewRealEnv(healthChecker)
 
 	fileDigestMap, dirs, err := collectRunfiles(runfilesDir)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	conn, err := grpc_client.DialSimple(*cacheBackend)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	env.SetByteStreamClient(bspb.NewByteStreamClient(conn))
 	env.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(conn))
@@ -1499,17 +1501,25 @@ func uploadRunfiles(ctx context.Context, workspaceRoot, runfilesDir string) ([]*
 
 	backendURL, err := url.Parse(*cacheBackend)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	bytestreamURIPrefix := "bytestream://" + backendURL.Host
 
 	var digests []*repb.Digest
 	var runfiles []*bespb.File
+	var executableRunfiles []string
 	for d, runfilePath := range fileDigestMap {
 		digests = append(digests, d.ToDigest())
 		relPath, err := filepath.Rel(workspaceRoot, runfilePath)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
+		}
+		info, err := os.Stat(runfilePath)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		if info.Mode()&0111 != 0 {
+			executableRunfiles = append(executableRunfiles, relPath)
 		}
 		downloadString := digest.NewCASResourceName(d.ToDigest(), *remoteInstanceName, repb.DigestFunction_SHA256).DownloadString()
 		if !strings.HasPrefix(downloadString, "/") {
@@ -1528,7 +1538,7 @@ func uploadRunfiles(ctx context.Context, workspaceRoot, runfilesDir string) ([]*
 		Purpose:      repb.FindMissingBlobsRequest_CI_RUNNER_UPLOAD,
 	})
 	if err != nil {
-		return nil, nil, status.UnknownErrorf("could not check digest existence: %s", err)
+		return nil, nil, nil, status.UnknownErrorf("could not check digest existence: %s", err)
 	}
 	missingDigests := rsp.GetMissingBlobDigests()
 
@@ -1539,14 +1549,14 @@ func uploadRunfiles(ctx context.Context, workspaceRoot, runfilesDir string) ([]*
 		runfilePath, ok := fileDigestMap[digest.NewKey(d)]
 		if !ok {
 			// not supposed to happen...
-			return nil, nil, status.InternalErrorf("missing digest not in our digest map")
+			return nil, nil, nil, status.InternalErrorf("missing digest not in our digest map")
 		}
 		f, err := os.Open(runfilePath)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		if err := u.Upload(d, f); err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 	}
 
@@ -1582,10 +1592,10 @@ func uploadRunfiles(ctx context.Context, workspaceRoot, runfilesDir string) ([]*
 	}
 
 	if err := eg.Wait(); err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
-	return runfiles, runfileDirs, nil
+	return runfiles, runfileDirs, executableRunfiles, nil
 }
 
 // processRunScript processes the contents of a bazel run script (produced via bazel run --script_path) and extracts
@@ -1643,17 +1653,18 @@ func processRunScript(ctx context.Context, runScript string) (*runInfo, error) {
 	}
 
 	runfilesDir := bin + ".runfiles"
-	runfiles, runfileDirs, err := uploadRunfiles(ctx, wsRoot, runfilesDir)
+	runfiles, runfileDirs, executableRunfiles, err := uploadRunfiles(ctx, wsRoot, runfilesDir)
 	if err != nil {
 		return nil, err
 	}
 
 	return &runInfo{
-		args:           args,
-		runfiles:       runfiles,
-		runfileDirs:    runfileDirs,
-		runfilesRoot:   runfilesRoot,
-		executablePath: executablePath,
+		args:               args,
+		runfiles:           runfiles,
+		runfileDirs:        runfileDirs,
+		runfilesRoot:       runfilesRoot,
+		executablePath:     executablePath,
+		executableRunfiles: executableRunfiles,
 	}, nil
 }
 

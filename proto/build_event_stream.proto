@@ -1668,6 +1668,8 @@ message RunTargetAnalyzed {
   repeated Tree runfileDirectories = 4;
   // Workspace-relative path to the executable selected by `bazel run`.
   string executable_path = 5;
+  // Workspace-relative paths of runfiles that should be executable.
+  repeated string executable_runfiles = 6;
 }
 
 // Event reporting stats about the git fetches performed by a remote runner
