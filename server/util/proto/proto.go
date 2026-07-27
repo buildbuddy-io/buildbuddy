@@ -4,7 +4,7 @@ import (
 	gproto "google.golang.org/protobuf/proto"
 )
 
-var Size = gproto.Size
+var Size = size
 var Merge = gproto.Merge
 var Equal = gproto.Equal
 
@@ -27,6 +27,13 @@ type VTProtoMessage interface {
 	// For vtprotoCodecV2
 	MarshalToSizedBufferVT(data []byte) (int, error)
 	SizeVT() int
+}
+
+func size(v Message) int {
+	if vt, ok := v.(VTProtoMessage); ok {
+		return vt.SizeVT()
+	}
+	return gproto.Size(v)
 }
 
 func Marshal(v Message) ([]byte, error) {
