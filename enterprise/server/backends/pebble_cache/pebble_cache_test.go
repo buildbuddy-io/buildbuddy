@@ -2935,6 +2935,79 @@ func TestGCSBlobStorage(t *testing.T) {
 	}
 }
 
+func TestGetReference(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
+	clock := clockwork.NewFakeClock()
+	ctx := getAnonContext(t, te)
+
+	var minGCSFileSize int64 = 100
+	var gcsTTLDays int64 = 1
+
+	mockGCS := mockgcs.New(clock)
+	require.NoError(t, mockGCS.SetBucketCustomTimeTTL(ctx, gcsTTLDays))
+	fileStorer := filestore.New(filestore.WithGCSBlobstore(mockGCS, "app-name"), filestore.WithClock(clock))
+	options := &pebble_cache.Options{
+		RootDirectory:          testfs.MakeTempDir(t),
+		MaxSizeBytes:           int64(1_000_000), // 1MB
+		Clock:                  clock,
+		FileStorer:             fileStorer,
+		MaxInlineFileSizeBytes: 10,
+		MinGCSFileSizeBytes:    &minGCSFileSize,
+		GCSTTLDays:             &gcsTTLDays,
+	}
+	pc, err := pebble_cache.NewPebbleCache(te, options)
+	require.NoError(t, err)
+	require.NoError(t, pc.Start())
+	defer pc.Stop()
+
+	// Blobs at or above minGCSFileSize live in GCS and are referenceable.
+	gcsRN, gcsBuf := testdigest.RandomCASResourceBuf(t, 100)
+	require.NoError(t, pc.Set(ctx, gcsRN, gcsBuf))
+
+	ref, err := pc.GetReference(ctx, gcsRN)
+	require.NoError(t, err)
+	require.NotEmpty(t, ref.GetMetadata().GetStorageMetadata().GetGcsMetadata().GetBlobName())
+	require.Equal(t, gcsRN.GetDigest().GetHash(), ref.GetMetadata().GetFileRecord().GetDigest().GetHash())
+
+	// The reference should carry everything needed to read unencrypted bytes
+	// back out of GCS without going through this cache.
+	r, err := mockGCS.Reader(ctx, ref.GetMetadata().GetStorageMetadata().GetGcsMetadata().GetBlobName(), 0, 0)
+	require.NoError(t, err)
+	defer r.Close()
+	blobBuf, err := io.ReadAll(r)
+	require.NoError(t, err)
+	require.EqualValues(t, len(blobBuf), ref.GetMetadata().GetStoredSizeBytes())
+	if ref.GetMetadata().GetFileRecord().GetCompressor() == repb.Compressor_ZSTD {
+		blobBuf, err = compression.DecompressZstd(nil, blobBuf)
+		require.NoError(t, err)
+	}
+	require.Equal(t, gcsBuf, blobBuf)
+
+	// Inlined blobs and blobs on local disk are not in shared storage, so
+	// they have no reference.
+	inlineRN, inlineBuf := testdigest.RandomCASResourceBuf(t, 1)
+	require.NoError(t, pc.Set(ctx, inlineRN, inlineBuf))
+	_, err = pc.GetReference(ctx, inlineRN)
+	require.True(t, status.IsNotFoundError(err), "expected NotFound, got %v", err)
+
+	diskRN, diskBuf := testdigest.RandomCASResourceBuf(t, 50)
+	require.NoError(t, pc.Set(ctx, diskRN, diskBuf))
+	_, err = pc.GetReference(ctx, diskRN)
+	require.True(t, status.IsNotFoundError(err), "expected NotFound, got %v", err)
+
+	// Missing resources have no reference either.
+	missingRN, _ := testdigest.RandomCASResourceBuf(t, 100)
+	_, err = pc.GetReference(ctx, missingRN)
+	require.True(t, status.IsNotFoundError(err), "expected NotFound, got %v", err)
+
+	// Once the backing object is past its GCS lifecycle TTL, stop handing out
+	// references to it.
+	clock.Advance(25 * time.Hour)
+	_, err = pc.GetReference(ctx, gcsRN)
+	require.True(t, status.IsNotFoundError(err), "expected NotFound, got %v", err)
+}
+
 func TestGCSBlobStorageOverwriteObjects(t *testing.T) {
 	te := testenv.GetTestEnv(t)
 	te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))

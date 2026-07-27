@@ -13,6 +13,7 @@ go_library(
         "//enterprise/server/util/gcsutil",
         "//enterprise/server/util/pebble",
         "//enterprise/server/util/proxy_util",
+        "//proto:reference_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:resource_go_proto",
         "//proto:storage_go_proto",
