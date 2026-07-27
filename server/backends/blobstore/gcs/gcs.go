@@ -27,6 +27,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 
+	refpb "github.com/buildbuddy-io/buildbuddy/proto/reference"
 	gstatus "google.golang.org/grpc/status"
 )
 
@@ -460,6 +461,14 @@ func (g *GCSBlobStore) Reader(ctx context.Context, blobName string, offset, limi
 	} else {
 		return reader, nil
 	}
+}
+
+func (g *GCSBlobStore) Dereference(ctx context.Context, ref *refpb.Reference, offset, limit int64) (io.ReadCloser, error) {
+	blobName := ref.GetMetadata().GetStorageMetadata().GetGcsMetadata().GetBlobName()
+	if blobName == "" {
+		return nil, status.InvalidArgumentError("malformed reference (empty blob name)")
+	}
+	return g.Reader(ctx, blobName, offset, limit)
 }
 
 func (g *GCSBlobStore) SetBucketCustomTimeTTL(ctx context.Context, ageInDays int64) error {

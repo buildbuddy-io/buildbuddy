@@ -572,14 +572,63 @@ func (c *Proxy) RemoteReader(ctx context.Context, peer string, r *rspb.ResourceN
 		return nil, err
 	}
 	rc, err := newDistributedCacheReader(stream, r.GetDigest().GetSizeBytes() == offset)
-	if err != nil || !decompress {
-		return rc, err
+	if err != nil {
+		return nil, err
+	}
+
+	// The server provided a reference. Dereference it.
+	if rc.rsp.GetReference() != nil {
+		ref := rc.rsp.GetReference().CloneVT()
+		if err := rc.Close(); err != nil {
+			c.log.Debugf("Error closing read stream after receiving a reference: %s", err)
+		}
+		resolver, ok := c.cache.(interfaces.ReferenceCache)
+		if !ok {
+			return nil, status.FailedPreconditionErrorf("peer %q returned a reference, but the local cache (%T) cannot dereference", peer, c.cache)
+		}
+		dereference, err := resolver.GetDereferencer()
+		if err != nil {
+			return nil, err
+		}
+		// Dereferencing yields the bytes exactly as stored, so the stored
+		// compressor must be reconciled with the one the caller wants.
+		// (When the ZSTD transport rewrite was applied above, the caller
+		// wants the original IDENTITY bytes, not the rewritten encoding.)
+		wanted := r.GetCompressor()
+		if decompress {
+			wanted = repb.Compressor_IDENTITY
+		}
+		stored := ref.GetMetadata().GetFileRecord().GetCompressor()
+		if stored == wanted {
+			return dereference(ctx, ref, offset, limit)
+		}
+		if stored == repb.Compressor_ZSTD && wanted == repb.Compressor_IDENTITY && offset == 0 && limit == 0 {
+			drc, err := dereference(ctx, ref, 0, 0)
+			if err != nil {
+				return nil, err
+			}
+			zr, err := compression.NewZstdDecompressingReader(drc)
+			if err != nil {
+				drc.Close()
+				return nil, err
+			}
+			return zr, nil
+		}
+		// Anything else (stored IDENTITY but ZSTD wanted, or a ranged read
+		// of a compressed blob, where offsets refer to uncompressed bytes)
+		// cannot be served from the reference.
+		return nil, status.InternalErrorf("peer %q returned a reference stored with compressor %s, but %s was requested", peer, stored, wanted)
+	}
+
+	if !decompress {
+		return rc, nil
 	}
 	dr, err := compression.NewZstdDecompressingReader(rc)
 	if err != nil {
 		rc.Close()
+		return nil, err
 	}
-	return dr, err
+	return dr, nil
 }
 
 type distributedCacheReader struct {

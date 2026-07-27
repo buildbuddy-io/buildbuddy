@@ -6,6 +6,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/backends/blobstore/gcs",
     visibility = ["//visibility:public"],
     deps = [
+        "//proto:reference_go_proto",
         "//server/backends/blobstore/util",
         "//server/interfaces",
         "//server/rpc/interceptors",

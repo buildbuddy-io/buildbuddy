@@ -314,6 +314,7 @@ type PebbleCache struct {
 	minGCSFileSizeBytes     int64
 	gcsTTLDays              int64
 	gcsAtimeUpdateThreshold time.Duration
+	gcsBlobstore            *gcs.GCSBlobStore
 
 	metrics struct {
 		compressedBlobSizeWrite   prometheus.Counter
@@ -653,6 +654,7 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 		clock = clockwork.NewRealClock()
 	}
 
+	var gcsBlobstore *gcs.GCSBlobStore
 	fileStorer := opts.FileStorer
 	if fileStorer == nil {
 		filestoreOpts := make([]filestore.Option, 0)
@@ -661,7 +663,8 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 			// will already compress blobs before storing them, so we don't
 			// want the gcs lib to attempt to compress them too.
 			ctx := env.GetServerContext()
-			gcsBlobstore, err := gcs.NewGCSBlobStore(ctx, opts.GCSBucket, "", opts.GCSCredentials, opts.GCSProjectID, false /*=enableCompression*/)
+			var err error
+			gcsBlobstore, err = gcs.NewGCSBlobStore(ctx, opts.GCSBucket, "", opts.GCSCredentials, opts.GCSProjectID, false /*=enableCompression*/)
 			if err != nil {
 				return nil, err
 			}
@@ -725,6 +728,7 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 		minGCSFileSizeBytes:         *opts.MinGCSFileSizeBytes,
 		gcsTTLDays:                  *opts.GCSTTLDays,
 		gcsAtimeUpdateThreshold:     *opts.GCSAtimeUpdateThreshold,
+		gcsBlobstore:                gcsBlobstore,
 		fileStorer:                  fileStorer,
 	}
 	zstdLabels := prometheus.Labels{metrics.CacheNameLabel: pc.name, metrics.CompressionType: "zstd"}
@@ -2150,6 +2154,19 @@ func (p *PebbleCache) GetReference(ctx context.Context, r *rspb.ResourceName) (*
 	p.sendAtimeUpdate(ctx, key, md.GetLastAccessUsec())
 
 	return &refpb.Reference{Metadata: md}, nil
+}
+
+func (p *PebbleCache) Dereferencer() interfaces.Dereferencer {
+	if p.gcsBlobstore == nil {
+		return nil
+	}
+	return func(ctx context.Context, ref *refpb.Reference, offset, limit int64) (io.ReadCloser, error) {
+		blobName := ref.GetMetadata().GetStorageMetadata().GetGcsMetadata().GetBlobName()
+		if blobName == "" {
+			return nil, status.InvalidArgumentError("Malformed reference (empty blob name)")
+		}
+		return p.gcsBlobstore.Reader(ctx, blobName, offset, limit)
+	}
 }
 
 func (p *PebbleCache) Set(ctx context.Context, r *rspb.ResourceName, data []byte) error {
