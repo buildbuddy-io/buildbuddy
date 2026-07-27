@@ -320,6 +320,13 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 			Value: v,
 		})
 	}
+	// Allow commands running on the hosted runner to target the app server that
+	// initiated the run. Append these after request env vars so callers cannot
+	// accidentally override them.
+	cmd.EnvironmentVariables = append(cmd.EnvironmentVariables,
+		&repb.Command_EnvironmentVariable{Name: ci_runner_env.BuildBuddyAPITargetEnvVarName, Value: cache_api_url.String()},
+		&repb.Command_EnvironmentVariable{Name: ci_runner_env.BuildBuddyHTTPTargetEnvVarName, Value: build_buddy_url.String()},
+	)
 
 	if isolationType != string(platform.FirecrackerContainerType) {
 		// If not running with Firecracker, run an init process so that the

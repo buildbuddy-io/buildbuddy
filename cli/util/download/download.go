@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -129,7 +130,12 @@ func fileDownloadURL(appURL, bytestreamURL, invocationID string) (string, error)
 	if err != nil {
 		return "", err
 	}
-	if u.Scheme != "https" || u.Host == "" {
+	isLoopbackHost := u.Hostname() == "localhost"
+	if ip := net.ParseIP(u.Hostname()); ip != nil {
+		isLoopbackHost = ip.IsLoopback()
+	}
+	isLoopbackHTTP := u.Scheme == "http" && isLoopbackHost
+	if u.Host == "" || (u.Scheme != "https" && !isLoopbackHTTP) {
 		return "", fmt.Errorf("invalid BuildBuddy web URL %q", appURL)
 	}
 	u.Path = "/file/download"

@@ -55,6 +55,7 @@ func commandArgs(request *agentutil.RunRequest) []string {
 	// --allowedTools. Run without approvals in a read-only sandbox.
 	args := []string{
 		"exec",
+		"--skip-git-repo-check",
 		"--sandbox", "read-only",
 		"--config", `approval_policy="never"`,
 		"--json",

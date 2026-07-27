@@ -1,4 +1,4 @@
-import { Clock, Download } from "lucide-react";
+import { Clock, Download, Sparkles } from "lucide-react";
 import React from "react";
 import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
 import capabilities from "../capabilities/capabilities";
@@ -11,6 +11,7 @@ import rpcService, { CancelablePromise, FileEncoding } from "../service/rpc_serv
 import { Profile, readProfile, Thread } from "../trace/compact_trace";
 import TimingProfileDropTarget from "../trace/timing_profile_drop_target";
 import TraceViewer from "../trace/trace_viewer";
+import { triggerRemoteRun } from "../util/remote_runner";
 import InvocationBreakdownCardComponent from "./invocation_breakdown_card";
 import InvocationModel from "./invocation_model";
 import { getTimingDataSuggestion, SuggestionComponent } from "./invocation_suggestion_card";
@@ -89,6 +90,34 @@ export default class InvocationTimingCardComponent extends React.Component<Props
 
   componentWillUnmount() {
     this.cancelProfileLoad();
+  }
+
+  private suggestSpeedups() {
+    const invocationId = this.props.model.getInvocationId();
+    // Run `bb explain profile` on a remote runner. The profile is fetched from
+    // the API by invocation ID, so the runner doesn't need the repo checked out,
+    // and `bb` is already available in the runner workspace. Tag the runner
+    // invocation with PARENT_INVOCATION_ID so it links back to this invocation.
+    // The hosted runner exports BUILDBUDDY_API_TARGET and
+    // BUILDBUDDY_HTTP_TARGET so the analysis targets this app rather than the
+    // public defaults.
+    const command = `bb explain profile --agent=codex --target="$BUILDBUDDY_API_TARGET" --url="$BUILDBUDDY_HTTP_TARGET" ${invocationId}`;
+    // Run on a darwin/arm64 executor. Setting an empty container-image also
+    // suppresses triggerRemoteRun's default linux amd64 container image.
+    const platformProps = new Map<string, string>([
+      ["OSFamily", "darwin"],
+      ["Arch", "arm64"],
+      ["container-image", ""],
+    ]);
+    triggerRemoteRun(
+      this.props.model,
+      command,
+      false /*autoOpenChild*/,
+      platformProps,
+      ["--parent_invocation_id=" + invocationId],
+      true /*skipRepo*/,
+      "remote explain profile"
+    );
   }
 
   getProfileFile(): build_event_stream.File | undefined {
@@ -463,13 +492,19 @@ export default class InvocationTimingCardComponent extends React.Component<Props
           <div className="content">
             <div className="header">
               <div className="title">All events</div>
-              {downloadHref && (
-                <div className="button">
+              <div className="button timing-events-actions">
+                {!this.state.localProfileName && (
+                  <OutlinedButton className="suggest-speedups-button" onClick={this.suggestSpeedups.bind(this)}>
+                    <Sparkles className="icon" />
+                    Suggest speedups
+                  </OutlinedButton>
+                )}
+                {downloadHref && (
                   <LinkButton className="download-gz-file" href={downloadHref} target="_blank">
                     {this.state.localProfileName ? "Download invocation profile" : "Download profile"}
                   </LinkButton>
-                </div>
-              )}
+                )}
+              </div>
             </div>
             <div className="sort-controls">
               <div className="sort-control">

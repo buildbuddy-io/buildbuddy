@@ -183,6 +183,7 @@ var (
 	actionName         = flag.String("action_name", "", "If set, run the specified action and *only* that action, ignoring trigger conditions.")
 	serializedAction   = flag.String("serialized_action", "", "If set, run this b64+yaml encoded action, ignoring trigger conditions.")
 	invocationID       = flag.String("invocation_id", "", "If set, use the specified invocation ID for the workflow action. Ignored if action_name is not set.")
+	parentInvocationID = flag.String("parent_invocation_id", "", "If set, used as the PARENT_INVOCATION_ID build metadata for the runner invocation, linking it back to the invocation that triggered this run.")
 	visibility         = flag.String("visibility", "", "If set, use the specified value for VISIBILITY build metadata for the workflow invocation.")
 	timeout            = flag.Duration("timeout", 0, "Timeout before all commands will be canceled automatically.")
 	timeoutReason      = flag.String("timeout_reason", "", "Reason for the configured timeout.")
@@ -1084,6 +1085,9 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 		buildMetadata.Metadata["VISIBILITY"] = *visibility
 	}
 	buildMetadata.Metadata["RUN_ID"] = ws.runID
+	if *parentInvocationID != "" {
+		buildMetadata.Metadata["PARENT_INVOCATION_ID"] = *parentInvocationID
+	}
 	buildMetadataEvent := &bespb.BuildEvent{
 		Id:      &bespb.BuildEventId{Id: &bespb.BuildEventId_BuildMetadata{BuildMetadata: &bespb.BuildEventId_BuildMetadataId{}}},
 		Payload: &bespb.BuildEvent_BuildMetadata{BuildMetadata: buildMetadata},

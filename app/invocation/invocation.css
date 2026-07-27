@@ -1018,6 +1018,17 @@
   flex-grow: 0;
 }
 
+.header .button.timing-events-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+/* Match the download button's font size so both buttons are the same height. */
+.header .button.timing-events-actions .base-button {
+  font-size: 14px;
+}
+
 .button .download-gz-file {
   font-size: 14px;
 }

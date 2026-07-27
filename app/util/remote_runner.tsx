@@ -18,7 +18,11 @@ export function triggerRemoteRun(
   command: string,
   autoOpenChild: boolean,
   platformProps: Map<string, string> | null,
-  runnerFlags: string[] = []
+  runnerFlags: string[] = [],
+  // When true, don't check out a git repo on the runner. Use for commands that
+  // operate purely on remotely-fetched data and don't need the workspace.
+  skipRepo: boolean = false,
+  name: string = ""
 ) {
   command = command.replaceAll(/--[a-zA-Z_]+='\<REDACTED\>'/g, "");
   let execProps: build.bazel.remote.execution.v2.Platform.Property[] = [];
@@ -41,13 +45,18 @@ export function triggerRemoteRun(
   }
 
   const request = new runner.RunRequest({
-    gitRepo: new git.GitRepo({
-      repoUrl: invocationModel.getRepo(),
-    }),
-    repoState: new git.RepoState({
-      commitSha: invocationModel.getCommit(),
-      branch: invocationModel.getBranchName(),
-    }),
+    // Leaving the git repo unset causes the runner to skip the checkout.
+    gitRepo: skipRepo
+      ? undefined
+      : new git.GitRepo({
+          repoUrl: invocationModel.getRepo(),
+        }),
+    repoState: skipRepo
+      ? undefined
+      : new git.RepoState({
+          commitSha: invocationModel.getCommit(),
+          branch: invocationModel.getBranchName(),
+        }),
     steps: [
       new runner.Step({
         run: command,
@@ -64,6 +73,7 @@ export function triggerRemoteRun(
     },
     execProperties: execProps,
     runnerFlags: runnerFlags,
+    name: name,
   });
 
   rpcService.service
