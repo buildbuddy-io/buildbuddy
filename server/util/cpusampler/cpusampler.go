@@ -1,10 +1,15 @@
 // Package cpusampler attributes app CPU usage to individual gRPC methods and
 // customer groups.
 //
-// Every RPC handler runs with pprof labels identifying its method and
+// RPC handlers run with pprof labels identifying their method and
 // authenticated group ID (the interceptor runs at the end of the interceptor
 // chain, after auth, so pre-auth interceptor CPU stays unattributed); labels
-// are inherited by all goroutines spawned (transitively) by the handler. A
+// are inherited by all goroutines spawned (transitively) by the handler.
+// Unary RPCs are only labeled while a profiling window is active (see
+// samplingActive); streams are always labeled. Note that labeling by group
+// multiplies the distinct (stack, labelset) tuples the profile builder must
+// track, so profile size and StopCPUProfile cost scale with the number of
+// groups active during a window, not just distinct stacks. A
 // background sampler duty-cycles the runtime CPU profiler (a short window each
 // period, at a random offset so windows aren't aligned across instances),
 // aggregates the profile's CPU samples by label, and exports the totals as
@@ -22,6 +27,7 @@ import (
 	"math/rand/v2"
 	"runtime/pprof"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -57,6 +63,15 @@ const (
 	UnattributedLabelValue = "[unattributed]"
 )
 
+// samplingActive is true while a profiling window is running. Unary
+// interceptors only apply pprof labels while a window is active, so that the
+// hot path pays no labeling cost the (by default) ~83% of the time no
+// profiler is running. Stream handlers are labeled unconditionally: the cost
+// is per-stream rather than per-message, and streams can be long-lived (BES
+// event streams last hours) so they'd rarely start inside a window and would
+// otherwise go unattributed.
+var samplingActive atomic.Bool
+
 // Start launches the background sampling loop if enabled. The loop stops when
 // the server shuts down.
 func Start(env environment.Env) {
@@ -65,6 +80,9 @@ func Start(env environment.Env) {
 	}
 	if *window <= 0 || *period <= *window {
 		log.Errorf("Invalid cpu_sampler configuration: window (%s) must be positive and shorter than period (%s); not sampling.", *window, *period)
+		// Clear the flag so the interceptors don't pay labeling costs for a
+		// sampler that will never run.
+		*enabled = false
 		return
 	}
 	ctx, cancel := context.WithCancel(env.GetServerContext())
@@ -87,8 +105,11 @@ func run(ctx context.Context) {
 		cpuNanos, profiledDur, err := profileWindow(ctx, *window)
 		if err != nil {
 			// Most likely the profiler is already in use (e.g. an ad-hoc
-			// /debug/pprof/profile scrape); skip this cycle.
-			log.Debugf("CPU sampler: skipping cycle: %s", err)
+			// /debug/pprof/profile scrape); skip this cycle. The counter makes
+			// persistent skipping (something else holding the profiler)
+			// alertable; the log is already rate-limited by the cycle period.
+			metrics.CPUSamplerSkippedCycles.Inc()
+			log.Warningf("CPU sampler: skipping cycle: %s", err)
 		} else {
 			metrics.CPUSamplerProfiledWallTimeSeconds.Add(profiledDur.Seconds())
 			for k, nanos := range cpuNanos {
@@ -108,11 +129,17 @@ func run(ctx context.Context) {
 // actual profiled wall time.
 func profileWindow(ctx context.Context, dur time.Duration) (map[sampleKey]int64, time.Duration, error) {
 	buf := &bytes.Buffer{}
+	// Unary interceptors only label RPCs while samplingActive is set; set it
+	// before starting the profiler so no labeled samples are missed.
+	samplingActive.Store(true)
+	defer samplingActive.Store(false)
 	if err := pprof.StartCPUProfile(buf); err != nil {
 		return nil, 0, err
 	}
 	start := time.Now()
-	sleepCtx(ctx, dur)
+	// Context cancellation (shutdown) just ends the window early; the partial
+	// window is still valid since profiledDur measures actual elapsed time.
+	_ = sleepCtx(ctx, dur)
 	pprof.StopCPUProfile()
 	profiledDur := time.Since(start)
 
@@ -142,6 +169,7 @@ func cpuNanosByRPCLabels(p *profile.Profile) (map[sampleKey]int64, error) {
 	for i, st := range p.SampleType {
 		if st.Type == "cpu" && st.Unit == "nanoseconds" {
 			cpuIndex = i
+			break
 		}
 	}
 	if cpuIndex == -1 {
@@ -214,7 +242,13 @@ func rpcLabels(ctx context.Context, fullMethod string) pprof.LabelSet {
 // after the auth interceptor.
 func UnaryServerInterceptor() grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
-		if !*enabled {
+		// Only label while a profiling window is active: labels on unary RPCs
+		// are useless outside a window, and high-QPS methods shouldn't pay
+		// the label allocations for samples that will never be taken. RPCs
+		// already in flight when a window starts go unattributed, which
+		// slightly under-samples unary RPCs that are long relative to the
+		// window; unary RPCs here are short, so the bias is negligible.
+		if !*enabled || !samplingActive.Load() {
 			return handler(ctx, req)
 		}
 		var rsp any
@@ -234,7 +268,8 @@ type labeledStream struct {
 func (s *labeledStream) Context() context.Context { return s.ctx }
 
 // StreamServerInterceptor is the streaming equivalent of
-// UnaryServerInterceptor.
+// UnaryServerInterceptor. Unlike the unary interceptor, it labels streams
+// even when no profiling window is active (see samplingActive).
 func StreamServerInterceptor() grpc.StreamServerInterceptor {
 	return func(srv any, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
 		if !*enabled {

@@ -91,8 +91,15 @@ func TestProfileWindowAttributesCPUToLabeledGoroutines(t *testing.T) {
 	require.Greater(t, byKey[key], int64(0), "expected CPU samples attributed to %+v, got: %v", key, byKey)
 }
 
+// setSamplingActive simulates an in-progress profiling window.
+func setSamplingActive(t *testing.T) {
+	samplingActive.Store(true)
+	t.Cleanup(func() { samplingActive.Store(false) })
+}
+
 func TestUnaryServerInterceptorSetsLabels(t *testing.T) {
 	flags.Set(t, "cpu_sampler.enabled", true)
+	setSamplingActive(t)
 	interceptor := UnaryServerInterceptor()
 	info := &grpc.UnaryServerInfo{FullMethod: "/foo.Service/Bar"}
 
@@ -110,6 +117,7 @@ func TestUnaryServerInterceptorSetsLabels(t *testing.T) {
 
 func TestUnaryServerInterceptorAnonymous(t *testing.T) {
 	flags.Set(t, "cpu_sampler.enabled", true)
+	setSamplingActive(t)
 	interceptor := UnaryServerInterceptor()
 	info := &grpc.UnaryServerInfo{FullMethod: "/foo.Service/Bar"}
 
@@ -123,6 +131,7 @@ func TestUnaryServerInterceptorAnonymous(t *testing.T) {
 }
 
 func TestUnaryServerInterceptorDisabled(t *testing.T) {
+	setSamplingActive(t)
 	interceptor := UnaryServerInterceptor()
 	info := &grpc.UnaryServerInfo{FullMethod: "/foo.Service/Bar"}
 	var labelSet bool
@@ -132,4 +141,41 @@ func TestUnaryServerInterceptorDisabled(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.False(t, labelSet)
+}
+
+func TestUnaryServerInterceptorNoActiveWindow(t *testing.T) {
+	flags.Set(t, "cpu_sampler.enabled", true)
+	interceptor := UnaryServerInterceptor()
+	info := &grpc.UnaryServerInfo{FullMethod: "/foo.Service/Bar"}
+	var labelSet bool
+	_, err := interceptor(context.Background(), nil, info, func(ctx context.Context, req any) (any, error) {
+		_, labelSet = pprof.Label(ctx, RPCMethodLabelKey)
+		return nil, nil
+	})
+	require.NoError(t, err)
+	require.False(t, labelSet)
+}
+
+type fakeServerStream struct {
+	grpc.ServerStream
+	ctx context.Context
+}
+
+func (s *fakeServerStream) Context() context.Context { return s.ctx }
+
+func TestStreamServerInterceptorLabelsWithoutActiveWindow(t *testing.T) {
+	flags.Set(t, "cpu_sampler.enabled", true)
+	interceptor := StreamServerInterceptor()
+	info := &grpc.StreamServerInfo{FullMethod: "/foo.Service/Bar"}
+
+	ctx := claims.AuthContext(context.Background(), &claims.Claims{GroupID: "GR123"})
+	var gotMethod, gotGroup string
+	err := interceptor(nil, &fakeServerStream{ctx: ctx}, info, func(srv any, stream grpc.ServerStream) error {
+		gotMethod, _ = pprof.Label(stream.Context(), RPCMethodLabelKey)
+		gotGroup, _ = pprof.Label(stream.Context(), GroupIDLabelKey)
+		return nil
+	})
+	require.NoError(t, err)
+	require.Equal(t, "/foo.Service/Bar", gotMethod)
+	require.Equal(t, "GR123", gotGroup)
 }

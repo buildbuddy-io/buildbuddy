@@ -4579,7 +4579,7 @@ var (
 		Namespace: bbNamespace,
 		Subsystem: "cpu_sampler",
 		Name:      "sampled_cpu_nanos_per_group",
-		Help:      "On-CPU time observed during CPU profiling windows, in **CPU-nanoseconds**, attributed via pprof labels to the group on whose behalf it was spent. Samples not attributable to any group are recorded under the `[unattributed]` label value.",
+		Help:      "On-CPU time observed during CPU profiling windows, in **CPU-nanoseconds**, attributed via pprof labels to the group on whose behalf it was spent. Samples not attributable to any group are recorded under the `[unattributed]` label value. Note: GC assist CPU is attributed to the allocating goroutine's group, but dedicated GC worker CPU lands in `[unattributed]`, so allocation-heavy groups are somewhat under-counted.",
 	}, []string{
 		GroupID,
 	})
@@ -4591,22 +4591,30 @@ var (
 		Help:      "Total wall-clock time during which the CPU sampler's profiler was running, in **seconds**. Because profiling is duty-cycled, divide sampled_cpu_nanos rates by this rate to extrapolate actual CPU usage.",
 	})
 
+	CPUSamplerSkippedCycles = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "cpu_sampler",
+		Name:      "skipped_cycles",
+		Help:      "Number of profiling cycles the CPU sampler skipped, most commonly because the CPU profiler was already in use (e.g. an ad-hoc /debug/pprof/profile scrape). Persistent growth (with profiled_wall_time_seconds flatlining) means something is holding the profiler and CPU attribution data is not being collected.",
+	})
+
 	// #### Examples
 	//
 	// ```promql
 	// # Estimated CPU cores consumed by each gRPC method, extrapolated from
-	// # the sampled profiling windows.
+	// # the sampled profiling windows. (avg() computes the per-instance duty
+	// # cycle across the instances exporting the metric.)
 	// sum by (grpc_service, grpc_method) (rate(buildbuddy_cpu_sampler_sampled_cpu_nanos[10m])) * 1e-9
-	//   / scalar(sum(rate(buildbuddy_cpu_sampler_profiled_wall_time_seconds[10m])) / count(up))
+	//   / scalar(avg(rate(buildbuddy_cpu_sampler_profiled_wall_time_seconds[10m])))
 	//
 	// # Fraction of profiled CPU time spent on each gRPC method.
-	// sum by (grpc_service, grpc_method) (rate(buildbuddy_cpu_sampler_sampled_cpu_nanos[10m])) * 1e-9
-	//   / scalar(sum(rate(buildbuddy_cpu_sampler_profiled_wall_time_seconds[10m])))
+	// sum by (grpc_service, grpc_method) (rate(buildbuddy_cpu_sampler_sampled_cpu_nanos[10m]))
+	//   / scalar(sum(rate(buildbuddy_cpu_sampler_sampled_cpu_nanos[10m])))
 	//
 	// # Average CPU cost per request, by method (labels join grpc_server_handled_total).
 	// sum by (grpc_service, grpc_method) (rate(buildbuddy_cpu_sampler_sampled_cpu_nanos[10m]))
 	//   / sum by (grpc_service, grpc_method) (rate(grpc_server_handled_total[10m]))
-	//   / scalar(sum(rate(buildbuddy_cpu_sampler_profiled_wall_time_seconds[10m])) / count(up))
+	//   / scalar(avg(rate(buildbuddy_cpu_sampler_profiled_wall_time_seconds[10m])))
 	// ```
 )
 
