@@ -529,8 +529,47 @@ echo "Hello from sh_binary!"
 }
 
 func TestBuildRemotelyRunLocally_Runfiles(t *testing.T) {
-	repoDir, _ := makeLocalGitRepo(t, map[string]string{
-		"BUILD": `
+	tests := []struct {
+		name                      string
+		beforeRunfilesInitializer string
+		runfilePath               string
+		expectedOutput            string
+	}{
+		{
+			name:           "runs with runfiles",
+			runfilePath:    "_main/message.txt",
+			expectedOutput: "Hello from a runfile!",
+		},
+		// The CLI sets RUNFILES_DIR to point to the local downloaded runfiles directory.
+		// Even if that env var is unset, the executable should still be able to find the runfiles directory.
+		{
+			name: "runs even if RUNFILES_DIR is unset",
+			beforeRunfilesInitializer: `
+# Run the top-level executable without its runfiles environment to verify
+# that it can rediscover the downloaded runfiles directory. The marker prevents
+# this from looping.
+if [[ -z "${RUNFILES_REEXECUTED:-}" ]]; then
+  executable="${RUNFILES_DIR%.runfiles}"
+  exec env -i PATH="$PATH" RUNFILES_REEXECUTED=1 "$executable"
+fi
+`,
+			runfilePath:    "_main/message.txt",
+			expectedOutput: "Hello from a runfile!",
+		},
+		{
+			name:           "resolves apparent Bzlmod repo name",
+			runfilePath:    "messages/external_message.txt",
+			expectedOutput: "Hello from an external runfile!",
+		},
+	}
+
+	// Run a server and executor locally to run remote bazel against.
+	env, bbServer, _ := runLocalServerAndExecutor(t, "", "", nil)
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			repoDir, _ := makeLocalGitRepo(t, map[string]string{
+				"BUILD": `
 load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
 
 genrule(
@@ -550,13 +589,16 @@ genrule(
 sh_binary(
     name = "main",
     srcs = [":generated_script"],
-    data = [":generated_message"],
+    data = [
+        ":generated_message",
+        "@messages//:generated_message",
+    ],
     deps = ["@bazel_tools//tools/bash/runfiles"],
 )
 `,
-		"main.sh": `#!/usr/bin/env bash
+				"main.sh": `#!/usr/bin/env bash
 set -euo pipefail
-
+` + test.beforeRunfilesInitializer + `
 # Load the Bash library that defines rlocation.
 # Don't exit on the first failed lookup; try several possible locations.
 set +e
@@ -572,26 +614,42 @@ set -e
 
 # Look for the runfile message.txt. We should be able to successfully find it
 # on the local machine.
-message_path="$(rlocation _main/message.txt || true)"
+message_path="$(rlocation "` + test.runfilePath + `" || true)"
 if [[ -z "$message_path" ]]; then
-  echo >&2 "failed to find the runfile message.txt"
+  echo >&2 "failed to find the runfile ` + test.runfilePath + `"
   exit 1
 fi
 cat "$message_path"
 `,
-	})
+				"MODULE.bazel": `
+module(name = "runfiles_test")
+bazel_dep(name = "message_dep", version = "1.0", repo_name = "messages")
+local_path_override(module_name = "message_dep", path = "dep")
+`,
+				".bazelrc": "common --lockfile_mode=off\n",
+				"dep/MODULE.bazel": `
+module(name = "message_dep", version = "1.0")
+`,
+				"dep/BUILD": `
+genrule(
+    name = "generated_message",
+    outs = ["external_message.txt"],
+    cmd = "echo 'Hello from an external runfile!' > $@",
+    visibility = ["//visibility:public"],
+)
+`,
+			})
 
-	// Run a server and executor locally to run remote bazel against.
-	env, bbServer, _ := runLocalServerAndExecutor(t, "", "", nil)
-
-	randomStr := fmt.Sprintf("%d", time.Now().UnixMilli())
-	output := runRemoteBazelInSeparateProcess(t, repoDir, bbServer.GRPCAddress(),
-		"--runner_exec_properties=instance_name="+randomStr,
-		"--run_remotely=0",
-		"run",
-		":main",
-		fmt.Sprintf("--remote_header=x-buildbuddy-api-key=%s", env.APIKey1))
-	require.Contains(t, output, "Hello from a runfile!")
+			randomStr := fmt.Sprintf("%d", time.Now().UnixMilli())
+			output := runRemoteBazelInSeparateProcess(t, repoDir, bbServer.GRPCAddress(),
+				"--runner_exec_properties=instance_name="+randomStr,
+				"--run_remotely=0",
+				"run",
+				":main",
+				fmt.Sprintf("--remote_header=x-buildbuddy-api-key=%s", env.APIKey1))
+			require.Contains(t, output, test.expectedOutput)
+		})
+	}
 }
 
 func TestAccessingSecrets(t *testing.T) {

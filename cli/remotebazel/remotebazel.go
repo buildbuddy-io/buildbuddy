@@ -932,8 +932,8 @@ func findExecutableOutput(outputs []string, outputBaseDir, executablePath string
 	return "", fmt.Errorf("run executable %q not found among downloaded artifacts", executablePath)
 }
 
-// For runs that are build-remotely-run-locally, envWithRunfilesDir ensures the locally-run target resolves runfiles from the
-// downloaded runfiles directory. The runfiles manifest contains absolute paths from the
+// envWithRunfilesDir ensures a locally-run target (build-remotely-run-locally) resolves
+// runfiles from the downloaded runfiles directory. The runfiles manifest contains absolute paths from the
 // remote runner, and inherited runfiles variables may refer to the bb binary's
 // own runfiles, so remove those settings and explicitly set the runfiles directory.
 func envWithRunfilesDir(env []string, runfilesDir string) []string {
@@ -941,12 +941,29 @@ func envWithRunfilesDir(env []string, runfilesDir string) []string {
 	for _, entry := range env {
 		name, _, _ := strings.Cut(entry, "=")
 		switch name {
-		case "RUNFILES_DIR", "RUNFILES_MANIFEST_FILE", "RUNFILES_MANIFEST_ONLY", "RUNFILES_REPO_MAPPING":
+		case "RUNFILES_DIR", "RUNFILES_MANIFEST_FILE", "RUNFILES_MANIFEST_ONLY", "PYTHON_RUNFILES", "JAVA_RUNFILES":
 			continue
 		}
 		filteredEnv = append(filteredEnv, entry)
 	}
 	return append(filteredEnv, "RUNFILES_DIR="+runfilesDir)
+}
+
+// removeRunfilesManifests removes runfile manifests whose absolute paths refer to the
+// remote runner. These manifests exist because we download the complete runfiles directory.
+// Removing them ensures the executable will use the downloaded local runfiles directory instead.
+func removeRunfilesManifests(binPath, runfilesDir string) error {
+	manifestPaths := []string{
+		filepath.Join(runfilesDir, "MANIFEST"),
+		binPath + ".runfiles_manifest",
+		binPath + ".exe.runfiles_manifest",
+	}
+	for _, path := range manifestPaths {
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("remove runfiles manifest %q: %w", path, err)
+		}
+	}
+	return nil
 }
 
 func getWorkingDirectory(workspaceFilePath string) (string, error) {
@@ -1204,19 +1221,39 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 				if err != nil {
 					return 1, err
 				}
-				if err := os.Chmod(binPath, 0755); err != nil {
-					return 1, fmt.Errorf("prepare binary %q for execution: %w", binPath, err)
+				absBinPath, err := filepath.Abs(binPath)
+				if err != nil {
+					return 1, fmt.Errorf("compute absolute path for %q: %w", binPath, err)
 				}
+				if err := os.Chmod(absBinPath, 0755); err != nil {
+					return 1, fmt.Errorf("prepare binary %q for execution: %w", absBinPath, err)
+				}
+
+				// runfilesWorkDir is the working directory inside the downloaded runfiles tree.
+				runfilesWorkDir, err := filepath.Abs(filepath.Join(outputsBaseDir, BuildBuddyArtifactDir, runfilesRoot))
+				if err != nil {
+					return 1, fmt.Errorf("compute absolute runfiles working directory: %w", err)
+				}
+				// runfilesDir is the absolute path to the downloaded runfiles directory.
+				// This is one level up from the working directory `runfilesWorkDir`.
+				runfilesDir := filepath.Dir(runfilesWorkDir)
+				info, err := os.Stat(runfilesDir)
+				if err != nil {
+					return 1, fmt.Errorf("locate downloaded runfiles directory %q: %w", runfilesDir, err)
+				}
+				if !info.IsDir() {
+					return 1, fmt.Errorf("downloaded runfiles path %q is not a directory", runfilesDir)
+				}
+				if err := removeRunfilesManifests(absBinPath, runfilesDir); err != nil {
+					return 1, err
+				}
+
 				execArgs := defaultRunArgs
 				// Pass through extra arguments (-- --foo=bar) from the command line.
 				execArgs = append(execArgs, opts.ExecArgs...)
-				log.Debugf("Executing %q with arguments %s", binPath, execArgs)
-				cmd := exec.CommandContext(ctx, binPath, execArgs...)
-				cmd.Dir = filepath.Join(outputsBaseDir, BuildBuddyArtifactDir, runfilesRoot)
-				runfilesDir, err := filepath.Abs(binPath + ".runfiles")
-				if err != nil {
-					return 1, fmt.Errorf("compute runfiles directory for %q: %w", binPath, err)
-				}
+				log.Debugf("Executing %q with arguments %s", absBinPath, execArgs)
+				cmd := exec.CommandContext(ctx, absBinPath, execArgs...)
+				cmd.Dir = runfilesWorkDir
 				cmd.Env = envWithRunfilesDir(os.Environ(), runfilesDir)
 				cmd.Stdout = os.Stdout
 				cmd.Stderr = os.Stderr

@@ -771,7 +771,6 @@ func TestEnvWithRunfilesDir(t *testing.T) {
 		"RUNFILES_DIR=/old/runfiles",
 		"RUNFILES_MANIFEST_FILE=/old/MANIFEST",
 		"RUNFILES_MANIFEST_ONLY=1",
-		"RUNFILES_REPO_MAPPING=/old/_repo_mapping",
 		"USER=test",
 	}
 
