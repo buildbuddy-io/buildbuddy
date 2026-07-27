@@ -56,6 +56,7 @@ import (
 	"golang.org/x/text/message"
 	"golang.org/x/time/rate"
 
+	refpb "github.com/buildbuddy-io/buildbuddy/proto/reference"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	sgpb "github.com/buildbuddy-io/buildbuddy/proto/storage"
@@ -247,6 +248,9 @@ type accessTimeUpdate struct {
 	// propagation, so the external atime updater is not called.
 	skipRemoteUpdate bool
 }
+
+// Compile-time assertion that PebbleCache implements interfaces.ReferenceCache.
+var _ interfaces.ReferenceCache = (*PebbleCache)(nil)
 
 // PebbleCache implements the cache interface by storing metadata in a pebble
 // database and storing cache entry contents on disk.
@@ -2089,6 +2093,63 @@ func (p *PebbleCache) GetMulti(ctx context.Context, resources []*rspb.ResourceNa
 		return nil, err
 	}
 	return foundMap, nil
+}
+
+func (p *PebbleCache) GetReference(ctx context.Context, r *rspb.ResourceName) (*refpb.Reference, error) {
+	ctx, spn := tracing.StartSpan(ctx)
+	defer spn.End()
+
+	db, err := p.leaser.DB()
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+
+	encryption, err := p.activeEncryption(ctx)
+	if err != nil {
+		return nil, err
+	}
+	fileRecord, err := p.makeFileRecord(p.userGroupID(ctx), encryption, r)
+	if err != nil {
+		return nil, err
+	}
+	key, err := p.fileStorer.PebbleKey(fileRecord)
+	if err != nil {
+		return nil, err
+	}
+
+	unlockFn := p.locker.RLock(key.LockID())
+	// The metadata is handed to the caller, so don't use mem pooling here.
+	md := &sgpb.FileMetadata{}
+	err = p.lookupFileMetadata(ctx, db, key, md)
+	unlockFn()
+	if err != nil {
+		return nil, err
+	}
+
+	// If this object is somehow stored as a zero-length file, pretend it
+	// does not exist.
+	if md.StoredSizeBytes == 0 {
+		log.Infof("Ignoring zero-length file. Key: %q, md: %+v", key, md)
+		return nil, status.NotFoundError("object not found (zero-length)")
+	}
+	gcsMetadata := md.GetStorageMetadata().GetGcsMetadata()
+	if gcsMetadata == nil {
+		return nil, status.NotFoundErrorf("resource %q is not stored in shared storage", key.String())
+	}
+	// If the custom time is stale the object may already have been deleted by
+	// a GCS lifecycle rule; don't hand out a reference to it. This matches
+	// the behavior of the Reader() and Contains()/FindMissing() paths.
+	if gcsutil.ObjectIsPastTTL(p.clock, gcsMetadata, p.gcsTTLDays) {
+		return nil, status.NotFoundError("backing object may have expired")
+	}
+
+	// Handing out a reference is a read: bump the atime (which also refreshes
+	// the GCS custom time) so the object is not evicted out from under the
+	// peer that resolves this reference.
+	p.sendAtimeUpdate(ctx, key, md.GetLastAccessUsec())
+
+	return &refpb.Reference{Metadata: md}, nil
 }
 
 func (p *PebbleCache) Set(ctx context.Context, r *rspb.ResourceName, data []byte) error {

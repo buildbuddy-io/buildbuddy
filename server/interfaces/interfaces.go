@@ -43,6 +43,7 @@ import (
 	irpb "github.com/buildbuddy-io/buildbuddy/proto/iprules"
 	npb "github.com/buildbuddy-io/buildbuddy/proto/notification"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
+	refpb "github.com/buildbuddy-io/buildbuddy/proto/reference"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rppb "github.com/buildbuddy-io/buildbuddy/proto/repo"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
@@ -323,6 +324,12 @@ type Cache interface {
 type StoppableCache interface {
 	Cache
 	Stop() error
+}
+
+// A Cache implementation that supports reading and writing refpb.References.
+type ReferenceCache interface {
+	Cache
+	GetReference(ctx context.Context, r *rspb.ResourceName) (*refpb.Reference, error)
 }
 
 type PooledByteStreamClient interface {
