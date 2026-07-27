@@ -1,4 +1,3 @@
-load("@bazel_skylib//lib:shell.bzl", "shell")
 load("@bazel_skylib//rules:write_file.bzl", "write_file")
 load("@rules_multirun//:defs.bzl", "multirun")
 load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
