@@ -11,7 +11,7 @@ import rpcService, { CancelablePromise, FileEncoding } from "../service/rpc_serv
 import { Profile, readProfile, Thread } from "../trace/compact_trace";
 import TimingProfileDropTarget from "../trace/timing_profile_drop_target";
 import TraceViewer from "../trace/trace_viewer";
-import { triggerRemoteRun } from "../util/remote_runner";
+import { triggerRemoteRun, UI_CODEX_MODEL, UI_CODEX_REASONING_EFFORT } from "../util/remote_runner";
 import InvocationBreakdownCardComponent from "./invocation_breakdown_card";
 import InvocationModel from "./invocation_model";
 import { getTimingDataSuggestion, SuggestionComponent } from "./invocation_suggestion_card";
@@ -101,7 +101,7 @@ export default class InvocationTimingCardComponent extends React.Component<Props
     // The hosted runner exports BUILDBUDDY_API_TARGET and
     // BUILDBUDDY_HTTP_TARGET so the analysis targets this app rather than the
     // public defaults.
-    const command = `bb explain profile --agent=codex --target="$BUILDBUDDY_API_TARGET" --url="$BUILDBUDDY_HTTP_TARGET" ${invocationId}`;
+    const command = `bb explain profile --agent=codex --model=${UI_CODEX_MODEL} --effort=${UI_CODEX_REASONING_EFFORT} --target="$BUILDBUDDY_API_TARGET" --url="$BUILDBUDDY_HTTP_TARGET" ${invocationId}`;
     // Run on a darwin/arm64 executor. Setting an empty container-image also
     // suppresses triggerRemoteRun's default linux amd64 container image.
     const platformProps = new Map<string, string>([

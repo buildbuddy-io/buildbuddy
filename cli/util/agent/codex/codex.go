@@ -26,7 +26,7 @@ type event struct {
 //
 // Codex doesn't support a tool allowlist, so request.AllowedTools is ignored.
 // Commands run in a read-only sandbox unless the caller explicitly requests a
-// writable workspace.
+// writable workspace. Network access is disabled unless explicitly requested.
 func Run(ctx context.Context, request *agentutil.RunRequest) (*agentutil.RunResponse, error) {
 	if _, err := exec.LookPath("codex"); err != nil {
 		return nil, fmt.Errorf("codex is not installed or not in PATH")
@@ -65,6 +65,9 @@ func commandArgs(request *agentutil.RunRequest) []string {
 		"--sandbox", sandbox,
 		"--config", `approval_policy="never"`,
 		"--json",
+	}
+	if request.NetworkAccess {
+		args = append(args, "--config", "sandbox_workspace_write.network_access=true")
 	}
 	if request.Model != "" {
 		args = append(args, "--model", request.Model)

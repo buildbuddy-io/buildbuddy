@@ -77,6 +77,7 @@ interface Props {
   tab: string;
   search: URLSearchParams;
   preferences: UserPreferences;
+  renderRemoteRunResult?: (model: InvocationModel) => React.ReactNode;
 }
 
 const largePageSize = 100;
@@ -622,6 +623,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
             <div className="workflow-details-header">
               <h2>Run results</h2>
             </div>
+            {this.props.renderRemoteRunResult?.(this.state.model)}
           </div>
         )}
         <div className="container nopadding-dense">

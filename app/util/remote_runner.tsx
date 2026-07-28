@@ -7,6 +7,8 @@ import InvocationModel from "../invocation/invocation_model";
 import rpcService from "../service/rpc_service";
 
 const DEFAULT_CONTAINER_IMAGE = "docker://gcr.io/flame-public/rbe-ubuntu24-04:latest";
+export const UI_CODEX_MODEL = "gpt-5.4-mini";
+export const UI_CODEX_REASONING_EFFORT = "low";
 
 export async function supportsRemoteRun(repoUrl: string): Promise<boolean> {
   const rsp = await rpcService.service.getLinkedGitHubRepos(new github.GetLinkedReposRequest());

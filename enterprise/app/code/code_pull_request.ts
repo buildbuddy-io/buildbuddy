@@ -9,6 +9,7 @@ export async function createPullRequest({
   title,
   body,
   base,
+  baseCommit,
   head,
   createWhenEmpty,
   changes: changesOption,
@@ -18,6 +19,7 @@ export async function createPullRequest({
     owner,
     repo,
     base,
+    baseCommit,
     head,
     createWhenEmpty,
     changes: changesOption,
@@ -42,6 +44,7 @@ export async function updatePullRequest({
   owner,
   repo,
   base,
+  baseCommit,
   head,
   createWhenEmpty,
   changes: changesOption,
@@ -50,6 +53,7 @@ export async function updatePullRequest({
   owner: string;
   repo: string;
   base?: string;
+  baseCommit?: string;
   head: string;
   createWhenEmpty?: boolean;
   createRef?: boolean;
@@ -112,7 +116,7 @@ export async function updatePullRequest({
     new github.GetGithubCommitsRequest({
       owner,
       repo,
-      sha: base,
+      sha: baseCommit || base,
       perPage: new Long(1),
     })
   );
@@ -318,6 +322,7 @@ export type Options = {
   body: string;
   head: string;
   base?: string;
+  baseCommit?: string;
   createWhenEmpty?: boolean;
   changes: Changes | Changes[];
   draft?: boolean;
