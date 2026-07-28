@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"time"
@@ -20,10 +21,13 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/login"
 	"github.com/buildbuddy-io/buildbuddy/cli/version"
+	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/util/error_util"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
+	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rexec"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"google.golang.org/grpc/metadata"
@@ -34,6 +38,7 @@ import (
 	gwpb "github.com/buildbuddy-io/buildbuddy/proto/gateway"
 	gwsvcpb "github.com/buildbuddy-io/buildbuddy/proto/gateway_service"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
@@ -46,6 +51,15 @@ const (
 
 	// Used for cache uploads and remotely executed action.
 	digestFunction = repb.DigestFunction_BLAKE3
+
+	// remoteInstanceName is the remote instance name for box actions. The
+	// "bb-devbox" prefix (snaputil.DevboxPartitionPrefix) opts box VMs into
+	// remote snapshot sharing on the executor, so that a named box can be
+	// resumed by any executor rather than only the one that last ran it, and
+	// routes cache artifacts to the devbox cache partition. The
+	// "<prefix>/<name>" form matches the convention used by the other devbox
+	// producers (hosted runners, workflows).
+	remoteInstanceName = "bb-devbox/box"
 
 	// defaultImage is the container image used for box VMs. This image is
 	// pinned by digest and is likely already cached on BuildBuddy executors.
@@ -69,6 +83,11 @@ list: Lists the named boxes currently available for your group.
 
 `
 )
+
+// boxNameRE restricts box names to a safe character set: the name is used as
+// a runner recycling key, an output path component (so path traversal
+// characters must be rejected), and a gateway DNS name.
+var boxNameRE = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,63}$`)
 
 var (
 	createFlags = flag.NewFlagSet("box create", flag.ContinueOnError)
@@ -137,6 +156,13 @@ func handleCreate(args []string) (int, error) {
 	var boxName string
 	if positional := createFlags.Args(); len(positional) > 0 {
 		boxName = positional[0]
+		// The name is used as a runner recycling key, an output path
+		// component, and the gateway DNS name, so restrict it to a safe
+		// character set.
+		if !boxNameRE.MatchString(boxName) {
+			log.Printf("Invalid box name %q: names must start with an alphanumeric character and contain only alphanumerics, '_', '.', or '-' (max 64 characters)", boxName)
+			return 1, nil
+		}
 	}
 	recycleable := boxName != ""
 
@@ -195,6 +221,23 @@ func handleCreate(args []string) (int, error) {
 		execProps = append(execProps,
 			"recycle-runner=true",
 			platform.RunnerRecyclingKey+"="+boxName,
+			// Give the executor that last ran this box a head start when
+			// scheduling, so that resumes hit its warm local snapshot. (The
+			// server caps this via remote_execution.max_scheduling_delay.)
+			platform.RunnerRecyclingMaxWaitPropertyName+"=5s",
+			// By default, firecracker only saves a snapshot for non-CI
+			// actions if none exists yet, which would freeze the box's state
+			// at its first session. Always save so that changes made in each
+			// session persist to the next one.
+			platform.SnapshotSavePolicyPropertyName+"="+platform.AlwaysSaveSnapshot,
+			// The always-save policy above only covers the remote snapshot:
+			// the local manifest on a warm executor can lag one session
+			// behind, and the default read policy prefers it, which would
+			// roll the box back a session. Always read the newest (remote)
+			// manifest instead. Chunks referenced by it that are already in
+			// the executor's filecache are still reused, so most of the
+			// warm-start benefit is retained.
+			platform.SnapshotReadPolicyPropertyName+"="+platform.AlwaysReadNewestSnapshot,
 		)
 	}
 	plat, err := rexec.MakePlatform(execProps...)
@@ -231,16 +274,48 @@ func handleCreate(args []string) (int, error) {
 		},
 		Platform: plat,
 	}
+	if recycleable {
+		// Declare a stable output path per box name. This activates the
+		// scheduler's affinity routing (which routes on the first output
+		// path), so that resumes prefer the executor holding the warm local
+		// snapshot. The path is never actually produced by the action, which
+		// is fine.
+		cmd.OutputPaths = []string{"bb-box/" + boxName}
+	}
 	action := &repb.Action{
 		DoNotCache: true,
 		Timeout:    durationpb.New(actionTimeout),
 	}
 
-	arn, err := rexec.Prepare(ctx, env, "bb-cli-box", digestFunction, action, cmd, inputDir)
+	arn, err := rexec.Prepare(ctx, env, remoteInstanceName, digestFunction, action, cmd, inputDir)
 	if err != nil {
 		return -1, fmt.Errorf("preparing action: %w", err)
 	}
 
+	bbClient := bbspb.NewBuildBuddyServiceClient(conn)
+
+	// If a named box's snapshot disappears between the executor's initial
+	// existence check and the VM load (e.g. local filecache eviction), the
+	// action fails with a SNAPSHOT_NOT_FOUND error. Retry once: on the next
+	// attempt the executor re-checks for the snapshot, misses, and does a
+	// normal cold boot. The failed attempt never ran the command inside the
+	// VM, so the same action and invocation ID can be reused.
+	var code int
+	r := retry.New(ctx, &retry.Options{MaxRetries: 2})
+	for r.Next() {
+		code, err = startAndAwaitReady(ctx, env, arn, bbClient, iid)
+		if err != nil && error_util.IsSnapshotNotFoundError(err) {
+			log.Printf("Box snapshot is no longer available; starting a fresh VM... (%s)", err)
+			continue
+		}
+		break
+	}
+	return code, err
+}
+
+// startAndAwaitReady starts the box action and polls the BES event log until
+// bb ssh-server writes its READY line, or the action fails.
+func startAndAwaitReady(ctx context.Context, env environment.Env, arn *rspb.ResourceName, bbClient bbspb.BuildBuddyServiceClient, iid string) (int, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -250,7 +325,7 @@ func handleCreate(args []string) (int, error) {
 	}
 
 	// Watch the operation stream for failures and cancel the context so the
-	// BES poll below unblocks immediately.
+	// readiness polls below unblock immediately.
 	streamErrCh := make(chan error, 1)
 	go func() {
 		for {
@@ -275,9 +350,7 @@ func handleCreate(args []string) (int, error) {
 		}
 	}()
 
-	// Poll the BES event log until the ssh-server writes its READY line.
 	log.Printf("Waiting for VM to start...")
-	bbClient := bbspb.NewBuildBuddyServiceClient(conn)
 	type readyResult struct {
 		*url.URL
 		err error
