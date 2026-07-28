@@ -25,7 +25,8 @@ type event struct {
 // Run executes a Codex agent command.
 //
 // Codex doesn't support a tool allowlist, so request.AllowedTools is ignored.
-// Instead, commands are run in a read-only sandbox.
+// Commands run in a read-only sandbox unless the caller explicitly requests a
+// writable workspace.
 func Run(ctx context.Context, request *agentutil.RunRequest) (*agentutil.RunResponse, error) {
 	if _, err := exec.LookPath("codex"); err != nil {
 		return nil, fmt.Errorf("codex is not installed or not in PATH")
@@ -33,6 +34,7 @@ func Run(ctx context.Context, request *agentutil.RunRequest) (*agentutil.RunResp
 
 	args := commandArgs(request)
 	cmd := exec.CommandContext(ctx, "codex", args...)
+	cmd.Env = agentutil.ChildProcessEnv()
 	cmd.Stdin = strings.NewReader(request.Prompt)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -52,11 +54,15 @@ func Run(ctx context.Context, request *agentutil.RunRequest) (*agentutil.RunResp
 
 func commandArgs(request *agentutil.RunRequest) []string {
 	// Codex does not support a tool allowlist equivalent to Claude's
-	// --allowedTools. Run without approvals in a read-only sandbox.
+	// --allowedTools. Run without approval prompts in a sandbox.
+	sandbox := "read-only"
+	if request.WritableWorkspace {
+		sandbox = "workspace-write"
+	}
 	args := []string{
 		"exec",
 		"--skip-git-repo-check",
-		"--sandbox", "read-only",
+		"--sandbox", sandbox,
 		"--config", `approval_policy="never"`,
 		"--json",
 	}

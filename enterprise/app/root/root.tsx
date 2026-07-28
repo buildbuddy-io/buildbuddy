@@ -12,10 +12,15 @@ import errorService from "../../../app/errors/error_service";
 import faviconService from "../../../app/favicon/favicon";
 import FooterComponent from "../../../app/footer/footer";
 import InvocationComponent from "../../../app/invocation/invocation";
+import InvocationModel from "../../../app/invocation/invocation_model";
 import MenuComponent from "../../../app/menu/menu";
 import TimingProfilePageComponent from "../../../app/profile/profile";
 import router, { Path } from "../../../app/router/router";
-import Shortcuts from "../../../app/shortcuts/shortcuts";
+import Shortcuts, { KeyCombo } from "../../../app/shortcuts/shortcuts";
+import { supportsRemoteRun, triggerRemoteRun } from "../../../app/util/remote_runner";
+import { quote } from "../../../app/util/shlex";
+import { invocation } from "../../../proto/invocation_ts_proto";
+import AskBuildBuddyModal, { AskBuildBuddyRepository, AskBuildBuddyRequest } from "../ask/ask_buildbuddy_modal";
 import AuditLogsComponent from "../auditlogs/auditlogs";
 import GroupSearchComponent from "../group_search/group_search";
 import HistoryComponent from "../history/history";
@@ -57,6 +62,7 @@ interface State {
   preferences: UserPreferences;
   loading: boolean;
   keyboardShortcutHelpShowing: boolean;
+  askBuildBuddyOpen: boolean;
 }
 
 capabilities.register("BuildBuddy Enterprise", true, [
@@ -166,7 +172,10 @@ export default class EnterpriseRootComponent extends React.Component {
     search: new URLSearchParams(window.location.search),
     preferences: new UserPreferences(this.handlePreferencesChanged.bind(this)),
     keyboardShortcutHelpShowing: false,
+    askBuildBuddyOpen: false,
   };
+
+  private askBuildBuddyShortcutHandle?: string;
 
   componentWillMount() {
     if (!capabilities.auth) {
@@ -185,6 +194,9 @@ export default class EnterpriseRootComponent extends React.Component {
   componentDidMount() {
     errorService.register();
     this.updateDarkModeClass();
+    this.askBuildBuddyShortcutHandle = Shortcuts.registerSequence([KeyCombo.b, KeyCombo.b], () => {
+      this.setState({ askBuildBuddyOpen: true });
+    });
   }
 
   private updateDarkModeClass() {
@@ -192,7 +204,91 @@ export default class EnterpriseRootComponent extends React.Component {
   }
 
   componentWillUnmount() {
+    if (this.askBuildBuddyShortcutHandle) {
+      Shortcuts.deregister(this.askBuildBuddyShortcutHandle);
+    }
     this.state.preferences.cleanup();
+  }
+
+  private submitAskBuildBuddy(request: AskBuildBuddyRequest) {
+    const command = [
+      "bb ask",
+      "--agent=codex",
+      '--target="$BUILDBUDDY_API_TARGET"',
+      '--url="$BUILDBUDDY_HTTP_TARGET"',
+      ...request.invocationIds.map((invocationId) => quote(`--invocation_id=${invocationId}`)),
+      "--",
+      quote(request.question),
+    ].join(" ");
+    const invocationModel = new InvocationModel(
+      new invocation.Invocation({
+        repoUrl: request.repository?.repoUrl,
+        commitSha: request.repository?.commitSha,
+        branchName: request.repository?.branch,
+      })
+    );
+    const platformProps = new Map<string, string>([
+      ["OSFamily", "darwin"],
+      ["Arch", "arm64"],
+      ["container-image", ""],
+    ]);
+    const runnerFlags = ["--disable_git_push=true"];
+    if (request.invocationIds[0]) {
+      runnerFlags.push(`--parent_invocation_id=${request.invocationIds[0]}`);
+    }
+    const username = this.state.user?.displayUser.username;
+
+    this.setState({ askBuildBuddyOpen: false });
+    triggerRemoteRun(
+      invocationModel,
+      command,
+      false /*autoOpenChild*/,
+      platformProps,
+      runnerFlags,
+      !request.repository /*skipRepo*/,
+      username ? `${username}'s remote Ask BuildBuddy` : "remote Ask BuildBuddy",
+      false /*openInNewTab*/
+    );
+  }
+
+  private async includeAskBuildBuddyRepository(invocationIds: string[]): Promise<AskBuildBuddyRepository | undefined> {
+    try {
+      const invocations = await Promise.all(
+        invocationIds.map(async (invocationId) => {
+          const response = await rpc_service.service.getInvocation(
+            new invocation.GetInvocationRequest({
+              lookup: new invocation.InvocationLookup({ invocationId }),
+            })
+          );
+          if (!response.invocation.length) {
+            throw new Error(`Invocation ${invocationId} was not found.`);
+          }
+          return response.invocation[0];
+        })
+      );
+      const repository = invocations[0];
+      if (!repository?.repoUrl) {
+        throw new Error("The current invocation does not include a repository URL.");
+      }
+      if (invocations.some((invocation) => invocation.repoUrl !== repository.repoUrl)) {
+        throw new Error("Repository context is not supported when comparing builds from different repositories.");
+      }
+      if (!(await supportsRemoteRun(repository.repoUrl))) {
+        alert_service.error(
+          `${repository.repoUrl} is not linked. Link the repository in GitHub settings before including it.`
+        );
+        this.setState({ askBuildBuddyOpen: false }, () => router.navigateTo(Path.settingsOrgGitHubLinkPath));
+        return undefined;
+      }
+      return {
+        repoUrl: repository.repoUrl,
+        commitSha: repository.commitSha,
+        branch: repository.branchName,
+      };
+    } catch (error) {
+      errorService.handleError(error);
+      return undefined;
+    }
   }
 
   handlePathChange() {
@@ -220,6 +316,17 @@ export default class EnterpriseRootComponent extends React.Component {
     let invocationId = router.getInvocationId(this.state.path);
     let compareInvocationIds = this.state.user && router.getInvocationIdsForCompare(this.state.path);
     let compareActionDetails = this.state.user && router.getActionDetailsForCompare(this.state.path);
+    const askBuildBuddyInvocationIds = Array.from(
+      new Set(
+        invocationId
+          ? [invocationId]
+          : compareInvocationIds
+            ? [compareInvocationIds.a, compareInvocationIds.b]
+            : compareActionDetails
+              ? [compareActionDetails.invocationA, compareActionDetails.invocationB]
+              : []
+      )
+    );
     let historyUser = this.state.user && router.getHistoryUser(this.state.path);
     let historyHost = this.state.user && router.getHistoryHost(this.state.path);
     let historyRepo = this.state.user && router.getHistoryRepo(this.state.path);
@@ -494,6 +601,13 @@ export default class EnterpriseRootComponent extends React.Component {
           <AlertComponent />
           <PickerComponent />
           <ShortcutsComponent preferences={this.state.preferences} />
+          <AskBuildBuddyModal
+            isOpen={this.state.askBuildBuddyOpen}
+            invocationIds={askBuildBuddyInvocationIds}
+            onRequestClose={() => this.setState({ askBuildBuddyOpen: false })}
+            onIncludeRepository={this.includeAskBuildBuddyRepository.bind(this)}
+            onSubmit={this.submitAskBuildBuddy.bind(this)}
+          />
           <DebugMenu preferences={this.state.preferences} />
         </div>
       </>
