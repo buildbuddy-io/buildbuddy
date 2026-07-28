@@ -566,7 +566,7 @@ func (c *Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName)
 
 // readBufSize returns the buffer size to allocate to hold the full contents
 // of r, whose stored metadata is md.
-func (c *Cache) readBufSize(r *rspb.ResourceName, md *sgpb.FileMetadata) int64 {
+func (c *Cache) readBufSize(r *rspb.ResourceName, md *sgpb.FileMetadata, reader io.Reader) int64 {
 	// If the requested compression matches the stored compression, the
 	// data is returned as stored, so the stored size from the file
 	// metadata is the right buffer size. Otherwise the data is compressed
@@ -577,10 +577,10 @@ func (c *Cache) readBufSize(r *rspb.ResourceName, md *sgpb.FileMetadata) int64 {
 	} else {
 		bufSize = int64(digest.SafeBufferSize(r, maxReadBufferSize))
 	}
-	// Blob-backed reads go through Buffer.ReadFrom, which needs MinRead
-	// spare capacity to detect EOF without growing the buffer. Inline
-	// reads copy directly via bytes.Reader.WriteTo and don't need the pad.
-	if r.GetDigest().GetSizeBytes() >= c.opts.MaxInlineFileSizeBytes {
+	// WriteTo allows copying without a second read to get EOF. Without that
+	// bytes.Buffer.ReadFrom will allocate an extra bytes.MinRead unless we
+	// oversize it.
+	if _, ok := reader.(io.WriterTo); !ok {
 		bufSize += bytes.MinRead
 	}
 	return bufSize
@@ -607,7 +607,7 @@ func (c *Cache) Get(ctx context.Context, r *rspb.ResourceName) (res []byte, resu
 	}
 	defer rc.Close()
 
-	buf := bytes.NewBuffer(make([]byte, 0, c.readBufSize(r, md)))
+	buf := bytes.NewBuffer(make([]byte, 0, c.readBufSize(r, md, rc)))
 	_, err = io.Copy(buf, rc)
 	return buf.Bytes(), err
 }
@@ -693,7 +693,7 @@ func (c *Cache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (m
 					}
 					return err
 				}
-				buf := bytes.NewBuffer(make([]byte, 0, c.readBufSize(r, hit.md)))
+				buf := bytes.NewBuffer(make([]byte, 0, c.readBufSize(r, hit.md, rc)))
 				_, copyErr := io.Copy(buf, rc)
 				closeErr := rc.Close()
 				if copyErr != nil {
