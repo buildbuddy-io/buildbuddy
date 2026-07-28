@@ -368,3 +368,118 @@ func TestMultiGetSet(t *testing.T) {
 		require.Equal(t, d.GetHash(), d2.GetHash(), "d=%v; d2=%v", d, d2)
 	}
 }
+
+// CAS is content-addressed, so a blob written under one remote instance name
+// must be readable under another. GetMulti pairs results to requests by
+// position (not by re-deriving an instance-sensitive key), so this holds.
+func TestGetMultiCrossInstance(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
+	ctx := getAnonContext(t, te)
+	clock := clockwork.NewFakeClock()
+
+	options := metacache.Options{
+		Name:                        "TestGetMultiCrossInstance",
+		MaxInlineFileSizeBytes:      1000,
+		MinBytesAutoZstdCompression: 100,
+		GCSTTLDays:                  1,
+	}
+	bc := runMetacache(t, te, clock, options)
+
+	// Write a CAS blob under one remote instance name.
+	writeRN, buf := testdigest.NewRandomResourceAndBuf(t, 256, rspb.CacheType_CAS, "instance-a")
+	require.NoError(t, bc.Set(ctx, writeRN, buf))
+
+	// Read the same content back under a different remote instance name.
+	readRN := digest.NewResourceName(writeRN.GetDigest(), "instance-b", rspb.CacheType_CAS, repb.DigestFunction_SHA256).ToProto()
+	m, err := bc.GetMulti(ctx, []*rspb.ResourceName{readRN})
+	require.NoError(t, err)
+	got, ok := m[readRN.GetDigest()]
+	require.True(t, ok, "GetMulti should find a CAS blob written under a different instance name")
+	require.Equal(t, buf, got)
+}
+
+// AC entries stay instance-isolated: GetMulti must not leak one across
+// instance names.
+func TestGetMultiACInstanceIsolation(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
+	ctx := getAnonContext(t, te)
+	clock := clockwork.NewFakeClock()
+
+	options := metacache.Options{
+		Name:                        "TestGetMultiACInstanceIsolation",
+		MaxInlineFileSizeBytes:      1000,
+		MinBytesAutoZstdCompression: 100,
+		GCSTTLDays:                  1,
+	}
+	bc := runMetacache(t, te, clock, options)
+
+	// Write an AC entry under one remote instance name.
+	writeRN, buf := testdigest.NewRandomResourceAndBuf(t, 256, rspb.CacheType_AC, "instance-a")
+	require.NoError(t, bc.Set(ctx, writeRN, buf))
+
+	// The same AC digest under a different instance name must be a miss.
+	readRN := digest.NewResourceName(writeRN.GetDigest(), "instance-b", rspb.CacheType_AC, repb.DigestFunction_SHA256).ToProto()
+	m, err := bc.GetMulti(ctx, []*rspb.ResourceName{readRN})
+	require.NoError(t, err)
+	_, ok := m[readRN.GetDigest()]
+	require.False(t, ok, "AC entry must not be returned under a different instance name")
+}
+
+// GetMulti with only misses returns an empty map (exercises the zero-hit
+// chunking path).
+func TestGetMultiAllMisses(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
+	ctx := getAnonContext(t, te)
+	clock := clockwork.NewFakeClock()
+
+	options := metacache.Options{
+		Name:                        "TestGetMultiAllMisses",
+		MaxInlineFileSizeBytes:      1000,
+		MinBytesAutoZstdCompression: 100,
+		GCSTTLDays:                  1,
+	}
+	bc := runMetacache(t, te, clock, options)
+
+	// Never written, so both are misses.
+	r1, _ := testdigest.NewRandomResourceAndBuf(t, 100, rspb.CacheType_CAS, "")
+	r2, _ := testdigest.NewRandomResourceAndBuf(t, 200, rspb.CacheType_CAS, "")
+	m, err := bc.GetMulti(ctx, []*rspb.ResourceName{r1, r2})
+	require.NoError(t, err)
+	require.Empty(t, m)
+}
+
+// A miss in the middle of the request must not shift results: GetMulti relies
+// on the metadata response being index-aligned to the request.
+func TestGetMultiAlignmentWithMisses(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
+	ctx := getAnonContext(t, te)
+	clock := clockwork.NewFakeClock()
+
+	options := metacache.Options{
+		Name:                        "TestGetMultiAlignmentWithMisses",
+		MaxInlineFileSizeBytes:      1000,
+		MinBytesAutoZstdCompression: 100,
+		GCSTTLDays:                  1,
+	}
+	bc := runMetacache(t, te, clock, options)
+
+	present1, buf1 := testdigest.NewRandomResourceAndBuf(t, 100, rspb.CacheType_CAS, "")
+	present2, buf2 := testdigest.NewRandomResourceAndBuf(t, 200, rspb.CacheType_CAS, "")
+	require.NoError(t, bc.Set(ctx, present1, buf1))
+	require.NoError(t, bc.Set(ctx, present2, buf2))
+	// Never written, so it is a miss.
+	absent, _ := testdigest.NewRandomResourceAndBuf(t, 150, rspb.CacheType_CAS, "")
+
+	// Interleave a miss between two hits so a positional bug would misalign.
+	m, err := bc.GetMulti(ctx, []*rspb.ResourceName{present1, absent, present2})
+	require.NoError(t, err)
+	require.Len(t, m, 2)
+	require.Equal(t, buf1, m[present1.GetDigest()])
+	require.Equal(t, buf2, m[present2.GetDigest()])
+	_, ok := m[absent.GetDigest()]
+	require.False(t, ok, "absent resource should not be returned")
+}

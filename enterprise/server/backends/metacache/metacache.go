@@ -276,42 +276,8 @@ func (c *Cache) makeFileRecord(groupID string, encryption *sgpb.Encryption, r *r
 	}, nil
 }
 
-// key is a comparable key for uniquely identifying a ResourceName/FileRecord.
-// Note: groupID, partitionID, and encryptionKeyID are deliberately omitted
-// because these fields are set by the server based on request context.
-type key struct {
-	cacheType          rspb.CacheType
-	remoteInstanceName string
-	hash               string
-	sizeBytes          int64
-	digestFunction     repb.DigestFunction_Value
-}
-
-// keyFromFileRecord creates a key from a FileRecord.
-func keyFromFileRecord(fr *sgpb.FileRecord) key {
-	iso := fr.GetIsolation()
-	d := fr.GetDigest()
-	return key{
-		cacheType:          iso.GetCacheType(),
-		remoteInstanceName: iso.GetRemoteInstanceName(),
-		hash:               string(d.GetHash()),
-		sizeBytes:          d.GetSizeBytes(),
-		digestFunction:     fr.GetDigestFunction(),
-	}
-}
-
-// keyFromResourceName creates a key from a ResourceName.
-func keyFromResourceName(r *rspb.ResourceName) key {
-	d := r.GetDigest()
-	return key{
-		cacheType:          r.GetCacheType(),
-		remoteInstanceName: r.GetInstanceName(),
-		hash:               string(d.GetHash()),
-		sizeBytes:          d.GetSizeBytes(),
-		digestFunction:     r.GetDigestFunction(),
-	}
-}
-
+// lookupMetadatas returns metadata index-aligned to records; a not-found entry
+// carries a nil FileRecord (an empty FileMetadata after proto round-trip).
 func (c *Cache) lookupMetadatas(ctx context.Context, records ...*sgpb.FileRecord) ([]*sgpb.FileMetadata, error) {
 	req := &mdpb.GetRequest{
 		FileRecords: records,
@@ -644,30 +610,37 @@ func (c *Cache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (m
 		return nil, err
 	}
 
-	keyToMetadata := make(map[key]*sgpb.FileMetadata, len(mds))
-	for _, md := range mds {
-		if md.GetFileRecord() == nil {
+	// mds is index-aligned to resources (see metadata.proto GetResponse), nil
+	// FileRecord on a miss. Pairing by position mirrors the server's match: CAS
+	// by content hash (size/instance excluded, like Get), AC instance-isolated.
+	if len(mds) != len(resources) {
+		// Aligned 1:1 is the server contract; a mismatch is a server bug.
+		log.CtxErrorf(ctx, "[%s] GetMulti metadata length %d != request length %d", c.opts.Name, len(mds), len(resources))
+		return nil, status.InternalErrorf("metadata response length %d does not match request length %d", len(mds), len(resources))
+	}
+	type resourceMetadata struct {
+		resource *rspb.ResourceName
+		md       *sgpb.FileMetadata
+	}
+	hits := make([]resourceMetadata, 0, len(resources))
+	for i, r := range resources {
+		if mds[i].GetFileRecord() == nil {
 			// Missing metadata, skip
 			continue
 		}
-		k := keyFromFileRecord(md.GetFileRecord())
-		keyToMetadata[k] = md
+		hits = append(hits, resourceMetadata{resource: r, md: mds[i]})
 	}
 
 	var foundMu sync.Mutex
-	foundMap := make(map[*repb.Digest][]byte, len(keyToMetadata))
+	foundMap := make(map[*repb.Digest][]byte, len(hits))
 	eg, ctx := errgroup.WithContext(ctx)
 	numChunks := c.opts.MaxReadGoroutines
-	chunkSize := (len(resources) + numChunks - 1) / numChunks
-	for chunk := range slices.Chunk(resources, int(chunkSize)) {
+	chunkSize := max(1, (len(hits)+numChunks-1)/numChunks)
+	for chunk := range slices.Chunk(hits, chunkSize) {
 		eg.Go(func() error {
-			for _, r := range chunk {
-				k := keyFromResourceName(r)
-				md, ok := keyToMetadata[k]
-				if !ok {
-					continue
-				}
-				rc, err := c.reader(ctx, md, r, 0, 0, encryption)
+			for _, hit := range chunk {
+				r := hit.resource
+				rc, err := c.reader(ctx, hit.md, r, 0, 0, encryption)
 				if err != nil {
 					if status.IsNotFoundError(err) || os.IsNotExist(err) {
 						continue
