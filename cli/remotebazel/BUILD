@@ -12,6 +12,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/remotebazel",
     deps = [
         "//cli/arg",
+        "//cli/artifacts",
         "//cli/log",
         "//cli/login",
         "//cli/parser",
