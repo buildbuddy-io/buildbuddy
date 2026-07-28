@@ -96,9 +96,9 @@ func New(env environment.Env) (interfaces.TaskRouter, error) {
 	// list have higher precedence)
 	strategies := []Router{
 		&ciRunnerRouter{rdb: rdb},
-		&recycledRunnerRouter{rdb: rdb},
 		&persistentWorkerRouter{env: env, rdb: rdb},
 		&affinityRouter{rdb: rdb},
+		&recycledRunnerRouter{rdb: rdb},
 	}
 	return &taskRouter{
 		env:        env,
@@ -508,8 +508,13 @@ func (s *ciRunnerRouter) RoutingInfo(params routingParams) (int, []string, error
 // The recycledRunnerRouter routes tasks that request runner recycling with an
 // explicit runner-recycling-key (e.g. `bb box` VMs) back to the executor that
 // last ran a task with the same key, so that paused runners and local VM
-// snapshots can be reused. CI runner tasks are handled by the higher-priority
-// ciRunnerRouter, which additionally routes on git branch info.
+// snapshots can be reused.
+//
+// This is the lowest-priority strategy: it only handles recycling tasks with
+// no other routing signal. CI runner tasks route by git branch info
+// (ciRunnerRouter), and tasks with declared outputs route by their first
+// output (affinityRouter) — many test targets can share one recycling key, so
+// routing them all by that key alone would funnel them onto a single host.
 type recycledRunnerRouter struct {
 	rdb redis.UniversalClient
 }
@@ -548,18 +553,18 @@ func (s *recycledRunnerRouter) GetPreferredHostIDs(ctx context.Context, routingK
 }
 
 func (s *recycledRunnerRouter) UpdatePreferredHostIDs(ctx context.Context, taskSucceeded bool, preferredNodeLimit int, routingKey, executorHostID string) error {
+	// Note: taskSucceeded is intentionally ignored. A task exiting non-zero
+	// (a failing test, a `bb box` session ending with a failed command) says
+	// nothing about the health of the runner snapshot on this host, and with
+	// a node limit of 1, removing the entry would discard the only pointer to
+	// the executor holding the warm snapshot.
 	pipe := s.rdb.TxPipeline()
-	if taskSucceeded {
-		// Push the node to the head of the list (but first remove it if already
-		// present to avoid dupes), trim to max length to prevent it from growing
-		// too large, and renew the TTL.
-		pipe.LRem(ctx, routingKey, 1, executorHostID)
-		pipe.LPush(ctx, routingKey, executorHostID)
-		pipe.LTrim(ctx, routingKey, 0, int64(preferredNodeLimit)-1)
-	} else {
-		// Note: -1 means remove all occurrences.
-		pipe.LRem(ctx, routingKey, -1, executorHostID).Err()
-	}
+	// Push the node to the head of the list (but first remove it if already
+	// present to avoid dupes), trim to max length to prevent it from growing
+	// too large, and renew the TTL.
+	pipe.LRem(ctx, routingKey, 1, executorHostID)
+	pipe.LPush(ctx, routingKey, executorHostID)
+	pipe.LTrim(ctx, routingKey, 0, int64(preferredNodeLimit)-1)
 	pipe.Expire(ctx, routingKey, routingPropsKeyTTL)
 	_, err := pipe.Exec(ctx)
 	return err
