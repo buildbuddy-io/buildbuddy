@@ -2018,7 +2018,7 @@ func (p *PebbleCache) lookupFileMetadataBytes(db pebble.IPebbleDB, key filestore
 
 // readBufSize returns the buffer size to allocate to hold the full contents
 // of r, whose stored metadata is md.
-func (p *PebbleCache) readBufSize(r *rspb.ResourceName, md *sgpb.FileMetadata) int64 {
+func (p *PebbleCache) readBufSize(r *rspb.ResourceName, md *sgpb.FileMetadata, reader io.Reader) int64 {
 	// If the requested compression matches the stored compression, the data is
 	// returned as stored, so the stored size from the file metadata is the
 	// right buffer size. Otherwise the data is compressed or decompressed while
@@ -2029,10 +2029,10 @@ func (p *PebbleCache) readBufSize(r *rspb.ResourceName, md *sgpb.FileMetadata) i
 	} else {
 		bufSize = int64(digest.SafeBufferSize(r, maxReadBufferSize))
 	}
-	// Non-inline reads go through Buffer.ReadFrom, which needs MinRead spare
-	// capacity to detect EOF without growing the buffer. Inline reads copy
-	// directly via bytes.Reader.WriteTo and don't need the pad.
-	if r.GetDigest().GetSizeBytes() >= p.maxInlineFileSizeBytes {
+	// WriteTo allows copying without a second read to get EOF. Without that
+	// bytes.Buffer.ReadFrom will allocate an extra bytes.MinRead unless we
+	// oversize it.
+	if _, ok := reader.(io.WriterTo); !ok {
 		bufSize += bytes.MinRead
 	}
 	return bufSize
@@ -2066,7 +2066,7 @@ func (p *PebbleCache) GetWithMetadata(ctx context.Context, r *rspb.ResourceName)
 		return nil, nil, err
 	}
 	defer rc.Close()
-	buf := bytes.NewBuffer(make([]byte, 0, p.readBufSize(r, md)))
+	buf := bytes.NewBuffer(make([]byte, 0, p.readBufSize(r, md, rc)))
 	_, err = io.Copy(buf, rc)
 	if err != nil {
 		return nil, nil, err
@@ -2120,7 +2120,7 @@ func (p *PebbleCache) GetMulti(ctx context.Context, resources []*rspb.ResourceNa
 					}
 					return err
 				}
-				buf := bytes.NewBuffer(make([]byte, 0, p.readBufSize(r, md)))
+				buf := bytes.NewBuffer(make([]byte, 0, p.readBufSize(r, md, rc)))
 				_, copyErr := io.Copy(buf, rc)
 				closeErr := rc.Close()
 				if copyErr != nil {
