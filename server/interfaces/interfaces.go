@@ -326,10 +326,13 @@ type StoppableCache interface {
 	Stop() error
 }
 
+type Dereferencer func(ctx context.Context, ref *refpb.Reference, offset, limit int64) (io.ReadCloser, error)
+
 // A Cache implementation that supports reading and writing refpb.References.
 type ReferenceCache interface {
 	Cache
 	GetReference(ctx context.Context, r *rspb.ResourceName) (*refpb.Reference, error)
+	GetDereferencer() (Dereferencer, error)
 }
 
 type PooledByteStreamClient interface {

@@ -558,6 +558,9 @@ func (c *Proxy) RemoteReader(ctx context.Context, peer string, r *rspb.ResourceN
 	// Pebble rejects offset/limit when the request matches the stored compressor,
 	// so skip the rewrite on the partial-read path.
 	decompress := offset == 0 && limit == 0 && c.shouldReadCompressed(r)
+	// The compressor the caller expects returned bytes to be encoded with,
+	// captured before any transport-only rewrite below.
+	wanted := r.GetCompressor()
 	if decompress {
 		r = r.CloneVT()
 		r.Compressor = repb.Compressor_ZSTD
@@ -572,14 +575,106 @@ func (c *Proxy) RemoteReader(ctx context.Context, peer string, r *rspb.ResourceN
 		return nil, err
 	}
 	rc, err := newDistributedCacheReader(stream, r.GetDigest().GetSizeBytes() == offset)
-	if err != nil || !decompress {
-		return rc, err
+	if err != nil {
+		return nil, err
+	}
+
+	// The server provided a reference. Dereference it.
+	if rc.rsp.GetReference() != nil {
+		ref := rc.rsp.GetReference().CloneVT()
+		if err := rc.Close(); err != nil {
+			c.log.Debugf("Error closing read stream after receiving a reference: %s", err)
+		}
+
+		// Confirm the provided reference matches what was requested.
+		fr := ref.GetMetadata().GetFileRecord()
+		frd := fr.GetDigest()
+		if frd.GetHash() != r.GetDigest().GetHash() ||
+			frd.GetSizeBytes() != r.GetDigest().GetSizeBytes() ||
+			fr.GetDigestFunction() != r.GetDigestFunction() ||
+			fr.GetIsolation().GetCacheType() != r.GetCacheType() ||
+			fr.GetIsolation().GetRemoteInstanceName() != r.GetInstanceName() {
+			return nil, status.InternalErrorf("peer %q returned a reference for %s/%d (cache type %s, instance %q), but %s/%d (cache type %s, instance %q) was requested",
+				peer,
+				frd.GetHash(), frd.GetSizeBytes(), fr.GetIsolation().GetCacheType(), fr.GetIsolation().GetRemoteInstanceName(),
+				r.GetDigest().GetHash(), r.GetDigest().GetSizeBytes(), r.GetCacheType(), r.GetInstanceName())
+		}
+
+		resolver, ok := c.cache.(interfaces.ReferenceCache)
+		if !ok {
+			return nil, status.FailedPreconditionErrorf("peer %q returned a reference, but the local cache (%T) cannot dereference", peer, c.cache)
+		}
+		dereference, err := resolver.GetDereferencer()
+		if err != nil {
+			return nil, err
+		}
+
+		// Dereferencing yields the bytes exactly as stored, so the stored
+		// compressor must be reconciled with the one the caller wants.
+		stored := ref.GetMetadata().GetFileRecord().GetCompressor()
+
+		// A ranged read of a compressed blob cannot be served: the caller's
+		// offset/limit refer to uncompressed bytes, which do not map to
+		// positions in the stored stream. This mirrors pebble's reader.
+		if stored == wanted && stored != repb.Compressor_IDENTITY && (offset != 0 || limit != 0) {
+			return nil, status.FailedPreconditionError("passthrough compression does not support offset/limit")
+		}
+
+		if stored == wanted {
+			return dereference(ctx, ref, offset, limit)
+		}
+		if stored == repb.Compressor_ZSTD && wanted == repb.Compressor_IDENTITY {
+			drc, err := dereference(ctx, ref, 0, 0)
+			if err != nil {
+				return nil, err
+			}
+			reader, err := compression.NewZstdDecompressingReader(drc)
+			if err != nil {
+				drc.Close()
+				return nil, err
+			}
+			// The offset/limit refer to uncompressed bytes, so apply them to
+			// the decompressed stream, as pebble's reader does.
+			if offset != 0 {
+				if _, err := io.CopyN(io.Discard, reader, offset); err != nil {
+					_ = reader.Close()
+					return nil, err
+				}
+			}
+			if limit != 0 {
+				return ioutil.LimitReadCloser(reader, limit), nil
+			}
+			return reader, nil
+		}
+		if stored == repb.Compressor_IDENTITY && wanted == repb.Compressor_ZSTD {
+			// The offset/limit refer to uncompressed bytes, so they can be
+			// applied to the stored stream directly before compressing.
+			drc, err := dereference(ctx, ref, offset, limit)
+			if err != nil {
+				return nil, err
+			}
+			bufSize := int64(digest.SafeBufferSize(r, *config.ReadBufSizeBytes))
+			zr, err := compression.NewZstdCompressingReader(drc, c.bufPool, bufSize)
+			if err != nil {
+				drc.Close()
+				return nil, err
+			}
+			return zr, nil
+		}
+		// Unreachable: every combination of stored and wanted compressors is
+		// handled above.
+		return nil, status.InternalErrorf("peer %q returned a reference stored with compressor %s, but %s was requested with offset %d and limit %d", peer, stored, wanted, offset, limit)
+	}
+
+	if !decompress {
+		return rc, nil
 	}
 	dr, err := compression.NewZstdDecompressingReader(rc)
 	if err != nil {
 		rc.Close()
+		return nil, err
 	}
-	return dr, err
+	return dr, nil
 }
 
 type distributedCacheReader struct {

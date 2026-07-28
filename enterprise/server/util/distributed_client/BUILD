@@ -42,8 +42,10 @@ go_test(
     deps = [
         ":distributed_client",
         "//proto:distributed_cache_go_proto",
+        "//proto:reference_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:resource_go_proto",
+        "//proto:storage_go_proto",
         "//server/interfaces",
         "//server/remote_cache/digest",
         "//server/testutil/testauth",
