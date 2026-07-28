@@ -30,12 +30,13 @@ var (
 	apiTarget  = flags.String("target", "remote.buildbuddy.io", "BuildBuddy gRPC target")
 	lines      = flags.Int("lines", 100_000, "Minimum number of lines to fetch")
 	testFilter = flags.String("test_filter", "", "If set, print only the output of matching failed test cases instead of the full build logs. The value is a test-name pattern (regular expression), matching bazel's --test_filter.")
+	errorsOnly = flags.Bool("errors", false, "Print only the invocation errors instead of the full build logs.")
 
 	pathPattern = regexp.MustCompile(`/invocation/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})`)
 	uuidPattern = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
 
 	usage = `
-bb ` + flags.Name() + ` <invocation-id-or-url> [target...] [--lines=100000] [--test_filter=TestName] [--target=remote.buildbuddy.io]
+bb ` + flags.Name() + ` <invocation-id-or-url> [target...] [--errors] [--lines=100000] [--test_filter=TestName] [--target=remote.buildbuddy.io]
 
 Fetch and display build logs or test logs for an invocation.
 
@@ -44,8 +45,13 @@ output of failed test cases instead of the full build logs. --test_filter is a
 regular expression (matching bazel's --test_filter semantics). With no
 target, every failing test target in the invocation is searched.
 
+If --errors is set, prints only the invocation errors shown in the invocation
+error card instead of the full build logs. It cannot be combined with target
+labels or --test_filter.
+
 Examples:
   bb view 12345678-1234-1234-1234-123456789012
+  bb view 12345678-1234-1234-1234-123456789012 --errors
   bb view https://app.buildbuddy.io/invocation/12345678-1234-1234-1234-123456789012
   bb view 12345678-1234-1234-1234-123456789012 //server/foo:foo_test
   bb view 12345678-1234-1234-1234-123456789012 //server/foo:foo_test --test_filter=TestName
@@ -107,6 +113,13 @@ func HandleView(args []string) (exitCode int, err error) {
 	// When targets and/or --test_filter are given, print only the matching
 	// failed test cases instead of the full build logs.
 	targets := flags.Args()[1:]
+	if *errorsOnly {
+		if len(targets) > 0 || *testFilter != "" {
+			return 1, fmt.Errorf("--errors cannot be combined with target labels or --test_filter")
+		}
+		bsClient := bspb.NewByteStreamClient(conn)
+		return ViewErrors(ctx, bbClient, download.NewByteStreamDownloader(bsClient), os.Stdout, invocationID)
+	}
 	if len(targets) > 0 || *testFilter != "" {
 		bsClient := bspb.NewByteStreamClient(conn)
 		return ViewFilteredTestOutput(ctx, bbClient, download.NewByteStreamDownloader(bsClient), os.Stdout, invocationID, targets, *testFilter)
