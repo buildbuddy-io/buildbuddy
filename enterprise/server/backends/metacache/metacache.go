@@ -610,10 +610,12 @@ func (c *Cache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (m
 		return nil, err
 	}
 
-	// mds is index-aligned to resources; pair hits by position instead of
-	// re-deriving a key, which would have to track the server's key derivation
-	// (e.g. CAS keys are instance-agnostic).
+	// mds is index-aligned to resources (see metadata.proto GetResponse), nil
+	// FileRecord on a miss. Pairing by position mirrors the server's match: CAS
+	// by content hash (size/instance excluded, like Get), AC instance-isolated.
 	if len(mds) != len(resources) {
+		// Aligned 1:1 is the server contract; a mismatch is a server bug.
+		log.CtxErrorf(ctx, "[%s] GetMulti metadata length %d != request length %d", c.opts.Name, len(mds), len(resources))
 		return nil, status.InternalErrorf("metadata response length %d does not match request length %d", len(mds), len(resources))
 	}
 	type resourceMetadata struct {
@@ -633,16 +635,12 @@ func (c *Cache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (m
 	foundMap := make(map[*repb.Digest][]byte, len(hits))
 	eg, ctx := errgroup.WithContext(ctx)
 	numChunks := c.opts.MaxReadGoroutines
-	chunkSize := (len(hits) + numChunks - 1) / numChunks
-	if chunkSize < 1 {
-		chunkSize = 1
-	}
-	for chunk := range slices.Chunk(hits, int(chunkSize)) {
+	chunkSize := max(1, (len(hits)+numChunks-1)/numChunks)
+	for chunk := range slices.Chunk(hits, chunkSize) {
 		eg.Go(func() error {
 			for _, hit := range chunk {
 				r := hit.resource
-				md := hit.md
-				rc, err := c.reader(ctx, md, r, 0, 0, encryption)
+				rc, err := c.reader(ctx, hit.md, r, 0, 0, encryption)
 				if err != nil {
 					if status.IsNotFoundError(err) || os.IsNotExist(err) {
 						continue
