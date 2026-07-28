@@ -22,6 +22,10 @@ type RunRequest struct {
 	// workspace and temporary directories. The agent still runs without
 	// approval prompts or unrestricted host access.
 	WritableWorkspace bool
+	// NetworkAccess enables network access in a writable workspace sandbox.
+	// This is intended for agents that need to run authenticated bb commands;
+	// it does not grant unrestricted filesystem access.
+	NetworkAccess bool
 }
 
 type RunResponse struct {

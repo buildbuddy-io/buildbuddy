@@ -17,10 +17,16 @@ import MenuComponent from "../../../app/menu/menu";
 import TimingProfilePageComponent from "../../../app/profile/profile";
 import router, { Path } from "../../../app/router/router";
 import Shortcuts, { KeyCombo } from "../../../app/shortcuts/shortcuts";
-import { supportsRemoteRun, triggerRemoteRun } from "../../../app/util/remote_runner";
+import {
+  supportsRemoteRun,
+  triggerRemoteRun,
+  UI_CODEX_MODEL,
+  UI_CODEX_REASONING_EFFORT,
+} from "../../../app/util/remote_runner";
 import { quote } from "../../../app/util/shlex";
 import { invocation } from "../../../proto/invocation_ts_proto";
 import AskBuildBuddyModal, { AskBuildBuddyRepository, AskBuildBuddyRequest } from "../ask/ask_buildbuddy_modal";
+import AskBuildBuddyProposal from "../ask/ask_buildbuddy_proposal";
 import AuditLogsComponent from "../auditlogs/auditlogs";
 import GroupSearchComponent from "../group_search/group_search";
 import HistoryComponent from "../history/history";
@@ -214,6 +220,8 @@ export default class EnterpriseRootComponent extends React.Component {
     const command = [
       "bb ask",
       "--agent=codex",
+      `--model=${UI_CODEX_MODEL}`,
+      `--effort=${UI_CODEX_REASONING_EFFORT}`,
       '--target="$BUILDBUDDY_API_TARGET"',
       '--url="$BUILDBUDDY_HTTP_TARGET"',
       ...request.invocationIds.map((invocationId) => quote(`--invocation_id=${invocationId}`)),
@@ -441,6 +449,9 @@ export default class EnterpriseRootComponent extends React.Component {
                         tab={this.state.tab}
                         search={this.state.search}
                         preferences={this.state.preferences}
+                        renderRemoteRunResult={(model) => (
+                          <AskBuildBuddyProposal invocationId={invocationId} model={model} user={this.state.user} />
+                        )}
                       />
                     </Suspense>
                   )}

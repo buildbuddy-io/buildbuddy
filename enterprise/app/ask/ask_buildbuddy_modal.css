@@ -89,6 +89,22 @@
   font-size: 12px;
 }
 
+.ask-buildbuddy-proposal-card .content {
+  flex: 1;
+}
+
+.ask-buildbuddy-proposal-actions {
+  display: flex;
+  margin-top: 12px;
+}
+
+.ask-buildbuddy-proposal-actions a {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  text-decoration: none;
+}
+
 @media (max-width: 600px) {
   .ask-buildbuddy-submit-hint {
     display: none;
