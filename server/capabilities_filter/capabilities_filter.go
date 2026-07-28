@@ -78,6 +78,7 @@ var (
 		buildBuddyServicePrefix + "GetGithubBlob",
 		buildBuddyServicePrefix + "CreateGithubBlob",
 		buildBuddyServicePrefix + "CreateGithubPull",
+		buildBuddyServicePrefix + "CreateGithubInstallationDraftPull",
 		buildBuddyServicePrefix + "MergeGithubPull",
 		buildBuddyServicePrefix + "GetGithubCompare",
 		buildBuddyServicePrefix + "GetGithubForks",

@@ -2819,6 +2819,18 @@ func (s *BuildBuddyServer) CreateGithubPull(ctx context.Context, req *ghpb.Creat
 	return a.CreateGithubPull(ctx, req)
 }
 
+func (s *BuildBuddyServer) CreateGithubInstallationDraftPull(ctx context.Context, req *ghpb.CreateGithubInstallationDraftPullRequest) (*ghpb.CreateGithubPullResponse, error) {
+	gh := s.env.GetGitHubAppService()
+	if gh == nil {
+		return nil, status.UnimplementedError("Not implemented")
+	}
+	a, err := gh.GetGitHubAppForAuthenticatedUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return a.CreateGithubInstallationDraftPull(ctx, req)
+}
+
 func (s *BuildBuddyServer) MergeGithubPull(ctx context.Context, req *ghpb.MergeGithubPullRequest) (*ghpb.MergeGithubPullResponse, error) {
 	gh := s.env.GetGitHubAppService()
 	if gh == nil {

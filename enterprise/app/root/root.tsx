@@ -450,7 +450,7 @@ export default class EnterpriseRootComponent extends React.Component {
                         search={this.state.search}
                         preferences={this.state.preferences}
                         renderRemoteRunResult={(model) => (
-                          <AskBuildBuddyProposal invocationId={invocationId} model={model} user={this.state.user} />
+                          <AskBuildBuddyProposal invocationId={invocationId} model={model} />
                         )}
                       />
                     </Suspense>

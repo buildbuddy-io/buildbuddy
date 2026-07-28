@@ -22,9 +22,8 @@ ts_library(
         "//app/components/modal",
         "//app/errors:error_service",
         "//app/invocation:invocation_model",
-        "//app/router",
         "//app/service:rpc_service",
         "//app/util:git",
-        "//enterprise/app/code:code_pull_request",
+        "//proto:github_ts_proto",
     ],
 )

@@ -31,6 +31,7 @@ import (
 
 const (
 	artifactsDirectoryEnvVar = "BUILDBUDDY_ARTIFACTS_DIRECTORY"
+	downloadDirectoryName    = "bb-download"
 	proposalManifestName     = "ask-buildbuddy-proposal.json"
 	proposalPatchName        = "ask-buildbuddy.patch"
 	maxProposalSizeBytes     = 20 * 1024 * 1024
@@ -54,10 +55,16 @@ type proposalManifest struct {
 }
 
 type proposalContext struct {
-	Root       string
-	Repository string
-	BaseCommit string
-	BaseBranch string
+	Root         string
+	Repository   string
+	BaseCommit   string
+	BaseBranch   string
+	MetadataPath string
+}
+
+type proposalMetadata struct {
+	Title string `json:"title"`
+	Body  string `json:"body"`
 }
 
 var (
@@ -122,6 +129,9 @@ func HandleAsk(args []string) (int, error) {
 
 func handleAgentQuestion(question string) (int, error) {
 	proposalCtx := loadProposalContext()
+	if proposalCtx != nil {
+		defer os.Remove(proposalCtx.MetadataPath)
+	}
 	promptContext := "No invocation IDs were included."
 	if len(*invocationIDs) > 0 {
 		var details []string
@@ -134,6 +144,19 @@ func handleAgentQuestion(question string) (int, error) {
 			))
 		}
 		promptContext = "The user included the following invocation context:\n\n" + strings.Join(details, "\n\n")
+	}
+	if proposalCtx != nil {
+		promptContext += fmt.Sprintf(`
+
+If you modify the repository, write pull request metadata as JSON to:
+%s
+
+Use exactly this shape:
+{"title":"Imperative title describing the actual fix","body":"One to three sentences describing only the resulting fix."}
+
+The title must reflect the change you actually made, not repeat the user's request. The body must only describe the
+fix and resulting behavior. Do not include your thought process, investigation, verification, tests, or commands in
+the body.`, proposalCtx.MetadataPath)
 	}
 
 	prompt := fmt.Sprintf(agentPrompt, question, promptContext)
@@ -154,6 +177,17 @@ func handleAgentQuestion(question string) (int, error) {
 		log.Warnf("Could not create pull request proposal artifacts: %s", err)
 	}
 
+	metadata, metadataErr := readProposalMetadata(proposalCtx)
+	if proposalCtx != nil {
+		_ = os.Remove(proposalCtx.MetadataPath)
+	}
+	if metadataErr != nil {
+		log.Warnf("Could not read pull request proposal metadata: %s", metadataErr)
+	}
+	if err := writeProposalArtifacts(proposalCtx, metadata); err != nil {
+		log.Warnf("Could not create pull request proposal artifacts: %s", err)
+	}
+
 	fmt.Println(response.Output)
 	fmt.Printf(
 		"%sResume this agent session with:%s\n%s%s%s\n",
@@ -161,6 +195,29 @@ func handleAgentQuestion(question string) (int, error) {
 		terminal.Esc(36), response.ResumeCommand, terminal.Esc(),
 	)
 	return 0, nil
+}
+
+func readProposalMetadata(proposalCtx *proposalContext) (*proposalMetadata, error) {
+	if proposalCtx == nil {
+		return nil, nil
+	}
+	data, err := os.ReadFile(proposalCtx.MetadataPath)
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	metadata := &proposalMetadata{}
+	if err := json.Unmarshal(data, metadata); err != nil {
+		return nil, err
+	}
+	metadata.Title = strings.TrimSpace(metadata.Title)
+	metadata.Body = strings.TrimSpace(metadata.Body)
+	if metadata.Title == "" || metadata.Body == "" {
+		return nil, fmt.Errorf("title and body are required")
+	}
+	return metadata, nil
 }
 
 func loadProposalContext() *proposalContext {
@@ -184,47 +241,57 @@ func loadProposalContext() *proposalContext {
 	if err != nil {
 		return nil
 	}
+	metadataFile, err := os.CreateTemp(root, ".buildbuddy-ask-proposal-*.json")
+	if err != nil {
+		return nil
+	}
+	metadataPath := metadataFile.Name()
+	if err := metadataFile.Close(); err != nil {
+		os.Remove(metadataPath)
+		return nil
+	}
+	if err := os.Remove(metadataPath); err != nil && !os.IsNotExist(err) {
+		return nil
+	}
 	return &proposalContext{
-		Root:       root,
-		Repository: gitutil.StripRepoURLCredentials(strings.TrimSpace(string(remoteOutput))),
-		BaseCommit: strings.TrimSpace(string(commitOutput)),
-		BaseBranch: strings.TrimSpace(string(branchOutput)),
+		Root:         root,
+		Repository:   gitutil.StripRepoURLCredentials(strings.TrimSpace(string(remoteOutput))),
+		BaseCommit:   strings.TrimSpace(string(commitOutput)),
+		BaseBranch:   strings.TrimSpace(string(branchOutput)),
+		MetadataPath: metadataPath,
 	}
 }
 
-func writeProposalArtifacts(proposalContext *proposalContext, question, answer string) error {
-	if proposalContext == nil {
+func writeProposalArtifacts(proposalCtx *proposalContext, metadata *proposalMetadata) error {
+	if proposalCtx == nil {
 		return nil
 	}
-	artifactsRoot := os.Getenv(artifactsDirectoryEnvVar)
-	if artifactsRoot == "" {
-		return nil
-	}
-
-	files, untrackedPaths, err := collectProposalFiles(proposalContext.Root, proposalContext.BaseCommit)
+	files, untrackedPaths, err := collectProposalFiles(proposalCtx.Root, proposalCtx.BaseCommit)
 	if err != nil {
 		return err
 	}
 	if len(files) == 0 {
 		return nil
 	}
+	if metadata == nil {
+		return fmt.Errorf("agent changed the repository but did not provide valid pull request metadata")
+	}
 
-	patch, err := createProposalPatch(proposalContext.Root, proposalContext.BaseCommit, untrackedPaths)
+	patch, err := createProposalPatch(proposalCtx.Root, proposalCtx.BaseCommit, untrackedPaths)
 	if err != nil {
 		return err
 	}
 	if len(patch) > maxProposalSizeBytes {
 		return fmt.Errorf("proposal patch is too large (%d bytes; maximum %d)", len(patch), maxProposalSizeBytes)
 	}
-
 	manifest := &proposalManifest{
 		Version:        1,
-		Repository:     proposalContext.Repository,
-		BaseCommit:     proposalContext.BaseCommit,
-		BaseBranch:     proposalContext.BaseBranch,
+		Repository:     proposalCtx.Repository,
+		BaseCommit:     proposalCtx.BaseCommit,
+		BaseBranch:     proposalCtx.BaseBranch,
 		PatchArtifact:  proposalPatchName,
-		SuggestedTitle: proposalTitle(question),
-		SuggestedBody:  truncateUTF8(answer, 6000),
+		SuggestedTitle: truncateUTF8(metadata.Title, 256),
+		SuggestedBody:  truncateUTF8(metadata.Body, 6000),
 		Files:          files,
 	}
 	manifestJSON, err := json.MarshalIndent(manifest, "", "  ")
@@ -235,7 +302,7 @@ func writeProposalArtifacts(proposalContext *proposalContext, question, answer s
 		return fmt.Errorf("proposal manifest is too large (%d bytes; maximum %d)", len(manifestJSON), maxProposalSizeBytes)
 	}
 
-	downloadDir := filepath.Join(artifactsRoot, artifacts.DownloadDirectoryName)
+	downloadDir := filepath.Join(os.Getenv(artifactsDirectoryEnvVar), downloadDirectoryName)
 	if err := os.Mkdir(downloadDir, 0755); err != nil && !os.IsExist(err) {
 		return fmt.Errorf("create downloadable artifacts directory: %w", err)
 	}
@@ -246,7 +313,6 @@ func writeProposalArtifacts(proposalContext *proposalContext, question, answer s
 	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
 		return fmt.Errorf("downloadable artifacts path %q is not a directory", downloadDir)
 	}
-
 	if err := writeProposalArtifact(downloadDir, proposalPatchName, patch); err != nil {
 		return fmt.Errorf("write proposal patch: %w", err)
 	}
@@ -286,19 +352,19 @@ func collectProposalFiles(root, baseCommit string) (map[string]proposalFile, []s
 	}
 	statusParts := bytes.Split(statusOutput, []byte{0})
 	for i := 0; i+1 < len(statusParts); i += 2 {
-		status, path := string(statusParts[i]), string(statusParts[i+1])
-		if status == "" || path == "" {
+		status, filePath := string(statusParts[i]), string(statusParts[i+1])
+		if status == "" || filePath == "" {
 			continue
 		}
 		if strings.HasPrefix(status, "D") {
-			files[path] = proposalFile{Deleted: true}
+			files[filePath] = proposalFile{Deleted: true}
 			continue
 		}
-		file, err := readProposalFile(root, path)
+		file, err := readProposalFile(root, filePath)
 		if err != nil {
 			return nil, nil, err
 		}
-		files[path] = file
+		files[filePath] = file
 	}
 
 	untrackedOutput, err := runGit(root, "ls-files", "--others", "--exclude-standard", "-z")
@@ -307,34 +373,33 @@ func collectProposalFiles(root, baseCommit string) (map[string]proposalFile, []s
 	}
 	var untrackedPaths []string
 	for pathBytes := range bytes.SplitSeq(untrackedOutput, []byte{0}) {
-		path := string(pathBytes)
-		if path == "" {
+		filePath := string(pathBytes)
+		if filePath == "" {
 			continue
 		}
-		file, err := readProposalFile(root, path)
+		file, err := readProposalFile(root, filePath)
 		if err != nil {
 			return nil, nil, err
 		}
-		files[path] = file
-		untrackedPaths = append(untrackedPaths, path)
+		files[filePath] = file
+		untrackedPaths = append(untrackedPaths, filePath)
 	}
 	return files, untrackedPaths, nil
 }
 
-func readProposalFile(root, path string) (proposalFile, error) {
-	if !utf8.ValidString(path) {
+func readProposalFile(root, filePath string) (proposalFile, error) {
+	if !utf8.ValidString(filePath) {
 		return proposalFile{}, fmt.Errorf("changed file path is not valid UTF-8")
 	}
-	fullPath := filepath.Join(root, filepath.FromSlash(path))
+	fullPath := filepath.Join(root, filepath.FromSlash(filePath))
 	relativePath, err := filepath.Rel(root, fullPath)
 	if err != nil || relativePath == ".." || strings.HasPrefix(relativePath, ".."+string(filepath.Separator)) {
-		return proposalFile{}, fmt.Errorf("changed file path %q is outside the repository", path)
+		return proposalFile{}, fmt.Errorf("changed file path %q is outside the repository", filePath)
 	}
 	info, err := os.Lstat(fullPath)
 	if err != nil {
-		return proposalFile{}, fmt.Errorf("inspect changed file %q: %w", path, err)
+		return proposalFile{}, fmt.Errorf("inspect changed file %q: %w", filePath, err)
 	}
-
 	mode := "100644"
 	var content []byte
 	switch {
@@ -342,7 +407,7 @@ func readProposalFile(root, path string) (proposalFile, error) {
 		mode = "120000"
 		target, err := os.Readlink(fullPath)
 		if err != nil {
-			return proposalFile{}, fmt.Errorf("read symlink %q: %w", path, err)
+			return proposalFile{}, fmt.Errorf("read symlink %q: %w", filePath, err)
 		}
 		content = []byte(target)
 	case info.Mode().IsRegular():
@@ -351,13 +416,13 @@ func readProposalFile(root, path string) (proposalFile, error) {
 		}
 		content, err = os.ReadFile(fullPath)
 		if err != nil {
-			return proposalFile{}, fmt.Errorf("read changed file %q: %w", path, err)
+			return proposalFile{}, fmt.Errorf("read changed file %q: %w", filePath, err)
 		}
 	default:
-		return proposalFile{}, fmt.Errorf("changed file %q has unsupported mode %s", path, info.Mode())
+		return proposalFile{}, fmt.Errorf("changed file %q has unsupported mode %s", filePath, info.Mode())
 	}
 	if len(content) > maxProposalSizeBytes {
-		return proposalFile{}, fmt.Errorf("changed file %q is too large (%d bytes; maximum %d)", path, len(content), maxProposalSizeBytes)
+		return proposalFile{}, fmt.Errorf("changed file %q is too large (%d bytes; maximum %d)", filePath, len(content), maxProposalSizeBytes)
 	}
 	return proposalFile{Content: content, Mode: mode}, nil
 }
@@ -367,10 +432,10 @@ func createProposalPatch(root, baseCommit string, untrackedPaths []string) ([]by
 	if err != nil {
 		return nil, fmt.Errorf("create proposal patch: %w", err)
 	}
-	for _, path := range untrackedPaths {
-		untrackedPatch, err := runGitDiff(root, "--no-index", "--binary", "--", "/dev/null", path)
+	for _, filePath := range untrackedPaths {
+		untrackedPatch, err := runGitDiff(root, "--no-index", "--binary", "--", "/dev/null", filePath)
 		if err != nil {
-			return nil, fmt.Errorf("create patch for untracked file %q: %w", path, err)
+			return nil, fmt.Errorf("create patch for untracked file %q: %w", filePath, err)
 		}
 		patch = append(patch, untrackedPatch...)
 	}
@@ -391,16 +456,6 @@ func runGitDiff(dir string, args ...string) ([]byte, error) {
 		return output, nil
 	}
 	return output, err
-}
-
-func proposalTitle(question string) string {
-	title := strings.TrimSpace(strings.SplitN(question, "\n", 2)[0])
-	if title == "" {
-		title = "Changes proposed by Ask BuildBuddy"
-	} else {
-		title = "Ask BuildBuddy: " + title
-	}
-	return truncateUTF8(title, 72)
 }
 
 func truncateUTF8(value string, maxRunes int) string {

@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/rsa"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
 	"errors"
@@ -14,6 +15,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -78,7 +80,9 @@ var (
 	readOnlyAppWebhookSecret          = flag.String("github.read_only_app.webhook_secret", "", "Read-only GitHub app webhook secret used to verify that webhook payload contents were sent by GitHub.", flag.Secret)
 	readOnlyAppWebhookSecretAlternate = flag.String("github.read_only_app.webhook_secret_alternate", "", "Alternate read-only GitHub app webhook secret accepted while rotating the primary webhook secret.", flag.Secret)
 
-	validPathRegex = regexp.MustCompile(`^[a-zA-Z0-9/_-]*$`)
+	validPathRegex   = regexp.MustCompile(`^[a-zA-Z0-9/_-]*$`)
+	draftPRHeadRegex = regexp.MustCompile(`^buildbuddy/ask/[a-zA-Z0-9_-]+$`)
+	commitSHARegex   = regexp.MustCompile(`^[a-fA-F0-9]{7,64}$`)
 )
 
 const (
@@ -91,6 +95,11 @@ const (
 
 	// Max page size that GitHub allows for list requests.
 	githubMaxPageSize = 100
+
+	maxDraftPRFiles        = 1000
+	maxDraftPRContentBytes = 20 * 1024 * 1024
+	maxDraftPRTitleLength  = 256
+	maxDraftPRBodyLength   = 64 * 1024
 )
 
 func Register(env *real_environment.RealEnv) error {
@@ -1755,6 +1764,180 @@ func (a *GitHubApp) CreateGithubPull(ctx context.Context, req *ghpb.CreateGithub
 		return nil, err
 	}
 
+	return &ghpb.CreateGithubPullResponse{
+		Url:        pr.GetHTMLURL(),
+		PullNumber: int64(pr.GetNumber()),
+		Ref:        pr.GetHead().GetRef(),
+	}, nil
+}
+
+func (a *GitHubApp) CreateGithubInstallationDraftPull(ctx context.Context, req *ghpb.CreateGithubInstallationDraftPullRequest) (*ghpb.CreateGithubPullResponse, error) {
+	u, err := a.env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	repoURL, err := gitutil.ParseGitHubRepoURL(req.GetRepoUrl())
+	if err != nil {
+		return nil, status.InvalidArgumentErrorf("invalid GitHub repository URL %q: %s", req.GetRepoUrl(), err)
+	}
+	if !commitSHARegex.MatchString(req.GetBaseCommit()) {
+		return nil, status.InvalidArgumentError("a valid base commit is required")
+	}
+	if !draftPRHeadRegex.MatchString(req.GetHead()) {
+		return nil, status.InvalidArgumentError("draft pull request branch must start with buildbuddy/ask/")
+	}
+	title := strings.TrimSpace(req.GetTitle())
+	body := strings.TrimSpace(req.GetBody())
+	if title == "" || len(title) > maxDraftPRTitleLength {
+		return nil, status.InvalidArgumentErrorf("draft pull request title must be between 1 and %d bytes", maxDraftPRTitleLength)
+	}
+	if body == "" || len(body) > maxDraftPRBodyLength {
+		return nil, status.InvalidArgumentErrorf("draft pull request body must be between 1 and %d bytes", maxDraftPRBodyLength)
+	}
+	if len(req.GetFiles()) == 0 || len(req.GetFiles()) > maxDraftPRFiles {
+		return nil, status.InvalidArgumentErrorf("draft pull request must contain between 1 and %d files", maxDraftPRFiles)
+	}
+
+	seenPaths := make(map[string]struct{}, len(req.GetFiles()))
+	totalContentBytes := 0
+	for _, file := range req.GetFiles() {
+		filePath := file.GetPath()
+		cleanPath := path.Clean(filePath)
+		if filePath == "" || filePath != cleanPath || path.IsAbs(filePath) || cleanPath == "." || cleanPath == ".." || strings.HasPrefix(cleanPath, "../") {
+			return nil, status.InvalidArgumentErrorf("invalid draft pull request file path %q", filePath)
+		}
+		if _, ok := seenPaths[filePath]; ok {
+			return nil, status.InvalidArgumentErrorf("duplicate draft pull request file path %q", filePath)
+		}
+		seenPaths[filePath] = struct{}{}
+		if file.GetDeleted() && len(file.GetContent()) > 0 {
+			return nil, status.InvalidArgumentErrorf("deleted file %q must not include content", filePath)
+		}
+		switch file.GetMode() {
+		case "", "100644", "100755", "120000":
+		default:
+			return nil, status.InvalidArgumentErrorf("unsupported mode %q for file %q", file.GetMode(), filePath)
+		}
+		totalContentBytes += len(file.GetContent())
+		if totalContentBytes > maxDraftPRContentBytes {
+			return nil, status.InvalidArgumentErrorf("draft pull request content exceeds %d bytes", maxDraftPRContentBytes)
+		}
+	}
+
+	token, err := a.GetRepositoryInstallationToken(ctx, u.GetGroupID(), repoURL.String())
+	if err != nil {
+		return nil, err
+	}
+	client, err := a.newAuthenticatedClient(ctx, token)
+	if err != nil {
+		return nil, err
+	}
+	repository, _, err := client.Repositories.Get(ctx, repoURL.Owner, repoURL.Repo)
+	if err != nil {
+		return nil, err
+	}
+	baseBranch := strings.TrimSpace(req.GetBaseBranch())
+	if baseBranch == "" {
+		baseBranch = repository.GetDefaultBranch()
+	}
+
+	baseCommit, _, err := client.Git.GetCommit(ctx, repoURL.Owner, repoURL.Repo, req.GetBaseCommit())
+	if err != nil {
+		return nil, err
+	}
+	entries := make([]*github.TreeEntry, 0, len(req.GetFiles()))
+	for _, file := range req.GetFiles() {
+		filePath := file.GetPath()
+		mode := file.GetMode()
+		if mode == "" {
+			mode = "100644"
+		}
+		entry := &github.TreeEntry{
+			Path: github.String(filePath),
+			Mode: github.String(mode),
+			Type: github.String("blob"),
+		}
+		if file.GetDeleted() {
+			// A nil SHA is serialized as JSON null by go-github, which tells
+			// the Git Trees API to delete this path.
+			entry.SHA = nil
+		} else {
+			content := base64.StdEncoding.EncodeToString(file.GetContent())
+			encoding := "base64"
+			blob, _, err := client.Git.CreateBlob(ctx, repoURL.Owner, repoURL.Repo, &github.Blob{
+				Content:  &content,
+				Encoding: &encoding,
+			})
+			if err != nil {
+				return nil, err
+			}
+			entry.SHA = blob.SHA
+		}
+		entries = append(entries, entry)
+	}
+	tree, _, err := client.Git.CreateTree(ctx, repoURL.Owner, repoURL.Repo, baseCommit.GetTree().GetSHA(), entries)
+	if err != nil {
+		return nil, err
+	}
+	commit, _, err := client.Git.CreateCommit(ctx, repoURL.Owner, repoURL.Repo, &github.Commit{
+		Message: github.String(title),
+		Tree:    &github.Tree{SHA: tree.SHA},
+		Parents: []*github.Commit{{SHA: github.String(req.GetBaseCommit())}},
+	}, nil)
+	if err != nil {
+		return nil, err
+	}
+	refName := "refs/heads/" + req.GetHead()
+	reusedRef := false
+	if _, _, err := client.Git.CreateRef(ctx, repoURL.Owner, repoURL.Repo, &github.Reference{
+		Ref:    github.String(refName),
+		Object: &github.GitObject{SHA: commit.SHA},
+	}); err != nil {
+		errorResponse := &github.ErrorResponse{}
+		if !errors.As(err, &errorResponse) || errorResponse.Response == nil || errorResponse.Response.StatusCode != http.StatusUnprocessableEntity {
+			return nil, err
+		}
+		existingRef, _, getRefErr := client.Git.GetRef(ctx, repoURL.Owner, repoURL.Repo, refName)
+		if getRefErr != nil {
+			return nil, err
+		}
+		existingCommit, _, getCommitErr := client.Git.GetCommit(ctx, repoURL.Owner, repoURL.Repo, existingRef.GetObject().GetSHA())
+		if getCommitErr != nil {
+			return nil, getCommitErr
+		}
+		if existingCommit.GetTree().GetSHA() != tree.GetSHA() {
+			return nil, status.AlreadyExistsErrorf("draft pull request branch %q already exists with different changes", req.GetHead())
+		}
+		reusedRef = true
+	}
+	if reusedRef {
+		pulls, _, err := client.PullRequests.List(ctx, repoURL.Owner, repoURL.Repo, &github.PullRequestListOptions{
+			State: "open",
+			Head:  repoURL.Owner + ":" + req.GetHead(),
+			Base:  baseBranch,
+		})
+		if err != nil {
+			return nil, err
+		}
+		if len(pulls) > 0 {
+			pr := pulls[0]
+			return &ghpb.CreateGithubPullResponse{
+				Url:        pr.GetHTMLURL(),
+				PullNumber: int64(pr.GetNumber()),
+				Ref:        pr.GetHead().GetRef(),
+			}, nil
+		}
+	}
+	pr, _, err := client.PullRequests.Create(ctx, repoURL.Owner, repoURL.Repo, &github.NewPullRequest{
+		Head:  github.String(req.GetHead()),
+		Base:  github.String(baseBranch),
+		Title: github.String(title),
+		Body:  github.String(body),
+		Draft: github.Bool(true),
+	})
+	if err != nil {
+		return nil, err
+	}
 	return &ghpb.CreateGithubPullResponse{
 		Url:        pr.GetHTMLURL(),
 		PullNumber: int64(pr.GetNumber()),

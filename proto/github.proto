@@ -410,6 +410,27 @@ message CreateGithubPullResponse {
   int64 pull_number = 3;
 }
 
+message GithubFileChange {
+  string path = 1;
+  bytes content = 2;
+  string mode = 3;
+  bool deleted = 4;
+}
+
+// Creates a draft pull request using the GitHub App installation linked to the
+// authenticated BuildBuddy group. The installation token is created and used
+// server-side and is never returned to the client.
+message CreateGithubInstallationDraftPullRequest {
+  context.RequestContext request_context = 1;
+  string repo_url = 2;
+  string base_commit = 3;
+  string base_branch = 4;
+  string head = 5;
+  string title = 6;
+  string body = 7;
+  repeated GithubFileChange files = 8;
+}
+
 // PUT /repos/{owner}/{repo}/pulls/{pull_number}/merge
 message MergeGithubPullRequest {
   context.RequestContext request_context = 1;

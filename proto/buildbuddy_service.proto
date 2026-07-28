@@ -328,6 +328,9 @@ service BuildBuddyService {
       returns (github.CreateGithubBlobResponse);
   rpc CreateGithubPull(github.CreateGithubPullRequest)
       returns (github.CreateGithubPullResponse);
+  rpc CreateGithubInstallationDraftPull(
+      github.CreateGithubInstallationDraftPullRequest)
+      returns (github.CreateGithubPullResponse);
   rpc MergeGithubPull(github.MergeGithubPullRequest)
       returns (github.MergeGithubPullResponse);
   rpc GetGithubCompare(github.GetGithubCompareRequest)
