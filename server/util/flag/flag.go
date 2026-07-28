@@ -40,7 +40,7 @@ func Parse() {
 }
 
 func String(name string, value string, usage string, tags ...flagtags.Taggable) *string {
-	return autoflags.New(common.DefaultFlagSet, name, value, usage, tags...)
+	return auxtoflags.New(common.DefaultFlagSet, name, value, usage, tags...)
 }
 
 func Bool(name string, value bool, usage string, tags ...flagtags.Taggable) *bool {
