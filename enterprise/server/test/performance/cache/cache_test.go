@@ -30,6 +30,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
+	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
@@ -41,6 +42,7 @@ import (
 	"google.golang.org/grpc/test/bufconn"
 
 	mdspb "github.com/buildbuddy-io/buildbuddy/proto/metadata_service"
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 )
 
@@ -50,7 +52,10 @@ const (
 	numDigests   = 100
 )
 
-var enablePebblePresenceCache = flag.Bool("enable_pebble_presence_cache", false, "If true, configure the pebble presence cache for benchmarks.")
+var (
+	enablePebblePresenceCache = flag.Bool("enable_pebble_presence_cache", false, "If true, configure the pebble presence cache for benchmarks.")
+	enableCompression         = flag.Bool("enable_compression", true, "If true, read and write compressed resources")
+)
 
 func init() {
 	*log.LogLevel = "error"
@@ -113,6 +118,10 @@ func makeDigests(t testing.TB, numDigests int, digestSizeBytes int64, cacheType 
 	digestBufs := make([]*digestBuf, 0, numDigests)
 	for i := 0; i < numDigests; i++ {
 		r, buf := testdigest.NewRandomResourceAndBuf(t, digestSizeBytes, cacheType, "")
+		if *enableCompression {
+			r.Compressor = repb.Compressor_ZSTD
+			buf = compression.CompressZstd(nil, buf)
+		}
 		digestBufs = append(digestBufs, &digestBuf{
 			d:   r,
 			buf: buf,
