@@ -2099,16 +2099,20 @@ func (p *PebbleCache) GetMulti(ctx context.Context, resources []*rspb.ResourceNa
 	if err != nil {
 		return nil, err
 	}
-	resourceChan := make(chan *rspb.ResourceName, len(resources))
-	for _, r := range resources {
-		resourceChan <- r
-	}
-	close(resourceChan)
 	eg, ctx := errgroup.WithContext(ctx)
 	maxGoroutines := 10
+	var next atomic.Int64
 	for range min(maxGoroutines, len(resources)) {
 		eg.Go(func() error {
-			for r := range resourceChan {
+			for {
+				if err := ctx.Err(); err != nil {
+					return err
+				}
+				i := int(next.Add(1)) - 1
+				if i >= len(resources) {
+					return nil
+				}
+				r := resources[i]
 				rc, md, err := p.reader(ctx, db, groupID, encryption, r, 0, 0)
 				if err != nil {
 					if status.IsNotFoundError(err) || os.IsNotExist(err) {
@@ -2131,7 +2135,6 @@ func (p *PebbleCache) GetMulti(ctx context.Context, resources []*rspb.ResourceNa
 				foundMap[r.GetDigest()] = buf.Bytes()
 				mu.Unlock()
 			}
-			return nil
 		})
 	}
 	if err := eg.Wait(); err != nil {
