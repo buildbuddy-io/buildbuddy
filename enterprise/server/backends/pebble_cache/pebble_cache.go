@@ -231,6 +231,7 @@ type Options struct {
 	// atime update.
 	GCSAtimeUpdateThreshold *time.Duration
 	FileStorer              filestore.Store
+	GCSBlobstore            filestore.PebbleGCSStorage
 }
 
 type sizeUpdate struct {
@@ -314,6 +315,7 @@ type PebbleCache struct {
 	minGCSFileSizeBytes     int64
 	gcsTTLDays              int64
 	gcsAtimeUpdateThreshold time.Duration
+	gcsBlobstore            filestore.PebbleGCSStorage
 
 	metrics struct {
 		compressedBlobSizeWrite   prometheus.Counter
@@ -653,6 +655,7 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 		clock = clockwork.NewRealClock()
 	}
 
+	gcsBlobstore := opts.GCSBlobstore
 	fileStorer := opts.FileStorer
 	if fileStorer == nil {
 		filestoreOpts := make([]filestore.Option, 0)
@@ -661,7 +664,8 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 			// will already compress blobs before storing them, so we don't
 			// want the gcs lib to attempt to compress them too.
 			ctx := env.GetServerContext()
-			gcsBlobstore, err := gcs.NewGCSBlobStore(ctx, opts.GCSBucket, "", opts.GCSCredentials, opts.GCSProjectID, false /*=enableCompression*/)
+			var err error
+			gcsBlobstore, err = gcs.NewGCSBlobStore(ctx, opts.GCSBucket, "", opts.GCSCredentials, opts.GCSProjectID, false /*=enableCompression*/)
 			if err != nil {
 				return nil, err
 			}
@@ -725,6 +729,7 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 		minGCSFileSizeBytes:         *opts.MinGCSFileSizeBytes,
 		gcsTTLDays:                  *opts.GCSTTLDays,
 		gcsAtimeUpdateThreshold:     *opts.GCSAtimeUpdateThreshold,
+		gcsBlobstore:                gcsBlobstore,
 		fileStorer:                  fileStorer,
 	}
 	zstdLabels := prometheus.Labels{metrics.CacheNameLabel: pc.name, metrics.CompressionType: "zstd"}
@@ -2198,6 +2203,50 @@ func (p *PebbleCache) GetReference(ctx context.Context, r *rspb.ResourceName) (*
 	p.sendAtimeUpdate(ctx, key, md.GetLastAccessUsec())
 
 	return &refpb.Reference{Metadata: md}, nil
+}
+
+func (p *PebbleCache) Dereference(ctx context.Context, ref *refpb.Reference, offset, limit int64) (io.ReadCloser, error) {
+	if p.gcsBlobstore == nil {
+		return nil, status.FailedPreconditionError("pebble cache is not backed by shared storage; cannot dereference")
+	}
+
+	md := ref.GetMetadata()
+	blobName := md.GetStorageMetadata().GetGcsMetadata().GetBlobName()
+	if blobName == "" {
+		return nil, status.InvalidArgumentError("malformed reference (empty blob name)")
+	}
+	em := md.GetEncryptionMetadata()
+	if em == nil {
+		return p.gcsBlobstore.Reader(ctx, blobName, offset, limit)
+	}
+
+	// The blob is encrypted at rest. Fetch the whole ciphertext and
+	// decrypt it using the key metadata carried by the reference, then
+	// apply offset/limit to the decrypted stream: offsets refer to
+	// positions in the stored (unencrypted) stream.
+	crypter := p.env.GetCrypter()
+	if crypter == nil {
+		return nil, status.FailedPreconditionError("crypter not available to decrypt referenced blob")
+	}
+	rc, err := p.gcsBlobstore.Reader(ctx, blobName, 0, 0)
+	if err != nil {
+		return nil, err
+	}
+	reader, err := crypter.NewDecryptor(ctx, md.GetFileRecord().GetDigest(), rc, em)
+	if err != nil {
+		_ = rc.Close()
+		return nil, status.UnavailableErrorf("decryptor not available: %s", err)
+	}
+	if offset != 0 {
+		if _, err := io.CopyN(io.Discard, reader, offset); err != nil {
+			_ = reader.Close()
+			return nil, err
+		}
+	}
+	if limit != 0 {
+		return ioutil.LimitReadCloser(reader, limit), nil
+	}
+	return reader, nil
 }
 
 func (p *PebbleCache) Set(ctx context.Context, r *rspb.ResourceName, data []byte) error {
