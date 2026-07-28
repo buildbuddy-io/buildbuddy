@@ -92,6 +92,10 @@ export default class ShortcutsComponent extends React.Component<Props, State> {
                 <td>Copy invocation link</td>
               </tr>
               <tr>
+                <td className="keyboard-shortcut-key">b-b</td>
+                <td>Open Ask BuildBuddy</td>
+              </tr>
+              <tr>
                 <th className="keyboard-shortcut-th">&nbsp;</th>
                 <th className="keyboard-shortcut-th"></th>
               </tr>

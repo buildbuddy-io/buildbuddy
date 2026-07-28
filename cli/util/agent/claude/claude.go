@@ -23,6 +23,7 @@ func Run(ctx context.Context, request *agentutil.RunRequest) (*agentutil.RunResp
 
 	args := commandArgs(request)
 	cmd := exec.CommandContext(ctx, "claude", args...)
+	cmd.Env = agentutil.ChildProcessEnv()
 	cmd.Stdin = strings.NewReader(request.Prompt)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout

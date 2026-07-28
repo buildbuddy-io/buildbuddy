@@ -190,6 +190,7 @@ var (
 
 	// Flags to configure setting up git repo
 	skipAutomaticCheckout = flag.Bool("skip_auto_checkout", false, "Whether to skip the automatic GitHub setup steps on the remote runner.")
+	disableGitPush        = flag.Bool("disable_git_push", false, "Whether to remove checkout credentials from Git remotes and disable pushes after fetching.")
 	triggerEvent          = flag.String("trigger_event", "", "Event type that triggered the action runner.")
 	pushedRepoURL         = flag.String("pushed_repo_url", "", "URL of the pushed repo. This is required.")
 	pushedBranch          = flag.String("pushed_branch", "", "Branch name of the commit to be checked out.")
@@ -2385,6 +2386,18 @@ func (ws *workspace) fetch(ctx context.Context, remoteURL string, refs []string,
 	}
 	if fetchErr != nil {
 		return status.WrapError(fetchErr, fetchErr.Output)
+	}
+	if *disableGitPush {
+		// The runner needs credentials while fetching, but analysis agents do
+		// not. Remove credentials persisted in the fetch URL and set a push URL
+		// that cannot reach the source repository before running user steps.
+		cleanRemoteURL := gitutil.StripRepoURLCredentials(remoteURL)
+		if _, err := git(ctx, io.Discard, "remote", "set-url", remoteName, cleanRemoteURL); err != nil {
+			return status.WrapError(err, "remove credentials from git remote")
+		}
+		if _, err := git(ctx, io.Discard, "remote", "set-url", "--push", remoteName, "https://push-disabled.invalid/"); err != nil {
+			return status.WrapError(err, "disable git remote push")
+		}
 	}
 	return nil
 }

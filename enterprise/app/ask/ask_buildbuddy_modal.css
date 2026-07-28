@@ -1,0 +1,96 @@
+.ask-buildbuddy-dialog.dialog-card {
+  width: 680px;
+}
+
+.ask-buildbuddy-description {
+  color: var(--color-text-secondary);
+}
+
+.ask-buildbuddy-question {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 144px;
+  resize: vertical;
+  padding: 12px 14px;
+  border: 1px solid var(--color-border-primary);
+  border-radius: 8px;
+  outline: none;
+  background: var(--color-bg-primary);
+  color: var(--color-text-primary);
+  font: inherit;
+  line-height: 1.5;
+}
+
+.ask-buildbuddy-question:focus {
+  border-color: var(--color-border-focus);
+  box-shadow: 0 0 0 1px var(--color-border-focus);
+}
+
+.ask-buildbuddy-question::placeholder {
+  color: var(--color-text-placeholder);
+}
+
+.ask-buildbuddy-suggestions,
+.ask-buildbuddy-context-items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.ask-buildbuddy-suggestions {
+  margin-top: 12px;
+}
+
+.ask-buildbuddy-suggestion,
+.ask-buildbuddy-context-chip,
+.ask-buildbuddy-include-context {
+  border: 1px solid var(--color-border-primary);
+  border-radius: 999px;
+  padding: 6px 10px;
+  background: var(--color-bg-secondary);
+  color: var(--color-text-primary);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.ask-buildbuddy-suggestion:hover,
+.ask-buildbuddy-context-chip:hover,
+.ask-buildbuddy-include-context:hover {
+  border-color: var(--color-button-outlined-hover-border);
+  background: var(--color-button-outlined-hover-bg);
+}
+
+.ask-buildbuddy-context {
+  margin-top: 20px;
+}
+
+.ask-buildbuddy-context-label {
+  margin-bottom: 8px;
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.ask-buildbuddy-include-context {
+  background: transparent;
+  border-style: dashed;
+  color: var(--color-text-secondary);
+}
+
+.ask-buildbuddy-include-context:disabled {
+  cursor: default;
+  opacity: 0.65;
+}
+
+.ask-buildbuddy-submit-hint {
+  align-self: center;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+}
+
+@media (max-width: 600px) {
+  .ask-buildbuddy-submit-hint {
+    display: none;
+  }
+}

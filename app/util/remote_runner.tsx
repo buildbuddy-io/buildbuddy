@@ -22,7 +22,10 @@ export function triggerRemoteRun(
   // When true, don't check out a git repo on the runner. Use for commands that
   // operate purely on remotely-fetched data and don't need the workspace.
   skipRepo: boolean = false,
-  name: string = ""
+  name: string = "",
+  // Most existing remote-run actions open a new tab. Callers that represent a
+  // primary navigation flow can instead replace the current page.
+  openInNewTab: boolean = true
 ) {
   command = command.replaceAll(/--[a-zA-Z_]+='\<REDACTED\>'/g, "");
   let execProps: build.bazel.remote.execution.v2.Platform.Property[] = [];
@@ -83,7 +86,11 @@ export function triggerRemoteRun(
       if (autoOpenChild) {
         url += "&openChild=true";
       }
-      window.open(url, "_blank");
+      if (openInNewTab) {
+        window.open(url, "_blank");
+      } else {
+        window.location.href = url;
+      }
     })
     .catch((error) => {
       error_service.handleError(error);
