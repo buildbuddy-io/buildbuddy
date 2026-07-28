@@ -20,12 +20,15 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/login"
 	"github.com/buildbuddy-io/buildbuddy/cli/version"
+	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/util/error_util"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rexec"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/types/known/durationpb"
 
@@ -34,7 +37,9 @@ import (
 	gwpb "github.com/buildbuddy-io/buildbuddy/proto/gateway"
 	gwsvcpb "github.com/buildbuddy-io/buildbuddy/proto/gateway_service"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
+	gstatus "google.golang.org/grpc/status"
 )
 
 const (
@@ -46,6 +51,13 @@ const (
 
 	// Used for cache uploads and remotely executed action.
 	digestFunction = repb.DigestFunction_BLAKE3
+
+	// remoteInstanceName is the remote instance name for box actions. The
+	// "bb-devbox" prefix (snaputil.DevboxPartitionPrefix) opts box VMs into
+	// remote snapshot sharing on the executor, so that a named box can be
+	// resumed by any executor rather than only the one that last ran it, and
+	// routes cache artifacts to the devbox cache partition.
+	remoteInstanceName = "bb-devbox-box"
 
 	// defaultImage is the container image used for box VMs. This image is
 	// pinned by digest and is likely already cached on BuildBuddy executors.
@@ -195,6 +207,15 @@ func handleCreate(args []string) (int, error) {
 		execProps = append(execProps,
 			"recycle-runner=true",
 			platform.RunnerRecyclingKey+"="+boxName,
+			// Give the executor that last ran this box a head start when
+			// scheduling, so that resumes hit its warm local snapshot. (The
+			// server caps this via remote_execution.max_scheduling_delay.)
+			platform.RunnerRecyclingMaxWaitPropertyName+"=5s",
+			// By default, firecracker only saves a snapshot for non-CI
+			// actions if none exists yet, which would freeze the box's state
+			// at its first session. Always save so that changes made in each
+			// session persist to the next one.
+			platform.SnapshotSavePolicyPropertyName+"="+platform.AlwaysSaveSnapshot,
 		)
 	}
 	plat, err := rexec.MakePlatform(execProps...)
@@ -231,16 +252,46 @@ func handleCreate(args []string) (int, error) {
 		},
 		Platform: plat,
 	}
+	if recycleable {
+		// Declare a stable output path per box name. This activates the
+		// scheduler's affinity routing (which routes on the first output
+		// path), so that resumes prefer the executor holding the warm local
+		// snapshot. The path is never actually produced by the action, which
+		// is fine.
+		cmd.OutputPaths = []string{"bb-box/" + boxName}
+	}
 	action := &repb.Action{
 		DoNotCache: true,
 		Timeout:    durationpb.New(actionTimeout),
 	}
 
-	arn, err := rexec.Prepare(ctx, env, "bb-cli-box", digestFunction, action, cmd, inputDir)
+	arn, err := rexec.Prepare(ctx, env, remoteInstanceName, digestFunction, action, cmd, inputDir)
 	if err != nil {
 		return -1, fmt.Errorf("preparing action: %w", err)
 	}
 
+	bbClient := bbspb.NewBuildBuddyServiceClient(conn)
+
+	// If a named box's snapshot disappears between the executor's initial
+	// existence check and the VM load (e.g. local filecache eviction), the
+	// action fails with a SNAPSHOT_NOT_FOUND error. Retry once: on the next
+	// attempt the executor re-checks for the snapshot, misses, and does a
+	// normal cold boot. The failed attempt never ran the command inside the
+	// VM, so the same action and invocation ID can be reused.
+	const maxAttempts = 2
+	for attempt := 1; ; attempt++ {
+		code, err := startAndAwaitReady(ctx, env, arn, bbClient, iid)
+		if err != nil && attempt < maxAttempts && isSnapshotNotFound(err) {
+			log.Printf("Box snapshot is no longer available; starting a fresh VM...")
+			continue
+		}
+		return code, err
+	}
+}
+
+// startAndAwaitReady starts the box action and polls the BES event log until
+// bb ssh-server writes its READY line, or the action fails.
+func startAndAwaitReady(ctx context.Context, env environment.Env, arn *rspb.ResourceName, bbClient bbspb.BuildBuddyServiceClient, iid string) (int, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -250,7 +301,7 @@ func handleCreate(args []string) (int, error) {
 	}
 
 	// Watch the operation stream for failures and cancel the context so the
-	// BES poll below unblocks immediately.
+	// readiness polls below unblock immediately.
 	streamErrCh := make(chan error, 1)
 	go func() {
 		for {
@@ -275,9 +326,7 @@ func handleCreate(args []string) (int, error) {
 		}
 	}()
 
-	// Poll the BES event log until the ssh-server writes its READY line.
 	log.Printf("Waiting for VM to start...")
-	bbClient := bbspb.NewBuildBuddyServiceClient(conn)
 	type readyResult struct {
 		*url.URL
 		err error
@@ -311,6 +360,19 @@ func handleCreate(args []string) (int, error) {
 		fmt.Printf("  Connect: bb ssh %s\n", nameOrIP)
 		return 0, nil
 	}
+}
+
+// isSnapshotNotFound returns whether the error from a failed box action
+// indicates that the VM snapshot went missing on the executor (in which case
+// re-running the action results in a normal cold boot).
+func isSnapshotNotFound(err error) bool {
+	if error_util.IsSnapshotNotFoundError(err) {
+		return true
+	}
+	// Fall back to matching on the status code and message, in case the typed
+	// error detail was dropped somewhere along the way.
+	s := gstatus.Convert(err)
+	return s.Code() == codes.NotFound && strings.Contains(strings.ToLower(s.Message()), "snapshot")
 }
 
 func handleList(args []string) (int, error) {
