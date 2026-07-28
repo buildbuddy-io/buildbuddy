@@ -49,11 +49,6 @@ const (
 	executionUpdatesExpiration        = 24 * time.Hour
 )
 
-var (
-	// Whether to write invocation => execution links.
-	writeInvocationExecutionLinks bool
-)
-
 type collector struct {
 	rdb redis.UniversalClient
 }
