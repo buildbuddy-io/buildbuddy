@@ -21,6 +21,7 @@ import (
 
 	"github.com/AlecAivazis/survey/v2"
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
+	"github.com/buildbuddy-io/buildbuddy/cli/artifacts"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/login"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser"
@@ -78,6 +79,10 @@ const (
 
 var (
 	RemoteFlagset = flag.NewFlagSet("remote", flag.ContinueOnError)
+
+	remoteDownloadFlags     = flag.NewFlagSet("remote download", flag.ContinueOnError)
+	remoteDownloadTarget    = remoteDownloadFlags.String("target", login.DefaultApiTarget, "BuildBuddy gRPC target.")
+	remoteDownloadOutputDir = remoteDownloadFlags.String("output_dir", artifacts.LocalOutputDirectoryName, "Directory under which artifacts are downloaded.")
 
 	execOs                  = RemoteFlagset.String("os", "", "If set, requests execution on a specific OS.")
 	execArch                = RemoteFlagset.String("arch", "", "If set, requests execution on a specific CPU architecture.")
@@ -1164,6 +1169,20 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 	}
 
 	exitCode := int(executeResponse.GetResult().GetExitCode())
+	outerInvocationID := inRsp.GetInvocation()[0].GetInvocationId()
+	downloadRoot := filepath.Join(filepath.Dir(opts.WorkspaceFilePath), artifacts.LocalOutputDirectoryName)
+	downloaded, err := artifacts.Download(
+		ctx,
+		bbClient,
+		bspb.NewByteStreamClient(conn),
+		outerInvocationID,
+		downloadRoot,
+	)
+	if err != nil {
+		return 1, fmt.Errorf("download remote runner artifacts for invocation %q: %w", outerInvocationID, err)
+	}
+	artifacts.PrintDownloaded(downloaded)
+
 	if opts.FetchOutputs && exitCode == 0 {
 		if childIID != "" {
 			conn, err := grpc_client.DialSimple(opts.Server)
@@ -1339,6 +1358,10 @@ func getRemoteRunnerTarget(commandLineArgs []string) string {
 }
 
 func HandleRemoteBazel(commandLineArgs []string) (int, error) {
+	if len(commandLineArgs) > 0 && commandLineArgs[0] == "download" {
+		return handleRemoteDownload(commandLineArgs[1:])
+	}
+
 	runner := normalizeGRPCTarget(getRemoteRunnerTarget(commandLineArgs))
 
 	commandLineArgs, err := parseRemoteCliFlags(commandLineArgs)
@@ -1434,6 +1457,51 @@ func HandleRemoteBazel(commandLineArgs []string) (int, error) {
 		return exitCode, nil
 	}
 	return exitCode, err
+}
+
+func handleRemoteDownload(args []string) (int, error) {
+	if err := arg.ParseFlagSet(remoteDownloadFlags, args); err != nil {
+		if err == flag.ErrHelp {
+			log.Printf("Usage: bb remote download [--target=API_TARGET] [--output_dir=DIR] INVOCATION_ID")
+			return 1, nil
+		}
+		return 1, err
+	}
+	if remoteDownloadFlags.NArg() != 1 {
+		return 1, fmt.Errorf("usage: bb remote download [--target=API_TARGET] [--output_dir=DIR] INVOCATION_ID")
+	}
+	invocationID := remoteDownloadFlags.Arg(0)
+
+	apiKey, err := login.GetAPIKey()
+	if err != nil {
+		return 1, fmt.Errorf("not logged in: %w", err)
+	}
+	if apiKey == "" {
+		return 1, fmt.Errorf("not logged in")
+	}
+	conn, err := grpc_client.DialSimple(*remoteDownloadTarget)
+	if err != nil {
+		return 1, fmt.Errorf("failed to connect to BuildBuddy: %w", err)
+	}
+	defer conn.Close()
+
+	ctx := metadata.AppendToOutgoingContext(context.Background(), "x-buildbuddy-api-key", apiKey)
+	downloaded, err := artifacts.Download(
+		ctx,
+		bbspb.NewBuildBuddyServiceClient(conn),
+		bspb.NewByteStreamClient(conn),
+		invocationID,
+		*remoteDownloadOutputDir,
+	)
+	if err != nil {
+		return 1, err
+	}
+	if len(downloaded) == 0 {
+		log.Printf("No %s artifacts found for invocation %s.", artifacts.DownloadDirectoryName, invocationID)
+		return 0, nil
+	}
+	artifacts.PrintDownloaded(downloaded)
+	return 0, nil
 }
 
 func parseArgs(commandLineArgs []string) ([]string, []string, error) {

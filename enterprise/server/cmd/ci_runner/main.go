@@ -92,6 +92,8 @@ const (
 	// command as BUILDBUDDY_ARTIFACTS_DIRECTORY.
 	// Bazel commands can reference this like:
 	//     bazel build --experimental_remote_grpc_log_file=$BUILDBUDDY_ARTIFACTS_DIRECTORY/grpc.log
+	// Files written under the bb-download subdirectory are downloaded
+	// automatically by the bb remote client.
 	// After each Bazel command, the CI runner will scan for artifacts under
 	// this directory and upload all artifacts to cache, and report all uploads
 	// as NamedSetOfFiles in the workflow build event stream.
