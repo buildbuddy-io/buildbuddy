@@ -52,6 +52,11 @@ const (
 	// Preferred node limit for tasks using [persistentWorkerRouter].
 	persistentWorkerRouterPreferredNodeLimit = 128
 
+	// The preferred node limit for recycled-runner tasks (e.g. `bb box` VMs).
+	// Local snapshots only exist on the executor that last ran the runner, so
+	// strongly prefer routing back to that single node.
+	recycledRunnerPreferredNodeLimit = 1
+
 	affinityRouterKeyExperiment = "remote_execution.affinity_router_key"
 
 	affinityRouterKeyFirstOutput = "first_output"
@@ -91,6 +96,7 @@ func New(env environment.Env) (interfaces.TaskRouter, error) {
 	// list have higher precedence)
 	strategies := []Router{
 		&ciRunnerRouter{rdb: rdb},
+		&recycledRunnerRouter{rdb: rdb},
 		&persistentWorkerRouter{env: env, rdb: rdb},
 		&affinityRouter{rdb: rdb},
 	}
@@ -497,6 +503,66 @@ func (s *ciRunnerRouter) RoutingInfo(params routingParams) (int, []string, error
 	nodeLimit := s.preferredNodeLimit(params)
 	keys, err := s.routingKeys(params)
 	return nodeLimit, keys, err
+}
+
+// The recycledRunnerRouter routes tasks that request runner recycling with an
+// explicit runner-recycling-key (e.g. `bb box` VMs) back to the executor that
+// last ran a task with the same key, so that paused runners and local VM
+// snapshots can be reused. CI runner tasks are handled by the higher-priority
+// ciRunnerRouter, which additionally routes on git branch info.
+type recycledRunnerRouter struct {
+	rdb redis.UniversalClient
+}
+
+func (*recycledRunnerRouter) Applies(_ context.Context, params routingParams) bool {
+	return platform.IsTrue(platform.FindValue(params.platform, "recycle-runner")) &&
+		platform.FindValue(params.platform, platform.RunnerRecyclingKey) != ""
+}
+
+func (s *recycledRunnerRouter) routingKey(params routingParams) (string, error) {
+	parts := []string{"task_route", params.groupID}
+	if params.remoteInstanceName != "" {
+		parts = append(parts, params.remoteInstanceName)
+	}
+	// Note: the platform hash already incorporates the runner-recycling-key
+	// property, but include it explicitly so that the routing intent is
+	// preserved even if unrelated platform properties are excluded from the
+	// hash in the future.
+	b, err := proto.Marshal(params.platform)
+	if err != nil {
+		return "", status.InternalErrorf("failed to marshal Platform: %s", err)
+	}
+	parts = append(parts, hash.Bytes(b))
+	recyclingKey := platform.FindValue(params.platform, platform.RunnerRecyclingKey)
+	parts = append(parts, hash.String(recyclingKey))
+	return strings.Join(parts, "/"), nil
+}
+
+func (s *recycledRunnerRouter) RoutingInfo(params routingParams) (int, []string, error) {
+	key, err := s.routingKey(params)
+	return recycledRunnerPreferredNodeLimit, []string{key}, err
+}
+
+func (s *recycledRunnerRouter) GetPreferredHostIDs(ctx context.Context, routingKey string) ([]string, error) {
+	return s.rdb.LRange(ctx, routingKey, 0, -1).Result()
+}
+
+func (s *recycledRunnerRouter) UpdatePreferredHostIDs(ctx context.Context, taskSucceeded bool, preferredNodeLimit int, routingKey, executorHostID string) error {
+	pipe := s.rdb.TxPipeline()
+	if taskSucceeded {
+		// Push the node to the head of the list (but first remove it if already
+		// present to avoid dupes), trim to max length to prevent it from growing
+		// too large, and renew the TTL.
+		pipe.LRem(ctx, routingKey, 1, executorHostID)
+		pipe.LPush(ctx, routingKey, executorHostID)
+		pipe.LTrim(ctx, routingKey, 0, int64(preferredNodeLimit)-1)
+	} else {
+		// Note: -1 means remove all occurrences.
+		pipe.LRem(ctx, routingKey, -1, executorHostID).Err()
+	}
+	pipe.Expire(ctx, routingKey, routingPropsKeyTTL)
+	_, err := pipe.Exec(ctx)
+	return err
 }
 
 // affinityRouter generates Redis routing keys based on:

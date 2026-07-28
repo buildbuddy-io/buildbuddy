@@ -125,6 +125,53 @@ func TestTaskRouter_RankNodes_RoutesByHostID(t *testing.T) {
 	requireNonSequential(t, ranked[1:])
 }
 
+func TestTaskRouter_RankNodes_RecycledRunnerRouting(t *testing.T) {
+	// Mark a non-CI recycled-runner task (like a `bb box` VM) complete by
+	// executor 1.
+
+	env := newTestEnv(t)
+	router := newTaskRouter(t, env)
+	ctx := withAuthUser(t, context.Background(), env, "US1")
+	cmd := &repb.Command{
+		Platform: &repb.Platform{
+			Properties: []*repb.Platform_Property{
+				{Name: "recycle-runner", Value: "true"},
+				{Name: "runner-recycling-key", Value: "my-box"},
+			},
+		},
+		Arguments: []string{"./bb", "ssh-server"},
+	}
+	instanceName := "bb-devbox"
+
+	router.MarkSucceeded(ctx, nil, cmd, instanceName, executorHostID1)
+
+	nodes := sequentiallyNumberedNodes(100)
+
+	// The task should be routed back to executor 1, even though it has no
+	// output paths (so affinity routing does not apply) and is not a CI
+	// command.
+
+	ranked := router.RankNodes(ctx, nil, cmd, instanceName, nodes)
+
+	requireSameExecutionNodes(t, nodes, ranked)
+	require.Equal(t, executorHostID1, ranked[0].GetExecutionNode().GetExecutorHostId())
+	requireNonSequential(t, ranked[1:])
+
+	// A task with a different recycling key should not be routed to executor 1.
+
+	otherCmd := &repb.Command{
+		Platform: &repb.Platform{
+			Properties: []*repb.Platform_Property{
+				{Name: "recycle-runner", Value: "true"},
+				{Name: "runner-recycling-key", Value: "other-box"},
+			},
+		},
+		Arguments: []string{"./bb", "ssh-server"},
+	}
+
+	requireNotAlwaysRanked(0, executorHostID1, t, router, ctx, otherCmd, instanceName)
+}
+
 func TestTaskRouter_RankNodes_AffinityRouting(t *testing.T) {
 	env := newTestEnv(t)
 	router := newTaskRouter(t, env)
