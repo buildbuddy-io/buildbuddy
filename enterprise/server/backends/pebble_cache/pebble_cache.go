@@ -2099,32 +2099,38 @@ func (p *PebbleCache) GetMulti(ctx context.Context, resources []*rspb.ResourceNa
 	if err != nil {
 		return nil, err
 	}
-	eg, ctx := errgroup.WithContext(ctx)
-	eg.SetLimit(10)
+	resourceChan := make(chan *rspb.ResourceName, len(resources))
 	for _, r := range resources {
+		resourceChan <- r
+	}
+	close(resourceChan)
+	eg, ctx := errgroup.WithContext(ctx)
+	maxGoroutines := 10
+	for range min(maxGoroutines, len(resources)) {
 		eg.Go(func() error {
-			rc, md, err := p.reader(ctx, db, groupID, encryption, r, 0, 0)
-			if err != nil {
-				if status.IsNotFoundError(err) || os.IsNotExist(err) {
-					return nil
+			for r := range resourceChan {
+				rc, md, err := p.reader(ctx, db, groupID, encryption, r, 0, 0)
+				if err != nil {
+					if status.IsNotFoundError(err) || os.IsNotExist(err) {
+						continue
+					}
+					return err
 				}
-				return err
+				buf := bytes.NewBuffer(make([]byte, 0, p.readBufSize(r, md)))
+				_, copyErr := io.Copy(buf, rc)
+				closeErr := rc.Close()
+				if copyErr != nil {
+					log.CtxWarningf(ctx, "[%s] GetMulti encountered error when copying %s: %s", p.name, r.GetDigest().GetHash(), copyErr)
+					continue
+				}
+				if closeErr != nil {
+					log.CtxWarningf(ctx, "[%s] GetMulti cannot close reader when copying %s: %s", p.name, r.GetDigest().GetHash(), closeErr)
+					continue
+				}
+				mu.Lock()
+				foundMap[r.GetDigest()] = buf.Bytes()
+				mu.Unlock()
 			}
-
-			buf := bytes.NewBuffer(make([]byte, 0, p.readBufSize(r, md)))
-			_, copyErr := io.Copy(buf, rc)
-			closeErr := rc.Close()
-			if copyErr != nil {
-				log.CtxWarningf(ctx, "[%s] GetMulti encountered error when copying %s: %s", p.name, r.GetDigest().GetHash(), copyErr)
-				return nil
-			}
-			if closeErr != nil {
-				log.CtxWarningf(ctx, "[%s] GetMulti cannot close reader when copying %s: %s", p.name, r.GetDigest().GetHash(), closeErr)
-				return nil
-			}
-			mu.Lock()
-			foundMap[r.GetDigest()] = buf.Bytes()
-			mu.Unlock()
 			return nil
 		})
 	}
