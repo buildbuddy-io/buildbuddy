@@ -89,12 +89,35 @@
   font-size: 12px;
 }
 
+.ask-buildbuddy-proposal-card {
+  border-left: 6px solid var(--color-status-info);
+  background: var(--color-bg-info-subtle);
+}
+
 .ask-buildbuddy-proposal-card .content {
   flex: 1;
 }
 
+.ask-buildbuddy-proposal-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 40px;
+  height: 40px;
+  margin-right: 16px;
+  border-radius: 50%;
+  background: var(--color-status-info);
+}
+
+.ask-buildbuddy-proposal-icon svg {
+  stroke: var(--color-icon-inverted);
+}
+
 .ask-buildbuddy-proposal-actions {
   display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
   margin-top: 12px;
 }
 

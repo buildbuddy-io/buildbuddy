@@ -1,9 +1,16 @@
-import { ExternalLink, GitPullRequest } from "lucide-react";
+import { Bot, ExternalLink, FileDiff, MoreVertical } from "lucide-react";
 import React from "react";
-import Button from "../../../app/components/button/button";
+import alertService from "../../../app/alert/alert_service";
+import Button, { OutlinedButton } from "../../../app/components/button/button";
+import Menu, { MenuItem } from "../../../app/components/menu/menu";
+import Popup, { PopupContainer } from "../../../app/components/popup/popup";
 import errorService from "../../../app/errors/error_service";
 import InvocationModel from "../../../app/invocation/invocation_model";
 import rpcService from "../../../app/service/rpc_service";
+import { copyToClipboard } from "../../../app/util/clipboard";
+import { RepoURL } from "../../../app/util/git";
+import { quote } from "../../../app/util/shlex";
+import { bazel_config } from "../../../proto/bazel_config_ts_proto";
 import { github } from "../../../proto/github_ts_proto";
 
 const PROPOSAL_MANIFEST_NAME = "ask-buildbuddy-proposal.json";
@@ -34,8 +41,11 @@ interface Props {
 
 interface State {
   proposal?: ProposalManifest;
+  patchUri?: string;
   creatingPullRequest: boolean;
   pullRequestUrl?: string;
+  copyingDownloadCommand?: boolean;
+  moreMenuOpen?: boolean;
 }
 
 export default class AskBuildBuddyProposal extends React.Component<Props, State> {
@@ -88,7 +98,7 @@ export default class AskBuildBuddyProposal extends React.Component<Props, State>
         console.error("Ignoring invalid Ask BuildBuddy proposal manifest.");
         return;
       }
-      this.setState({ proposal });
+      this.setState({ proposal, patchUri: patchArtifact.uri });
     } catch (error) {
       // Artifacts may not exist until the runner command finishes. The parent
       // invocation component supplies a refreshed model as the run updates.
@@ -140,18 +150,53 @@ export default class AskBuildBuddyProposal extends React.Component<Props, State>
     }
   }
 
+  private async copyDownloadCommand() {
+    this.setState({ copyingDownloadCommand: true });
+    try {
+      const response = await rpcService.service.getBazelConfig(
+        new bazel_config.GetBazelConfigRequest({
+          host: window.location.host,
+          protocol: window.location.protocol,
+        })
+      );
+      const apiTarget = response.configOption.find((option) => option.flagName === "bes_backend")?.flagValue;
+      if (!apiTarget) {
+        throw new Error("BuildBuddy API target is not configured.");
+      }
+      copyToClipboard(`bb remote download ${quote(`--target=${apiTarget}`)} ${quote(this.props.invocationId)}`);
+      alertService.success("Download command copied to clipboard");
+    } catch (error) {
+      errorService.handleError(error);
+    } finally {
+      this.setState({ copyingDownloadCommand: false, moreMenuOpen: false });
+    }
+  }
+
+  private closeMoreMenu(event: React.MouseEvent<HTMLElement>) {
+    event.preventDefault();
+    event.stopPropagation();
+    this.setState({ moreMenuOpen: false });
+  }
+
   render() {
     if (!this.state.proposal) return null;
+    const repository = RepoURL.parse(this.state.proposal.repository);
+    const codePath = repository ? `/code/${repository.owner}/${repository.repo}/` : "/code/buildbuddy-io/buildbuddy/";
+    const diffUrl = this.state.patchUri
+      ? `${codePath}?bytestream_url=${encodeURIComponent(
+          this.state.patchUri
+        )}&invocation_id=${this.props.invocationId}&filename=${encodeURIComponent(
+          `${DOWNLOAD_DIRECTORY_NAME}/${PROPOSAL_PATCH_NAME}`
+        )}`
+      : undefined;
 
     return (
       <div className="card ask-buildbuddy-proposal-card">
-        <GitPullRequest />
+        <div className="ask-buildbuddy-proposal-icon">
+          <Bot />
+        </div>
         <div className="content">
-          <div className="title">Proposed repository changes</div>
-          <div className="details">
-            Ask BuildBuddy produced a patch for {this.state.proposal.repository}. Review the patch in the Artifacts tab
-            or create a draft pull request.
-          </div>
+          <div className="title">Changes proposed</div>
           <div className="ask-buildbuddy-proposal-actions">
             {this.state.pullRequestUrl ? (
               <a className="base-button filled-button" href={this.state.pullRequestUrl} target="_blank">
@@ -162,6 +207,26 @@ export default class AskBuildBuddyProposal extends React.Component<Props, State>
                 {this.state.creatingPullRequest ? "Creating draft PR…" : "Create draft PR"}
               </Button>
             )}
+            {diffUrl && (
+              <a className="base-button outlined-button" href={diffUrl} target="_blank">
+                <FileDiff className="icon" /> View diff <ExternalLink size={14} />
+              </a>
+            )}
+            <PopupContainer>
+              <OutlinedButton
+                className="icon-button"
+                title="More actions"
+                onClick={() => this.setState({ moreMenuOpen: true })}>
+                <MoreVertical />
+              </OutlinedButton>
+              <Popup isOpen={Boolean(this.state.moreMenuOpen)} onRequestClose={this.closeMoreMenu.bind(this)}>
+                <Menu>
+                  <MenuItem disabled={this.state.copyingDownloadCommand} onClick={this.copyDownloadCommand.bind(this)}>
+                    {this.state.copyingDownloadCommand ? "Copying…" : "Copy command to download diffs"}
+                  </MenuItem>
+                </Menu>
+              </Popup>
+            </PopupContainer>
           </div>
         </div>
       </div>

@@ -31,7 +31,6 @@ import (
 
 const (
 	artifactsDirectoryEnvVar = "BUILDBUDDY_ARTIFACTS_DIRECTORY"
-	downloadDirectoryName    = "bb-download"
 	proposalManifestName     = "ask-buildbuddy-proposal.json"
 	proposalPatchName        = "ask-buildbuddy.patch"
 	maxProposalSizeBytes     = 20 * 1024 * 1024
@@ -173,11 +172,8 @@ the body.`, proposalCtx.MetadataPath)
 	if err != nil {
 		return -1, fmt.Errorf("ask BuildBuddy: %w", err)
 	}
-	if err := writeProposalArtifacts(proposalCtx, question, response.Output); err != nil {
-		log.Warnf("Could not create pull request proposal artifacts: %s", err)
-	}
 
-	metadata, metadataErr := readProposalMetadata(proposalCtx)
+	metadata, metadataErr := readProposalMetadata(proposalCtx, question)
 	if proposalCtx != nil {
 		_ = os.Remove(proposalCtx.MetadataPath)
 	}
@@ -197,7 +193,7 @@ the body.`, proposalCtx.MetadataPath)
 	return 0, nil
 }
 
-func readProposalMetadata(proposalCtx *proposalContext) (*proposalMetadata, error) {
+func readProposalMetadata(proposalCtx *proposalContext, question string) (*proposalMetadata, error) {
 	if proposalCtx == nil {
 		return nil, nil
 	}
@@ -208,6 +204,9 @@ func readProposalMetadata(proposalCtx *proposalContext) (*proposalMetadata, erro
 	if err != nil {
 		return nil, err
 	}
+	if len(data) > 64*1024 {
+		return nil, fmt.Errorf("metadata exceeds 64 KiB")
+	}
 	metadata := &proposalMetadata{}
 	if err := json.Unmarshal(data, metadata); err != nil {
 		return nil, err
@@ -216,6 +215,18 @@ func readProposalMetadata(proposalCtx *proposalContext) (*proposalMetadata, erro
 	metadata.Body = strings.TrimSpace(metadata.Body)
 	if metadata.Title == "" || metadata.Body == "" {
 		return nil, fmt.Errorf("title and body are required")
+	}
+	canonicalTitle := strings.TrimSpace(strings.TrimPrefix(strings.ToLower(metadata.Title), "ask buildbuddy:"))
+	if canonicalTitle == strings.ToLower(strings.TrimSpace(question)) {
+		return nil, fmt.Errorf("title repeats the user's question instead of describing the actual fix")
+	}
+	body := strings.ToLower(metadata.Body)
+	for _, forbidden := range []string{
+		"verification:", "tests:", "testing:", "test plan:", "commands run:", "i ran ", "i tried ", "verified by",
+	} {
+		if strings.Contains(body, forbidden) {
+			return nil, fmt.Errorf("body contains disallowed process or verification details")
+		}
 	}
 	return metadata, nil
 }
@@ -302,7 +313,7 @@ func writeProposalArtifacts(proposalCtx *proposalContext, metadata *proposalMeta
 		return fmt.Errorf("proposal manifest is too large (%d bytes; maximum %d)", len(manifestJSON), maxProposalSizeBytes)
 	}
 
-	downloadDir := filepath.Join(os.Getenv(artifactsDirectoryEnvVar), downloadDirectoryName)
+	downloadDir := filepath.Join(os.Getenv(artifactsDirectoryEnvVar), artifacts.DownloadDirectoryName)
 	if err := os.Mkdir(downloadDir, 0755); err != nil && !os.IsExist(err) {
 		return fmt.Errorf("create downloadable artifacts directory: %w", err)
 	}
