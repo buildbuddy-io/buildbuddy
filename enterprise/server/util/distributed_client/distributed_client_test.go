@@ -1343,12 +1343,14 @@ func TestRemoteGetMulti_MultipleCompressedBlobs(t *testing.T) {
 }
 
 // referenceReadServer is a DistributedCache server that answers every Read
-// with a single ReadResponse carrying the configured reference. It records
-// the compressor of the last requested resource so tests can assert on what
-// was seen at the server side of the wire.
+// with a ReadResponse carrying the configured reference, followed by one data
+// message per configured chunk (the verification-mode response shape). It
+// records the compressor of the last requested resource so tests can assert
+// on what was seen at the server side of the wire.
 type referenceReadServer struct {
 	dcpb.UnimplementedDistributedCacheServer
-	ref *refpb.Reference
+	ref        *refpb.Reference
+	dataChunks [][]byte
 
 	mu             sync.Mutex
 	lastCompressor repb.Compressor_Value
@@ -1358,7 +1360,15 @@ func (s *referenceReadServer) Read(req *dcpb.ReadRequest, stream dcpb.Distribute
 	s.mu.Lock()
 	s.lastCompressor = req.GetResource().GetCompressor()
 	s.mu.Unlock()
-	return stream.Send(&dcpb.ReadResponse{Reference: s.ref})
+	if err := stream.Send(&dcpb.ReadResponse{Reference: s.ref}); err != nil {
+		return err
+	}
+	for _, chunk := range s.dataChunks {
+		if err := stream.Send(&dcpb.ReadResponse{Data: chunk}); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *referenceReadServer) LastCompressor() repb.Compressor_Value {
@@ -1373,11 +1383,17 @@ func startReferenceReadServer(t *testing.T, ref *refpb.Reference) string {
 }
 
 func startReferenceReadServerWithRecorder(t *testing.T, ref *refpb.Reference) (string, *referenceReadServer) {
+	return startVerifyingReadServer(t, ref, nil)
+}
+
+// startVerifyingReadServer starts a server that responds with ref followed by
+// the given data chunks.
+func startVerifyingReadServer(t *testing.T, ref *refpb.Reference, dataChunks [][]byte) (string, *referenceReadServer) {
 	t.Helper()
 	lis, err := net.Listen("tcp", "localhost:0")
 	require.NoError(t, err)
 	srv := grpc.NewServer()
-	rrs := &referenceReadServer{ref: ref}
+	rrs := &referenceReadServer{ref: ref, dataChunks: dataChunks}
 	dcpb.RegisterDistributedCacheServer(srv, rrs)
 	t.Cleanup(srv.Stop)
 	go srv.Serve(lis)
@@ -1574,5 +1590,125 @@ func TestRemoteReadReference(t *testing.T) {
 		_, err := c.RemoteReader(ctx, peer, rn, 0, 0)
 		require.Error(t, err)
 		require.True(t, status.IsNotFoundError(err), "expected NotFoundError, got %s", err)
+	})
+}
+
+func TestRemoteReadVerification(t *testing.T) {
+	te := getTestEnv(t, emptyUserMap)
+	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), te.GetAuthenticator())
+	require.NoError(t, err)
+
+	const blobName = "blobs/verified-blob"
+	rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+	chunks := [][]byte{buf[:40], buf[40:]}
+
+	t.Run("matching bytes", func(t *testing.T) {
+		peer, _ := startVerifyingReadServer(t, makeReference(rn, blobName, repb.Compressor_IDENTITY), chunks)
+		c := newReferenceTestProxy(t, te, map[string][]byte{blobName: buf})
+		r, err := c.RemoteReader(ctx, peer, rn, 0, 0)
+		require.NoError(t, err)
+		got, err := io.ReadAll(r)
+		require.NoError(t, err)
+		require.NoError(t, r.Close())
+		require.Equal(t, buf, got)
+	})
+
+	t.Run("ranged", func(t *testing.T) {
+		rangedChunks := [][]byte{buf[5:15]}
+		peer, _ := startVerifyingReadServer(t, makeReference(rn, blobName, repb.Compressor_IDENTITY), rangedChunks)
+		c := newReferenceTestProxy(t, te, map[string][]byte{blobName: buf})
+		r, err := c.RemoteReader(ctx, peer, rn, 5, 10)
+		require.NoError(t, err)
+		got, err := io.ReadAll(r)
+		require.NoError(t, err)
+		require.NoError(t, r.Close())
+		require.Equal(t, buf[5:15], got)
+	})
+
+	t.Run("mismatched reference bytes are non-fatal", func(t *testing.T) {
+		_, otherBuf := testdigest.RandomCASResourceBuf(t, 100)
+		peer, _ := startVerifyingReadServer(t, makeReference(rn, blobName, repb.Compressor_IDENTITY), chunks)
+		c := newReferenceTestProxy(t, te, map[string][]byte{blobName: otherBuf})
+		r, err := c.RemoteReader(ctx, peer, rn, 0, 0)
+		require.NoError(t, err)
+		got, err := io.ReadAll(r)
+		require.NoError(t, err)
+		require.NoError(t, r.Close())
+		// The streamed bytes are authoritative.
+		require.Equal(t, buf, got)
+	})
+
+	t.Run("missing dereferencer is non-fatal", func(t *testing.T) {
+		peer, _ := startVerifyingReadServer(t, makeReference(rn, blobName, repb.Compressor_IDENTITY), chunks)
+		localPeer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+		c := distributed_client.New(te, te.GetCache(), localPeer)
+		require.NoError(t, c.StartListening())
+		waitUntilServerIsAlive(localPeer)
+		r, err := c.RemoteReader(ctx, peer, rn, 0, 0)
+		require.NoError(t, err)
+		got, err := io.ReadAll(r)
+		require.NoError(t, err)
+		require.NoError(t, r.Close())
+		require.Equal(t, buf, got)
+	})
+}
+
+// errorReadCloser fails every read with the given error.
+type errorReadCloser struct {
+	err error
+}
+
+func (e *errorReadCloser) Read(p []byte) (int, error) { return 0, e.err }
+func (e *errorReadCloser) Close() error               { return nil }
+
+func TestVerifyingReadCloser(t *testing.T) {
+	newRC := func(data []byte) io.ReadCloser {
+		return io.NopCloser(bytes.NewReader(data))
+	}
+	_, data := testdigest.RandomCASResourceBuf(t, 1000)
+
+	run := func(t *testing.T, secondary io.ReadCloser) (gotData []byte, statuses []string) {
+		onResult := func(verificationStatus string, err error) {
+			statuses = append(statuses, verificationStatus)
+		}
+		v := distributed_client.NewVerifyingReadCloser(newRC(data), secondary, onResult)
+		got, err := io.ReadAll(v)
+		require.NoError(t, err)
+		require.NoError(t, v.Close())
+		return got, statuses
+	}
+
+	t.Run("matching streams", func(t *testing.T) {
+		got, statuses := run(t, newRC(data))
+		require.Equal(t, data, got)
+		require.Equal(t, []string{distributed_client.VerificationSuccess}, statuses)
+	})
+
+	t.Run("differing bytes", func(t *testing.T) {
+		other := append([]byte{}, data...)
+		other[500] ^= 0xff
+		got, statuses := run(t, newRC(other))
+		// Primary bytes are served regardless of the mismatch.
+		require.Equal(t, data, got)
+		require.Equal(t, []string{distributed_client.VerificationFailure}, statuses)
+	})
+
+	t.Run("secondary too short", func(t *testing.T) {
+		got, statuses := run(t, newRC(data[:900]))
+		require.Equal(t, data, got)
+		require.Equal(t, []string{distributed_client.VerificationFailure}, statuses)
+	})
+
+	t.Run("secondary too long", func(t *testing.T) {
+		longer := append(append([]byte{}, data...), 0x01)
+		got, statuses := run(t, newRC(longer))
+		require.Equal(t, data, got)
+		require.Equal(t, []string{distributed_client.VerificationFailure}, statuses)
+	})
+
+	t.Run("secondary read error", func(t *testing.T) {
+		got, statuses := run(t, &errorReadCloser{err: errors.New("gcs exploded")})
+		require.Equal(t, data, got)
+		require.Equal(t, []string{distributed_client.VerificationError}, statuses)
 	})
 }

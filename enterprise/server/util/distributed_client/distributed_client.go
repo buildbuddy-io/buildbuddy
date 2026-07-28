@@ -1,6 +1,7 @@
 package distributed_client
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/config"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
@@ -30,11 +32,13 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rpcutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/reflection"
 
 	dcpb "github.com/buildbuddy-io/buildbuddy/proto/distributed_cache"
+	refpb "github.com/buildbuddy-io/buildbuddy/proto/reference"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 )
@@ -579,12 +583,9 @@ func (c *Proxy) RemoteReader(ctx context.Context, peer string, r *rspb.ResourceN
 		return nil, err
 	}
 
-	// The server provided a reference. Dereference it.
+	// The server provided a reference.
 	if rc.rsp.GetReference() != nil {
 		ref := rc.rsp.GetReference().CloneVT()
-		if err := rc.Close(); err != nil {
-			c.log.Debugf("Error closing read stream after receiving a reference: %s", err)
-		}
 
 		// Confirm the provided reference matches what was requested.
 		fr := ref.GetMetadata().GetFileRecord()
@@ -594,76 +595,54 @@ func (c *Proxy) RemoteReader(ctx context.Context, peer string, r *rspb.ResourceN
 			fr.GetDigestFunction() != r.GetDigestFunction() ||
 			fr.GetIsolation().GetCacheType() != r.GetCacheType() ||
 			fr.GetIsolation().GetRemoteInstanceName() != r.GetInstanceName() {
+			rc.Close()
 			return nil, status.InternalErrorf("peer %q returned a reference for %s/%d (cache type %s, instance %q), but %s/%d (cache type %s, instance %q) was requested",
 				peer,
 				frd.GetHash(), frd.GetSizeBytes(), fr.GetIsolation().GetCacheType(), fr.GetIsolation().GetRemoteInstanceName(),
 				r.GetDigest().GetHash(), r.GetDigest().GetSizeBytes(), r.GetCacheType(), r.GetInstanceName())
 		}
 
-		resolver, ok := c.cache.(interfaces.ReferenceCache)
-		if !ok {
-			return nil, status.FailedPreconditionErrorf("peer %q returned a reference, but the local cache (%T) cannot dereference", peer, c.cache)
-		}
-		dereference, err := resolver.GetDereferencer()
-		if err != nil {
-			return nil, err
-		}
-
-		// Dereferencing yields the bytes exactly as stored, so the stored
-		// compressor must be reconciled with the one the caller wants.
-		stored := ref.GetMetadata().GetFileRecord().GetCompressor()
-
-		// A ranged read of a compressed blob cannot be served: the caller's
-		// offset/limit refer to uncompressed bytes, which do not map to
-		// positions in the stored stream. This mirrors pebble's reader.
-		if stored == wanted && stored != repb.Compressor_IDENTITY && (offset != 0 || limit != 0) {
-			return nil, status.FailedPreconditionError("passthrough compression does not support offset/limit")
-		}
-
-		if stored == wanted {
-			return dereference(ctx, ref, offset, limit)
-		}
-		if stored == repb.Compressor_ZSTD && wanted == repb.Compressor_IDENTITY {
-			drc, err := dereference(ctx, ref, 0, 0)
-			if err != nil {
-				return nil, err
-			}
-			reader, err := compression.NewZstdDecompressingReader(drc)
-			if err != nil {
-				drc.Close()
-				return nil, err
-			}
-			// The offset/limit refer to uncompressed bytes, so apply them to
-			// the decompressed stream, as pebble's reader does.
-			if offset != 0 {
-				if _, err := io.CopyN(io.Discard, reader, offset); err != nil {
-					_ = reader.Close()
+		// If the server is also streaming the data, serve those bytes to the
+		// caller and verify that dereferencing the reference produces the
+		// same stream. This lets the reference machinery be validated
+		// end-to-end while the byte stream remains the source of truth.
+		if rc.moreData() {
+			byteReader := io.ReadCloser(rc)
+			if decompress {
+				dr, err := compression.NewZstdDecompressingReader(rc)
+				if err != nil {
+					rc.Close()
 					return nil, err
 				}
+				byteReader = dr
 			}
-			if limit != 0 {
-				return ioutil.LimitReadCloser(reader, limit), nil
-			}
-			return reader, nil
-		}
-		if stored == repb.Compressor_IDENTITY && wanted == repb.Compressor_ZSTD {
-			// The offset/limit refer to uncompressed bytes, so they can be
-			// applied to the stored stream directly before compressing.
-			drc, err := dereference(ctx, ref, offset, limit)
+			refReader, err := c.dereferencedReader(ctx, peer, ref, r, wanted, offset, limit)
 			if err != nil {
-				return nil, err
+				// Verification is best-effort: the byte stream is
+				// authoritative, so log and serve it.
+				c.log.Warningf("Cannot verify reference for %q from peer %q: %s", ResourceIsolationString(r), peer, err)
+				metrics.DistributedCacheReferenceVerificationCount.With(
+					prometheus.Labels{metrics.StatusLabel: VerificationError}).Inc()
+				return byteReader, nil
 			}
-			bufSize := int64(digest.SafeBufferSize(r, *config.ReadBufSizeBytes))
-			zr, err := compression.NewZstdCompressingReader(drc, c.bufPool, bufSize)
-			if err != nil {
-				drc.Close()
-				return nil, err
+			onResult := func(verificationStatus string, err error) {
+				switch verificationStatus {
+				case VerificationFailure:
+					c.log.Errorf("Reference verification failed for %q from peer %q: %s", ResourceIsolationString(r), peer, err)
+				case VerificationError:
+					c.log.Warningf("Reference verification error for %q from peer %q: %s", ResourceIsolationString(r), peer, err)
+				}
+				metrics.DistributedCacheReferenceVerificationCount.With(
+					prometheus.Labels{metrics.StatusLabel: verificationStatus}).Inc()
 			}
-			return zr, nil
+			return NewVerifyingReadCloser(byteReader, refReader, onResult), nil
 		}
-		// Unreachable: every combination of stored and wanted compressors is
-		// handled above.
-		return nil, status.InternalErrorf("peer %q returned a reference stored with compressor %s, but %s was requested with offset %d and limit %d", peer, stored, wanted, offset, limit)
+
+		// The reference is the whole response: dereference it.
+		if err := rc.Close(); err != nil {
+			c.log.Debugf("Error closing read stream after receiving a reference: %s", err)
+		}
+		return c.dereferencedReader(ctx, peer, ref, r, wanted, offset, limit)
 	}
 
 	if !decompress {
@@ -675,6 +654,180 @@ func (c *Proxy) RemoteReader(ctx context.Context, peer string, r *rspb.ResourceN
 		return nil, err
 	}
 	return dr, nil
+}
+
+// dereferencedReader resolves ref via the local cache's dereferencer and
+// returns a reader producing the referenced bytes encoded with the wanted
+// compressor, reconciling it with the compressor the blob was stored with.
+func (c *Proxy) dereferencedReader(ctx context.Context, peer string, ref *refpb.Reference, r *rspb.ResourceName, wanted repb.Compressor_Value, offset, limit int64) (io.ReadCloser, error) {
+	resolver, ok := c.cache.(interfaces.ReferenceCache)
+	if !ok {
+		return nil, status.FailedPreconditionErrorf("peer %q returned a reference, but the local cache (%T) cannot dereference", peer, c.cache)
+	}
+	dereference, err := resolver.GetDereferencer()
+	if err != nil {
+		return nil, err
+	}
+
+	// Dereferencing yields the bytes exactly as stored, so the stored
+	// compressor must be reconciled with the one the caller wants.
+	stored := ref.GetMetadata().GetFileRecord().GetCompressor()
+
+	// A ranged read of a compressed blob cannot be served: the caller's
+	// offset/limit refer to uncompressed bytes, which do not map to
+	// positions in the stored stream. This mirrors pebble's reader.
+	if stored == wanted && stored != repb.Compressor_IDENTITY && (offset != 0 || limit != 0) {
+		return nil, status.FailedPreconditionError("passthrough compression does not support offset/limit")
+	}
+
+	if stored == wanted {
+		return dereference(ctx, ref, offset, limit)
+	}
+	if stored == repb.Compressor_ZSTD && wanted == repb.Compressor_IDENTITY {
+		drc, err := dereference(ctx, ref, 0, 0)
+		if err != nil {
+			return nil, err
+		}
+		reader, err := compression.NewZstdDecompressingReader(drc)
+		if err != nil {
+			drc.Close()
+			return nil, err
+		}
+		// The offset/limit refer to uncompressed bytes, so apply them to
+		// the decompressed stream, as pebble's reader does.
+		if offset != 0 {
+			if _, err := io.CopyN(io.Discard, reader, offset); err != nil {
+				_ = reader.Close()
+				return nil, err
+			}
+		}
+		if limit != 0 {
+			return ioutil.LimitReadCloser(reader, limit), nil
+		}
+		return reader, nil
+	}
+	if stored == repb.Compressor_IDENTITY && wanted == repb.Compressor_ZSTD {
+		// The offset/limit refer to uncompressed bytes, so they can be
+		// applied to the stored stream directly before compressing.
+		drc, err := dereference(ctx, ref, offset, limit)
+		if err != nil {
+			return nil, err
+		}
+		bufSize := int64(digest.SafeBufferSize(r, *config.ReadBufSizeBytes))
+		zr, err := compression.NewZstdCompressingReader(drc, c.bufPool, bufSize)
+		if err != nil {
+			drc.Close()
+			return nil, err
+		}
+		return zr, nil
+	}
+	// Unreachable: every combination of stored and wanted compressors is
+	// handled above.
+	return nil, status.InternalErrorf("peer %q returned a reference stored with compressor %s, but %s was requested with offset %d and limit %d", peer, stored, wanted, offset, limit)
+}
+
+const (
+	// VerificationSuccess indicates that the two streams matched through EOF.
+	VerificationSuccess = "success"
+	// VerificationFailure indicates that the two streams diverged.
+	VerificationFailure = "failure"
+	// VerificationError indicates that verification could not be completed.
+	VerificationError = "error"
+)
+
+// verifyingReadCloser serves bytes from primary while reading the same number
+// of bytes from secondary and comparing the two streams. The outcome is
+// reported once via onResult (with one of the Verification* statuses above)
+// and verification then stops, but reads from primary continue to be served:
+// the primary stream is the source of truth, and verification failures
+// indicate a bug in the reference machinery rather than a problem with the
+// primary bytes. No outcome is reported if the reader is closed before the
+// primary stream reaches EOF.
+type verifyingReadCloser struct {
+	primary   io.ReadCloser
+	secondary io.ReadCloser
+	onResult  func(verificationStatus string, err error)
+
+	scratch  []byte
+	compared int64
+	done     bool
+}
+
+// NewVerifyingReadCloser returns a reader serving primary's bytes, comparing
+// them against secondary's as they are read. See verifyingReadCloser.
+func NewVerifyingReadCloser(primary, secondary io.ReadCloser, onResult func(verificationStatus string, err error)) io.ReadCloser {
+	return &verifyingReadCloser{
+		primary:   primary,
+		secondary: secondary,
+		onResult:  onResult,
+	}
+}
+
+// verify compares p against the next len(p) bytes of the secondary stream,
+// reporting the outcome and disabling verification on divergence or error.
+func (v *verifyingReadCloser) verify(p []byte) {
+	if v.done {
+		return
+	}
+	if len(p) > cap(v.scratch) {
+		v.scratch = make([]byte, len(p))
+	}
+	scratch := v.scratch[:len(p)]
+	if _, err := io.ReadFull(v.secondary, scratch); err != nil {
+		if err == io.EOF || err == io.ErrUnexpectedEOF {
+			v.report(VerificationFailure, status.InternalErrorf("dereferenced bytes ended early at offset %d", v.compared))
+		} else {
+			v.report(VerificationError, status.InternalErrorf("error reading dereferenced bytes at offset %d: %s", v.compared, err))
+		}
+		return
+	}
+	if !bytes.Equal(p, scratch) {
+		v.report(VerificationFailure, status.InternalErrorf("dereferenced bytes differ from streamed bytes at offset %d", v.compared))
+		return
+	}
+	v.compared += int64(len(p))
+}
+
+// verifyEOF confirms the secondary stream is also exhausted and reports the
+// final outcome.
+func (v *verifyingReadCloser) verifyEOF() {
+	if v.done {
+		return
+	}
+	var b [1]byte
+	n, err := v.secondary.Read(b[:])
+	switch {
+	case n == 0 && err == io.EOF:
+		v.report(VerificationSuccess, nil)
+	case n != 0 || err == nil:
+		v.report(VerificationFailure, status.InternalErrorf("dereferenced bytes continue past streamed bytes at offset %d", v.compared))
+	default:
+		v.report(VerificationError, status.InternalErrorf("error reading dereferenced bytes at offset %d: %s", v.compared, err))
+	}
+}
+
+func (v *verifyingReadCloser) report(verificationStatus string, err error) {
+	v.done = true
+	v.onResult(verificationStatus, err)
+}
+
+func (v *verifyingReadCloser) Read(p []byte) (int, error) {
+	n, err := v.primary.Read(p)
+	if n > 0 {
+		v.verify(p[:n])
+	}
+	if err == io.EOF {
+		v.verifyEOF()
+	}
+	return n, err
+}
+
+func (v *verifyingReadCloser) Close() error {
+	err := v.primary.Close()
+	if serr := v.secondary.Close(); err == nil {
+		err = serr
+	}
+	return err
 }
 
 type distributedCacheReader struct {

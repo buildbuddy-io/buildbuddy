@@ -1012,6 +1012,20 @@ var (
 		StatusLabel,
 	})
 
+	// DistributedCacheReferenceVerificationCount counts verifications of
+	// references received alongside streamed bytes on distributed cache
+	// reads, by outcome: "success" (the dereferenced bytes matched the
+	// streamed bytes through EOF), "failure" (the two streams diverged), or
+	// "error" (verification could not be run or completed).
+	DistributedCacheReferenceVerificationCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "distributed_cache_reference_verification_count",
+		Help:      "Count of reference verifications on distributed cache reads, by outcome.",
+	}, []string{
+		StatusLabel,
+	})
+
 	MigrationNotFoundErrorCount = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_cache",
