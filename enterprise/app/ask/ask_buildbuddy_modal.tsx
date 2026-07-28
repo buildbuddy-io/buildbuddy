@@ -26,10 +26,7 @@ interface Props {
   isOpen: boolean;
   invocationIds: string[];
   onRequestClose: () => void;
-  onIncludeRepository: (
-    invocationIds: string[],
-    promptToLink: boolean
-  ) => Promise<AskBuildBuddyRepository | undefined>;
+  onIncludeRepository: (invocationIds: string[], promptToLink: boolean) => Promise<AskBuildBuddyRepository | undefined>;
   onSubmit: (request: AskBuildBuddyRequest) => void;
 }
 
