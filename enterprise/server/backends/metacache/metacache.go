@@ -276,6 +276,35 @@ func (c *Cache) makeFileRecord(groupID string, encryption *sgpb.Encryption, r *r
 	}, nil
 }
 
+// lookupMetadata returns the file metadata for r, or a NotFound error if it
+// does not exist.
+func (c *Cache) lookupMetadata(ctx context.Context, r *rspb.ResourceName, encryption *sgpb.Encryption) (*sgpb.FileMetadata, error) {
+	fileRecord, err := c.makeFileRecord(c.userGroupID(ctx), encryption, r)
+	if err != nil {
+		return nil, err
+	}
+
+	mds, err := c.lookupMetadatas(ctx, fileRecord)
+	if err != nil {
+		return nil, err
+	}
+	if len(mds) != 1 {
+		log.CtxErrorf(ctx, "File record %v found multiple metadatas: %v", fileRecord, mds)
+		return nil, status.InternalError("only one metadata record should match query")
+	}
+	md := mds[0]
+	if md.GetFileRecord() == nil {
+		// MetadataService.Get doesn't have an explicit "not found" response,
+		// but it returns an empty FileMetadata if the record is not found.
+		// Because proto marshalling and unmarshalling turns a repeated field
+		// with nils into a repeated field with empty structs, we need to check
+		// if the proto is empty rather than nil. The easiest way to do this is
+		// check if a field that should always be set is nil.
+		return nil, status.NotFoundErrorf("File metadata not found for %v", r)
+	}
+	return md, nil
+}
+
 // lookupMetadatas returns metadata index-aligned to records; a not-found entry
 // carries a nil FileRecord (an empty FileMetadata after proto round-trip).
 func (c *Cache) lookupMetadatas(ctx context.Context, records ...*sgpb.FileRecord) ([]*sgpb.FileMetadata, error) {
@@ -488,22 +517,9 @@ func (c *Cache) Metadata(ctx context.Context, r *rspb.ResourceName) (cm *interfa
 	if err != nil {
 		return nil, err
 	}
-	fileRecord, err := c.makeFileRecord(c.userGroupID(ctx), encryption, r)
+	md, err := c.lookupMetadata(ctx, r, encryption)
 	if err != nil {
 		return nil, err
-	}
-	mds, err := c.lookupMetadatas(ctx, fileRecord)
-	if err != nil {
-		return nil, err
-	}
-
-	if len(mds) != 1 {
-		log.CtxErrorf(ctx, "File record %v found multiple metadatas: %v", fileRecord, mds)
-		return nil, status.InternalError("only one metadata record should match query")
-	}
-	md := mds[0]
-	if md.GetFileRecord() == nil {
-		return nil, status.NotFoundErrorf("Metadata not found for %v", r)
 	}
 	return &interfaces.CacheMetadata{
 		StoredSizeBytes:    md.GetStoredSizeBytes(),
@@ -548,6 +564,28 @@ func (c *Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName)
 	return missing, nil
 }
 
+// readBufSize returns the buffer size to allocate to hold the full contents
+// of r, whose stored metadata is md.
+func (c *Cache) readBufSize(r *rspb.ResourceName, md *sgpb.FileMetadata) int64 {
+	// If the requested compression matches the stored compression, the
+	// data is returned as stored, so the stored size from the file
+	// metadata is the right buffer size. Otherwise the data is compressed
+	// or decompressed while reading, so fall back to estimating.
+	var bufSize int64
+	if r.GetCompressor() == md.GetFileRecord().GetCompressor() {
+		bufSize = min(md.GetStoredSizeBytes(), maxReadBufferSize)
+	} else {
+		bufSize = int64(digest.SafeBufferSize(r, maxReadBufferSize))
+	}
+	// Blob-backed reads go through Buffer.ReadFrom, which needs MinRead
+	// spare capacity to detect EOF without growing the buffer. Inline
+	// reads copy directly via bytes.Reader.WriteTo and don't need the pad.
+	if r.GetDigest().GetSizeBytes() >= c.opts.MaxInlineFileSizeBytes {
+		bufSize += bytes.MinRead
+	}
+	return bufSize
+}
+
 func (c *Cache) Get(ctx context.Context, r *rspb.ResourceName) (res []byte, resultErr error) {
 	start := c.opts.Clock.Now()
 	defer c.recordMetrics("Get", resultErr, start)
@@ -555,13 +593,21 @@ func (c *Cache) Get(ctx context.Context, r *rspb.ResourceName) (res []byte, resu
 	defer spn.End()
 	setSingleResourceTraceAttributes(spn, r)
 
-	rc, err := c.Reader(ctx, r, 0, 0)
+	encryption, err := c.activeEncryption(ctx)
+	if err != nil {
+		return nil, err
+	}
+	md, err := c.lookupMetadata(ctx, r, encryption)
+	if err != nil {
+		return nil, err
+	}
+	rc, err := c.reader(ctx, md, r, 0, 0, encryption)
 	if err != nil {
 		return nil, err
 	}
 	defer rc.Close()
 
-	buf := bytes.NewBuffer(make([]byte, 0, digest.SafeBufferSize(r, maxReadBufferSize)))
+	buf := bytes.NewBuffer(make([]byte, 0, c.readBufSize(r, md)))
 	_, err = io.Copy(buf, rc)
 	return buf.Bytes(), err
 }
@@ -647,7 +693,7 @@ func (c *Cache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (m
 					}
 					return err
 				}
-				buf := bytes.NewBuffer(make([]byte, 0, digest.SafeBufferSize(r, maxReadBufferSize)))
+				buf := bytes.NewBuffer(make([]byte, 0, c.readBufSize(r, hit.md)))
 				_, copyErr := io.Copy(buf, rc)
 				closeErr := rc.Close()
 				if copyErr != nil {
@@ -838,28 +884,9 @@ func (c *Cache) Reader(ctx context.Context, r *rspb.ResourceName, uncompressedOf
 	if err != nil {
 		return nil, err
 	}
-	fileRecord, err := c.makeFileRecord(c.userGroupID(ctx), encryption, r)
+	md, err := c.lookupMetadata(ctx, r, encryption)
 	if err != nil {
 		return nil, err
-	}
-
-	mds, err := c.lookupMetadatas(ctx, fileRecord)
-	if err != nil {
-		return nil, err
-	}
-	if len(mds) != 1 {
-		log.CtxErrorf(ctx, "File record %v found multiple metadatas: %v", fileRecord, mds)
-		return nil, status.InternalError("only one metadata record should match query")
-	}
-	md := mds[0]
-	if md.GetFileRecord() == nil {
-		// MetadataService.Get doesn't have an explicit "not found" response,
-		// but it returns an empty FileMetadata if the record is not found.
-		// Because proto marshalling and unmarshalling turns a repeated field
-		// with nils into a repeated field with empty structs, we need to check
-		// if the proto is empty rather than nil. The easiest way to do this is
-		// check if a field that should always be set is nil.
-		return nil, status.NotFoundErrorf("File metadata not found for %v", r)
 	}
 	return c.reader(ctx, md, r, uncompressedOffset, uncompressedLimit, encryption)
 }
