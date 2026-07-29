@@ -30,6 +30,7 @@ go_library(
         "//enterprise/server/util/pebble",
         "//proto:raft_go_proto",
         "//proto:raft_service_go_proto",
+        "//proto:storage_go_proto",
         "//server/environment",
         "//server/interfaces",
         "//server/metrics",
@@ -58,6 +59,25 @@ go_library(
         "@org_golang_google_grpc//reflection",
         "@org_golang_x_sync//errgroup",
         "@org_golang_x_time//rate",
+    ],
+)
+
+go_test(
+    name = "store_internal_test",
+    size = "small",
+    srcs = ["store_internal_test.go"],
+    embed = [":store"],
+    deps = [
+        "//enterprise/server/filestore",
+        "//enterprise/server/raft/keys",
+        "//enterprise/server/util/pebble",
+        "//proto:remote_execution_go_proto",
+        "//proto:resource_go_proto",
+        "//proto:storage_go_proto",
+        "//server/testutil/testfs",
+        "//server/util/proto",
+        "@com_github_cockroachdb_pebble//:pebble",
+        "@com_github_stretchr_testify//require",
     ],
 )
 

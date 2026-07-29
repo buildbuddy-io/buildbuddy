@@ -2,11 +2,13 @@ package keys
 
 import (
 	"bytes"
+	"encoding/binary"
 	"math"
 	"strconv"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/filestore"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/prometheus/client_golang/prometheus"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
@@ -49,6 +51,57 @@ func IsLocalKey(key Key) bool {
 // range identified by the given key prefix.
 func Range(key []byte) ([]byte, []byte) {
 	return MakeKey(key, MinByte), MakeKey(key, MaxByte)
+}
+
+// AtimeIndexPrefix is the node-local eviction-index keyspace. It lives in the
+// unreplicated local ('\x01') region but outside every replica's
+// '\x01c<rangeID>n<replicaID>-' prefix, so index entries are never part of a
+// range span, snapshot stream, split, or replica clear. Each replica's apply
+// path derives one entry per file record hosted on this node; entries sort by
+// (partition, access time) so the eviction scanner reads coldest-first.
+var AtimeIndexPrefix = []byte{'\x01', 'a', 't', 'i', 'd', 'x', '/'}
+
+// AtimeIndexKey returns the eviction-index key for a file record:
+// AtimeIndexPrefix + partitionID + '/' + atimeUsec (8-byte big-endian, so byte
+// order equals time order) + '/' + fileKey.
+func AtimeIndexKey(partitionID string, atimeUsec int64, fileKey []byte) []byte {
+	k := make([]byte, 0, len(AtimeIndexPrefix)+len(partitionID)+1+8+1+len(fileKey))
+	k = append(k, AtimeIndexPrefix...)
+	k = append(k, partitionID...)
+	k = append(k, '/')
+	k = binary.BigEndian.AppendUint64(k, uint64(atimeUsec))
+	k = append(k, '/')
+	k = append(k, fileKey...)
+	return k
+}
+
+// ParseAtimeIndexKey splits an index key back into its parts. The partition ID
+// must not contain '/' (the 8 atime bytes may, but they are located by offset,
+// not by separator).
+func ParseAtimeIndexKey(key []byte) (partitionID string, atimeUsec int64, fileKey []byte, err error) {
+	rest, ok := bytes.CutPrefix(key, AtimeIndexPrefix)
+	if !ok {
+		return "", 0, nil, status.InvalidArgumentErrorf("not an atime index key: %q", key)
+	}
+	part, rest, ok := bytes.Cut(rest, []byte{'/'})
+	if !ok || len(rest) < 9 || rest[8] != '/' {
+		return "", 0, nil, status.InvalidArgumentErrorf("malformed atime index key: %q", key)
+	}
+	return string(part), int64(binary.BigEndian.Uint64(rest[:8])), rest[9:], nil
+}
+
+// AtimeIndexPartitionRange returns bounds spanning every eviction-index entry
+// for the given partition.
+func AtimeIndexPartitionRange(partitionID string) ([]byte, []byte) {
+	return Range(MakeKey(AtimeIndexPrefix, []byte(partitionID), []byte{'/'}))
+}
+
+// AtimeIndexBackfillMarkerKey returns the node-local marker recording that the
+// one-time atime-index backfill completed for the partition. It lives in the
+// unreplicated local region but sorts outside every AtimeIndexPartitionRange
+// ('-' precedes '/'), so index sweeps never see it.
+func AtimeIndexBackfillMarkerKey(partitionID string) []byte {
+	return MakeKey([]byte{'\x01'}, []byte("atidx-backfill/"), []byte(partitionID))
 }
 
 // PartitionIDFromRangeStart parses the partition ID out of a range descriptor's
