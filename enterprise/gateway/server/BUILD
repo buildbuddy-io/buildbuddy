@@ -12,10 +12,12 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//proto:gateway_go_proto",
+        "//proto:gateway_service_go_proto",
         "//server/environment",
         "//server/util/flag",
         "//server/util/log",
         "//server/util/status",
+        "//server/util/uuid",
         "//server/util/wgkeys",
         "@com_github_miekg_dns//:dns",
         "@com_zx2c4_golang_wireguard//conn",
@@ -32,6 +34,7 @@ go_library(
         "@dev_gvisor_gvisor//pkg/tcpip/transport/icmp",
         "@dev_gvisor_gvisor//pkg/tcpip/transport/tcp",
         "@dev_gvisor_gvisor//pkg/tcpip/transport/udp",
+        "@org_golang_google_protobuf//types/known/timestamppb",
     ],
 )
 
@@ -47,9 +50,11 @@ go_test(
         "//proto:gateway_go_proto",
         "//server/testutil/testauth",
         "//server/testutil/testenv",
+        "//server/util/status",
         "//server/util/testing/flags",
         "//server/util/wgkeys",
         "@com_github_stretchr_testify//require",
+        "@org_golang_google_grpc//:grpc",
         "@com_zx2c4_golang_wireguard//conn",
         "@com_zx2c4_golang_wireguard//device",
         "@com_zx2c4_golang_wireguard//tun/netstack",

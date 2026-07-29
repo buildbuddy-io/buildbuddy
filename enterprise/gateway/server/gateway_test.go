@@ -10,10 +10,12 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/buildbuddy-io/buildbuddy/server/util/wgkeys"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
+	"google.golang.org/grpc"
 
 	gwpb "github.com/buildbuddy-io/buildbuddy/proto/gateway"
 )
@@ -319,6 +321,176 @@ func TestList_Unauthenticated(t *testing.T) {
 
 	_, err := gw.List(context.Background(), &gwpb.ListRequest{})
 	require.Error(t, err)
+}
+
+// fakeConnectStream implements gwsvcpb.GatewayService_ConnectServer for
+// testing. Only Context and Send are used by the Connect handler; the
+// embedded nil grpc.ServerStream panics if anything else is called.
+type fakeConnectStream struct {
+	grpc.ServerStream
+	ctx       context.Context
+	responses chan *gwpb.ConnectResponse
+}
+
+func (f *fakeConnectStream) Context() context.Context { return f.ctx }
+func (f *fakeConnectStream) Send(rsp *gwpb.ConnectResponse) error {
+	f.responses <- rsp
+	return nil
+}
+
+// startConnect runs gw.Connect on a fake stream in the background and waits
+// for the initial config response. The returned cancel func closes the
+// stream (simulating the client going away); the done channel receives
+// Connect's return value.
+func startConnect(t *testing.T, gw *Gateway, ctx context.Context, req *gwpb.ConnectRequest) (*gwpb.ConnectResponse, context.CancelFunc, chan error) {
+	t.Helper()
+	ctx, cancel := context.WithCancel(ctx)
+	t.Cleanup(cancel)
+	stream := &fakeConnectStream{ctx: ctx, responses: make(chan *gwpb.ConnectResponse, 1)}
+	done := make(chan error, 1)
+	go func() { done <- gw.Connect(req, stream) }()
+	select {
+	case rsp := <-stream.responses:
+		return rsp, cancel, done
+	case err := <-done:
+		t.Fatalf("Connect returned before sending config: %v", err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for Connect response")
+	}
+	return nil, nil, nil
+}
+
+func TestConnect_LeasesRegistrationToStream(t *testing.T) {
+	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("user1", "group1"))
+	gw := setupGateway(t, ta)
+
+	ctx, err := ta.WithAuthenticatedUser(context.Background(), "user1")
+	require.NoError(t, err)
+
+	pubKey := newPubKeyHex(t)
+	rsp, cancel, done := startConnect(t, gw, ctx, &gwpb.ConnectRequest{
+		NetworkName: "net1",
+		PeerName:    "box1",
+		PublicKey:   pubKey,
+		SessionId:   "session-1",
+	})
+	require.NotEmpty(t, rsp.GetAssignedIp())
+	require.NotEmpty(t, rsp.GetServerPublicKey())
+
+	// While the stream is open, the peer is registered and listed with its
+	// session ID.
+	list, err := gw.List(ctx, &gwpb.ListRequest{})
+	require.NoError(t, err)
+	require.Len(t, list.GetPeers(), 1)
+	require.Equal(t, "box1", list.GetPeers()[0].GetName())
+	require.Equal(t, "session-1", list.GetPeers()[0].GetSessionId())
+
+	// Closing the stream deregisters the peer: IP, DNS name, and peer entry
+	// are all freed.
+	cancel()
+	select {
+	case err := <-done:
+		require.NoError(t, err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for Connect to return after stream close")
+	}
+
+	gw.mu.Lock()
+	defer gw.mu.Unlock()
+	require.NotContains(t, gw.peers, pubKey)
+	_, inTUN := gw.tun.ipToNetwork.Load(netip.MustParseAddr(rsp.GetAssignedIp()))
+	require.False(t, inTUN, "IP should be unregistered after stream close")
+	_, nameExists := gw.networks["group1/net1"].names["box1"]
+	require.False(t, nameExists, "DNS name should be freed after stream close")
+}
+
+func TestConnect_RefusesDuplicateName(t *testing.T) {
+	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("user1", "group1"))
+	gw := setupGateway(t, ta)
+
+	ctx, err := ta.WithAuthenticatedUser(context.Background(), "user1")
+	require.NoError(t, err)
+
+	_, cancel, done := startConnect(t, gw, ctx, &gwpb.ConnectRequest{
+		NetworkName: "net1",
+		PeerName:    "box1",
+		PublicKey:   newPubKeyHex(t),
+		SessionId:   "session-1",
+	})
+
+	// A second connection requesting the same name is refused while the
+	// first stream is open.
+	stream := &fakeConnectStream{ctx: ctx, responses: make(chan *gwpb.ConnectResponse, 1)}
+	err = gw.Connect(&gwpb.ConnectRequest{
+		NetworkName: "net1",
+		PeerName:    "box1",
+		PublicKey:   newPubKeyHex(t),
+		SessionId:   "session-2",
+	}, stream)
+	require.True(t, status.IsAlreadyExistsError(err), "expected AlreadyExists, got: %v", err)
+
+	// Once the first connection closes, the name is immediately reusable.
+	cancel()
+	require.NoError(t, <-done)
+	rsp2, _, _ := startConnect(t, gw, ctx, &gwpb.ConnectRequest{
+		NetworkName: "net1",
+		PeerName:    "box1",
+		PublicKey:   newPubKeyHex(t),
+		SessionId:   "session-3",
+	})
+	require.NotEmpty(t, rsp2.GetAssignedIp())
+}
+
+func TestConnect_RequiresSessionID(t *testing.T) {
+	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("user1", "group1"))
+	gw := setupGateway(t, ta)
+
+	ctx, err := ta.WithAuthenticatedUser(context.Background(), "user1")
+	require.NoError(t, err)
+
+	stream := &fakeConnectStream{ctx: ctx, responses: make(chan *gwpb.ConnectResponse, 1)}
+	err = gw.Connect(&gwpb.ConnectRequest{
+		NetworkName: "net1",
+		PeerName:    "box1",
+		PublicKey:   newPubKeyHex(t),
+	}, stream)
+	require.True(t, status.IsInvalidArgumentError(err), "expected InvalidArgument, got: %v", err)
+}
+
+func TestConnect_SweepRemovalClosesStream(t *testing.T) {
+	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("user1", "group1"))
+	flags.Set(t, "gateway.stale_peer_timeout", 5*time.Second)
+	gw := setupGateway(t, ta)
+
+	ctx, err := ta.WithAuthenticatedUser(context.Background(), "user1")
+	require.NoError(t, err)
+
+	pubKey := newPubKeyHex(t)
+	_, _, done := startConnect(t, gw, ctx, &gwpb.ConnectRequest{
+		NetworkName: "net1",
+		PeerName:    "box1",
+		PublicKey:   pubKey,
+		SessionId:   "session-1",
+	})
+
+	// Backdate the peer so the stale-peer sweep reaps it (it never completed
+	// a WireGuard handshake, so registeredAt is its last-seen baseline).
+	gw.mu.Lock()
+	gw.peers[pubKey].registeredAt = time.Now().Add(-10 * time.Second)
+	gw.mu.Unlock()
+
+	gw.cleanupStalePeers()
+
+	// Removing the peer must close its Connect stream.
+	select {
+	case err := <-done:
+		require.NoError(t, err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for Connect to return after sweep removal")
+	}
+	gw.mu.Lock()
+	defer gw.mu.Unlock()
+	require.NotContains(t, gw.peers, pubKey)
 }
 
 // TestCleanupStalePeers verifies that cleanupStalePeers removes peers whose
