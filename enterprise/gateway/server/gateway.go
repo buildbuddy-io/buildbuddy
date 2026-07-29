@@ -36,8 +36,8 @@ import (
 )
 
 var (
-	udpListenPort    = flag.Int("gateway.udp_listen_port", 51820, "UDP port for the WireGuard device")
-	publicHost       = flag.String("gateway.public_host", "localhost", "Public hostname returned to clients as the WireGuard endpoint")
+	udpListenPort     = flag.Int("gateway.udp_listen_port", 51820, "UDP port for the WireGuard device")
+	publicHost        = flag.String("gateway.public_host", "localhost", "Public hostname returned to clients as the WireGuard endpoint")
 	stalePeerTimeout  = flag.Duration("gateway.stale_peer_timeout", 5*time.Minute, "Time after the last WireGuard handshake before a peer is removed. WireGuard re-handshakes every 3 minutes, so this should be at least that.")
 	cleanupInterval   = flag.Duration("gateway.cleanup_interval", time.Minute, "How often to scan for and remove stale peers.")
 	heartbeatInterval = flag.Duration("gateway.connect_heartbeat_interval", 30*time.Second, "How often Connect streams send an empty heartbeat message. Should be well under typical intermediary idle timeouts (usually 60s+).")
