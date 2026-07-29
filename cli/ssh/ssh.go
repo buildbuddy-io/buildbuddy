@@ -155,6 +155,9 @@ func HandleSSH(args []string) (int, error) {
 		SessionId:   uuid.New(),
 	})
 	if err != nil {
+		// Note: for a server-streaming RPC, grpc-go surfaces most status
+		// errors on the first Recv rather than here; this branch only
+		// catches immediate connection failures.
 		return 1, status.WrapError(err, "connecting to gateway")
 	}
 	rsp, err := stream.Recv()
@@ -162,16 +165,20 @@ func HandleSSH(args []string) (int, error) {
 		return 1, status.WrapError(err, "connecting to gateway")
 	}
 	// Hold the stream open in the background for the lifetime of the SSH
-	// session; if it ends, the tunnel is (or is about to be) dead.
+	// session; if it ends, the tunnel is (or is about to be) dead. gwLostErr
+	// is written before gwLost is closed, so it is safe to read after
+	// receiving from gwLost.
+	var gwLostErr error
+	gwLost := make(chan struct{})
 	go func() {
 		for {
 			if _, err := stream.Recv(); err != nil {
-				select {
-				case <-connectCtx.Done():
+				if connectCtx.Err() != nil {
+					// Normal local shutdown.
 					return
-				default:
 				}
-				log.Warnf("Gateway connection lost: %v", err)
+				gwLostErr = err
+				close(gwLost)
 				return
 			}
 		}
@@ -230,6 +237,18 @@ func HandleSSH(args []string) (int, error) {
 	}
 	client := gossh.NewClient(sshConn, chans, reqs)
 	defer client.Close()
+
+	// If the gateway connection is lost mid-session, the tunnel is dead:
+	// close the SSH client so the session below unblocks immediately instead
+	// of hanging until TCP gives up. The close message is printed on the
+	// normal exit path, after the terminal is restored from raw mode.
+	go func() {
+		select {
+		case <-gwLost:
+			client.Close()
+		case <-connectCtx.Done():
+		}
+	}()
 
 	session, err := client.NewSession()
 	if err != nil {
@@ -296,6 +315,9 @@ func HandleSSH(args []string) (int, error) {
 
 	if remoteCmd != "" {
 		if err := session.Run(remoteCmd); err != nil {
+			if gwLostErr := lostGateway(gwLost, gwLostErr); gwLostErr != nil {
+				return 1, status.UnavailableErrorf("gateway connection lost: %s", gwLostErr)
+			}
 			var exitErr *gossh.ExitError
 			if errors.As(err, &exitErr) {
 				return exitErr.ExitStatus(), nil
@@ -309,6 +331,17 @@ func HandleSSH(args []string) (int, error) {
 	}
 
 	err = session.Wait()
+	if gwLostErr := lostGateway(gwLost, gwLostErr); gwLostErr != nil {
+		// Restore the terminal before printing so the message lands at
+		// column 0 (the goroutine that noticed the loss can't print safely
+		// while the terminal is in raw mode).
+		if rawRestore != nil {
+			rawRestore()
+			rawRestore = nil
+		}
+		fmt.Fprintf(os.Stderr, "Connection to %s closed: gateway connection lost: %v\n", target, gwLostErr)
+		return 1, nil
+	}
 	if err != nil {
 		var exitErr *gossh.ExitError
 		if errors.As(err, &exitErr) {
@@ -328,4 +361,15 @@ func HandleSSH(args []string) (int, error) {
 	}
 	fmt.Fprintf(os.Stderr, "Connection to %s closed.\n", target)
 	return 0, nil
+}
+
+// lostGateway returns the gateway-loss error if the gwLost channel (closed
+// after gwLostErr is set) has fired, or nil otherwise.
+func lostGateway(gwLost chan struct{}, gwLostErr error) error {
+	select {
+	case <-gwLost:
+		return gwLostErr
+	default:
+		return nil
+	}
 }

@@ -222,10 +222,8 @@ func (f *Style) Passthrough() bool { return true }
 type redactSecrets struct{}
 
 func (r *redactSecrets) Transform(in any, n *yaml.Node, flg *flag.Flag) (*yaml.Node, error) {
-	if flg != nil {
-		if s, ok := flg.Value.(common.Secretable); ok && s.IsSecret() {
-			return nil, nil
-		}
+	if common.IsSecret(flg) {
+		return nil, nil
 	}
 
 	t := reflect.TypeOf(in)
