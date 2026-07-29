@@ -4,7 +4,10 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 
 go_library(
     name = "llmproxy",
-    srcs = ["proxy.go"],
+    srcs = [
+        "proxy.go",
+        "sessions.go",
+    ],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/llmproxy",
     visibility = ["//visibility:public"],
     deps = [
