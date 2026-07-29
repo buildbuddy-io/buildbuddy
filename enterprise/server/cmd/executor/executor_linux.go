@@ -13,6 +13,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ociconv"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/cgroup"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/llmproxy"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vbd"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
@@ -153,6 +154,26 @@ func setupNetworking(rootContext context.Context) {
 		fmt.Printf("Error configuring secondary network: %s", err)
 		os.Exit(1)
 	}
+}
+
+func startLLMProxy(ctx context.Context) (*llmproxy.Service, error) {
+	if !*llmProxyEnabled {
+		return nil, nil
+	}
+	ip, err := networking.DefaultIP(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("determine executor IP for LLM proxy: %w", err)
+	}
+	service, err := llmproxy.NewService(ip.String(), *llmProxyPort)
+	if err != nil {
+		return nil, err
+	}
+	if err := networking.AllowTaskPrivateTCPPort(ip.String(), service.Port()); err != nil {
+		_ = service.Shutdown(ctx)
+		return nil, fmt.Errorf("allow Firecracker access to LLM proxy: %w", err)
+	}
+	log.Infof("LLM proxy listening at %s", service.BaseURL())
+	return service, nil
 }
 
 func cleanupFUSEMounts() {

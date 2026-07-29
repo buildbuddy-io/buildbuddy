@@ -48,7 +48,15 @@ var (
 
 	// Private IP ranges, as defined in RFC1918.
 	PrivateIPRanges = []string{"10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "169.254.0.0/16"}
+
+	taskAllowedPrivateTCPPortsMu sync.RWMutex
+	taskAllowedPrivateTCPPorts   = make(map[privateTCPPort]struct{})
 )
+
+type privateTCPPort struct {
+	ip   string
+	port int
+}
 
 const (
 	defaultRoute         = "default"
@@ -817,6 +825,14 @@ func setupVethPair(ctx context.Context, netns *Namespace, enableExternalNetworki
 		iptablesRules = append(iptablesRules, []string{"FORWARD", "-i", vp.hostDevice, "-d", allow, "-j", "ACCEPT"})
 		iptablesRules = append(iptablesRules, []string{"INPUT", "-i", vp.hostDevice, "-d", allow, "-j", "ACCEPT"})
 	}
+	taskAllowedPrivateTCPPortsMu.RLock()
+	for endpoint := range taskAllowedPrivateTCPPorts {
+		iptablesRules = append(iptablesRules, []string{
+			"INPUT", "-i", vp.hostDevice, "-d", endpoint.ip,
+			"-p", "tcp", "--dport", strconv.Itoa(endpoint.port), "-j", "ACCEPT",
+		})
+	}
+	taskAllowedPrivateTCPPortsMu.RUnlock()
 	for _, r := range PrivateIPRanges {
 		iptablesRules = append(iptablesRules, []string{"FORWARD", "-i", vp.hostDevice, "-d", r, "-j", "REJECT"})
 		iptablesRules = append(iptablesRules, []string{"INPUT", "-i", vp.hostDevice, "-d", r, "-j", "REJECT"})
@@ -855,6 +871,24 @@ func setupVethPair(ctx context.Context, netns *Namespace, enableExternalNetworki
 
 	vp.Cleanup = cleanupStack.Cleanup
 	return vp, nil
+}
+
+// AllowTaskPrivateTCPPort makes one executor-local TCP endpoint reachable from
+// subsequently created task network namespaces. Unlike
+// executor.task_allowed_private_ips, this does not expose every port bound to
+// the private address.
+func AllowTaskPrivateTCPPort(ip string, port int) error {
+	addr, err := netip.ParseAddr(ip)
+	if err != nil || !addr.Is4() {
+		return status.InvalidArgumentError("task-allowed endpoint must use a valid IPv4 address")
+	}
+	if port < 1 || port > 65535 {
+		return status.InvalidArgumentError("task-allowed endpoint has an invalid TCP port")
+	}
+	taskAllowedPrivateTCPPortsMu.Lock()
+	defer taskAllowedPrivateTCPPortsMu.Unlock()
+	taskAllowedPrivateTCPPorts[privateTCPPort{ip: addr.String(), port: port}] = struct{}{}
+	return nil
 }
 
 func (v *vethPair) updateBaseline(ctx context.Context) error {
