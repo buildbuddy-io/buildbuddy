@@ -1306,7 +1306,8 @@ func TestFileWriteAndFind(t *testing.T) {
 				BlobName: "blob",
 			},
 		},
-		LastAccessUsec: now,
+		StoredSizeBytes: 1000,
+		LastAccessUsec:  now,
 	}
 
 	fs := filestore.New()
@@ -1345,6 +1346,63 @@ func TestFileWriteAndFind(t *testing.T) {
 	require.True(t, findRsp.GetPresent())
 	require.Equal(t, now, findRsp.GetLastAccessUsec())
 	require.Equal(t, "blob", findRsp.GetGcsMetadata().GetBlobName())
+}
+
+// A zero-length record is an anomaly the read path rejects, so Find must report
+// it absent.
+func TestFileFindZeroLengthReportsAbsent(t *testing.T) {
+	repl := testutil.NewTestingReplica(t, 1, 1)
+	require.NotNil(t, repl)
+	t.Cleanup(func() {
+		require.NoError(t, repl.Close())
+	})
+
+	stopc := make(chan struct{})
+	_, err := repl.Open(stopc)
+	require.NoError(t, err)
+	em := newEntryMaker(t)
+	writeDefaultRangeDescriptor(t, em, repl.Replica)
+
+	r, _ := testdigest.RandomCASResourceBuf(t, 1000)
+	fileRecord := &sgpb.FileRecord{
+		Isolation: &sgpb.Isolation{
+			CacheType:   rspb.CacheType_CAS,
+			PartitionId: "default",
+			GroupId:     interfaces.AuthAnonymousUser,
+		},
+		Digest:         r.GetDigest(),
+		DigestFunction: repb.DigestFunction_SHA256,
+	}
+	md := &sgpb.FileMetadata{
+		FileRecord:      fileRecord,
+		StoredSizeBytes: 0, // zero-length anomaly
+		LastAccessUsec:  time.Now().UnixMicro(),
+	}
+
+	fs := filestore.New()
+	key, err := fs.PebbleKey(fileRecord)
+	require.NoError(t, err)
+	fileMetadataKey, err := key.Bytes(filestore.Version5)
+	require.NoError(t, err)
+	val, err := proto.Marshal(md)
+	require.NoError(t, err)
+
+	entry := em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
+		Kv: &rfpb.KV{Key: fileMetadataKey, Value: val},
+	}))
+	_, err = repl.Update([]dbsm.Entry{entry})
+	require.NoError(t, err)
+
+	buf, err := rbuilder.NewBatchBuilder().Add(&rfpb.FindRequest{
+		Key: fileMetadataKey,
+	}).ToBuf()
+	require.NoError(t, err)
+	readRsp, err := repl.Lookup(buf)
+	require.NoError(t, err)
+
+	findRsp, err := rbuilder.NewBatchResponse(readRsp).FindResponse(0)
+	require.NoError(t, err)
+	require.False(t, findRsp.GetPresent(), "zero-length record must report absent")
 }
 
 func TestUsage(t *testing.T) {

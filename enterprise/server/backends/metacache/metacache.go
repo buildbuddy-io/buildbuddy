@@ -752,7 +752,9 @@ func (c *Cache) reader(ctx context.Context, md *sgpb.FileMetadata, r *rspb.Resou
 	// so that we avoid saying something exists when it's been deleted by
 	// a GCS lifecycle rule.
 	if gcsMetadata := md.GetStorageMetadata().GetGcsMetadata(); gcsMetadata != nil {
-		if gcsutil.ObjectIsPastTTL(c.opts.Clock, gcsMetadata, c.opts.GCSTTLDays) {
+		// GCSTTLDays==0 disables the check (no TTL, nothing reaped); kept in
+		// lockstep with the metadata server's Find.
+		if c.opts.GCSTTLDays > 0 && gcsutil.ObjectIsPastTTL(c.opts.Clock, gcsMetadata, c.opts.GCSTTLDays) {
 			return nil, status.NotFoundError("backing object may have expired")
 		}
 	}

@@ -1,5 +1,5 @@
-// Internal test, unlike metadata_test.go: calls maybeUpdateGCSAtime directly
-// rather than standing up a cluster through New().
+// Internal test, unlike metadata_test.go: calls the GCS TTL/atime helpers
+// directly rather than standing up a cluster through New().
 
 package metadata
 
@@ -152,39 +152,39 @@ func TestMaybeUpdateGCSAtime_FailedRefreshRecordsNoCustomTime(t *testing.T) {
 	require.Zero(t, customTime)
 }
 
-func TestPresentConsideringGCSTTL_RecentObjectStaysPresent(t *testing.T) {
+func TestGCSObjectMayBeExpired_RecentObject(t *testing.T) {
 	f := newGCSAtimeFixture(t, 7 /*=ttlDays*/, 0 /*=threshold*/)
 	md := f.metadataWithCustomTime(-1 * time.Hour)
 
-	require.True(t, f.server.presentConsideringGCSTTL(true, md))
+	require.False(t, f.server.gcsObjectMayBeExpired(md))
 }
 
-func TestPresentConsideringGCSTTL_PastTTLObjectReportsAbsent(t *testing.T) {
+func TestGCSObjectMayBeExpired_PastTTL(t *testing.T) {
 	f := newGCSAtimeFixture(t, 7 /*=ttlDays*/, 0 /*=threshold*/)
 	md := f.metadataWithCustomTime(-8 * 24 * time.Hour)
 
-	// Past TTL: the object was likely reaped, so report absent.
-	require.False(t, f.server.presentConsideringGCSTTL(true, md))
+	require.True(t, f.server.gcsObjectMayBeExpired(md))
 }
 
-func TestPresentConsideringGCSTTL_TTLDisabledStaysPresent(t *testing.T) {
+func TestGCSObjectMayBeExpired_WithinBufferOfTTL(t *testing.T) {
+	f := newGCSAtimeFixture(t, 7 /*=ttlDays*/, 0 /*=threshold*/)
+	// 30m short of the 7d TTL, but the 1h safety buffer pushes it over.
+	md := f.metadataWithCustomTime(-(7*24*time.Hour - 30*time.Minute))
+
+	require.True(t, f.server.gcsObjectMayBeExpired(md))
+}
+
+func TestGCSObjectMayBeExpired_TTLDisabled(t *testing.T) {
 	f := newGCSAtimeFixture(t, 0 /*=ttlDays*/, 0 /*=threshold*/)
 	md := f.metadataWithCustomTime(-8 * 24 * time.Hour)
 
-	// No bucket TTL: the guard must keep it present.
-	require.True(t, f.server.presentConsideringGCSTTL(true, md))
+	// No bucket TTL: nothing is reaped, so never treat it as expired.
+	require.False(t, f.server.gcsObjectMayBeExpired(md))
 }
 
-func TestPresentConsideringGCSTTL_InlineRecordStaysPresent(t *testing.T) {
-	f := newGCSAtimeFixture(t, 7 /*=ttlDays*/, 0 /*=threshold*/)
-
+func TestGCSObjectMayBeExpired_InlineRecord(t *testing.T) {
 	// Inline records have no GCS object, so the TTL check does not apply.
-	require.True(t, f.server.presentConsideringGCSTTL(true, nil))
-}
-
-func TestPresentConsideringGCSTTL_AbsentStaysAbsent(t *testing.T) {
 	f := newGCSAtimeFixture(t, 7 /*=ttlDays*/, 0 /*=threshold*/)
-	md := f.metadataWithCustomTime(-1 * time.Hour)
 
-	require.False(t, f.server.presentConsideringGCSTTL(false, md))
+	require.False(t, f.server.gcsObjectMayBeExpired(nil))
 }

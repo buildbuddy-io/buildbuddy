@@ -1174,7 +1174,9 @@ func (sm *Replica) find(db ReplicaReader, req *rfpb.FindRequest) (*rfpb.FindResp
 	defer iter.Close()
 
 	fileMetadata, err := lookupFileMetadata(iter, req.GetKey())
-	present := (err == nil)
+	// A zero-length stored file is an anomaly the read path treats as missing,
+	// so report it absent here too.
+	present := err == nil && fileMetadata.GetStoredSizeBytes() != 0
 
 	return &rfpb.FindResponse{
 		Present:        present,
