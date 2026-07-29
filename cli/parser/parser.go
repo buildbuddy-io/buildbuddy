@@ -8,6 +8,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"iter"
 	"maps"
 	"os"
 	"path/filepath"
@@ -90,8 +91,8 @@ func SetBazelHelpForTesting(encodedProto string) {
 
 // Subparser is a parser that recognizes one set of options, optionally followed by a subcommand.
 type Subparser struct {
-	ByName      map[string]*options.Definition
-	ByShortName map[string]*options.Definition
+	ByName      map[string]options.Defined
+	ByShortName map[string]options.Defined
 
 	Subcommands set.Set[string]
 	Aliases     map[string]string
@@ -101,7 +102,7 @@ type Subparser struct {
 	Permissive bool
 }
 
-func (m *Subparser) ForceAdd(d *options.Definition) {
+func (m *Subparser) ForceAdd(d options.Defined) {
 	m.ByName[d.Name()] = d
 	if d.HasNegative() {
 		m.ByName["no"+d.Name()] = d
@@ -117,7 +118,7 @@ func (m *Subparser) ForceAdd(d *options.Definition) {
 	}
 }
 
-func (m *Subparser) Add(d *options.Definition) error {
+func (m *Subparser) Add(d options.Defined) error {
 	if _, ok := m.ByName[d.Name()]; ok {
 		return fmt.Errorf("Naming collision adding flag %s; flag already exists with that name.", d.Name())
 	}
@@ -148,20 +149,20 @@ type Parser struct {
 	CommandOptionParser *Subparser
 }
 
-func NewParser(optionDefinitions []*options.Definition, commands []string, aliases map[string]string) *Parser {
+func NewParser[D options.Defined](optionDefinitions iter.Seq[D], commands []string, aliases map[string]string) *Parser {
 	p := &Parser{
 		StartupOptionParser: &Subparser{
-			ByName:      map[string]*options.Definition{},
-			ByShortName: map[string]*options.Definition{},
+			ByName:      map[string]options.Defined{},
+			ByShortName: map[string]options.Defined{},
 			Subcommands: set.From(commands...),
 			Aliases:     aliases,
 		},
 		CommandOptionParser: &Subparser{
-			ByName:      map[string]*options.Definition{},
-			ByShortName: map[string]*options.Definition{},
+			ByName:      map[string]options.Defined{},
+			ByShortName: map[string]options.Defined{},
 		},
 	}
-	for _, d := range optionDefinitions {
+	for d := range optionDefinitions {
 		p.AddOptionDefinition(d)
 	}
 	return p
@@ -176,7 +177,7 @@ func GetNativeParser() *Parser {
 		aliases[alias] = command.Name
 	}
 	return NewParser(
-		definitions,
+		slices.Values(definitions),
 		slices.Collect(maps.Keys(cli_command.CommandsByName)),
 		aliases,
 	)
@@ -223,7 +224,7 @@ func GetHelpParser() (*Parser, error) {
 	}
 	nativeParser := GetNativeParser()
 
-	var helpOptionDefinitionsAsStartupOptions []*options.Definition
+	var helpOptionDefinitionsAsStartupOptions []options.Defined
 	for name, d := range bazelParser.CommandOptionParser.ByName {
 		if d.Supports("help") {
 			// help parser has to be able to recognize help options as startup options,
@@ -262,7 +263,7 @@ func GetHelpParser() (*Parser, error) {
 		slices.Collect(maps.Values(bazelParser.StartupOptionParser.ByName)),
 		slices.Collect(maps.Values(bazelParser.CommandOptionParser.ByName)),
 		helpOptionDefinitionsAsStartupOptions,
-		[]*options.Definition{helpoptdef.Help},
+		[]options.Defined{helpoptdef.Help},
 	)
 
 	commands := slices.Concat(
@@ -276,7 +277,7 @@ func GetHelpParser() (*Parser, error) {
 	aliases := maps.Clone(bazelParser.StartupOptionParser.Aliases)
 	maps.Insert(aliases, maps.All(nativeParser.StartupOptionParser.Aliases))
 
-	return NewParser(option_definitions, commands, aliases), nil
+	return NewParser(slices.Values(option_definitions), commands, aliases), nil
 }
 
 // GetBazelParser can parse bazel options, bb CLI native options, and plugin
@@ -290,11 +291,11 @@ func (p *Parser) ForceAddOptionDefinition(d *options.Definition) {
 	_ = p.addOptionDefinitionImpl(d, true)
 }
 
-func (p *Parser) AddOptionDefinition(d *options.Definition) error {
+func (p *Parser) AddOptionDefinition(d options.Defined) error {
 	return p.addOptionDefinitionImpl(d, false)
 }
 
-func (p *Parser) addOptionDefinitionImpl(d *options.Definition, force bool) error {
+func (p *Parser) addOptionDefinitionImpl(d options.Defined, force bool) error {
 	if d.Supports("startup") {
 		if force {
 			p.StartupOptionParser.ForceAdd(d)
@@ -304,11 +305,11 @@ func (p *Parser) addOptionDefinitionImpl(d *options.Definition, force bool) erro
 			}
 		}
 	}
-	addedToCommonParser := false
+	addedToCommandParser := false
 	for cmd := range d.SupportedCommands() {
 		if cmd != "startup" {
 			p.StartupOptionParser.Subcommands.Add(cmd)
-			if !addedToCommonParser {
+			if !addedToCommandParser {
 				// non-startup flags support the "common" and "always" bazelrc classifiers
 				d.AddSupportedCommand("common")
 				d.AddSupportedCommand("always")
@@ -319,7 +320,7 @@ func (p *Parser) addOptionDefinitionImpl(d *options.Definition, force bool) erro
 						return err
 					}
 				}
-				addedToCommonParser = true
+				addedToCommandParser = true
 			}
 		}
 	}
@@ -335,20 +336,20 @@ func ParseArgs(args []string) (*parsed.OrderedArgs, error) {
 }
 
 func (p *Parser) ParseArgs(args []string) (*parsed.OrderedArgs, error) {
-	return p.ParseArgsForCommand(args, "startup")
+	return p.ParseArgsForPhase(args, "startup")
 }
 
-func (p *Parser) ParseArgsForCommand(args []string, command string) (*parsed.OrderedArgs, error) {
+func (p *Parser) ParseArgsForPhase(args []string, phase string) (*parsed.OrderedArgs, error) {
 	parsedArgs := &parsed.OrderedArgs{}
 	next := args
 	subparser := p.StartupOptionParser
-	if command != "startup" {
+	if phase != "startup" {
 		subparser = p.CommandOptionParser
 	}
 	for {
-		opts, argIndex, err := subparser.ParseOptions(next, command)
+		opts, argIndex, err := subparser.ParseOptions(next, phase)
 		if err != nil {
-			return nil, fmt.Errorf("failed to parse %s options: %s", command, err)
+			return nil, fmt.Errorf("failed to parse %s options: %s", phase, err)
 		}
 		parsedArgs.Args = append(parsedArgs.Args, arguments.FromConcrete(opts)...)
 		next = next[argIndex:]
@@ -381,22 +382,22 @@ func (p *Parser) ParseArgsForCommand(args []string, command string) (*parsed.Ord
 			next = next[1:]
 			continue
 		}
-		command = next[0]
-		if !subparser.Subcommands.Contains(command) {
-			if command == "" {
+		phase = next[0]
+		if !subparser.Subcommands.Contains(phase) {
+			if phase == "" {
 				// bazel treats a blank command as a help command that halts both option and
 				// argument parsing and ignores all non-startup options in the rc file.
 				break
 			}
 			// Expand command shortcuts like b=>build, t=>test, etc.
-			aliased, ok := subparser.Aliases[command]
+			aliased, ok := subparser.Aliases[phase]
 			if !ok {
-				return nil, fmt.Errorf("Command '%s' not found. Try 'bb help'", command)
+				return nil, fmt.Errorf("Command '%s' not found. Try 'bb help'", phase)
 			}
-			command = aliased
+			phase = aliased
 		}
 		subparser = p.CommandOptionParser
-		parsedArgs.Args = append(parsedArgs.Args, &arguments.PositionalArgument{Value: command})
+		parsedArgs.Args = append(parsedArgs.Args, &arguments.PositionalArgument{Value: phase})
 		next = next[1:]
 	}
 	return parsedArgs, nil
@@ -405,9 +406,9 @@ func (p *Parser) ParseArgsForCommand(args []string, command string) (*parsed.Ord
 // Parse options until we encounter a positional argument, and return the
 // options and the index of the positional argument that terminated parsing, or
 // the length of the input arguments array if no positional argument was
-// encountered. If no command is provided, options will not be filtered by
+// encountered. If no phase is provided, options will not be filtered by
 // command.
-func (p *Subparser) ParseOptions(args []string, command string) ([]options.Option, int, error) {
+func (p *Subparser) ParseOptions(args []string, phase string) ([]options.Option, int, error) {
 	var parsedOptions []options.Option
 	// Iterate through the args, looking for a terminating token.
 	for i := 0; i < len(args); {
@@ -424,12 +425,12 @@ func (p *Subparser) ParseOptions(args []string, command string) ([]options.Optio
 			// This is a positional argument, return it.
 			return parsedOptions, i, nil
 		}
-		if command != "" {
+		if phase != "" {
 			if option.PluginID() == options.UnknownBuiltinPluginID {
 				// If this is an unknown option, assume it's supported by this command.
-				option.GetDefinition().AddSupportedCommand(command)
-			} else if !p.Permissive && !option.Supports(command) {
-				return nil, 0, fmt.Errorf("failed to parse options: Option '%s' does not support command '%s'", token, command)
+				option.GetDefinition().AddSupportedCommand(phase)
+			} else if !p.Permissive && !option.Supports(phase) && !bazelrc.IsUnconditionalCommandPhase(phase) {
+				return nil, 0, fmt.Errorf("failed to parse options: Option '%s' does not support phase '%s'", token, phase)
 			}
 		}
 		parsedOptions = append(parsedOptions, option)
@@ -437,6 +438,8 @@ func (p *Subparser) ParseOptions(args []string, command string) ([]options.Optio
 	}
 	return parsedOptions, len(args), nil
 }
+
+func (p *Subparser) 
 
 // Next parses the next option in the args list, starting at the given index. It
 // is intended to be called in a loop that parses an argument list against a
@@ -619,12 +622,14 @@ func DecodeHelpFlagsAsProto(protoHelp string) (*bfpb.FlagCollection, error) {
 // OptionDefinitions, places each option definition into subparsers corresponding
 // to the commands it supports, and returns the resulting parser.
 func GenerateParser(flagCollection *bfpb.FlagCollection, commandsToPartition ...string) (*Parser, error) {
-	p := NewParser(nil, nil, nil)
-	for _, info := range flagCollection.FlagInfos {
-		if err := p.AddOptionDefinition(options.DefinitionFrom(info)); err != nil {
-			return nil, err
+	optionDefinitions := func(yield func(options.Defined) bool) {
+		for _, info := range flagCollection.FlagInfos {
+			if !yield(options.DefinitionFrom(info)) {
+				return
+			}
 		}
 	}
+	p := NewParser(optionDefinitions, nil, nil)
 	return p, nil
 }
 
@@ -916,7 +921,7 @@ func (p *Parser) ParseRCFilesWithPolicy(workspaceDir string, policy RCFilePolicy
 // "phase" (for example, `common` or `build:foo`) and the remaining lexed
 // tokens and returns those tokens parsed into a slice of Arguments.
 func (p *Parser) ParseConfig(phase string, tokens []string) ([]arguments.Argument, error) {
-	parsedArgs, err := p.ParseArgsForCommand(tokens, phase)
+	parsedArgs, err := p.ParseArgsForPhase(tokens, phase)
 	if err != nil {
 		return nil, err
 	}
