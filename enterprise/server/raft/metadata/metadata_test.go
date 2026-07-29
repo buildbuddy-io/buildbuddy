@@ -480,17 +480,10 @@ func TestLRU(t *testing.T) {
 	// and (2) stale-atime samples making recently-Find()'d records appear
 	// old enough to evict.
 	flags.Set(t, "cache.raft.min_eviction_age", 18*time.Minute)
-	// Small batch so the sampler rotates ranges and reaches the last eligible
-	// records quickly.
-	flags.Set(t, "cache.raft.samples_per_range", 10)
-	// Short refresh (wall time) so the reused iterator promptly picks up writes,
-	// atime updates, and deletions instead of re-sampling a stale snapshot.
-	flags.Set(t, "cache.raft.sampler_iter_refresh_period", time.Millisecond)
-	// Disable the sampler's idle sleep. In production the sampler sleeps when
-	// it can't find an eligible entry (e.g. a random key landing past the end
-	// of a small partition) to avoid wasting CPU. That sleep uses the fake
-	// clock here, which the test doesn't advance during the GC wait below, so
-	// it would stall the sampler and time out eviction.
+	// Disable the scanner's idle sleep. In production the scanner sleeps when
+	// a sweep finds nothing eligible to avoid wasting CPU. That sleep uses the
+	// fake clock here, which the test doesn't advance during the GC wait
+	// below, so it would stall the scanner and time out eviction.
 	flags.Set(t, "cache.raft.sampler_sleep_duration", time.Duration(0))
 	// Make the sample channel unbuffered so it can't hold stale samples
 	// produced before atime updates from the test's Find() calls were

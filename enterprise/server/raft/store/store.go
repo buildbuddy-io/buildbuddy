@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"maps"
 	"math"
-	"math/rand"
 	"net"
 	"os"
 	"path/filepath"
@@ -72,6 +71,7 @@ import (
 	raftConfig "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/config"
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	rfspb "github.com/buildbuddy-io/buildbuddy/proto/raft_service"
+	sgpb "github.com/buildbuddy-io/buildbuddy/proto/storage"
 	dbConfig "github.com/lni/dragonboat/v4/config"
 	dbsm "github.com/lni/dragonboat/v4/statemachine"
 )
@@ -404,7 +404,7 @@ func New(env environment.Env, cfg *raftConfig.ServerConfig, opts ...Option) (*St
 	txnCoordinator := txn.NewCoordinator(s, apiClient, clock)
 	s.txnCoordinator = txnCoordinator
 
-	usages, err := usagetracker.New(s, s.sender, s.leaser, cfg.GossipManager, s.NodeDescriptor(), cfg.Partitions, clock, cfg.FileStorer)
+	usages, err := usagetracker.New(s.sender, s.leaser, cfg.GossipManager, s.NodeDescriptor(), cfg.Partitions, clock, cfg.FileStorer)
 
 	if *enableDriver {
 		s.driverQueue = driver.NewQueue(s, s.sender, cfg.GossipManager, nhLog, apiClient, clock, env.GetExperimentFlagProvider())
@@ -1685,58 +1685,6 @@ func (s *Store) getLeasedReplicas(ctx context.Context) []*replica.Replica {
 	return res
 }
 
-// RandomOpenRangeDescriptor returns a uniformly random range this store hosts
-// (leader or follower) whose data lives in the given partition, or nil if none.
-// Used by the eviction sampler; scoping to hosted (not leased) ranges keeps the
-// sampling rate independent of lease distribution.
-func (s *Store) RandomOpenRangeDescriptor(partitionID string) *rfpb.RangeDescriptor {
-	s.rangeMu.RLock()
-	defer s.rangeMu.RUnlock()
-	// Reservoir sample (Algorithm R, size 1): pick the n-th eligible range with
-	// probability 1/n, leaving every range equally likely in a single pass.
-	var chosen *rfpb.RangeDescriptor
-	n := 0
-	for _, rd := range s.openRanges {
-		if !rangeInPartition(rd, partitionID) {
-			continue
-		}
-		n++
-		if rand.Intn(n) == 0 {
-			chosen = rd
-		}
-	}
-	return chosen
-}
-
-// rangeInPartition reports whether rd holds evictable data in the partition:
-// not the meta range, and partition-matching. Prefers partition_id, falling
-// back to the start key for descriptors that predate the field.
-func rangeInPartition(rd *rfpb.RangeDescriptor, partitionID string) bool {
-	if rd.GetRangeId() == constants.MetaRangeID {
-		return false
-	}
-	partID := rd.GetPartitionId()
-	if partID == "" {
-		partID = keys.PartitionIDFromRangeStart(rd.GetStart())
-	}
-	return partID == partitionID
-}
-
-// HostedRangeIDs returns the range IDs this store hosts in the given partition
-// (excluding the meta range), used by the sampler to prune stale resume cursors.
-func (s *Store) HostedRangeIDs(partitionID string) map[uint64]struct{} {
-	s.rangeMu.RLock()
-	defer s.rangeMu.RUnlock()
-	ids := make(map[uint64]struct{}, len(s.openRanges))
-	for _, rd := range s.openRanges {
-		if !rangeInPartition(rd, partitionID) {
-			continue
-		}
-		ids[rd.GetRangeId()] = struct{}{}
-	}
-	return ids
-}
-
 func (s *Store) StartShard(ctx context.Context, req *rfpb.StartShardRequest) (*rfpb.StartShardResponse, error) {
 	s.log.Infof("Starting new raft node c%dn%d", req.GetRangeId(), req.GetReplicaId())
 	rc := raftConfig.GetRaftConfig(req.GetRangeId(), req.GetReplicaId())
@@ -1907,6 +1855,12 @@ func (s *Store) RemoveData(ctx context.Context, req *rfpb.RemoveDataRequest) (*r
 			return nil, err
 		}
 		defer db.Close()
+		// Drop the node-local atime-index entries for the range's records
+		// before the records themselves: the exact index key of each record is
+		// derived from its stored atime, so this needs the span data present.
+		if err := deleteAtimeIndexEntriesInRange(db, remoteRD.GetStart(), remoteRD.GetEnd()); err != nil {
+			return nil, status.InternalErrorf("failed to delete atime index entries of c%dn%d: %w", req.GetRange().GetRangeId(), req.GetReplicaId(), err)
+		}
 		if err = db.DeleteRange(remoteRD.GetStart(), remoteRD.GetEnd(), pebble.NoSync); err != nil {
 			return nil, status.InternalErrorf("failed to delete data of c%dn%d from pebble: %w", req.GetRange().GetRangeId(), req.GetReplicaId(), err)
 		}
@@ -1928,6 +1882,35 @@ func (s *Store) RemoveData(ctx context.Context, req *rfpb.RemoveDataRequest) (*r
 	return &rfpb.RemoveDataResponse{
 		Range: rd,
 	}, nil
+}
+
+// deleteAtimeIndexEntriesInRange removes the node-local atime-index entries
+// for every file record in [start, end). Any entries it misses (e.g. orphans
+// from blind Set overwrites) are dropped lazily by the eviction scanner.
+func deleteAtimeIndexEntriesInRange(db pebble.IPebbleDB, start, end []byte) error {
+	partID := keys.PartitionIDFromRangeStart(start)
+	if partID == "" {
+		// Not a data range (e.g. the meta range): no file records, no index.
+		return nil
+	}
+	iter, err := db.NewIter(&pebble.IterOptions{LowerBound: start, UpperBound: end})
+	if err != nil {
+		return err
+	}
+	defer iter.Close()
+	wb := db.NewBatch()
+	defer wb.Close()
+	for iter.First(); iter.Valid(); iter.Next() {
+		md := &sgpb.FileMetadata{}
+		if err := proto.Unmarshal(iter.Value(), md); err != nil {
+			log.Warningf("skipping atime index cleanup for non-FileMetadata key %q: %s", iter.Key(), err)
+			continue
+		}
+		if err := wb.Delete(keys.AtimeIndexKey(partID, md.GetLastAccessUsec(), iter.Key()), nil); err != nil {
+			return err
+		}
+	}
+	return wb.Commit(pebble.NoSync)
 }
 
 // SyncPropose makes a synchronous proposal (writes) on the Raft shard.

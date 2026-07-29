@@ -40,8 +40,8 @@ go_test(
     embed = [":usagetracker"],
     deps = [
         "//enterprise/server/filestore",
+        "//enterprise/server/raft/keys",
         "//enterprise/server/util/pebble",
-        "//proto:raft_go_proto",
         "//proto:resource_go_proto",
         "//proto:storage_go_proto",
         "//server/testutil/testdigest",
