@@ -1178,6 +1178,15 @@ func WarmupConfigs() []WarmupConfig {
 				Image:     platform.Ubuntu20_04WorkflowsImage,
 				Isolation: string(isolation),
 			})
+			out = append(out, WarmupConfig{
+				Image:     platform.Ubuntu22_04WorkflowsImage,
+				Isolation: string(isolation),
+			})
+			out = append(out, WarmupConfig{
+				Image:     platform.Ubuntu24_04WorkflowsImage,
+				Isolation: string(isolation),
+			})
+
 		}
 	}
 	return out
