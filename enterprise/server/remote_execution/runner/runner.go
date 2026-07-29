@@ -1359,6 +1359,7 @@ func (p *pool) newLLMProxySession(groupID string, props *platform.Properties, ta
 	providerSecretNames := map[string]struct{}{
 		"ANTHROPIC_API_KEY":    {},
 		"ANTHROPIC_AUTH_TOKEN": {},
+		"CODEX_API_KEY":        {},
 		"OPENAI_API_KEY":       {},
 	}
 	filteredEnv := command.EnvironmentVariables[:0]
@@ -1377,6 +1378,11 @@ func (p *pool) newLLMProxySession(groupID string, props *platform.Properties, ta
 			continue
 		case "ANTHROPIC_AUTH_TOKEN":
 			session.AnthropicAuthToken = value
+			continue
+		case "CODEX_API_KEY":
+			if session.OpenAIAPIKey == "" {
+				session.OpenAIAPIKey = value
+			}
 			continue
 		case "OPENAI_API_KEY":
 			session.OpenAIAPIKey = value
@@ -1401,10 +1407,12 @@ func (p *pool) newLLMProxySession(groupID string, props *platform.Properties, ta
 	setCommandEnv(command, ci_runner_env.BuildBuddySecretEnvVarNamesForRedaction, string(serializedNames))
 	if session.AnthropicAPIKey != "" || session.AnthropicAuthToken != "" {
 		setCommandEnv(command, "ANTHROPIC_BASE_URL", p.llmProxyURL+"/anthropic")
+		setCommandEnv(command, "ANTHROPIC_API_KEY", llmProxyPlaceholderCredential)
 		setCommandEnv(command, "ANTHROPIC_AUTH_TOKEN", llmProxyPlaceholderCredential)
 	}
 	if session.OpenAIAPIKey != "" {
 		setCommandEnv(command, "OPENAI_BASE_URL", p.llmProxyURL+"/openai/v1")
+		setCommandEnv(command, "CODEX_API_KEY", llmProxyPlaceholderCredential)
 		setCommandEnv(command, "OPENAI_API_KEY", llmProxyPlaceholderCredential)
 	}
 	return session, nil
@@ -1501,7 +1509,7 @@ statusMessage = "Redacting secrets from tool output"
 [model_providers.buildbuddy]
 name = "BuildBuddy OpenAI proxy"
 base_url = %q
-env_key = "OPENAI_API_KEY"
+env_key = "CODEX_API_KEY"
 wire_api = "responses"
 `, r.p.llmProxyURL+"/openai/v1")
 		if err := os.WriteFile(filepath.Join(configDir, "codex-config.toml"), []byte(codexConfig), 0o444); err != nil {
