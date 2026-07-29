@@ -54,12 +54,12 @@ go_test(
         "//server/util/testing/flags",
         "//server/util/wgkeys",
         "@com_github_stretchr_testify//require",
-        "@org_golang_google_grpc//:grpc",
         "@com_zx2c4_golang_wireguard//conn",
         "@com_zx2c4_golang_wireguard//device",
         "@com_zx2c4_golang_wireguard//tun/netstack",
         "@dev_gvisor_gvisor//pkg/tcpip",
         "@dev_gvisor_gvisor//pkg/tcpip/header",
+        "@org_golang_google_grpc//:grpc",
         "@org_uber_go_goleak//:goleak",
     ],
 )
