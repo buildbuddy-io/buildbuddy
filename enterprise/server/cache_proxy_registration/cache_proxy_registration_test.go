@@ -15,7 +15,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
+	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/buildbuddy-io/buildbuddy/server/util/upgrade"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
@@ -269,4 +271,52 @@ func TestSumByStatus_Empty(t *testing.T) {
 	assert.Equal(t, int64(0), hits)
 	assert.Equal(t, int64(0), misses)
 	assert.Equal(t, int64(0), uncacheable)
+}
+
+func TestConfiguredFlags(t *testing.T) {
+	flags.Set(t, "cache_proxy.app_target", "grpcs://app.example.com")
+	flags.Set(t, "cache_proxy.api_key", "SUPER_SECRET_KEY")
+
+	configured := configuredFlags()
+
+	assert.Contains(t, configured, "--cache_proxy.app_target=grpcs://app.example.com")
+	// Secret flags are reported, but with their values redacted.
+	assert.Contains(t, configured, "--cache_proxy.api_key=<redacted>")
+	for _, f := range configured {
+		assert.NotContains(t, f, "SUPER_SECRET_KEY")
+		// Flags left at their defaults are omitted.
+		assert.NotContains(t, f, "--cache_proxy.metadata_directory")
+	}
+}
+
+// fakeHeartbeatStream records sent requests; the embedded interface panics on
+// any other method, which sendHeartbeat won't call as long as Send succeeds.
+type fakeHeartbeatStream struct {
+	cppb.CacheProxyRegistry_RegisterAndStreamHeartbeatClient
+	sent []*cppb.RegisterCacheProxyRequest
+}
+
+func (f *fakeHeartbeatStream) Send(req *cppb.RegisterCacheProxyRequest) error {
+	// Clone the request: real gRPC streams serialize at Send time, but
+	// sendHeartbeat mutates the shared node between sends.
+	f.sent = append(f.sent, proto.Clone(req).(*cppb.RegisterCacheProxyRequest))
+	return nil
+}
+
+// Flag values can change at runtime (the config file is re-read on SIGHUP),
+// so every heartbeat should report the current configuration, not a snapshot
+// from startup.
+func TestSendHeartbeat_RefreshesConfiguredFlags(t *testing.T) {
+	stream := &fakeHeartbeatStream{}
+	node := &cppb.CacheProxyNode{Host: "h", ProxyId: "id"}
+
+	flags.Set(t, "cache_proxy.app_target", "grpcs://before.example.com")
+	require.NoError(t, sendHeartbeat(stream, &cppb.RegisterCacheProxyRequest{Node: node}))
+
+	flags.Set(t, "cache_proxy.app_target", "grpcs://after.example.com")
+	require.NoError(t, sendHeartbeat(stream, &cppb.RegisterCacheProxyRequest{Node: node}))
+
+	require.Len(t, stream.sent, 2)
+	assert.Contains(t, stream.sent[0].GetNode().GetConfiguredFlags(), "--cache_proxy.app_target=grpcs://before.example.com")
+	assert.Contains(t, stream.sent[1].GetNode().GetConfiguredFlags(), "--cache_proxy.app_target=grpcs://after.example.com")
 }
