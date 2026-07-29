@@ -3216,17 +3216,21 @@ func (e *partitionEvictor) sample(ctx context.Context, k int) ([]*approxlru.Samp
 }
 
 func deleteDirIfEmptyAndOld(dir string) error {
-	files, err := os.ReadDir(dir)
-	if err != nil {
-		return err
-	}
 	di, err := os.Stat(dir)
 	if err != nil {
 		return err
 	}
+	if time.Since(di.ModTime()) < *dirDeletionDelay {
+		// dir is too young
+		return nil
+	}
 
-	if len(files) != 0 || time.Since(di.ModTime()) < *dirDeletionDelay {
-		// dir was not empty or was too young
+	files, err := os.ReadDir(dir)
+	if err != nil {
+		return err
+	}
+	if len(files) != 0 {
+		// dir is not empty
 		return nil
 	}
 
