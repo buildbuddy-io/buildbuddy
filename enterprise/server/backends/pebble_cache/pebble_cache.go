@@ -3234,7 +3234,7 @@ func deleteDirIfEmptyAndOld(dir string) error {
 		return nil
 	}
 
-	err := os.Remove(dir)
+	err = os.Remove(dir)
 	log.Infof("Deleted dir: %q; err: %v", dir, err)
 	return err
 }
