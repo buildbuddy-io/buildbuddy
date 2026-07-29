@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io/fs"
 	"math"
+	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
@@ -134,6 +135,8 @@ const (
 	// invalidate the snapshot the action was run in. This can be written
 	// if the action detects that the snapshot was corrupted upon startup.
 	invalidateSnapshotMarkerFile = ".BUILDBUDDY_INVALIDATE_SNAPSHOT"
+
+	llmProxyPlaceholderCredential = "buildbuddy-executor-proxy"
 )
 
 func GetBuildRoot() string {
@@ -227,6 +230,7 @@ type taskRunner struct {
 
 	llmProxySession       *llmproxy.Session
 	revokeLLMProxySession func()
+	llmProxyConfigDir     string
 	// State is the current state of the runner as it pertains to reuse. It is
 	// atomic because in some cases we want to print runner metadata for debug
 	// purposes but without having to hold the pool lock.
@@ -348,6 +352,9 @@ func (r *taskRunner) DownloadInputs(ctx context.Context) error {
 		if err := r.Workspace.AddRemoteRunnerBinaries(ctx); err != nil {
 			return err
 		}
+	}
+	if err := r.prepareLLMProxyConfig(); err != nil {
+		return err
 	}
 	return nil
 }
@@ -530,6 +537,9 @@ func (r *taskRunner) Run(ctx context.Context, ioStats *repb.IOStats) (res *inter
 		return commandutil.ErrorResult(status.UnavailableErrorf("Not starting new task since executor is shutting down"))
 	default:
 		return commandutil.ErrorResult(status.InternalErrorf("unexpected runner state %d; this should never happen", s))
+	}
+	if err := r.installLLMProxyConfig(ctx); err != nil {
+		return commandutil.ErrorResult(err)
 	}
 
 	if _, ok := persistentworker.Key(r.PlatformProperties, command.GetArguments()); ok {
@@ -733,6 +743,9 @@ type PoolOptions struct {
 	// LLMSessionRegistrar enables execution-scoped LLM request redaction for
 	// Firecracker runners.
 	LLMSessionRegistrar llmproxy.SessionRegistrar
+
+	// LLMProxyURL is the HTTP origin reachable from Firecracker guests.
+	LLMProxyURL string
 }
 
 type pool struct {
@@ -746,6 +759,7 @@ type pool struct {
 	overrideProvider    container.Provider
 	oomKiller           oomkiller.Killer
 	llmSessionRegistrar llmproxy.SessionRegistrar
+	llmProxyURL         string
 	containerProviders  map[platform.ContainerType]container.Provider
 
 	maxRunnerCount                 int
@@ -782,6 +796,12 @@ func NewPool(env environment.Env, cacheRoot string, opts *PoolOptions) (*pool, e
 	if err != nil {
 		return nil, status.InternalErrorf("Could not create OCI resolver: %s", err)
 	}
+	if opts.LLMSessionRegistrar != nil {
+		proxyURL, err := url.Parse(opts.LLMProxyURL)
+		if err != nil || proxyURL.Scheme != "http" || proxyURL.Host == "" || proxyURL.Path != "" || proxyURL.User != nil || proxyURL.RawQuery != "" || proxyURL.Fragment != "" {
+			return nil, status.InvalidArgumentError("LLM proxy URL must be an HTTP origin")
+		}
+	}
 	p := &pool{
 		env:                 env,
 		podID:               podID,
@@ -790,6 +810,7 @@ func NewPool(env environment.Env, cacheRoot string, opts *PoolOptions) (*pool, e
 		cgroupParent:        opts.CgroupParent,
 		oomKiller:           opts.OOMKiller,
 		llmSessionRegistrar: opts.LLMSessionRegistrar,
+		llmProxyURL:         strings.TrimRight(opts.LLMProxyURL, "/"),
 		runners:             []*taskRunner{},
 		resolver:            resolver,
 	}
@@ -1335,6 +1356,11 @@ func (p *pool) newLLMProxySession(groupID string, props *platform.Properties, ta
 		GroupID:     groupID,
 		ExecutionID: task.GetExecutionId(),
 	}
+	providerSecretNames := map[string]struct{}{
+		"ANTHROPIC_API_KEY":    {},
+		"ANTHROPIC_AUTH_TOKEN": {},
+		"OPENAI_API_KEY":       {},
+	}
 	filteredEnv := command.EnvironmentVariables[:0]
 	for _, envVar := range command.GetEnvironmentVariables() {
 		if _, ok := secretNameSet[envVar.GetName()]; !ok {
@@ -1362,7 +1388,158 @@ func (p *pool) newLLMProxySession(groupID string, props *platform.Properties, ta
 	if len(session.RedactionValues) == 0 {
 		return nil, nil
 	}
+	remainingSecretNames := secretNames[:0]
+	for _, name := range secretNames {
+		if _, ok := providerSecretNames[name]; !ok {
+			remainingSecretNames = append(remainingSecretNames, name)
+		}
+	}
+	serializedNames, err := json.Marshal(remainingSecretNames)
+	if err != nil {
+		return nil, status.WrapError(err, "marshal remaining secret environment variable names")
+	}
+	setCommandEnv(command, ci_runner_env.BuildBuddySecretEnvVarNamesForRedaction, string(serializedNames))
+	if session.AnthropicAPIKey != "" || session.AnthropicAuthToken != "" {
+		setCommandEnv(command, "ANTHROPIC_BASE_URL", p.llmProxyURL+"/anthropic")
+		setCommandEnv(command, "ANTHROPIC_AUTH_TOKEN", llmProxyPlaceholderCredential)
+	}
+	if session.OpenAIAPIKey != "" {
+		setCommandEnv(command, "OPENAI_BASE_URL", p.llmProxyURL+"/openai/v1")
+		setCommandEnv(command, "OPENAI_API_KEY", llmProxyPlaceholderCredential)
+	}
 	return session, nil
+}
+
+func setCommandEnv(command *repb.Command, name, value string) {
+	filtered := command.EnvironmentVariables[:0]
+	for _, envVar := range command.GetEnvironmentVariables() {
+		if envVar.GetName() != name {
+			filtered = append(filtered, envVar)
+		}
+	}
+	command.EnvironmentVariables = append(filtered, &repb.Command_EnvironmentVariable{
+		Name:  name,
+		Value: value,
+	})
+}
+
+func (r *taskRunner) prepareLLMProxyConfig() error {
+	if r.llmProxySession == nil {
+		return nil
+	}
+	configDir, err := os.MkdirTemp(r.Workspace.Path(), ".buildbuddy-llm-proxy-")
+	if err != nil {
+		return status.WrapError(err, "create LLM proxy config directory")
+	}
+	r.llmProxyConfigDir = filepath.Base(configDir)
+
+	hookScript := `#!/bin/sh
+if ! command -v curl >/dev/null 2>&1; then
+  echo "BuildBuddy secret redaction unavailable; tool output withheld." >&2
+  exit 2
+fi
+if ! curl --fail --silent --show-error --max-time 30 \
+  -H "Content-Type: application/json" \
+  --data-binary @- "$1"; then
+  echo "BuildBuddy secret redaction unavailable; tool output withheld." >&2
+  exit 2
+fi
+`
+	if err := os.WriteFile(filepath.Join(configDir, "redact-hook"), []byte(hookScript), 0o555); err != nil {
+		return status.WrapError(err, "write LLM redaction hook")
+	}
+
+	claudeSettings := map[string]any{
+		"allowManagedHooksOnly": true,
+		"hooks": map[string]any{
+			"PostToolUse": []any{
+				map[string]any{
+					"matcher": "*",
+					"hooks": []any{
+						map[string]any{
+							"type":    "command",
+							"command": fmt.Sprintf("/usr/local/lib/buildbuddy/redact-hook %s/hooks/claude/post-tool-use", r.p.llmProxyURL),
+							"timeout": 30,
+						},
+					},
+				},
+			},
+		},
+	}
+	claudeJSON, err := json.Marshal(claudeSettings)
+	if err != nil {
+		return status.WrapError(err, "marshal managed Claude settings")
+	}
+	if err := os.WriteFile(filepath.Join(configDir, "claude-managed-settings.json"), claudeJSON, 0o444); err != nil {
+		return status.WrapError(err, "write managed Claude settings")
+	}
+
+	codexRequirements := fmt.Sprintf(`allow_managed_hooks_only = true
+
+[features]
+hooks = true
+
+[hooks]
+managed_dir = "/usr/local/lib/buildbuddy"
+
+[[hooks.PostToolUse]]
+matcher = "*"
+
+[[hooks.PostToolUse.hooks]]
+type = "command"
+command = "/usr/local/lib/buildbuddy/redact-hook %s/hooks/codex/post-tool-use"
+timeout = 30
+statusMessage = "Redacting secrets from tool output"
+`, r.p.llmProxyURL)
+	if err := os.WriteFile(filepath.Join(configDir, "codex-requirements.toml"), []byte(codexRequirements), 0o444); err != nil {
+		return status.WrapError(err, "write managed Codex requirements")
+	}
+
+	if r.llmProxySession.OpenAIAPIKey != "" {
+		codexConfig := fmt.Sprintf(`model_provider = "buildbuddy"
+
+[model_providers.buildbuddy]
+name = "BuildBuddy OpenAI proxy"
+base_url = %q
+env_key = "OPENAI_API_KEY"
+wire_api = "responses"
+`, r.p.llmProxyURL+"/openai/v1")
+		if err := os.WriteFile(filepath.Join(configDir, "codex-config.toml"), []byte(codexConfig), 0o444); err != nil {
+			return status.WrapError(err, "write managed Codex config")
+		}
+	}
+	return nil
+}
+
+func (r *taskRunner) installLLMProxyConfig(ctx context.Context) error {
+	if r.llmProxySession == nil {
+		return nil
+	}
+	if r.llmProxyConfigDir == "" {
+		return status.FailedPreconditionError("LLM proxy config was not prepared")
+	}
+	stagingDir := filepath.Join("/workspace", r.llmProxyConfigDir)
+	commands := []string{
+		"set -eu",
+		"mkdir -p /usr/local/lib/buildbuddy /etc/claude-code /etc/codex",
+		fmt.Sprintf("cp %s/redact-hook /usr/local/lib/buildbuddy/redact-hook", stagingDir),
+		"chmod 0555 /usr/local/lib/buildbuddy/redact-hook",
+		fmt.Sprintf("cp %s/claude-managed-settings.json /etc/claude-code/managed-settings.json", stagingDir),
+		fmt.Sprintf("cp %s/codex-requirements.toml /etc/codex/requirements.toml", stagingDir),
+	}
+	if r.llmProxySession.OpenAIAPIKey != "" {
+		commands = append(commands, fmt.Sprintf("cp %s/codex-config.toml /etc/codex/config.toml", stagingDir))
+	}
+	result := r.Container.Exec(ctx, &repb.Command{
+		Arguments: []string{"/bin/sh", "-c", strings.Join(commands, "\n")},
+	}, &interfaces.Stdio{})
+	if result.Error != nil {
+		return status.WrapError(result.Error, "install managed agent redaction config")
+	}
+	if result.ExitCode != 0 {
+		return status.FailedPreconditionErrorf("install managed agent redaction config: exited with code %d", result.ExitCode)
+	}
+	return nil
 }
 
 func (r *taskRunner) startLLMProxySession() error {
@@ -1397,6 +1574,7 @@ func (r *taskRunner) clearLLMProxySession() {
 		*r.llmProxySession = llmproxy.Session{}
 		r.llmProxySession = nil
 	}
+	r.llmProxyConfigDir = ""
 }
 
 // newRunner creates a runner either for the given task (if set) or restores the

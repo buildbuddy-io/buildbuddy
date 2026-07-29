@@ -138,6 +138,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		http.Error(w, "unauthorized proxy request", http.StatusUnauthorized)
 		return
 	}
+	if strings.HasPrefix(req.URL.Path, "/hooks/") {
+		h.serveHook(w, req, session)
+		return
+	}
 
 	upstream, upstreamPath, err := h.resolveUpstream(req, session)
 	if err != nil {
@@ -226,6 +230,18 @@ func (h *Handler) resolveUpstream(req *http.Request, session *Session) (*url.URL
 }
 
 func (h *Handler) redactRequestBody(req *http.Request, values []string) ([]byte, error) {
+	value, err := h.decodeJSONRequestBody(req)
+	if err != nil {
+		return nil, err
+	}
+	if value == nil {
+		return nil, nil
+	}
+	value, _ = redactJSONStrings(value, values)
+	return json.Marshal(value)
+}
+
+func (h *Handler) decodeJSONRequestBody(req *http.Request) (any, error) {
 	if req.Body == nil || req.Body == http.NoBody {
 		return nil, nil
 	}
@@ -252,8 +268,63 @@ func (h *Handler) redactRequestBody(req *http.Request, values []string) ([]byte,
 	if err := decoder.Decode(&trailing); err != io.EOF {
 		return nil, errors.New("request body must contain exactly one JSON value")
 	}
-	redactJSONStrings(value, values)
-	return json.Marshal(value)
+	return value, nil
+}
+
+func (h *Handler) serveHook(w http.ResponseWriter, req *http.Request, session *Session) {
+	if req.Method != http.MethodPost {
+		http.Error(w, "unsupported hook method", http.StatusMethodNotAllowed)
+		return
+	}
+	value, err := h.decodeJSONRequestBody(req)
+	if err != nil {
+		http.Error(w, "invalid hook body", http.StatusBadRequest)
+		return
+	}
+	event, ok := value.(map[string]any)
+	if !ok {
+		http.Error(w, "invalid hook event", http.StatusBadRequest)
+		return
+	}
+	toolResponse, ok := event["tool_response"]
+	if !ok {
+		http.Error(w, "hook event is missing tool_response", http.StatusBadRequest)
+		return
+	}
+	toolResponse, changed := redactJSONStrings(toolResponse, session.RedactionValues)
+	if !changed {
+		writeJSON(w, map[string]any{})
+		return
+	}
+
+	switch req.URL.Path {
+	case "/hooks/claude/post-tool-use":
+		writeJSON(w, map[string]any{
+			"hookSpecificOutput": map[string]any{
+				"hookEventName":     "PostToolUse",
+				"updatedToolOutput": toolResponse,
+			},
+		})
+	case "/hooks/codex/post-tool-use":
+		sanitized, err := json.Marshal(toolResponse)
+		if err != nil {
+			http.Error(w, "could not encode hook response", http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, map[string]any{
+			"decision": "block",
+			"reason":   string(sanitized),
+		})
+	default:
+		http.Error(w, "unsupported hook endpoint", http.StatusNotFound)
+	}
+}
+
+func writeJSON(w http.ResponseWriter, value any) {
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(value); err != nil {
+		return
+	}
 }
 
 func readAtMost(r io.Reader, limit int64) ([]byte, error) {
@@ -293,25 +364,26 @@ func decompress(body []byte, contentEncoding string, limit int64) ([]byte, error
 	}
 }
 
-func redactJSONStrings(value any, values []string) {
+func redactJSONStrings(value any, values []string) (any, bool) {
+	changed := false
 	switch value := value.(type) {
+	case string:
+		redacted := redact.RedactTextWithValues(value, values)
+		return redacted, redacted != value
 	case map[string]any:
 		for key, child := range value {
-			if text, ok := child.(string); ok {
-				value[key] = redact.RedactTextWithValues(text, values)
-				continue
-			}
-			redactJSONStrings(child, values)
+			redacted, childChanged := redactJSONStrings(child, values)
+			value[key] = redacted
+			changed = childChanged || changed
 		}
 	case []any:
 		for i, child := range value {
-			if text, ok := child.(string); ok {
-				value[i] = redact.RedactTextWithValues(text, values)
-				continue
-			}
-			redactJSONStrings(child, values)
+			redacted, childChanged := redactJSONStrings(child, values)
+			value[i] = redacted
+			changed = childChanged || changed
 		}
 	}
+	return value, changed
 }
 
 func redactQuery(query url.Values, values []string) url.Values {
