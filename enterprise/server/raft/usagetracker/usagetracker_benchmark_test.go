@@ -1,0 +1,95 @@
+package usagetracker
+
+import (
+	"context"
+	"fmt"
+	"testing"
+	"time"
+
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebble"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/server/util/approxlru"
+	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
+	"github.com/jonboulle/clockwork"
+	"github.com/stretchr/testify/require"
+
+	pebblev1 "github.com/cockroachdb/pebble"
+)
+
+// BenchmarkEvictionCandidateDiscovery measures how long the eviction sample
+// generator takes to discover every eligible record: M records total, K of
+// them older than min_eviction_age (spread evenly through the keyspace),
+// timed until K distinct candidates arrive on the samples channel.
+//
+// The atime-index scanner's cost is proportional to K (read the index's cold
+// front, stop at the age cutoff); the range-scoped sampler it replaced reads
+// through all M record values, so its cost is proportional to M. A branch-
+// adapted copy of this benchmark runs against the old sampler for A/B
+// comparison (the partitionUsage internals differ across branches).
+func BenchmarkEvictionCandidateDiscovery(b *testing.B) {
+	for _, tc := range []struct{ m, k int }{
+		{10_000, 100},
+		{100_000, 100},
+		{100_000, 1_000},
+	} {
+		b.Run(fmt.Sprintf("m=%d/k=%d", tc.m, tc.k), func(b *testing.B) {
+			dir := testfs.MakeTempDir(b)
+			db, err := pebble.Open(dir, "test", &pebblev1.Options{})
+			require.NoError(b, err)
+			leaser := pebble.NewDBLeaser(db)
+			b.Cleanup(func() {
+				leaser.Close()
+				db.Close()
+			})
+
+			// K eligible records (2h old, > minEvictionAge below) spread every
+			// m/k-th write; the rest are fresh and ineligible.
+			eligibleAtime := time.Now().Add(-2 * time.Hour).UnixMicro()
+			freshAtime := time.Now().UnixMicro()
+			stride := tc.m / tc.k
+			for i := 0; i < tc.m; i++ {
+				atime := freshAtime
+				if i%stride == 0 && i/stride < tc.k {
+					atime = eligibleAtime
+				}
+				writeRecordWithIndex(b, db, "GR1", atime)
+			}
+			require.NoError(b, db.Flush())
+
+			for b.Loop() {
+				pu := &partitionUsage{
+					part:     disk.Partition{ID: "FOO", MaxSizeBytes: 1 << 20},
+					dbGetter: leaser,
+					clock:    clockwork.NewRealClock(),
+					// Keep GlobalSizeBytes above the sleep threshold so the
+					// generator never sleeps.
+					nodes:   map[string]*nodePartitionUsage{"n1": {sizeBytes: 1 << 40}},
+					samples: make(chan *approxlru.Sample[*evictionKey], 128),
+
+					samplerSleepDuration: time.Hour,
+					minEvictionAge:       time.Hour,
+				}
+				ctx, cancel := context.WithCancel(context.Background())
+				done := make(chan struct{})
+				go func() {
+					pu.generateSamplesForEviction(ctx)
+					close(done)
+				}()
+
+				seen := make(map[string]bool, tc.k)
+				for len(seen) < tc.k {
+					select {
+					case s := <-pu.samples:
+						seen[s.Key.ID()] = true
+					case <-time.After(120 * time.Second):
+						cancel()
+						<-done
+						b.Fatalf("timed out with %d/%d candidates discovered", len(seen), tc.k)
+					}
+				}
+				cancel()
+				<-done
+			}
+		})
+	}
+}

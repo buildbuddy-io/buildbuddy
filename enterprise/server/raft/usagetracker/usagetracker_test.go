@@ -25,7 +25,7 @@ import (
 // writeRecordWithIndex writes one CAS v7 file record with the given atime plus
 // its atime-index entry, mirroring what the replica apply path maintains.
 // Returns the record's file key.
-func writeRecordWithIndex(t *testing.T, db pebble.IPebbleDB, groupID string, atimeUsec int64) []byte {
+func writeRecordWithIndex(t testing.TB, db pebble.IPebbleDB, groupID string, atimeUsec int64) []byte {
 	fs := filestore.New()
 	// 100 random bytes so digests don't collide across records (a collision
 	// would overwrite a record and legitimately orphan its older index entry).

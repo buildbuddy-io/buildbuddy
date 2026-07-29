@@ -36,7 +36,10 @@ go_library(
 
 go_test(
     name = "usagetracker_test",
-    srcs = ["usagetracker_test.go"],
+    srcs = [
+        "usagetracker_benchmark_test.go",
+        "usagetracker_test.go",
+    ],
     embed = [":usagetracker"],
     deps = [
         "//enterprise/server/filestore",
