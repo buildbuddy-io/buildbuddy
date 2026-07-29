@@ -431,6 +431,25 @@ func (rc *Server) sendAccessTimeUpdate(a atimeUpdateData) {
 	}
 }
 
+// presentConsideringGCSTTL reports a record absent if its backing GCS object is
+// past the bucket TTL, so callers don't skip re-uploading an unreadable blob.
+func (rc *Server) presentConsideringGCSTTL(present bool, gcsMetadata *sgpb.StorageMetadata_GCSMetadata) bool {
+	if !present {
+		return false
+	}
+	// No bucket TTL configured: nothing is reaped (and ObjectIsPastTTL treats a
+	// zero TTL as always-expired), so leave presence untouched.
+	if rc.gcsTTLDays <= 0 {
+		return true
+	}
+	// Inline records have no GCS object to expire.
+	if gcsMetadata == nil {
+		return true
+	}
+	// The lifecycle rule may have deleted the object while its metadata survives.
+	return !gcsutil.ObjectIsPastTTL(rc.clock, gcsMetadata, rc.gcsTTLDays)
+}
+
 // maybeUpdateGCSAtime refreshes the backing GCS object's custom time and
 // returns the new value to record, or 0 if it was not refreshed. Refreshes are
 // billed and contend on the object, and the custom time is only a TTL backstop,
@@ -696,7 +715,7 @@ func (rc *Server) Find(ctx context.Context, req *mdpb.FindRequest) (*mdpb.FindRe
 			if err != nil {
 				return nil, err
 			}
-			present := findRsp.GetPresent()
+			present := rc.presentConsideringGCSTTL(findRsp.GetPresent(), findRsp.GetGcsMetadata())
 			res.found[k.Meta.(*sgpb.FileRecord)] = present
 			if present {
 				res.atimeUpdates = append(res.atimeUpdates, atimeUpdateData{

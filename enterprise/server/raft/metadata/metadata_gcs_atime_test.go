@@ -151,3 +151,40 @@ func TestMaybeUpdateGCSAtime_FailedRefreshRecordsNoCustomTime(t *testing.T) {
 	require.Error(t, err)
 	require.Zero(t, customTime)
 }
+
+func TestPresentConsideringGCSTTL_RecentObjectStaysPresent(t *testing.T) {
+	f := newGCSAtimeFixture(t, 7 /*=ttlDays*/, 0 /*=threshold*/)
+	md := f.metadataWithCustomTime(-1 * time.Hour)
+
+	require.True(t, f.server.presentConsideringGCSTTL(true, md))
+}
+
+func TestPresentConsideringGCSTTL_PastTTLObjectReportsAbsent(t *testing.T) {
+	f := newGCSAtimeFixture(t, 7 /*=ttlDays*/, 0 /*=threshold*/)
+	md := f.metadataWithCustomTime(-8 * 24 * time.Hour)
+
+	// Past TTL: the object was likely reaped, so report absent.
+	require.False(t, f.server.presentConsideringGCSTTL(true, md))
+}
+
+func TestPresentConsideringGCSTTL_TTLDisabledStaysPresent(t *testing.T) {
+	f := newGCSAtimeFixture(t, 0 /*=ttlDays*/, 0 /*=threshold*/)
+	md := f.metadataWithCustomTime(-8 * 24 * time.Hour)
+
+	// No bucket TTL: the guard must keep it present.
+	require.True(t, f.server.presentConsideringGCSTTL(true, md))
+}
+
+func TestPresentConsideringGCSTTL_InlineRecordStaysPresent(t *testing.T) {
+	f := newGCSAtimeFixture(t, 7 /*=ttlDays*/, 0 /*=threshold*/)
+
+	// Inline records have no GCS object, so the TTL check does not apply.
+	require.True(t, f.server.presentConsideringGCSTTL(true, nil))
+}
+
+func TestPresentConsideringGCSTTL_AbsentStaysAbsent(t *testing.T) {
+	f := newGCSAtimeFixture(t, 7 /*=ttlDays*/, 0 /*=threshold*/)
+	md := f.metadataWithCustomTime(-1 * time.Hour)
+
+	require.False(t, f.server.presentConsideringGCSTTL(false, md))
+}
