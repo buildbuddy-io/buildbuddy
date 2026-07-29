@@ -3234,7 +3234,9 @@ func deleteDirIfEmptyAndOld(dir string) error {
 		return nil
 	}
 
-	return os.Remove(dir)
+	err := os.Remove(dir)
+	log.Infof("Deleted dir: %q; err: %v", dir, err)
+	return err
 }
 
 func (e *partitionEvictor) deleteFile(rawKey []byte, key filestore.PebbleKey, groupID string, lastModifyUsec int64, storedSizeBytes int64, storageMetadata *sgpb.StorageMetadata) error {
