@@ -540,34 +540,17 @@ func TestLRU(t *testing.T) {
 	flags.Set(t, "cache.raft.atime_write_batch_size", 1)
 	// The test creates records at fake-clock T0, then Find()s subsets at T1,
 	// T2, T3, leaving records 18-24 with atime T0. Final fake-clock time is
-	// T4 = T0+20min. Setting min_eviction_age=18min restricts the eviction
-	// sampler to only records 18-24 (age 20min); the Find()'d records (age
-	// 5/10/15min) are skipped entirely. This eliminates two flake sources:
-	// (1) the LRU evictor's real-time 1s ticker firing during the test's
-	// setup phase and evicting random records before atime updates apply,
-	// and (2) stale-atime samples making recently-Find()'d records appear
-	// old enough to evict.
+	// T4 = T0+20min. Setting min_eviction_age=18min restricts eviction to
+	// records 18-24 (age 20min); the Find()'d records (age 5/10/15min) are
+	// skipped entirely, so the eviction sweep can't race the async atime
+	// updates from the Find() calls.
 	flags.Set(t, "cache.raft.min_eviction_age", 18*time.Minute)
-	// Read a small batch forward per random seek instead of refreshing the
-	// iterator on every single read. The records this test evicts (18-24) are
-	// never Find()'d, so their atimes are set once and never change -- a short
-	// batch keeps them fresh while avoiding the per-record db.NewIter churn
-	// that, under the race detector, starves the evictor and makes the sampler
-	// take far too long to randomly land on the last few eligible records.
-	flags.Set(t, "cache.raft.samples_per_batch", 10)
-	// Disable the sampler's idle sleep. In production the sampler sleeps when
-	// it can't find an eligible entry (e.g. a random key landing past the end
-	// of a small partition) to avoid wasting CPU. That sleep uses the fake
-	// clock here, which the test doesn't advance during the GC wait below, so
-	// it would stall the sampler and time out eviction.
+	// Disable the eviction loop's idle sleep. In production the loop sleeps
+	// while the partition is under its threshold or nothing is old enough to
+	// evict. That sleep uses the fake clock here, which the test doesn't
+	// advance during the GC wait below, so it would stall eviction and time
+	// out.
 	flags.Set(t, "cache.raft.sampler_sleep_duration", time.Duration(0))
-	// Make the sample channel unbuffered so it can't hold stale samples
-	// produced before atime updates from the test's Find() calls were
-	// applied to pebble. Without this, the eviction consumer reads stale
-	// samples whose Timestamp doesn't match the current pebble atime, and
-	// every Delete is rejected with "Atime mismatch".
-	flags.Set(t, "cache.raft.sample_buffer_size", 0)
-	flags.Set(t, "cache.raft.sample_pool_size", 10)
 	flags.Set(t, "cache.raft.eviction_batch_size", 1)
 	flags.Set(t, "cache.raft.local_size_update_period", 100*time.Millisecond)
 	flags.Set(t, "cache.raft.partition_usage_delta_bytes_threshold", 100)
@@ -635,6 +618,13 @@ func TestLRU(t *testing.T) {
 			require.NoError(t, err)
 			lastUsed[r] = clock.Now()
 		}
+		// The Find() atime updates are applied asynchronously, but the
+		// eviction loop reacts to the fake-clock advance immediately. Flush
+		// the updates before advancing so eviction never observes a
+		// recently-used record at its stale (pre-Find) atime. Production
+		// doesn't jump clocks, and its hours-scale thresholds dwarf the
+		// pipeline's real-time lag.
+		rc1.TestingFlushAtimeUpdates()
 		clock.Advance(5 * time.Minute)
 	}
 

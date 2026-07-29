@@ -71,6 +71,7 @@ import (
 	raftConfig "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/config"
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	rfspb "github.com/buildbuddy-io/buildbuddy/proto/raft_service"
+	sgpb "github.com/buildbuddy-io/buildbuddy/proto/storage"
 	dbConfig "github.com/lni/dragonboat/v4/config"
 	dbsm "github.com/lni/dragonboat/v4/statemachine"
 )
@@ -1854,6 +1855,12 @@ func (s *Store) RemoveData(ctx context.Context, req *rfpb.RemoveDataRequest) (*r
 			return nil, err
 		}
 		defer db.Close()
+		// Drop the node-local atime-index entries for the range's records
+		// before the records themselves: the exact index key of each record is
+		// derived from its stored atime, so this needs the span data present.
+		if err := deleteAtimeIndexEntriesInRange(db, remoteRD.GetStart(), remoteRD.GetEnd()); err != nil {
+			return nil, status.InternalErrorf("failed to delete atime index entries of c%dn%d: %w", req.GetRange().GetRangeId(), req.GetReplicaId(), err)
+		}
 		if err = db.DeleteRange(remoteRD.GetStart(), remoteRD.GetEnd(), pebble.NoSync); err != nil {
 			return nil, status.InternalErrorf("failed to delete data of c%dn%d from pebble: %w", req.GetRange().GetRangeId(), req.GetReplicaId(), err)
 		}
@@ -1875,6 +1882,50 @@ func (s *Store) RemoveData(ctx context.Context, req *rfpb.RemoveDataRequest) (*r
 	return &rfpb.RemoveDataResponse{
 		Range: rd,
 	}, nil
+}
+
+// atimeIndexCleanupCommitSizeBytes is how large deleteAtimeIndexEntriesInRange
+// lets its delete batch grow before committing it. A removed range can hold
+// millions of records (one small index delete each), and pebble panics on
+// batches over ~4GB, so the cleanup commits in bounded chunks. Losing
+// atomicity across chunks is fine: the deletes are idempotent, and anything
+// missed after a crash is an orphan the eviction sweep drops. Var so tests can
+// exercise the chunking cheaply.
+var atimeIndexCleanupCommitSizeBytes = 4 * 1024 * 1024
+
+// deleteAtimeIndexEntriesInRange removes the node-local atime-index entries
+// for every file record in [start, end). Any entries it misses are dropped
+// lazily by the eviction scanner's orphan check.
+func deleteAtimeIndexEntriesInRange(db pebble.IPebbleDB, start, end []byte) error {
+	partID := keys.PartitionIDFromRangeStart(start)
+	if partID == "" {
+		// Not a data range (e.g. the meta range): no file records, no index.
+		return nil
+	}
+	iter, err := db.NewIter(&pebble.IterOptions{LowerBound: start, UpperBound: end})
+	if err != nil {
+		return err
+	}
+	defer iter.Close()
+	wb := db.NewBatch()
+	defer wb.Close()
+	for iter.First(); iter.Valid(); iter.Next() {
+		md := &sgpb.FileMetadata{}
+		if err := proto.Unmarshal(iter.Value(), md); err != nil {
+			log.Warningf("skipping atime index cleanup for non-FileMetadata key %q: %s", iter.Key(), err)
+			continue
+		}
+		if err := wb.Delete(keys.AtimeIndexKey(partID, md.GetLastAccessUsec(), iter.Key()), nil); err != nil {
+			return err
+		}
+		if wb.Len() >= atimeIndexCleanupCommitSizeBytes {
+			if err := wb.Commit(pebble.NoSync); err != nil {
+				return err
+			}
+			wb.Reset()
+		}
+	}
+	return wb.Commit(pebble.NoSync)
 }
 
 // SyncPropose makes a synchronous proposal (writes) on the Raft shard.

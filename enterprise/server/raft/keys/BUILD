@@ -10,6 +10,7 @@ go_library(
         "//enterprise/server/filestore",
         "//proto:raft_go_proto",
         "//server/metrics",
+        "//server/util/status",
         "@com_github_prometheus_client_golang//prometheus",
     ],
 )
@@ -20,5 +21,6 @@ go_test(
     deps = [
         ":keys",
         "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
     ],
 )

@@ -622,9 +622,12 @@ func (sm *Replica) deleteTxnRollbackMarkersBefore(wb pebble.Batch, req *rfpb.Del
 }
 
 func (sm *Replica) loadInflightTransactions(db ReplicaReader) error {
+	// Bound the scan to this replica's local keys; the '\x01' region also
+	// holds other replicas' local keys and the node-local atime index.
+	start, end := keys.Range(sm.replicaPrefix())
 	iterOpts := &pebble.IterOptions{
-		LowerBound: constants.LocalPrefix,
-		UpperBound: constants.MetaRangePrefix,
+		LowerBound: start,
+		UpperBound: end,
 	}
 	iter, err := db.NewIter(iterOpts)
 	if err != nil {
@@ -692,7 +695,9 @@ func (sm *Replica) clearInMemoryReplicaState() {
 	sm.lastAppliedIndex = 0
 }
 
-// clearRangeData clears data in range [start, end).
+// clearRangeData clears data in range [start, end). Atime-index entries for
+// the cleared records are left behind as orphans; the eviction scanner drops
+// entries whose stored record is missing or has a different atime.
 func (sm *Replica) clearRangeData(db ReplicaWriter, rd *rfpb.RangeDescriptor) error {
 	wb := db.NewBatch()
 	if rd.GetStart() != nil && rd.GetEnd() != nil {
@@ -1106,6 +1111,28 @@ func (sm *Replica) get(db ReplicaReader, req *rfpb.GetRequest) (*rfpb.GetRespons
 	}, nil
 }
 
+// addAtimeIndexEntry / deleteAtimeIndexEntry maintain the node-local eviction
+// index (see keys.AtimeIndexPrefix): one entry per stored file record, keyed
+// by (partition, atime, file key), written into the same batch as the primary
+// mutation so the two commit atomically. Index keys live outside the range
+// keyspace and are deliberately NOT routed through rangeCheckedSet /
+// replicaLocalKey: the index is derived, per-node state, not range data.
+func addAtimeIndexEntry(wb pebble.Batch, fileKey []byte, atimeUsec int64) error {
+	partID := keys.PartitionIDFromRangeStart(fileKey)
+	if partID == "" {
+		return nil
+	}
+	return wb.Set(keys.AtimeIndexKey(partID, atimeUsec, fileKey), nil, nil /*ignored write options*/)
+}
+
+func deleteAtimeIndexEntry(wb pebble.Batch, fileKey []byte, atimeUsec int64) error {
+	partID := keys.PartitionIDFromRangeStart(fileKey)
+	if partID == "" {
+		return nil
+	}
+	return wb.Delete(keys.AtimeIndexKey(partID, atimeUsec, fileKey), nil /*ignored write options*/)
+}
+
 func (sm *Replica) set(wb pebble.Batch, req *rfpb.SetRequest) (*rfpb.SetResponse, error) {
 	// Check that key is a valid PebbleKey.
 	var pk filestore.PebbleKey
@@ -1119,11 +1146,34 @@ func (sm *Replica) set(wb pebble.Batch, req *rfpb.SetRequest) (*rfpb.SetResponse
 	if req.GetFileMetadata().GetFileRecord() == nil {
 		log.Warningf("incoming FileMetadata has no FileRecord for key %q: %+v", req.GetKey(), req.GetFileMetadata())
 	}
+	// Look up the previous record, if any, so an overwrite moves its atime
+	// index entry instead of orphaning it. wb is an indexed batch, so this
+	// sees earlier writes in the same batch.
+	prevAtimeUsec := int64(-1)
+	if buf, err := sm.lookup(wb, req.GetKey()); err == nil {
+		prevMetadata := &sgpb.FileMetadata{}
+		if err := proto.Unmarshal(buf, prevMetadata); err != nil {
+			return nil, err
+		}
+		prevAtimeUsec = prevMetadata.GetLastAccessUsec()
+	} else if !status.IsNotFoundError(err) {
+		return nil, err
+	}
+
 	buf, err := proto.Marshal(req.GetFileMetadata())
 	if err != nil {
 		return nil, err
 	}
 	if err := sm.rangeCheckedSet(wb, req.GetKey(), buf); err != nil {
+		return nil, err
+	}
+	newAtimeUsec := req.GetFileMetadata().GetLastAccessUsec()
+	if prevAtimeUsec >= 0 && prevAtimeUsec != newAtimeUsec {
+		if err := deleteAtimeIndexEntry(wb, req.GetKey(), prevAtimeUsec); err != nil {
+			return nil, err
+		}
+	}
+	if err := addAtimeIndexEntry(wb, req.GetKey(), newAtimeUsec); err != nil {
 		return nil, err
 	}
 	return &rfpb.SetResponse{}, nil
@@ -1155,6 +1205,9 @@ func (sm *Replica) delete(wb pebble.Batch, req *rfpb.DeleteRequest) (*rfpb.Delet
 		return nil, err
 	}
 	if err := wb.Delete(req.GetKey(), nil /*ignored write options*/); err != nil {
+		return nil, err
+	}
+	if err := deleteAtimeIndexEntry(wb, req.GetKey(), fileMetadata.GetLastAccessUsec()); err != nil {
 		return nil, err
 	}
 	return &rfpb.DeleteResponse{}, nil
@@ -1201,6 +1254,7 @@ func (sm *Replica) updateAtime(wb pebble.Batch, req *rfpb.UpdateAtimeRequest) (*
 		return nil, err
 	}
 	updated := false
+	prevAtimeUsec := fileMetadata.GetLastAccessUsec()
 
 	// Atime should always move forward. If the new one is behind, or is the same
 	// value a retry already applied, don't attempt to add it.
@@ -1229,6 +1283,16 @@ func (sm *Replica) updateAtime(wb pebble.Batch, req *rfpb.UpdateAtimeRequest) (*
 	}
 	if err := sm.rangeCheckedSet(wb, req.GetKey(), buf); err != nil {
 		return nil, err
+	}
+	// Move the record's index entry to its new atime position. A custom-time-
+	// only update leaves the atime (and thus the entry) unchanged.
+	if newAtimeUsec := fileMetadata.GetLastAccessUsec(); newAtimeUsec != prevAtimeUsec {
+		if err := deleteAtimeIndexEntry(wb, req.GetKey(), prevAtimeUsec); err != nil {
+			return nil, err
+		}
+		if err := addAtimeIndexEntry(wb, req.GetKey(), newAtimeUsec); err != nil {
+			return nil, err
+		}
 	}
 	return &rfpb.UpdateAtimeResponse{}, nil
 }
@@ -1915,9 +1979,12 @@ func (sm *Replica) saveRangeData(w io.Writer, snap *pebble.Snapshot) error {
 }
 
 func (sm *Replica) saveRangeLocalData(w io.Writer, snap *pebble.Snapshot) error {
+	// Bound the scan to this replica's local keys; the '\x01' region also
+	// holds other replicas' local keys and the node-local atime index.
+	start, end := keys.Range(sm.replicaPrefix())
 	iter, err := snap.NewIter(&pebble.IterOptions{
-		LowerBound: constants.LocalPrefix,
-		UpperBound: constants.MetaRangePrefix,
+		LowerBound: start,
+		UpperBound: end,
 	})
 	if err != nil {
 		return err
@@ -2003,6 +2070,17 @@ func (sm *Replica) applySnapshotFromReader(r io.Reader, db ReplicaWriter) error 
 		}
 		if err := wb.Set(kv.Key, kv.Value, nil); err != nil {
 			return err
+		}
+		// Data KVs (file records) also get their node-local atime-index entry,
+		// since the index is per-node derived state and isn't part of the
+		// snapshot stream. Local/meta keys never carry the "PT" prefix.
+		if bytes.HasPrefix(kv.Key, []byte(filestore.PartitionDirectoryPrefix)) {
+			md := &sgpb.FileMetadata{}
+			if err := proto.Unmarshal(kv.Value, md); err != nil {
+				sm.log.Warningf("snapshot data KV %q is not a FileMetadata; skipping atime index entry: %s", kv.Key, err)
+			} else if err := addAtimeIndexEntry(wb, kv.Key, md.GetLastAccessUsec()); err != nil {
+				return err
+			}
 		}
 		if wb.Len() > 1*gb {
 			// Pebble panics when the batch is greater than ~4GB (or 2GB on 32-bit systems)
