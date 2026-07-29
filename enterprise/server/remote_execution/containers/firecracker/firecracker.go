@@ -1951,6 +1951,13 @@ func (c *FirecrackerContainer) setupNetworking(ctx context.Context) error {
 	return nil
 }
 
+func (c *FirecrackerContainer) NetworkSourceIP() string {
+	if c.network == nil {
+		return ""
+	}
+	return c.network.NamespacedIP()
+}
+
 func (c *FirecrackerContainer) setupUFFDHandler(ctx context.Context) error {
 	if c.memoryStore == nil {
 		// No memory file to serve over UFFD; do nothing.

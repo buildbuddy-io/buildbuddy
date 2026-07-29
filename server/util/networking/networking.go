@@ -1080,6 +1080,13 @@ func (v *VMNetwork) NamespacePath() string {
 	return v.netns.Path()
 }
 
+// NamespacedIP returns the address assigned to the namespaced end of the outer
+// veth pair. Traffic leaving a Firecracker guest is SNATed to this address
+// before it reaches services running in the executor's network namespace.
+func (v *VMNetwork) NamespacedIP() string {
+	return v.vethPair.network.NamespacedIP()
+}
+
 func (v *VMNetwork) Cleanup(ctx context.Context) error {
 	return v.cleanup(ctx)
 }

@@ -521,6 +521,11 @@ type VM interface {
 	// SetTaskFileSystemLayout sets the VFS layout for use inside the guest.
 	SetTaskFileSystemLayout(layout *FileSystemLayout)
 
+	// NetworkSourceIP returns the executor-assigned source IP used by traffic
+	// leaving the VM's network namespace. It is empty until networking has been
+	// initialized, or if networking is disabled.
+	NetworkSourceIP() string
+
 	// SnapshotDebugString returns a string representing the cache key used for
 	// VM snapshots, if applicable.
 	SnapshotDebugString(ctx context.Context) string
