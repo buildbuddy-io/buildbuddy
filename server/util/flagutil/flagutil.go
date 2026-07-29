@@ -50,3 +50,8 @@ func GetDereferencedValue[T any](name string) (T, error) {
 // Expand updates the flag value to replace any placeholders in format ${FOO}
 // with the content of calling the mapper function with the placeholder name.
 var Expand = common.Expand
+
+// Returns whether the provided flag is Secretable.IsSecret() or not.
+func IsSecret(flg *flag.Flag) bool {
+	return common.IsSecret(flg)
+}

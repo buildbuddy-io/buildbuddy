@@ -9,7 +9,7 @@ go_library(
         "//proto:build_event_stream_go_proto",
         "//proto:command_line_go_proto",
         "//server/util/flag",
-        "//server/util/flagutil/common",
+        "//server/util/flagutil",
         "//server/util/git",
         "//server/util/status",
         "@com_github_google_shlex//:shlex",

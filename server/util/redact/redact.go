@@ -11,7 +11,7 @@ import (
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
-	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil/common"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/google/shlex"
 	"google.golang.org/protobuf/encoding/prototext"
@@ -970,10 +970,10 @@ func CollectSensitiveEnvValues(environ []string) []string {
 // export redacts just the secret fields (see flagyaml.RedactSecrets);
 // callers of this coarser check should redact the whole value.
 func IsSecret(flg *flag.Flag) bool {
-	if common.IsSecret(flg) {
+	if flagutil.IsSecret(flg) {
 		return true
 	}
-	t, err := common.GetTypeForFlagValue(flg.Value)
+	t, err := flagutil.GetTypeForFlagValue(flg.Value)
 	if err != nil {
 		// Unrecognized flag value type; assume it may contain secrets.
 		return true
