@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -256,6 +255,10 @@ func handleCreate(args []string) (int, error) {
 		"--bes_backend=" + *targetFlag,
 		"./bb", "ssh-server",
 		"--gateway=" + *gatewayFlag,
+		// Use the invocation ID as the gateway session ID so that the
+		// gateway's peer listing can be correlated with the action running
+		// the VM.
+		"--session_id=" + iid,
 		fmt.Sprintf("--grace_period=%s", gracePeriod.String()),
 		fmt.Sprintf("--idle_timeout=%s", idleTimeout.String()),
 	}
@@ -294,6 +297,15 @@ func handleCreate(args []string) (int, error) {
 
 	bbClient := bbspb.NewBuildBuddyServiceClient(conn)
 
+	// Dial the gateway for readiness detection: the box is ready the moment
+	// its peer registration (matched by session ID) appears in List.
+	gwConn, err := grpc_client.DialSimple(*gatewayFlag)
+	if err != nil {
+		return -1, fmt.Errorf("dialing gateway: %w", err)
+	}
+	defer gwConn.Close()
+	gwClient := gwsvcpb.NewGatewayServiceClient(gwConn)
+
 	// If a named box's snapshot disappears between the executor's initial
 	// existence check and the VM load (e.g. local filecache eviction), the
 	// action fails with a SNAPSHOT_NOT_FOUND error. Retry once: on the next
@@ -303,7 +315,7 @@ func handleCreate(args []string) (int, error) {
 	var code int
 	r := retry.New(ctx, &retry.Options{MaxRetries: 2})
 	for r.Next() {
-		code, err = startAndAwaitReady(ctx, env, arn, bbClient, iid)
+		code, err = startAndAwaitReady(ctx, env, arn, bbClient, gwClient, iid)
 		if err != nil && error_util.IsSnapshotNotFoundError(err) {
 			log.Printf("Box snapshot is no longer available; starting a fresh VM... (%s)", err)
 			continue
@@ -313,9 +325,10 @@ func handleCreate(args []string) (int, error) {
 	return code, err
 }
 
-// startAndAwaitReady starts the box action and polls the BES event log until
-// bb ssh-server writes its READY line, or the action fails.
-func startAndAwaitReady(ctx context.Context, env environment.Env, arn *rspb.ResourceName, bbClient bbspb.BuildBuddyServiceClient, iid string) (int, error) {
+// startAndAwaitReady starts the box action and polls the gateway until the
+// VM's peer registration appears (matched by session ID, which is the
+// invocation ID), or the action fails.
+func startAndAwaitReady(ctx context.Context, env environment.Env, arn *rspb.ResourceName, bbClient bbspb.BuildBuddyServiceClient, gwClient gwsvcpb.GatewayServiceClient, iid string) (int, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -343,7 +356,13 @@ func startAndAwaitReady(ctx context.Context, env environment.Env, arn *rspb.Reso
 			if msg.Done {
 				result := msg.ExecuteResponse.GetResult()
 				exitCode := result.GetExitCode()
-				streamErrCh <- fmt.Errorf("VM exited before becoming ready (exit code %d)", exitCode)
+				// Surface the VM's own output (e.g. "peer name already in
+				// use") rather than just the exit code.
+				if tail := fetchLogTail(ctx, bbClient, iid); tail != "" {
+					streamErrCh <- fmt.Errorf("VM exited before becoming ready (exit code %d):\n%s", exitCode, tail)
+				} else {
+					streamErrCh <- fmt.Errorf("VM exited before becoming ready (exit code %d)", exitCode)
+				}
 				cancel()
 				return
 			}
@@ -351,38 +370,49 @@ func startAndAwaitReady(ctx context.Context, env environment.Env, arn *rspb.Reso
 	}()
 
 	log.Printf("Waiting for VM to start...")
-	type readyResult struct {
-		*url.URL
-		err error
-	}
-	readyCh := make(chan readyResult, 1)
+	readyCh := make(chan *gwpb.Peer, 1)
 	go func() {
-		u, err := waitForReady(ctx, bbClient, iid)
-		readyCh <- readyResult{u, err}
+		if p, err := waitForPeer(ctx, gwClient, iid); err == nil {
+			readyCh <- p
+		}
+		// On error the context was canceled; the stream watcher above
+		// reports the underlying failure.
 	}()
 
 	select {
 	case err := <-streamErrCh:
 		return -1, err
-	case r := <-readyCh:
-		if r.err != nil {
-			// Prefer the stream error if the context was cancelled by it.
-			select {
-			case err := <-streamErrCh:
-				return -1, err
-			default:
-				return -1, r.err
-			}
-		}
-		nameOrIP := r.Query().Get("name")
+	case p := <-readyCh:
+		nameOrIP := p.GetName()
 		if nameOrIP == "" {
-			nameOrIP = r.Hostname()
+			nameOrIP = p.GetIp()
 		}
-
 		fmt.Printf("Box %q is ready.\n", nameOrIP)
-		fmt.Printf("  URL:     %s\n", r.URL)
+		fmt.Printf("  Address: %s\n", p.GetIp())
 		fmt.Printf("  Connect: bb ssh %s\n", nameOrIP)
 		return 0, nil
+	}
+}
+
+// waitForPeer polls the gateway's List RPC until a peer whose session ID
+// matches the box's invocation ID appears — i.e. the moment the VM's
+// ssh-server registers with the gateway.
+func waitForPeer(ctx context.Context, gwClient gwsvcpb.GatewayServiceClient, sessionID string) (*gwpb.Peer, error) {
+	for {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(500 * time.Millisecond):
+		}
+		resp, err := gwClient.List(ctx, &gwpb.ListRequest{})
+		if err != nil {
+			continue
+		}
+		for _, p := range resp.GetPeers() {
+			if p.GetSessionId() == sessionID {
+				return p, nil
+			}
+		}
 	}
 }
 
@@ -435,7 +465,14 @@ func handleList(args []string) (int, error) {
 
 	rows := make([][]string, 0, len(peers))
 	for _, p := range peers {
-		rows = append(rows, []string{p.GetName(), p.GetIp()})
+		// A live peer re-handshakes every couple of minutes, so "never" or
+		// an old value here means the peer's tunnel is dark even though it
+		// is still registered.
+		lastHandshake := "never"
+		if t := p.GetLastHandshakeTime(); t != nil {
+			lastHandshake = fmt.Sprintf("%s ago", time.Since(t.AsTime()).Truncate(time.Second))
+		}
+		rows = append(rows, []string{p.GetName(), p.GetIp(), lastHandshake})
 	}
 
 	headerStyle := lipgloss.NewStyle().Bold(true).Padding(0, 1)
@@ -443,7 +480,7 @@ func handleList(args []string) (int, error) {
 	t := table.New().
 		Border(lipgloss.RoundedBorder()).
 		BorderStyle(lipgloss.NewStyle().Foreground(lipgloss.Color("240"))).
-		Headers("NAME", "ADDRESS").
+		Headers("NAME", "ADDRESS", "LAST HANDSHAKE").
 		Rows(rows...).
 		StyleFunc(func(row, col int) lipgloss.Style {
 			if row == table.HeaderRow {
@@ -455,58 +492,29 @@ func handleList(args []string) (int, error) {
 	return 0, nil
 }
 
-// waitForReady polls GetEventLogChunk (BUILD_LOG) for the given invocation ID
-// until bb ssh-server writes a "READY bb-ssh://..." line to stdout (which bb
-// record streams as a BES Progress event), then returns the parsed URL.
-func waitForReady(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, iid string) (*url.URL, error) {
-	chunkID := ""
-	for {
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		default:
-		}
-
+// fetchLogTail returns the last few lines of the invocation's build log, so
+// that the VM's failure output can be shown in the user's terminal when the
+// action exits before becoming ready. Returns "" if no log output could be
+// fetched. Retries briefly since the action's final log lines may still be
+// in flight to BES when the execution completes.
+func fetchLogTail(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, iid string) string {
+	for attempt := 0; attempt < 3; attempt++ {
 		resp, err := bbClient.GetEventLogChunk(ctx, &elpb.GetEventLogChunkRequest{
 			InvocationId: iid,
-			ChunkId:      chunkID,
-			Type:         elpb.LogType_BUILD_LOG,
+			// Empty ChunkId fetches the last chunk.
+			MinLines: 10,
+			Type:     elpb.LogType_BUILD_LOG,
 		})
-		if err != nil {
-			// Invocation likely doesn't exist yet; keep polling.
-			time.Sleep(500 * time.Millisecond)
-			continue
+		if err == nil && len(resp.GetBuffer()) > 0 {
+			return strings.TrimSpace(string(resp.GetBuffer()))
 		}
-
-		if u, ok := parseReadyLine(string(resp.GetBuffer())); ok {
-			return u, nil
+		select {
+		case <-ctx.Done():
+			return ""
+		case <-time.After(500 * time.Millisecond):
 		}
-
-		nextID := resp.GetNextChunkId()
-		if nextID == "" || nextID == chunkID {
-			time.Sleep(500 * time.Millisecond)
-			continue
-		}
-		chunkID = nextID
 	}
-}
-
-// parseReadyLine scans log output for a bb-ssh:// URL written by bb
-// ssh-server (e.g. embedded in the "SSH server listening on ..." log line)
-// and returns the parsed URL if found.
-func parseReadyLine(buf string) (*url.URL, bool) {
-	for line := range strings.SplitSeq(buf, "\n") {
-		i := strings.Index(line, "bb-ssh://")
-		if i < 0 {
-			continue
-		}
-		u, err := url.Parse(strings.TrimSpace(line[i:]))
-		if err != nil || u.Host == "" {
-			continue
-		}
-		return u, true
-	}
-	return nil, false
+	return ""
 }
 
 // ensureDockerPrefix prepends "docker://" to an image reference if it isn't

@@ -27,6 +27,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/buildbuddy-io/buildbuddy/server/util/wgkeys"
 	"github.com/creack/pty"
 	"github.com/gliderlabs/ssh"
@@ -53,9 +54,12 @@ var (
 	sshPort     = flags.Int("port", 22, "SSH listen port on the tunnel interface")
 	shellPath   = flags.String("shell", "", "Shell to use for interactive sessions (auto-detected if unset)")
 	hostKeyFile = flags.String("host_key_file", "", "SSH host private key file (generates an ephemeral key if empty)")
+	sessionID   = flags.String("session_id", "", "Unique identifier for this gateway connection, shown in gateway listings (generated if empty)")
 
 	usage string
 )
+
+const doNotRecycleMarkerFile = ".BUILDBUDDY_DO_NOT_RECYCLE"
 
 func init() {
 	var buf strings.Builder
@@ -224,28 +228,55 @@ func HandleSSHServer(args []string) (int, error) {
 
 	gwClient := gwsvcpb.NewGatewayServiceClient(grpcConn)
 
-	// Deregister runs before grpcConn.Close() (LIFO), freeing the IP and DNS
-	// name on the gateway immediately rather than waiting for stale-peer cleanup.
-	defer func() {
-		dctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-		defer cancel()
-		if _, err := gwClient.Deregister(dctx, &gwpb.DeregisterRequest{PublicKey: privKey.PublicKey().Hex()}); err != nil {
-			log.Warnf("deregister: %v", err)
-		} else {
-			log.Printf("Deregistered from gateway.")
-		}
-	}()
+	sid := *sessionID
+	if sid == "" {
+		sid = uuid.New()
+	}
 
-	rsp, err := gwClient.Register(ctx, &gwpb.RegisterRequest{
+	// Connect to the gateway. The registration is leased to this stream: the
+	// gateway frees the peer's IP and DNS name as soon as the stream closes,
+	// so there is no explicit Deregister on shutdown — canceling connectCtx
+	// (deferred below) is the clean-shutdown path.
+	connectCtx, cancelConnect := context.WithCancel(ctx)
+	defer cancelConnect()
+	stream, err := gwClient.Connect(connectCtx, &gwpb.ConnectRequest{
 		NetworkName: *network,
 		PeerName:    name,
 		PublicKey:   privKey.PublicKey().Hex(),
+		SessionId:   sid,
 	})
 	if err != nil {
-		return 1, status.WrapError(err, "registering with gateway")
+		// Note: for a server-streaming RPC, grpc-go surfaces most status
+		// errors (including ALREADY_EXISTS from the gateway) on the first
+		// Recv rather than here; this branch only catches immediate
+		// connection failures.
+		return 1, status.WrapError(err, "connecting to gateway")
 	}
-	log.Printf("Registered: assigned_ip=%s gateway_ip=%s cidr=%s endpoint=%s name=%s",
-		rsp.GetAssignedIp(), rsp.GetGatewayIp(), rsp.GetNetworkCidr(), rsp.GetServerEndpoint(), rsp.GetAssignedPeerName())
+	rsp, err := stream.Recv()
+	if err != nil {
+		if status.IsAlreadyExistsError(err) {
+			// Another connected peer holds this name (e.g. two concurrent
+			// `bb box create <name>` calls). Exit without doing any work,
+			// and drop the do-not-recycle marker so this VM is not
+			// snapshotted: otherwise its empty session could race the
+			// winner's snapshot save for the same recycling key. The marker
+			// must land in the workspace root, which relies on this process
+			// running with the workspace root as its working directory (bb
+			// record execs us from the action's working directory); log the
+			// absolute path so a violation of that assumption is visible.
+			log.Printf("Peer name %q is already in use by a connected peer; exiting.", name)
+			markerPath, _ := filepath.Abs(doNotRecycleMarkerFile)
+			if err := os.WriteFile(doNotRecycleMarkerFile, nil, 0644); err != nil {
+				log.Warnf("write %s: %v", markerPath, err)
+			} else {
+				log.Printf("Wrote %s", markerPath)
+			}
+			return 1, nil
+		}
+		return 1, status.WrapError(err, "connecting to gateway")
+	}
+	log.Printf("Connected: assigned_ip=%s gateway_ip=%s cidr=%s endpoint=%s name=%s session=%s",
+		rsp.GetAssignedIp(), rsp.GetGatewayIp(), rsp.GetNetworkCidr(), rsp.GetServerEndpoint(), name, sid)
 
 	// Bring up the userspace WireGuard tunnel.
 	assignedAddr := netip.MustParseAddr(rsp.GetAssignedIp())
@@ -288,12 +319,11 @@ func HandleSSHServer(args []string) (int, error) {
 		if err != nil {
 			return 1, status.WrapError(err, "getting cache dir for host key")
 		}
-		// Key filename is scoped to the assigned peer name so that a VM
-		// resuming with the same name reuses the same key, preventing SSH warnings.
-		// A different assigned name (e.g. "myvm-1" due to a conflict) gets a
-		// fresh key. Falls back to the assigned IP for peers registered without
-		// a name (unique per peer, though not stable across restarts).
-		keyID := rsp.GetAssignedPeerName()
+		// Key filename is scoped to the peer name so that a VM resuming with
+		// the same name reuses the same key, preventing SSH warnings. Falls
+		// back to the assigned IP for peers registered without a name (unique
+		// per peer, though not stable across restarts).
+		keyID := name
 		if keyID == "" {
 			keyID = strings.ReplaceAll(rsp.GetAssignedIp(), ":", "_")
 		}
@@ -315,12 +345,12 @@ func HandleSSHServer(args []string) (int, error) {
 
 	hostPort := net.JoinHostPort(rsp.GetAssignedIp(), fmt.Sprintf("%d", *sshPort))
 	q := url.Values{}
-	if label := rsp.GetAssignedPeerName(); label != "" {
-		q.Set("name", label)
+	if name != "" {
+		q.Set("name", name)
 	}
 	sshURL := &url.URL{Scheme: "bb-ssh", Host: hostPort, RawQuery: q.Encode()}
 	log.Printf("Listening on %s", sshURL)
-	connectTarget := rsp.GetAssignedPeerName()
+	connectTarget := name
 	if connectTarget == "" {
 		connectTarget = rsp.GetAssignedIp()
 	}
@@ -373,9 +403,29 @@ func HandleSSHServer(args []string) (int, error) {
 		handleSession(s)
 	}
 
+	// The gateway registration is leased to the Connect stream. If the stream
+	// ends for any reason other than local shutdown (gateway restart, network
+	// partition, eviction), this server is unreachable through the tunnel:
+	// shut down so the VM suspends cleanly and can be resumed.
+	go func() {
+		for {
+			if _, err := stream.Recv(); err != nil {
+				if connectCtx.Err() != nil {
+					// Local shutdown already in progress.
+					return
+				}
+				log.Printf("Gateway connection lost (%v); shutting down.", err)
+				shutCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+				defer cancel()
+				sshServer.Shutdown(shutCtx)
+				return
+			}
+		}
+	}()
+
 	// Catch SIGINT/SIGTERM so the process shuts down via Shutdown() rather than
-	// being killed abruptly, ensuring deferred cleanup (Deregister, dev.Close)
-	// runs on Ctrl-C or a normal kill signal.
+	// being killed abruptly, ensuring deferred cleanup (closing the gateway
+	// stream, dev.Close) runs on Ctrl-C or a normal kill signal.
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 	defer signal.Stop(sigCh)
