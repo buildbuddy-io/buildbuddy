@@ -1,5 +1,11 @@
 load("@bazel_skylib//lib:paths.bzl", "paths")
 load("@io_bazel_rules_go//go:def.bzl", "go_context")
+load(
+    "@io_bazel_rules_go//go/private:context.bzl",
+    "CGO_ATTRS",
+    "CGO_FRAGMENTS",
+    "CGO_TOOLCHAINS",
+)
 
 def _go_sdk_tool_impl(ctx):
     # Locate the File object corresponding to the tool path. This is needed for
@@ -52,8 +58,9 @@ go_sdk_tool = rule(
         "_go_context_data": attr.label(
             default = "@io_bazel_rules_go//:go_context_data",
         ),
-    },
+    } | CGO_ATTRS,
     implementation = _go_sdk_tool_impl,
     executable = True,
-    toolchains = ["@io_bazel_rules_go//go:toolchain"],
+    fragments = CGO_FRAGMENTS,
+    toolchains = ["@io_bazel_rules_go//go:toolchain"] + CGO_TOOLCHAINS,
 )
