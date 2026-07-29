@@ -190,6 +190,10 @@ gazelle_python_manifest(
 # TODO(siggisim): remove once we support .css imports properly
 # gazelle:exclude website/**
 #
+## Ignore Claude Code agent worktrees, which contain checkouts of this repo
+## and would otherwise make every first-party import ambiguous
+# gazelle:exclude .claude/**
+#
 # gazelle:python_library_naming_convention $package_name$_py_library
 # gazelle:python_generation_mode file
 #
