@@ -14,6 +14,7 @@ go_library(
         "//server/util/flag",
         "//server/util/grpc_client",
         "//server/util/status",
+        "//server/util/uuid",
         "//server/util/wgkeys",
         "@com_github_creack_pty//:pty",
         "@com_github_gliderlabs_ssh//:ssh",

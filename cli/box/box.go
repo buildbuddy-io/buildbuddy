@@ -256,6 +256,10 @@ func handleCreate(args []string) (int, error) {
 		"--bes_backend=" + *targetFlag,
 		"./bb", "ssh-server",
 		"--gateway=" + *gatewayFlag,
+		// Use the invocation ID as the gateway session ID so that the
+		// gateway's peer listing can be correlated with the action running
+		// the VM.
+		"--session_id=" + iid,
 		fmt.Sprintf("--grace_period=%s", gracePeriod.String()),
 		fmt.Sprintf("--idle_timeout=%s", idleTimeout.String()),
 	}

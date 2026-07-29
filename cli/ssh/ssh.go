@@ -21,6 +21,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/buildbuddy-io/buildbuddy/server/util/wgkeys"
 	"golang.org/x/term"
 	"golang.zx2c4.com/wireguard/conn"
@@ -143,22 +144,38 @@ func HandleSSH(args []string) (int, error) {
 
 	gwClient := gwsvcpb.NewGatewayServiceClient(grpcConn)
 
-	// Deregister runs before grpcConn.Close() (LIFO).
-	defer func() {
-		dctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-		defer cancel()
-		if _, err := gwClient.Deregister(dctx, &gwpb.DeregisterRequest{PublicKey: privKey.PublicKey().Hex()}); err != nil {
-			log.Warnf("deregister: %v", err)
-		}
-	}()
-
-	rsp, err := gwClient.Register(ctx, &gwpb.RegisterRequest{
+	// Connect to the gateway. The registration is leased to this stream: the
+	// gateway frees the peer's IP as soon as the stream closes, so canceling
+	// connectCtx (deferred below) is the clean-shutdown path.
+	connectCtx, cancelConnect := context.WithCancel(ctx)
+	defer cancelConnect()
+	stream, err := gwClient.Connect(connectCtx, &gwpb.ConnectRequest{
 		NetworkName: *network,
 		PublicKey:   privKey.PublicKey().Hex(),
+		SessionId:   uuid.New(),
 	})
 	if err != nil {
-		return 1, status.WrapError(err, "registering with gateway")
+		return 1, status.WrapError(err, "connecting to gateway")
 	}
+	rsp, err := stream.Recv()
+	if err != nil {
+		return 1, status.WrapError(err, "connecting to gateway")
+	}
+	// Hold the stream open in the background for the lifetime of the SSH
+	// session; if it ends, the tunnel is (or is about to be) dead.
+	go func() {
+		for {
+			if _, err := stream.Recv(); err != nil {
+				select {
+				case <-connectCtx.Done():
+					return
+				default:
+				}
+				log.Warnf("Gateway connection lost: %v", err)
+				return
+			}
+		}
+	}()
 
 	// Bring up the userspace WireGuard tunnel.
 	assignedAddr := netip.MustParseAddr(rsp.GetAssignedIp())
