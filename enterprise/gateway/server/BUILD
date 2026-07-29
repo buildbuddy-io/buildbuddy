@@ -17,7 +17,6 @@ go_library(
         "//server/util/flag",
         "//server/util/log",
         "//server/util/status",
-        "//server/util/uuid",
         "//server/util/wgkeys",
         "@com_github_miekg_dns//:dns",
         "@com_zx2c4_golang_wireguard//conn",

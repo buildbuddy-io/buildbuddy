@@ -25,7 +25,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/buildbuddy-io/buildbuddy/server/util/wgkeys"
 	"github.com/miekg/dns"
 	"golang.zx2c4.com/wireguard/conn"
@@ -39,8 +38,9 @@ import (
 var (
 	udpListenPort    = flag.Int("gateway.udp_listen_port", 51820, "UDP port for the WireGuard device")
 	publicHost       = flag.String("gateway.public_host", "localhost", "Public hostname returned to clients as the WireGuard endpoint")
-	stalePeerTimeout = flag.Duration("gateway.stale_peer_timeout", 5*time.Minute, "Time after the last WireGuard handshake before a peer is removed. WireGuard re-handshakes every 3 minutes, so this should be at least that.")
-	cleanupInterval  = flag.Duration("gateway.cleanup_interval", time.Minute, "How often to scan for and remove stale peers.")
+	stalePeerTimeout  = flag.Duration("gateway.stale_peer_timeout", 5*time.Minute, "Time after the last WireGuard handshake before a peer is removed. WireGuard re-handshakes every 3 minutes, so this should be at least that.")
+	cleanupInterval   = flag.Duration("gateway.cleanup_interval", time.Minute, "How often to scan for and remove stale peers.")
+	heartbeatInterval = flag.Duration("gateway.connect_heartbeat_interval", 30*time.Second, "How often Connect streams send an empty heartbeat message. Should be well under typical intermediary idle timeouts (usually 60s+).")
 )
 
 // networkState holds IP allocation and peer name state for one
@@ -171,7 +171,10 @@ func (g *Gateway) Register(ctx context.Context, req *gwpb.RegisterRequest) (*gwp
 		ns.namesMu.Unlock()
 	}
 
-	assignedIP, err := g.addPeerLocked(ns, clientPubKey.Hex(), assignedName, uuid.New(), nil /*=cancel*/)
+	// Note: session_id is left empty for Register peers — it is a Connect
+	// concept, and leaving it unset lets List callers distinguish legacy
+	// registrations.
+	assignedIP, err := g.addPeerLocked(ns, clientPubKey.Hex(), assignedName, "" /*=sessionID*/, nil /*=cancel*/)
 	if err != nil {
 		return nil, err
 	}
@@ -241,23 +244,30 @@ func (g *Gateway) Connect(req *gwpb.ConnectRequest, stream gwsvcpb.GatewayServic
 			return status.AlreadyExistsErrorf("peer name %q is already in use", name)
 		}
 	}
+	// Session IDs uniquely identify connections within a group, so that
+	// removal below (and deregistration by session ID, eventually) is
+	// unambiguous. Note: peers registered via the deprecated Register RPC
+	// have an empty session ID and can never conflict.
+	for _, info := range g.peers {
+		if info.sessionID == sessionID && info.networkState.groupID == groupID {
+			g.mu.Unlock()
+			return status.AlreadyExistsErrorf("session_id %q is already in use", sessionID)
+		}
+	}
 	assignedIP, err := g.addPeerLocked(ns, clientPubKey.Hex(), name, sessionID, cancel)
 	g.mu.Unlock()
 	if err != nil {
 		return err
 	}
 
-	// Remove the peer when the stream ends for any reason.
+	// Remove the peer, by (key, session_id), when the stream ends.
 	defer func() {
 		g.mu.Lock()
 		defer g.mu.Unlock()
-		if info, ok := g.peers[clientPubKey.Hex()]; ok {
+		if info, ok := g.peers[clientPubKey.Hex()]; ok && info.sessionID == sessionID {
 			g.removePeerLocked(clientPubKey.Hex(), info)
 		}
 	}()
-
-	log.Infof("Connected peer %s in group %q network %q, assigned %s (name=%q session=%s)",
-		clientPubKey.String()[:8]+"...", groupID, req.GetNetworkName(), assignedIP, name, sessionID)
 
 	if err := stream.Send(&gwpb.ConnectResponse{
 		ServerPublicKey: g.pubKey,
@@ -269,14 +279,41 @@ func (g *Gateway) Connect(req *gwpb.ConnectRequest, stream gwsvcpb.GatewayServic
 		return err
 	}
 
-	<-ctx.Done()
-	return nil
+	log.Infof("Connected peer %s in group %q network %q, assigned %s (name=%q session=%s)",
+		clientPubKey.String()[:8]+"...", groupID, req.GetNetworkName(), assignedIP, name, sessionID)
+
+	// Send periodic (empty) heartbeat messages. These keep the stream from
+	// being closed by idle-sensitive intermediaries while the tunnel is
+	// otherwise quiet on the gRPC connection, and surface half-open TCP
+	// connections whose peer is long gone. Clients ignore them.
+	heartbeat := time.NewTicker(*heartbeatInterval)
+	defer heartbeat.Stop()
+	for {
+		select {
+		case <-heartbeat.C:
+			if err := stream.Send(&gwpb.ConnectResponse{}); err != nil {
+				return err
+			}
+		case <-ctx.Done():
+			// If the registration is no longer this session's, another path
+			// (the stale-peer sweep, Deregister) evicted this peer; tell the
+			// client so it can distinguish eviction from a clean shutdown.
+			g.mu.Lock()
+			info, ok := g.peers[clientPubKey.Hex()]
+			evicted := !ok || info.sessionID != sessionID
+			g.mu.Unlock()
+			if evicted {
+				return status.AbortedErrorf("peer evicted: session %s is no longer registered", sessionID)
+			}
+			return nil
+		}
+	}
 }
 
 // addPeerLocked allocates an IP in ns, registers it with the TUN and the
-// WireGuard device, and records the peer. assignedName must already be
-// validated (and, for unique-name callers, checked for conflicts) by the
-// caller. Must be called with g.mu held.
+// WireGuard device, and records the peer. assignedName and sessionID must
+// already be validated (and checked for conflicts) by the caller. Must be
+// called with g.mu held.
 func (g *Gateway) addPeerLocked(ns *networkState, pubKeyHex, assignedName, sessionID string, cancel context.CancelFunc) (netip.Addr, error) {
 	if _, ok := g.peers[pubKeyHex]; ok {
 		return netip.Addr{}, status.AlreadyExistsErrorf("public key %s... is already registered", pubKeyHex[:8])
@@ -468,7 +505,7 @@ func (g *Gateway) cleanupStalePeers() {
 func (g *Gateway) lastHandshakeTimes() (map[string]time.Time, error) {
 	ipc, err := g.dev.IpcGet()
 	if err != nil {
-		return nil, fmt.Errorf("IpcGet failed: %s", err)
+		return nil, status.InternalErrorf("IpcGet failed: %s", err)
 	}
 	handshakeTimes := make(map[string]time.Time)
 	var currentKey string

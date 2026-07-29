@@ -25,13 +25,15 @@ message ConnectRequest {
   // Required. Caller-chosen identifier for this connection, echoed in List
   // results so that callers can correlate a connection with the workload
   // that created it (e.g. `bb box` uses the invocation ID of the action
-  // running the VM).
+  // running the VM). Session IDs are unique among the group's connected
+  // peers; a duplicate causes the request to fail with ALREADY_EXISTS.
   string session_id = 4;
 }
 
 // ConnectResponse messages are streamed by the Connect RPC. The first
 // message carries the full tunnel configuration; the stream then stays open
-// for the lifetime of the registration.
+// for the lifetime of the registration, carrying periodic empty heartbeat
+// messages that clients should ignore.
 message ConnectResponse {
   // Gateway's WireGuard public key for this network, hex-encoded.
   string server_public_key = 1;
@@ -113,7 +115,8 @@ message Peer {
   string ip = 2;
 
   // Uniquely identifies this peer's connection (see
-  // ConnectRequest.session_id).
+  // ConnectRequest.session_id). Empty for peers registered via the
+  // deprecated Register RPC.
   string session_id = 3;
 
   // The time of this peer's most recent WireGuard handshake. Unset if the

@@ -16,6 +16,7 @@ import (
 	"io"
 	"net"
 	"net/netip"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -30,15 +31,21 @@ import (
 )
 
 // tunnelPeer holds the gVisor netstack and assigned tunnel address for a
-// registered WireGuard peer.
+// connected WireGuard peer.
 type tunnelPeer struct {
 	net          *netstack.Net
 	addr         netip.Addr
 	assignedName string
 }
 
-// registerAndConnect registers a new peer with the gateway and brings up a
-// userspace WireGuard tunnel for it. The tunnel is closed when the test ends.
+// sessionCounter generates unique session IDs for e2e peers: the gateway
+// requires session IDs and enforces their uniqueness within a group.
+var sessionCounter atomic.Int64
+
+// registerAndConnect connects a new peer to the gateway via the streaming
+// Connect RPC and brings up a userspace WireGuard tunnel for it. The
+// registration is leased to the Connect stream, which stays open (and the
+// tunnel up) until the test ends.
 //
 // persistent_keepalive_interval=1 is used so that the first outbound packet
 // triggers an immediate WireGuard handshake rather than waiting for the
@@ -48,12 +55,12 @@ func registerAndConnect(t testing.TB, gw *Gateway, ctx context.Context, networkN
 	privKey, err := wgkeys.GeneratePrivateKey()
 	require.NoError(t, err)
 
-	resp, err := gw.Register(ctx, &gwpb.RegisterRequest{
+	resp, _, _ := startConnect(t, gw, ctx, &gwpb.ConnectRequest{
 		NetworkName: networkName,
 		PeerName:    peerName,
 		PublicKey:   privKey.PublicKey().Hex(),
+		SessionId:   fmt.Sprintf("e2e-session-%d", sessionCounter.Add(1)),
 	})
-	require.NoError(t, err)
 
 	addr := netip.MustParseAddr(resp.GetAssignedIp())
 	tunDev, tnet, err := netstack.CreateNetTUN(
@@ -79,7 +86,9 @@ func registerAndConnect(t testing.TB, gw *Gateway, ctx context.Context, networkN
 	require.NoError(t, dev.IpcSet(ipc))
 	require.NoError(t, dev.Up())
 
-	return tunnelPeer{net: tnet, addr: addr, assignedName: resp.GetAssignedPeerName()}
+	// Peer names are unique under Connect, so the assigned name is always
+	// the requested name.
+	return tunnelPeer{net: tnet, addr: addr, assignedName: peerName}
 }
 
 // TestEndToEnd_PeersCanCommunicate verifies that two peers in the same network

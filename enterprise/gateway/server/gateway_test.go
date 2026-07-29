@@ -342,7 +342,7 @@ func (f *fakeConnectStream) Send(rsp *gwpb.ConnectResponse) error {
 // for the initial config response. The returned cancel func closes the
 // stream (simulating the client going away); the done channel receives
 // Connect's return value.
-func startConnect(t *testing.T, gw *Gateway, ctx context.Context, req *gwpb.ConnectRequest) (*gwpb.ConnectResponse, context.CancelFunc, chan error) {
+func startConnect(t testing.TB, gw *Gateway, ctx context.Context, req *gwpb.ConnectRequest) (*gwpb.ConnectResponse, context.CancelFunc, chan error) {
 	t.Helper()
 	ctx, cancel := context.WithCancel(ctx)
 	t.Cleanup(cancel)
@@ -419,8 +419,11 @@ func TestConnect_RefusesDuplicateName(t *testing.T) {
 	})
 
 	// A second connection requesting the same name is refused while the
-	// first stream is open.
-	stream := &fakeConnectStream{ctx: ctx, responses: make(chan *gwpb.ConnectResponse, 1)}
+	// first stream is open. Use a cancelable context so the test fails
+	// rather than hanging if the conflict check ever regresses.
+	cctx, ccancel := context.WithCancel(ctx)
+	t.Cleanup(ccancel)
+	stream := &fakeConnectStream{ctx: cctx, responses: make(chan *gwpb.ConnectResponse, 1)}
 	err = gw.Connect(&gwpb.ConnectRequest{
 		NetworkName: "net1",
 		PeerName:    "box1",
@@ -432,13 +435,174 @@ func TestConnect_RefusesDuplicateName(t *testing.T) {
 	// Once the first connection closes, the name is immediately reusable.
 	cancel()
 	require.NoError(t, <-done)
-	rsp2, _, _ := startConnect(t, gw, ctx, &gwpb.ConnectRequest{
+	rsp2, cancel2, done2 := startConnect(t, gw, ctx, &gwpb.ConnectRequest{
 		NetworkName: "net1",
 		PeerName:    "box1",
 		PublicKey:   newPubKeyHex(t),
 		SessionId:   "session-3",
 	})
 	require.NotEmpty(t, rsp2.GetAssignedIp())
+	cancel2()
+	require.NoError(t, <-done2)
+}
+
+func TestConnect_RefusesDuplicatePublicKey(t *testing.T) {
+	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("user1", "group1"))
+	gw := setupGateway(t, ta)
+
+	ctx, err := ta.WithAuthenticatedUser(context.Background(), "user1")
+	require.NoError(t, err)
+
+	pubKey := newPubKeyHex(t)
+	startConnect(t, gw, ctx, &gwpb.ConnectRequest{
+		NetworkName: "net1",
+		PeerName:    "box1",
+		PublicKey:   pubKey,
+		SessionId:   "session-1",
+	})
+
+	// A second connection reusing the same public key is refused, even with
+	// a different peer name.
+	cctx, ccancel := context.WithCancel(ctx)
+	t.Cleanup(ccancel)
+	stream := &fakeConnectStream{ctx: cctx, responses: make(chan *gwpb.ConnectResponse, 1)}
+	err = gw.Connect(&gwpb.ConnectRequest{
+		NetworkName: "net1",
+		PeerName:    "box2",
+		PublicKey:   pubKey,
+		SessionId:   "session-2",
+	}, stream)
+	require.True(t, status.IsAlreadyExistsError(err), "expected AlreadyExists, got: %v", err)
+}
+
+func TestConnect_RefusesDuplicateSessionID(t *testing.T) {
+	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("user1", "group1"))
+	gw := setupGateway(t, ta)
+
+	ctx, err := ta.WithAuthenticatedUser(context.Background(), "user1")
+	require.NoError(t, err)
+
+	_, cancel, done := startConnect(t, gw, ctx, &gwpb.ConnectRequest{
+		NetworkName: "net1",
+		PeerName:    "box1",
+		PublicKey:   newPubKeyHex(t),
+		SessionId:   "session-1",
+	})
+
+	// A second connection reusing the same session ID is refused, even with
+	// a different key and name.
+	cctx, ccancel := context.WithCancel(ctx)
+	t.Cleanup(ccancel)
+	stream := &fakeConnectStream{ctx: cctx, responses: make(chan *gwpb.ConnectResponse, 1)}
+	err = gw.Connect(&gwpb.ConnectRequest{
+		NetworkName: "net1",
+		PeerName:    "box2",
+		PublicKey:   newPubKeyHex(t),
+		SessionId:   "session-1",
+	}, stream)
+	require.True(t, status.IsAlreadyExistsError(err), "expected AlreadyExists, got: %v", err)
+
+	// Once the first connection closes, the session ID is reusable.
+	cancel()
+	require.NoError(t, <-done)
+	rsp, cancel2, done2 := startConnect(t, gw, ctx, &gwpb.ConnectRequest{
+		NetworkName: "net1",
+		PeerName:    "box2",
+		PublicKey:   newPubKeyHex(t),
+		SessionId:   "session-1",
+	})
+	require.NotEmpty(t, rsp.GetAssignedIp())
+	cancel2()
+	require.NoError(t, <-done2)
+}
+
+func TestRegister_RefusesDuplicatePublicKey(t *testing.T) {
+	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("user1", "group1"))
+	gw := setupGateway(t, ta)
+
+	ctx, err := ta.WithAuthenticatedUser(context.Background(), "user1")
+	require.NoError(t, err)
+
+	pubKey := newPubKeyHex(t)
+	_, err = gw.Register(ctx, &gwpb.RegisterRequest{NetworkName: "net1", PublicKey: pubKey})
+	require.NoError(t, err)
+
+	// Re-registering the same public key is refused rather than silently
+	// overwriting (and leaking) the previous registration.
+	_, err = gw.Register(ctx, &gwpb.RegisterRequest{NetworkName: "net1", PublicKey: pubKey})
+	require.True(t, status.IsAlreadyExistsError(err), "expected AlreadyExists, got: %v", err)
+}
+
+func TestConnect_UnnamedPeer(t *testing.T) {
+	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("user1", "group1"))
+	gw := setupGateway(t, ta)
+
+	ctx, err := ta.WithAuthenticatedUser(context.Background(), "user1")
+	require.NoError(t, err)
+
+	// Peers can connect without a name (e.g. transient bb ssh clients).
+	pubKey := newPubKeyHex(t)
+	rsp, cancel, done := startConnect(t, gw, ctx, &gwpb.ConnectRequest{
+		NetworkName: "net1",
+		PublicKey:   pubKey,
+		SessionId:   "session-1",
+	})
+	require.NotEmpty(t, rsp.GetAssignedIp())
+
+	// Unnamed peers are omitted from List.
+	list, err := gw.List(ctx, &gwpb.ListRequest{})
+	require.NoError(t, err)
+	require.Empty(t, list.GetPeers())
+
+	cancel()
+	require.NoError(t, <-done)
+	gw.mu.Lock()
+	defer gw.mu.Unlock()
+	require.NotContains(t, gw.peers, pubKey)
+}
+
+func TestConnect_ClosingOneLeaseLeavesOthersUntouched(t *testing.T) {
+	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("user1", "group1"))
+	gw := setupGateway(t, ta)
+
+	ctx, err := ta.WithAuthenticatedUser(context.Background(), "user1")
+	require.NoError(t, err)
+
+	pubKey1 := newPubKeyHex(t)
+	_, cancel1, done1 := startConnect(t, gw, ctx, &gwpb.ConnectRequest{
+		NetworkName: "net1",
+		PeerName:    "box1",
+		PublicKey:   pubKey1,
+		SessionId:   "session-1",
+	})
+	pubKey2 := newPubKeyHex(t)
+	rsp2, _, _ := startConnect(t, gw, ctx, &gwpb.ConnectRequest{
+		NetworkName: "net1",
+		PeerName:    "box2",
+		PublicKey:   pubKey2,
+		SessionId:   "session-2",
+	})
+
+	cancel1()
+	require.NoError(t, <-done1)
+
+	// box2 is still registered, listed, and reachable at its IP; its
+	// last_handshake_time is unset since no WireGuard handshake happened.
+	list, err := gw.List(ctx, &gwpb.ListRequest{})
+	require.NoError(t, err)
+	require.Len(t, list.GetPeers(), 1)
+	require.Equal(t, "box2", list.GetPeers()[0].GetName())
+	require.Equal(t, "session-2", list.GetPeers()[0].GetSessionId())
+	require.Nil(t, list.GetPeers()[0].GetLastHandshakeTime())
+
+	gw.mu.Lock()
+	defer gw.mu.Unlock()
+	require.NotContains(t, gw.peers, pubKey1)
+	require.Contains(t, gw.peers, pubKey2)
+	_, inTUN := gw.tun.ipToNetwork.Load(netip.MustParseAddr(rsp2.GetAssignedIp()))
+	require.True(t, inTUN, "box2's IP should still be registered in the TUN")
+	_, nameExists := gw.networks["group1/net1"].names["box2"]
+	require.True(t, nameExists, "box2's DNS name should still be registered")
 }
 
 func TestConnect_RequiresSessionID(t *testing.T) {
@@ -448,7 +612,9 @@ func TestConnect_RequiresSessionID(t *testing.T) {
 	ctx, err := ta.WithAuthenticatedUser(context.Background(), "user1")
 	require.NoError(t, err)
 
-	stream := &fakeConnectStream{ctx: ctx, responses: make(chan *gwpb.ConnectResponse, 1)}
+	cctx, ccancel := context.WithCancel(ctx)
+	t.Cleanup(ccancel)
+	stream := &fakeConnectStream{ctx: cctx, responses: make(chan *gwpb.ConnectResponse, 1)}
 	err = gw.Connect(&gwpb.ConnectRequest{
 		NetworkName: "net1",
 		PeerName:    "box1",
@@ -481,10 +647,11 @@ func TestConnect_SweepRemovalClosesStream(t *testing.T) {
 
 	gw.cleanupStalePeers()
 
-	// Removing the peer must close its Connect stream.
+	// Removing the peer must close its Connect stream, with an Aborted error
+	// so the client can distinguish eviction from a clean shutdown.
 	select {
 	case err := <-done:
-		require.NoError(t, err)
+		require.True(t, status.IsAbortedError(err), "expected Aborted, got: %v", err)
 	case <-time.After(5 * time.Second):
 		t.Fatal("timed out waiting for Connect to return after sweep removal")
 	}
