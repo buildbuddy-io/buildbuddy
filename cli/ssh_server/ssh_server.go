@@ -59,10 +59,6 @@ var (
 	usage string
 )
 
-// doNotRecycleMarkerFile, when present in the workspace root (the working
-// directory of the remote action running this server), tells the executor not
-// to recycle the runner or save a VM snapshot for it. Mirrors the unexported
-// constant in enterprise/server/remote_execution/runner.
 const doNotRecycleMarkerFile = ".BUILDBUDDY_DO_NOT_RECYCLE"
 
 func init() {
@@ -250,6 +246,10 @@ func HandleSSHServer(args []string) (int, error) {
 		SessionId:   sid,
 	})
 	if err != nil {
+		// Note: for a server-streaming RPC, grpc-go surfaces most status
+		// errors (including ALREADY_EXISTS from the gateway) on the first
+		// Recv rather than here; this branch only catches immediate
+		// connection failures.
 		return 1, status.WrapError(err, "connecting to gateway")
 	}
 	rsp, err := stream.Recv()
@@ -259,10 +259,17 @@ func HandleSSHServer(args []string) (int, error) {
 			// `bb box create <name>` calls). Exit without doing any work,
 			// and drop the do-not-recycle marker so this VM is not
 			// snapshotted: otherwise its empty session could race the
-			// winner's snapshot save for the same recycling key.
+			// winner's snapshot save for the same recycling key. The marker
+			// must land in the workspace root, which relies on this process
+			// running with the workspace root as its working directory (bb
+			// record execs us from the action's working directory); log the
+			// absolute path so a violation of that assumption is visible.
 			log.Printf("Peer name %q is already in use by a connected peer; exiting.", name)
+			markerPath, _ := filepath.Abs(doNotRecycleMarkerFile)
 			if err := os.WriteFile(doNotRecycleMarkerFile, nil, 0644); err != nil {
-				log.Warnf("write %s: %v", doNotRecycleMarkerFile, err)
+				log.Warnf("write %s: %v", markerPath, err)
+			} else {
+				log.Printf("Wrote %s", markerPath)
 			}
 			return 1, nil
 		}
@@ -403,11 +410,9 @@ func HandleSSHServer(args []string) (int, error) {
 	go func() {
 		for {
 			if _, err := stream.Recv(); err != nil {
-				select {
-				case <-connectCtx.Done():
+				if connectCtx.Err() != nil {
 					// Local shutdown already in progress.
 					return
-				default:
 				}
 				log.Printf("Gateway connection lost (%v); shutting down.", err)
 				shutCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
