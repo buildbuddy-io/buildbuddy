@@ -299,6 +299,8 @@ func TestList(t *testing.T) {
 	for _, p := range list.GetPeers() {
 		bySession[p.GetSessionId()] = p
 	}
+	require.Contains(t, bySession, "session-1")
+	require.Contains(t, bySession, "session-2")
 	require.Equal(t, "box1", bySession["session-1"].GetName())
 	require.Equal(t, named.GetAssignedIp(), bySession["session-1"].GetIp())
 	require.Equal(t, "", bySession["session-2"].GetName())

@@ -26,6 +26,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/login"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
+	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/buildbuddy-io/buildbuddy/server/util/wgkeys"
@@ -59,7 +60,28 @@ var (
 	usage string
 )
 
-const doNotRecycleMarkerFile = ".BUILDBUDDY_DO_NOT_RECYCLE"
+// workspaceRootEnvVar points at the remote action's workspace root. It is set
+// by `bb box create` on the action's environment (and inherited through bb
+// record), signaling both that we are running inside a remote action and
+// where executor marker files should be written.
+const workspaceRootEnvVar = "BUILDBUDDY_WORKSPACE_ROOT"
+
+// writeDoNotRecycleMarker writes the executor's do-not-recycle marker to the
+// remote action's workspace root, so the VM is neither recycled nor
+// snapshotted. No-op when running outside a remote action (workspace root
+// env var unset).
+func writeDoNotRecycleMarker() {
+	root := os.Getenv(workspaceRootEnvVar)
+	if root == "" {
+		return
+	}
+	path := filepath.Join(root, platform.DoNotRecycleMarkerFile)
+	if err := os.WriteFile(path, nil, 0644); err != nil {
+		log.Warnf("write %s: %v", path, err)
+	} else {
+		log.Printf("Wrote %s", path)
+	}
+}
 
 func init() {
 	var buf strings.Builder
@@ -188,6 +210,7 @@ func handleSession(s ssh.Session) {
 }
 
 func HandleSSHServer(args []string) (int, error) {
+	start := time.Now()
 	if err := arg.ParseFlagSet(flags, args); err != nil {
 		if err == flag.ErrHelp {
 			log.Print(usage)
@@ -255,28 +278,23 @@ func HandleSSHServer(args []string) (int, error) {
 	rsp, err := stream.Recv()
 	if err != nil {
 		if status.IsAlreadyExistsError(err) {
-			// Another connected peer holds this name (e.g. two concurrent
-			// `bb box create <name>` calls). Exit without doing any work,
-			// and drop the do-not-recycle marker so this VM is not
-			// snapshotted: otherwise its empty session could race the
-			// winner's snapshot save for the same recycling key. The marker
-			// must land in the workspace root, which relies on this process
-			// running with the workspace root as its working directory (bb
-			// record execs us from the action's working directory); log the
-			// absolute path so a violation of that assumption is visible.
-			log.Printf("Peer name %q is already in use by a connected peer; exiting.", name)
-			markerPath, _ := filepath.Abs(doNotRecycleMarkerFile)
-			if err := os.WriteFile(doNotRecycleMarkerFile, nil, 0644); err != nil {
-				log.Warnf("write %s: %v", markerPath, err)
-			} else {
-				log.Printf("Wrote %s", markerPath)
-			}
+			// The gateway refused the registration because the peer name,
+			// session ID, or public key is already in use — the server's
+			// message says which. Exit without doing any work, and drop the
+			// do-not-recycle marker so this VM is not snapshotted: otherwise
+			// its empty session could race the winner's snapshot save for
+			// the same recycling key.
+			log.Printf("Gateway registration refused: %s; exiting.", status.Message(err))
+			writeDoNotRecycleMarker()
 			return 1, nil
 		}
 		return 1, status.WrapError(err, "connecting to gateway")
 	}
 	log.Printf("Connected: assigned_ip=%s gateway_ip=%s cidr=%s endpoint=%s name=%s session=%s",
 		rsp.GetAssignedIp(), rsp.GetGatewayIp(), rsp.GetNetworkCidr(), rsp.GetServerEndpoint(), name, sid)
+	// Startup timing breadcrumb: process start -> gateway registration, plus
+	// an absolute timestamp to correlate with executor/gateway logs.
+	log.Printf("Registered with gateway %s after process start (t=%d)", time.Since(start), time.Now().UnixMilli())
 
 	// Bring up the userspace WireGuard tunnel.
 	assignedAddr := netip.MustParseAddr(rsp.GetAssignedIp())
@@ -349,7 +367,7 @@ func HandleSSHServer(args []string) (int, error) {
 		q.Set("name", name)
 	}
 	sshURL := &url.URL{Scheme: "bb-ssh", Host: hostPort, RawQuery: q.Encode()}
-	log.Printf("Listening on %s", sshURL)
+	log.Printf("Listening on %s (startup took %s)", sshURL, time.Since(start))
 	connectTarget := name
 	if connectTarget == "" {
 		connectTarget = rsp.GetAssignedIp()

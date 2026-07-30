@@ -13,6 +13,7 @@ go_library(
         "//proto:gateway_service_go_proto",
         "//server/util/flag",
         "//server/util/grpc_client",
+        "//server/util/platform",
         "//server/util/status",
         "//server/util/uuid",
         "//server/util/wgkeys",
