@@ -33,12 +33,14 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/buildbuddy-io/buildbuddy/server/util/upgrade"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/uuid"
 	"github.com/jonboulle/clockwork"
 	"github.com/open-feature/go-sdk/openfeature"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel"
 	"google.golang.org/protobuf/testing/protocmp"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -401,6 +403,8 @@ func TestSchedulerServerPersistentVolumes(t *testing.T) {
 
 type task struct {
 	delay time.Duration
+	// The reservation request that delivered this task.
+	reservation *scpb.EnqueueTaskReservationRequest
 }
 
 type Result[T any] struct {
@@ -534,7 +538,7 @@ func (e *fakeExecutor) Register() {
 						e.mu.Lock()
 						log.CtxInfof(ctx, "Executor %s got task %q with scheduling delay %s", e.id, req.GetTaskId(), req.GetDelay())
 						taskID := req.GetTaskId()
-						e.tasks[taskID] = task{delay: req.GetDelay().AsDuration()}
+						e.tasks[taskID] = task{delay: req.GetDelay().AsDuration(), reservation: req}
 						e.mu.Unlock()
 					}
 				}
@@ -624,6 +628,14 @@ func (e *fakeExecutor) ResetTasks() {
 	e.mu.Lock()
 	e.tasks = make(map[string]task)
 	e.mu.Unlock()
+}
+
+// TaskReservation returns the reservation request that delivered the given
+// task, or nil if the task was not received.
+func (e *fakeExecutor) TaskReservation(taskID string) *scpb.EnqueueTaskReservationRequest {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.tasks[taskID].reservation
 }
 
 type taskLease struct {
@@ -835,6 +847,53 @@ func TestExecutorReEnqueue_MatchingLeaseID(t *testing.T) {
 	require.NoError(t, err)
 	// On a successful re-enqueue the executor should receive the task again.
 	fe.WaitForTask(taskID)
+}
+
+// TestTraceMetadataSurvivesReEnqueue verifies that reservations rebuilt from
+// persisted state (re-enqueues, work stealing) carry the trace context
+// captured when the task was scheduled, rather than the ambient context of
+// whatever RPC triggered the rebuild.
+func TestTraceMetadataSurvivesReEnqueue(t *testing.T) {
+	flags.Set(t, "app.trace_fraction", 1.0)
+	env, ctx := getEnv(t, &schedulerOpts{}, "user1")
+	// Configuring tracing replaces the process-global tracer provider and
+	// propagator; restore them so other tests are unaffected.
+	prevTracerProvider := otel.GetTracerProvider()
+	prevPropagator := otel.GetTextMapPropagator()
+	t.Cleanup(func() {
+		otel.SetTracerProvider(prevTracerProvider)
+		otel.SetTextMapPropagator(prevPropagator)
+	})
+	require.NoError(t, tracing.ConfigureWithNoopExporter(env))
+
+	fe := newFakeExecutor(ctx, t, env.GetSchedulerClient())
+	fe.Register()
+
+	// Schedule the task with an active span, as the execution server does.
+	spanCtx, span := tracing.StartNamedSpan(ctx, "dispatch")
+	taskID := scheduleTask(spanCtx, t, env, map[string]string{})
+	span.End()
+	require.True(t, span.SpanContext().IsSampled())
+	traceID := span.SpanContext().TraceID().String()
+
+	// The initial (probe path) reservation should carry the trace context.
+	fe.WaitForTask(taskID)
+	traceparent := fe.TaskReservation(taskID).GetTraceMetadata().GetEntries()["traceparent"]
+	require.Contains(t, traceparent, traceID)
+
+	// Re-enqueue the task from a context that is not part of the trace. The
+	// rebuilt reservation should still carry the original trace context.
+	lease := fe.Claim(taskID)
+	fe.ResetTasks()
+	_, err := env.GetSchedulerClient().ReEnqueueTask(ctx, &scpb.ReEnqueueTaskRequest{
+		TaskId:  taskID,
+		Reason:  "test re-enqueue",
+		LeaseId: lease.leaseID,
+	})
+	require.NoError(t, err)
+	fe.WaitForTask(taskID)
+	traceparent = fe.TaskReservation(taskID).GetTraceMetadata().GetEntries()["traceparent"]
+	require.Contains(t, traceparent, traceID)
 }
 
 func TestExecutorReEnqueue_NonMatchingLeaseID(t *testing.T) {
