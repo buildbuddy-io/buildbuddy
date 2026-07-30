@@ -62,11 +62,9 @@ const (
 	remoteInstanceName = "bb-devbox/box"
 
 	// defaultImage is the container image used for box VMs: the workflows
-	// image plus coding agents (claude, codex), tmux, and the bb CLI. See
-	// dockerfiles/box-ubuntu24-04. The floating "latest" tag lets the image
-	// be updated frequently; executors resolve it at pull time and warm it
-	// on startup.
-	defaultImage = platform.DockerPrefix + "gcr.io/flame-public/box-ubuntu24-04:latest"
+	// image plus coding agents (claude, codex) and tmux. Firecracker
+	// executors warm it on startup (see runner.WarmupConfigs).
+	defaultImage = platform.DockerPrefix + platform.Box24_04Image
 
 	// githubReleaseURL is the download URL for the linux/amd64 bb binary,
 	// used when box create is run from a non-linux-amd64 host.

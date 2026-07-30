@@ -1168,7 +1168,8 @@ func WarmupConfigs() []WarmupConfig {
 			Isolation: string(isolation),
 		})
 
-		// If firecracker is supported, additionally warm up the workflow images.
+		// If firecracker is supported, additionally warm up the workflow
+		// images and the `bb box` VM image.
 		if *warmupWorkflowImages && isolation == platform.FirecrackerContainerType {
 			out = append(out, WarmupConfig{
 				Image:     platform.Ubuntu18_04WorkflowsImage,
@@ -1176,6 +1177,10 @@ func WarmupConfigs() []WarmupConfig {
 			})
 			out = append(out, WarmupConfig{
 				Image:     platform.Ubuntu20_04WorkflowsImage,
+				Isolation: string(isolation),
+			})
+			out = append(out, WarmupConfig{
+				Image:     platform.Box24_04Image,
 				Isolation: string(isolation),
 			})
 		}

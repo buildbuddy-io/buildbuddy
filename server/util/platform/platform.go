@@ -40,6 +40,12 @@ const (
 	Ubuntu22_04WorkflowsImage = Ubuntu22_04Image
 	Ubuntu24_04WorkflowsImage = Ubuntu24_04Image
 
+	// Box24_04Image is the image used for `bb box` VMs: Ubuntu24_04Image plus
+	// coding agents (claude, codex) and tmux. It is built FROM the
+	// Ubuntu24_04Image digest (see dockerfiles/box-ubuntu24-04); rebuild and
+	// bump this digest when that image or the pinned agent versions change.
+	Box24_04Image = "gcr.io/flame-public/box-ubuntu24-04@sha256:a256e74676a4a73f0334038538a421bdbdce41169d7333e246a6cd0f59c5ed6b"
+
 	// OverrideHeaderPrefix is a prefix used to override platform props via
 	// remote headers. The property name immediately follows the prefix in the
 	// header key, and the header value is used as the property value.
