@@ -2,6 +2,7 @@ package cache_proxy_registration
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"testing"
 	"time"
@@ -304,19 +305,45 @@ func (f *fakeHeartbeatStream) Send(req *cppb.RegisterCacheProxyRequest) error {
 }
 
 // Flag values can change at runtime (the config file is re-read on SIGHUP),
-// so every heartbeat should report the current configuration, not a snapshot
-// from startup.
+// so heartbeats should report the latest configuration snapshot, which
+// config.OnReload refreshes after each completed reload.
 func TestSendHeartbeat_RefreshesConfiguredFlags(t *testing.T) {
 	stream := &fakeHeartbeatStream{}
 	node := &cppb.CacheProxyNode{Host: "h", ProxyId: "id"}
 
 	flags.Set(t, "cache_proxy.app_target", "grpcs://before.example.com")
+	refreshConfiguredFlags()
 	require.NoError(t, sendHeartbeat(stream, &cppb.RegisterCacheProxyRequest{Node: node}))
 
+	// After a config reload (e.g. on SIGHUP), config.OnReload triggers
+	// refreshConfiguredFlags and subsequent heartbeats pick up the change.
 	flags.Set(t, "cache_proxy.app_target", "grpcs://after.example.com")
+	refreshConfiguredFlags()
 	require.NoError(t, sendHeartbeat(stream, &cppb.RegisterCacheProxyRequest{Node: node}))
 
 	require.Len(t, stream.sent, 2)
 	assert.Contains(t, stream.sent[0].GetNode().GetConfiguredFlags(), "--cache_proxy.app_target=grpcs://before.example.com")
 	assert.Contains(t, stream.sent[1].GetNode().GetConfiguredFlags(), "--cache_proxy.app_target=grpcs://after.example.com")
+}
+
+func TestSendHeartbeat_FlagMutationRaciness(t *testing.T) {
+	stream := &fakeHeartbeatStream{}
+	node := &cppb.CacheProxyNode{Host: "h", ProxyId: "id"}
+	refreshConfiguredFlags()
+
+	const iterations = 1_000
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for i := 0; i < iterations; i++ {
+			_ = sendHeartbeat(stream, &cppb.RegisterCacheProxyRequest{Node: node})
+		}
+	}()
+
+	for i := 0; i < iterations; i++ {
+		flags.Set(t, "cache_proxy.app_target", fmt.Sprintf("grpcs://app-%d.example.com", i))
+	}
+	<-done
+
+	assert.Len(t, stream.sent, iterations)
 }

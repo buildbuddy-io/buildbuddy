@@ -9,6 +9,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//proto:cache_proxy_go_proto",
+        "//server/config",
         "//server/environment",
         "//server/hostid",
         "//server/metrics",
