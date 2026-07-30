@@ -56,13 +56,21 @@ const (
 	// maxLabels labels.
 	maxLabels   = 20
 	maxLabelLen = 50
+
+	// How often the configured flags are re-reported even if they haven't
+	// changed, so the scheduler recovers them if it lost its copy while our
+	// registration stream stayed up.
+	configuredFlagsResendInterval = 5 * time.Minute
 )
 
 var (
 	// Caching for parsed command-line flags, to avoid racing against config
-	// reparsing logic in config.go.
+	// reparsing logic in config.go. configuredFlags always holds the most
+	// recently parsed flags; sendConfiguredFlags says whether the schedule
+	// needs to be told about them.
 	registerReloadHookOnce sync.Once
-	configuredFlagsCache   atomic.Pointer[[]string]
+	configuredFlags        atomic.Pointer[[]string]
+	sendConfiguredFlags    atomic.Bool
 )
 
 // Options provide overrides for executor registration properties.
@@ -239,7 +247,7 @@ func (r *Registration) ServeStatusz(w http.ResponseWriter, req *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-func (r *Registration) processWorkStream(ctx context.Context, stream scpb.Scheduler_RegisterAndStreamWorkClient, schedulerMsgs chan *scpb.RegisterAndStreamWorkResponse, schedulerErr chan error, registrationTicker, requestMoreWorkTicker *time.Ticker) (bool, error) {
+func (r *Registration) processWorkStream(ctx context.Context, stream scpb.Scheduler_RegisterAndStreamWorkClient, schedulerMsgs chan *scpb.RegisterAndStreamWorkResponse, schedulerErr chan error, registrationTicker, requestMoreWorkTicker, resendConfiguredFlagsTicker *time.Ticker) (bool, error) {
 	select {
 	case <-ctx.Done():
 		log.Debugf("Context cancelled, cancelling node registration.")
@@ -303,6 +311,10 @@ func (r *Registration) processWorkStream(ctx context.Context, stream scpb.Schedu
 		if err := stream.Send(requestMoreWorkMsg); err != nil {
 			return false, status.UnavailableErrorf("could not send registration message: %s", err)
 		}
+	case <-resendConfiguredFlagsTicker.C:
+		// Resend the flags even though they haven't changed, so the scheduler
+		// can recover them if it lost its copy while this stream was up.
+		sendConfiguredFlags.Store(true)
 	}
 	return false, nil
 }
@@ -338,6 +350,9 @@ func (r *Registration) maintainRegistrationAndStreamWork(ctx context.Context) {
 	requestMoreWorkTicker := time.NewTicker(idleExecutorMoreWorkTimeout)
 	defer requestMoreWorkTicker.Stop()
 
+	resendConfiguredFlagsTicker := time.NewTicker(configuredFlagsResendInterval)
+	defer resendConfiguredFlagsTicker.Stop()
+
 	for {
 		stream, err := r.schedulerClient.RegisterAndStreamWork(ctx)
 		if err != nil {
@@ -347,6 +362,8 @@ func (r *Registration) maintainRegistrationAndStreamWork(ctx context.Context) {
 			}
 			continue
 		}
+		// Always send flags in the first registration message of a stream.
+		sendConfiguredFlags.Store(true)
 		if err := stream.Send(&scpb.RegisterAndStreamWorkRequest{
 			RegisterExecutorRequest: &scpb.RegisterExecutorRequest{Node: r.nodeWithStats()},
 		}); err != nil {
@@ -375,7 +392,7 @@ func (r *Registration) maintainRegistrationAndStreamWork(ctx context.Context) {
 		}()
 
 		for {
-			done, err := r.processWorkStream(ctx, stream, schedulerMsgs, schedulerErr, registrationTicker, requestMoreWorkTicker)
+			done, err := r.processWorkStream(ctx, stream, schedulerMsgs, schedulerErr, registrationTicker, requestMoreWorkTicker, resendConfiguredFlagsTicker)
 			if err != nil {
 				_ = stream.CloseSend()
 				log.Warningf("Error maintaining registration with scheduler, will retry: %s", err)
@@ -396,10 +413,13 @@ func (r *Registration) maintainRegistrationAndStreamWork(ctx context.Context) {
 
 func (r *Registration) nodeWithStats() *scpb.ExecutionNode {
 	n := proto.Clone(r.node).(*scpb.ExecutionNode)
+	n.ConfiguredFlags = nil
 	n.CurrentQueueLength = int32(r.taskScheduler.QueueLength())
 	n.ActiveActionCount = int32(r.taskScheduler.ActiveTaskCount())
-	if flags := configuredFlagsCache.Load(); flags != nil {
-		n.ConfiguredFlags = *flags
+	if sendConfiguredFlags.Swap(false) {
+		if flags := configuredFlags.Load(); flags != nil {
+			n.ConfiguredFlags = *flags
+		}
 	}
 	return n
 }
@@ -447,7 +467,11 @@ func (r *Registration) watchRunState(rootContext context.Context) {
 
 func refreshConfiguredFlags() {
 	flags := redact.GetConfiguredFlags()
-	configuredFlagsCache.Store(&flags)
+	if len(flags) == 0 {
+		flags = []string{"none"}
+	}
+	configuredFlags.Store(&flags)
+	sendConfiguredFlags.Store(true)
 }
 
 // NewRegistration creates a handle to maintain registration with a scheduler server.

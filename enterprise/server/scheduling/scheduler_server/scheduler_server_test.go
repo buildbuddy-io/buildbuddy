@@ -1562,6 +1562,62 @@ func TestGetExecutionNodes_UpgradePrompt_WithinAllowance(t *testing.T) {
 	require.Nil(t, rsp.GetUpgradePrompt())
 }
 
+// Executors only report their configured flags when the flags change, so the
+// scheduler has to hang onto them across subsequent registrations.
+func TestGetExecutionNodes_ConfiguredFlagsPersistAcrossRegistrations(t *testing.T) {
+	env, ctx := getEnv(t, &schedulerOpts{}, "user1")
+	enterprise_testauth.Configure(t, env)
+
+	configuredFlags := []string{"--app.foo=bar", "--app.baz=qux"}
+	executor := newFakeExecutorWithId(ctx, t, "a", env.GetSchedulerClient())
+	executor.node.Version = "v2.153.0"
+	executor.node.ConfiguredFlags = configuredFlags
+	executor.Register()
+
+	u := enterprise_testauth.CreateRandomUser(t, env, "org1.invalid")
+	auther := env.GetAuthenticator().(*testauth.TestAuthenticator)
+	authCtx, err := auther.WithAuthenticatedUser(ctx, u.UserID)
+	require.NoError(t, err)
+	getExecutionNodes := func() (*scpb.GetExecutionNodesResponse, error) {
+		return env.GetSchedulerService().GetExecutionNodes(authCtx, &scpb.GetExecutionNodesRequest{
+			RequestContext: &ctxpb.RequestContext{
+				GroupId: u.Groups[0].Group.GroupID,
+			},
+		})
+	}
+
+	rsp, err := getExecutionNodes()
+	require.NoError(t, err)
+	require.Len(t, rsp.GetExecutor(), 1)
+	require.Equal(t, configuredFlags, rsp.GetExecutor()[0].GetNode().GetConfiguredFlags())
+
+	// Re-register without flags, as an executor does once it has reported them.
+	node := proto.Clone(executor.node).(*scpb.ExecutionNode)
+	node.ConfiguredFlags = nil
+	node.Version = "v2.154.0"
+	executor.Send(&scpb.RegisterAndStreamWorkRequest{
+		RegisterExecutorRequest: &scpb.RegisterExecutorRequest{Node: node},
+	})
+
+	// The bumped version is what makes the re-registration observable. Only
+	// t.Logf is safe here: testify runs this closure on its own goroutine, so
+	// a require would Goexit before reporting the condition.
+	require.Eventually(t, func() bool {
+		rsp, err := getExecutionNodes()
+		if err != nil {
+			t.Logf("GetExecutionNodes failed: %s", err)
+			return false
+		}
+		executors := rsp.GetExecutor()
+		return len(executors) == 1 && executors[0].GetNode().GetVersion() == node.GetVersion()
+	}, 5*time.Second, 50*time.Millisecond)
+
+	rsp, err = getExecutionNodes()
+	require.NoError(t, err)
+	require.Len(t, rsp.GetExecutor(), 1)
+	require.Equal(t, configuredFlags, rsp.GetExecutor()[0].GetNode().GetConfiguredFlags())
+}
+
 // With user-owned executors enabled, only registrations in the shared
 // executor pool group ("sharedGroupID", set by getEnv) set the
 // newest-version bar.
