@@ -12,6 +12,7 @@ usage: bb detect <subcommand>
 Detects issues in the current workspace.
 
 Subcommands:
+  flake            Replays a test invocation with progressively broader scope to reproduce a flake.
   nondeterminism   Runs two uncached Bazel builds and compares their compact execution logs.
 `
 
@@ -23,6 +24,8 @@ func HandleDetect(args []string) (int, error) {
 		return 1, nil
 	}
 	switch args[0] {
+	case "flake":
+		return handleFlake(args[1:])
 	case "nondeterminism":
 		return handleNondeterminism(args[1:])
 	default:

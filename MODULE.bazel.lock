@@ -660,7 +660,7 @@
     },
     "@@rules_bazel_integration_test+//:extensions.bzl%bazel_binaries": {
       "general": {
-        "bzlTransitiveDigest": "oQMXA+1vXOnAfba5bC1ylvPW6IjPND8MSJd0KjmiCDQ=",
+        "bzlTransitiveDigest": "XC9nqZ31LIbq8N7cEK+rYa2iXNQLcJ3cyGWw+zPZlc0=",
         "usagesDigest": "MwaseeVw9b3Y+qZP0igMZrbC6B120Oc2Gk6ZW8JfFz8=",
         "recordedInputs": [
           "REPO_MAPPING:rules_bazel_integration_test+,bazel_skylib bazel_skylib+",
