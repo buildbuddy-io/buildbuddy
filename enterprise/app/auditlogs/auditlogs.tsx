@@ -253,43 +253,6 @@ export default class AuditLogsComponent extends React.Component<AuditLogsCompone
     return lines.slice(1, lines.length - 1).join("\n");
   }
 
-  renderProtectionLayer(layer: agentsecurity.ProtectionLayer) {
-    switch (layer) {
-      case agentsecurity.ProtectionLayer.AGENT_CONTEXT_HOOK:
-        return "Agent context hook";
-      case agentsecurity.ProtectionLayer.MODEL_REQUEST_PROXY:
-        return "Model request proxy";
-      default:
-        return "Unknown";
-    }
-  }
-
-  renderProvider(provider: agentsecurity.AgentProvider) {
-    switch (provider) {
-      case agentsecurity.AgentProvider.CLAUDE:
-        return "Claude";
-      case agentsecurity.AgentProvider.CODEX:
-        return "Codex";
-      default:
-        return "Unknown";
-    }
-  }
-
-  renderSurface(surface: agentsecurity.RedactionSurface) {
-    switch (surface) {
-      case agentsecurity.RedactionSurface.TOOL_OUTPUT:
-        return "Tool output";
-      case agentsecurity.RedactionSurface.REQUEST_BODY:
-        return "Request body";
-      case agentsecurity.RedactionSurface.REQUEST_HEADER:
-        return "Request header";
-      case agentsecurity.RedactionSurface.REQUEST_QUERY:
-        return "Request query";
-      default:
-        return "Unknown";
-    }
-  }
-
   renderAdministrativeLogs() {
     return (
       <div className="audit-logs">
@@ -337,53 +300,34 @@ export default class AuditLogsComponent extends React.Component<AuditLogsCompone
           <div className="agent-security-table">
             <div className="agent-security-header">
               <div>Last detected</div>
-              <div>Event</div>
-              <div>Protection</div>
-              <div>Agent</div>
+              <div>Secrets detected</div>
               <div>Invocation</div>
-              <div>Agent session</div>
-              <div>Count</div>
+              <div>Agent sessions</div>
             </div>
             {this.state.securityEvents.map((event) => (
-              <div
-                className="agent-security-entry"
-                key={[
-                  event.secretName,
-                  event.protectionLayer,
-                  event.provider,
-                  event.surface,
-                  event.invocationId,
-                  event.agentSessionId,
-                ].join(":")}>
+              <div className="agent-security-entry" key={event.invocationId}>
                 <div>
                   <div>{formatDate(proto.timestampToDate(event.lastSeen || {}))}</div>
-                  {event.occurrenceCount.toString() !== "1" && (
-                    <div className="secondary">
-                      First: {formatDate(proto.timestampToDate(event.firstSeen || {}))}
-                    </div>
-                  )}
                 </div>
                 <div>
-                  <div>Secret value detected and redacted</div>
-                  <code>{event.secretName}</code>
+                  {event.secretNames.map((secretName) => (
+                    <code key={secretName}>{secretName}</code>
+                  ))}
                 </div>
-                <div>
-                  <div>{this.renderProtectionLayer(event.protectionLayer)}</div>
-                  <div className="secondary">{this.renderSurface(event.surface)}</div>
-                </div>
-                <div>{this.renderProvider(event.provider)}</div>
                 <div>
                   <a href={`/invocation/${event.invocationId}`}>{event.invocationId}</a>
                 </div>
                 <div>
-                  <a
-                    href={`/invocation/${event.invocationId}?executionFilter=${encodeURIComponent(
-                      event.agentSessionId
-                    )}#execution`}>
-                    {event.agentSessionId}
-                  </a>
+                  {event.agentSessionIds.map((agentSessionId) => (
+                    <a
+                      key={agentSessionId}
+                      href={`/invocation/${event.invocationId}?executionFilter=${encodeURIComponent(
+                        agentSessionId
+                      )}#execution`}>
+                      {agentSessionId}
+                    </a>
+                  ))}
                 </div>
-                <div>{event.occurrenceCount.toString()}</div>
               </div>
             ))}
           </div>

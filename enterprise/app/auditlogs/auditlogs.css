@@ -86,12 +86,9 @@
   display: grid;
   grid-template-columns:
     minmax(150px, max-content) /* last detected */
-    minmax(220px, max-content) /* event */
-    minmax(150px, max-content) /* protection */
-    minmax(70px, max-content) /* agent */
+    minmax(220px, max-content) /* secrets */
     minmax(180px, max-content) /* invocation */
-    minmax(180px, max-content) /* session */
-    minmax(60px, max-content) /* count */;
+    minmax(180px, max-content) /* sessions */;
   max-width: 100%;
   overflow-x: auto;
   border: 1px solid var(--color-auditlog-border);
@@ -116,4 +113,10 @@
 
 .agent-security-events .agent-security-entry > * {
   background: var(--color-auditlog-entry-bg);
+}
+
+.agent-security-events .agent-security-entry code,
+.agent-security-events .agent-security-entry a {
+  display: block;
+  width: fit-content;
 }

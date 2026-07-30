@@ -12,13 +12,11 @@ interface Props {
 
 interface State {
   events: agentsecurity.AgentSecurityEvent[];
-  hasMore: boolean;
 }
 
 export default class InvocationSecurityCardComponent extends React.Component<Props, State> {
   state: State = {
     events: [],
-    hasMore: false,
   };
 
   private mounted = false;
@@ -30,7 +28,7 @@ export default class InvocationSecurityCardComponent extends React.Component<Pro
 
   componentDidUpdate(prevProps: Props) {
     if (prevProps.invocationId !== this.props.invocationId) {
-      this.setState({ events: [], hasMore: false }, () => this.fetchEvents());
+      this.setState({ events: [] }, () => this.fetchEvents());
     }
   }
 
@@ -53,7 +51,7 @@ export default class InvocationSecurityCardComponent extends React.Component<Pro
         })
       );
       if (this.mounted) {
-        this.setState({ events: response.events, hasMore: Boolean(response.nextPageToken) });
+        this.setState({ events: response.events });
       }
     } catch (e) {
       // This card is supplemental. Audit-only data may not be available to
@@ -66,8 +64,7 @@ export default class InvocationSecurityCardComponent extends React.Component<Pro
     if (!this.state.events.length) {
       return null;
     }
-    const secretCount = new Set(this.state.events.map((event) => event.secretName)).size;
-    const occurrenceCount = this.state.events.reduce((sum, event) => sum + Number(event.occurrenceCount), 0);
+    const secretNames = [...new Set(this.state.events.flatMap((event) => event.secretNames))].sort();
     const start = new Date(this.props.invocationStartTime);
     start.setHours(0, 0, 0, 0);
     const query = new URLSearchParams({
@@ -82,9 +79,7 @@ export default class InvocationSecurityCardComponent extends React.Component<Pro
         <div className="content">
           <div className="title">Secret value detected and redacted</div>
           <div className="details">
-            {this.state.hasMore ? "100+" : occurrenceCount.toLocaleString()}{" "}
-            {occurrenceCount === 1 ? "detection" : "detections"} across {secretCount.toLocaleString()} named{" "}
-            {secretCount === 1 ? "secret" : "secrets"}. Secret values and request content are not retained.
+            Detected secrets: {secretNames.join(", ")}. Secret values and request content are not retained.
           </div>
           <Link href={`/audit-logs/?${query.toString()}`}>Review agent security events</Link>
         </div>

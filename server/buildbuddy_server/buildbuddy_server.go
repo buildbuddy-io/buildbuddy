@@ -2748,15 +2748,10 @@ func (s *BuildBuddyServer) GetAgentSecurityEvents(ctx context.Context, request *
 
 	qb := query_builder.NewQuery(`
 		SELECT
-			secret_name,
-			protection_layer,
-			provider,
-			surface,
 			invocation_id,
-			agent_session_id,
-			min(event_time_usec) AS first_seen_usec,
-			max(event_time_usec) AS last_seen_usec,
-			count(*) AS occurrence_count
+			arraySort(groupUniqArray(secret_name)) AS secret_names,
+			arraySort(groupUniqArray(agent_session_id)) AS agent_session_ids,
+			max(event_time_usec) AS last_seen_usec
 		FROM AgentSecurityEvents
 	`)
 	qb.AddWhereClause("group_id = ?", user.GetGroupID())
@@ -2768,7 +2763,7 @@ func (s *BuildBuddyServer) GetAgentSecurityEvents(ctx context.Context, request *
 	if request.GetAgentSessionId() != "" {
 		qb.AddWhereClause("agent_session_id = ?", request.GetAgentSessionId())
 	}
-	qb.SetGroupBy("secret_name, protection_layer, provider, surface, invocation_id, agent_session_id")
+	qb.SetGroupBy("invocation_id")
 	innerQuery, innerArgs := qb.Build()
 
 	outerQuery := query_builder.NewQueryWithArgs("SELECT * FROM ("+innerQuery+")", innerArgs)
@@ -2784,15 +2779,10 @@ func (s *BuildBuddyServer) GetAgentSecurityEvents(ctx context.Context, request *
 	query, args := outerQuery.Build()
 
 	type eventRow struct {
-		SecretName      string
-		ProtectionLayer uint8
-		Provider        uint8
-		Surface         uint8
 		InvocationID    string
-		AgentSessionID  string
-		FirstSeenUsec   int64
+		SecretNames     []string `gorm:"type:Array(String);"`
+		AgentSessionIDs []string `gorm:"type:Array(String);"`
 		LastSeenUsec    int64
-		OccurrenceCount int64
 	}
 	response := &aspb.GetAgentSecurityEventsResponse{}
 	rq := dbh.NewQuery(ctx, "agent_security_get_events").Raw(query, args...)
@@ -2802,15 +2792,10 @@ func (s *BuildBuddyServer) GetAgentSecurityEvents(ctx context.Context, request *
 			return nil
 		}
 		response.Events = append(response.Events, &aspb.AgentSecurityEvent{
-			SecretName:      row.SecretName,
-			ProtectionLayer: aspb.ProtectionLayer(row.ProtectionLayer),
-			Provider:        aspb.AgentProvider(row.Provider),
-			Surface:         aspb.RedactionSurface(row.Surface),
+			SecretNames:     row.SecretNames,
 			InvocationId:    row.InvocationID,
-			AgentSessionId:  row.AgentSessionID,
-			FirstSeen:       timestamppb.New(time.UnixMicro(row.FirstSeenUsec)),
+			AgentSessionIds: row.AgentSessionIDs,
 			LastSeen:        timestamppb.New(time.UnixMicro(row.LastSeenUsec)),
-			OccurrenceCount: row.OccurrenceCount,
 		})
 		return nil
 	})
