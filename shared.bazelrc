@@ -209,6 +209,12 @@ common:local-rbe-mac --config=local
 common:dev --bes_results_url=https://buildbuddy.buildbuddy.dev/invocation/
 common:dev --bes_backend=grpcs://buildbuddy.buildbuddy.dev
 
+# Enable execution graph log for all dev builds
+build:dev --experimental_enable_execution_graph_log
+build:dev --experimental_execution_graph_log_dep_type=all
+build:dev --experimental_execution_graph_include_change_pruned_actions
+build:dev --experimental_execution_graph_enable_edges_from_filewrite_actions=true
+
 # Common flags to be used with remote cache
 common:cache-shared --remote_cache_compression
 common:cache-shared --experimental_remote_cache_compression_threshold=100
