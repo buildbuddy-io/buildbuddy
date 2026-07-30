@@ -5,6 +5,7 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 go_library(
     name = "runner",
     srcs = [
+        "llmproxy_hooks.go",
         "runner.go",
         "runner_darwin.go",
         "runner_linux.go",
@@ -46,6 +47,7 @@ go_library(
         "//server/util/log",
         "//server/util/platform",
         "//server/util/proto",
+        "//server/util/shlex",
         "//server/util/status",
         "//server/util/tracing",
         "//server/util/uuid",
