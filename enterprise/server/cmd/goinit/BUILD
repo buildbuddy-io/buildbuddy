@@ -10,6 +10,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/cmd/goinit",
     deps = [
         "//enterprise/server/util/firecrackerutil",
+        "//enterprise/server/remote_execution/llmproxy/ports",
         "//enterprise/server/util/vsock",
         "//enterprise/server/vmdns",
         "//enterprise/server/vmexec",
@@ -19,6 +20,7 @@ go_library(
         "//server/util/rlimit",
         "//server/util/status",
         "@com_github_jsimonetti_rtnetlink//rtnl",
+        "@com_github_mdlayher_vsock//:vsock",
         "@com_github_miekg_dns//:dns",
         "@org_golang_x_sync//errgroup",
         "@org_golang_x_sys//unix",

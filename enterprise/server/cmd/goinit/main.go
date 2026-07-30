@@ -19,6 +19,7 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/llmproxy/ports"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/firecrackerutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vsock"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/vmdns"
@@ -32,6 +33,8 @@ import (
 	"github.com/miekg/dns"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sys/unix"
+
+	libVsock "github.com/mdlayher/vsock"
 )
 
 const (
@@ -146,6 +149,19 @@ func configureDefaultRoute(ifaceName, ipAddr string) error {
 	return nlConn.Close()
 }
 
+func configureLoopback() error {
+	iface, err := net.InterfaceByName("lo")
+	if err != nil {
+		return err
+	}
+	nlConn, err := rtnl.Dial(nil)
+	if err != nil {
+		return err
+	}
+	defer nlConn.Close()
+	return nlConn.LinkUp(iface)
+}
+
 func copyFile(src, dest string, mode os.FileMode) error {
 	log.Debugf("copyFile src: %q; dest: %q", src, dest)
 	out, err := os.OpenFile(dest, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, mode)
@@ -208,6 +224,39 @@ func startDockerd(ctx context.Context) error {
 		cmd.Stderr = os.Stderr
 	}
 	return cmd.Start()
+}
+
+func runLLMProxyForwarder() error {
+	if err := configureLoopback(); err != nil {
+		return fmt.Errorf("configure loopback for guest LLM proxy: %w", err)
+	}
+	listener, err := net.Listen("tcp4", net.JoinHostPort("127.0.0.1", strconv.Itoa(ports.GuestHTTP)))
+	if err != nil {
+		return fmt.Errorf("listen for guest LLM proxy connections: %w", err)
+	}
+	for {
+		guestConn, err := listener.Accept()
+		if err != nil {
+			return fmt.Errorf("accept guest LLM proxy connection: %w", err)
+		}
+		go forwardLLMProxyConnection(guestConn)
+	}
+}
+
+func forwardLLMProxyConnection(guestConn net.Conn) {
+	hostConn, err := libVsock.Dial(libVsock.Host, ports.HostVSock, &libVsock.Config{})
+	if err != nil {
+		_ = guestConn.Close()
+		return
+	}
+	go func() {
+		_, _ = io.Copy(hostConn, guestConn)
+		_ = hostConn.Close()
+		_ = guestConn.Close()
+	}()
+	_, _ = io.Copy(guestConn, hostConn)
+	_ = guestConn.Close()
+	_ = hostConn.Close()
 }
 
 // This is mostly cribbed from github.com/superfly/init-snapshot
@@ -448,7 +497,6 @@ func main() {
 		cmd.Stderr = os.Stderr
 		return cmd.Run()
 	})
-
 	if *initDockerd {
 		die(startDockerd(ctx))
 	}
