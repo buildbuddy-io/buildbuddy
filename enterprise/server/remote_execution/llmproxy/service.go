@@ -24,21 +24,14 @@ type SessionRegistrar interface {
 // Service owns the execution-scoped HTTP servers running over per-VM vsock
 // listeners. It does not expose a host TCP listener.
 type Service struct {
-	reporter EventReporter
-
 	mu      sync.Mutex
 	closed  bool
 	servers map[*http.Server]struct{}
 }
 
-func NewService(reporters ...EventReporter) (*Service, error) {
-	var reporter EventReporter
-	if len(reporters) > 0 {
-		reporter = reporters[0]
-	}
+func NewService() (*Service, error) {
 	return &Service{
-		reporter: reporter,
-		servers:  make(map[*http.Server]struct{}),
+		servers: make(map[*http.Server]struct{}),
 	}, nil
 }
 
@@ -53,8 +46,7 @@ func (s *Service) RegisterSession(listener net.Listener, session *Session) (func
 		return nil, errors.New("listener is required")
 	}
 	handler, err := NewHandler(Options{
-		Session:       session,
-		EventReporter: s.reporter,
+		Session: session,
 	})
 	if err != nil {
 		_ = listener.Close()
@@ -114,13 +106,6 @@ func (s *Service) Shutdown(ctx context.Context) error {
 		if err := server.Shutdown(ctx); err != nil {
 			shutdownErr = errors.Join(shutdownErr, fmt.Errorf("shut down VM LLM proxy server: %w", err))
 			_ = server.Close()
-		}
-	}
-	if reporter, ok := s.reporter.(interface {
-		Shutdown(context.Context) error
-	}); ok {
-		if err := reporter.Shutdown(ctx); err != nil {
-			shutdownErr = errors.Join(shutdownErr, err)
 		}
 	}
 	return shutdownErr

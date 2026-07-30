@@ -12,8 +12,10 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//enterprise/server/remote_execution/llmproxy/ports",
+        "//proto:agent_security_go_proto",
         "//server/util/log",
         "//server/util/redact",
         "@com_github_klauspost_compress//zstd",
+        "@org_golang_google_protobuf//types/known/timestamppb",
     ],
 )
