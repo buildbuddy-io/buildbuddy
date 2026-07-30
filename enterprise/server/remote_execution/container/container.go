@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"strconv"
 	"strings"
 	"sync"
@@ -520,6 +521,10 @@ type StatsRecorder interface {
 type VM interface {
 	// SetTaskFileSystemLayout sets the VFS layout for use inside the guest.
 	SetTaskFileSystemLayout(layout *FileSystemLayout)
+
+	// NewHostVSockListener returns a host listener reachable only through this
+	// VM's vsock device at the given port.
+	NewHostVSockListener(port int) (net.Listener, error)
 
 	// SnapshotDebugString returns a string representing the cache key used for
 	// VM snapshots, if applicable.

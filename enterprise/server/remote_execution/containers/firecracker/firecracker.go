@@ -1951,6 +1951,18 @@ func (c *FirecrackerContainer) setupNetworking(ctx context.Context) error {
 	return nil
 }
 
+func (c *FirecrackerContainer) NewHostVSockListener(port int) (net.Listener, error) {
+	socketPath := vsock.HostListenSocketPath(filepath.Join(c.getChroot(), firecrackerVSockPath), port)
+	if err := os.MkdirAll(filepath.Dir(socketPath), 0755); err != nil {
+		return nil, status.WrapError(err, "create host vsock listener directory")
+	}
+	listener, err := net.Listen("unix", socketPath)
+	if err != nil {
+		return nil, status.WrapError(err, "listen on host vsock socket")
+	}
+	return listener, nil
+}
+
 func (c *FirecrackerContainer) setupUFFDHandler(ctx context.Context) error {
 	if c.memoryStore == nil {
 		// No memory file to serve over UFFD; do nothing.
