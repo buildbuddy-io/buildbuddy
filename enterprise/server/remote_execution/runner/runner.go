@@ -136,6 +136,8 @@ const (
 	// invalidate the snapshot the action was run in. This can be written
 	// if the action detects that the snapshot was corrupted upon startup.
 	invalidateSnapshotMarkerFile = ".BUILDBUDDY_INVALIDATE_SNAPSHOT"
+
+	llmProxyPlaceholderCredential = "buildbuddy-executor-proxy"
 )
 
 func GetBuildRoot() string {
@@ -1352,8 +1354,16 @@ func (p *pool) newLLMProxySession(groupID string, props *platform.Properties, ta
 		secretNameSet[name] = struct{}{}
 	}
 	session := &llmproxy.Session{}
+	providerSecretNames := map[string]struct{}{
+		"ANTHROPIC_API_KEY":    {},
+		"ANTHROPIC_AUTH_TOKEN": {},
+		"CODEX_API_KEY":        {},
+		"OPENAI_API_KEY":       {},
+	}
+	filteredEnv := command.EnvironmentVariables[:0]
 	for _, envVar := range command.GetEnvironmentVariables() {
 		if _, ok := secretNameSet[envVar.GetName()]; !ok {
+			filteredEnv = append(filteredEnv, envVar)
 			continue
 		}
 		value := envVar.GetValue()
@@ -1367,24 +1377,45 @@ func (p *pool) newLLMProxySession(groupID string, props *platform.Properties, ta
 		switch envVar.GetName() {
 		case "ANTHROPIC_API_KEY":
 			session.AnthropicAPIKey = value
+			continue
 		case "ANTHROPIC_AUTH_TOKEN":
 			session.AnthropicAuthToken = value
+			continue
 		case "CODEX_API_KEY":
 			if session.OpenAIAPIKey == "" {
 				session.OpenAIAPIKey = value
 			}
+			continue
 		case "OPENAI_API_KEY":
 			session.OpenAIAPIKey = value
+			continue
 		}
+		filteredEnv = append(filteredEnv, envVar)
 	}
+	command.EnvironmentVariables = filteredEnv
 	if len(session.RedactionValues) == 0 {
 		return nil, nil
 	}
+	remainingSecretNames := secretNames[:0]
+	for _, name := range secretNames {
+		if _, ok := providerSecretNames[name]; !ok {
+			remainingSecretNames = append(remainingSecretNames, name)
+		}
+	}
+	serializedNames, err := json.Marshal(remainingSecretNames)
+	if err != nil {
+		return nil, status.WrapError(err, "marshal remaining secret environment variable names")
+	}
+	setCommandEnv(command, ci_runner_env.BuildBuddySecretEnvVarNamesForRedaction, string(serializedNames))
 	if session.AnthropicAPIKey != "" || session.AnthropicAuthToken != "" {
 		setCommandEnv(command, "ANTHROPIC_BASE_URL", p.llmProxyURL+"/anthropic")
+		setCommandEnv(command, "ANTHROPIC_API_KEY", llmProxyPlaceholderCredential)
+		setCommandEnv(command, "ANTHROPIC_AUTH_TOKEN", llmProxyPlaceholderCredential)
 	}
 	if session.OpenAIAPIKey != "" {
 		setCommandEnv(command, "OPENAI_BASE_URL", p.llmProxyURL+"/openai/v1")
+		setCommandEnv(command, "CODEX_API_KEY", llmProxyPlaceholderCredential)
+		setCommandEnv(command, "OPENAI_API_KEY", llmProxyPlaceholderCredential)
 	}
 	return session, nil
 }
