@@ -50,6 +50,15 @@ proto_library(
 )
 
 proto_library(
+    name = "agent_security_proto",
+    srcs = ["agent_security.proto"],
+    deps = [
+        ":context_proto",
+        "@com_google_protobuf//:timestamp_proto",
+    ],
+)
+
+proto_library(
     name = "api_key_proto",
     srcs = ["api_key.proto"],
     deps = [
@@ -250,6 +259,7 @@ proto_library(
     ],
     deps = [
         ":acl_proto",
+        ":agent_security_proto",
         ":context_proto",
         ":invocation_status_proto",
         ":remote_execution_proto",
@@ -698,6 +708,7 @@ proto_library(
     name = "buildbuddy_service_proto",
     srcs = ["buildbuddy_service.proto"],
     deps = [
+        ":agent_security_proto",
         ":api_key_proto",
         ":auditlog_proto",
         ":bazel_config_proto",
@@ -1037,6 +1048,15 @@ go_proto_library(
 )
 
 go_proto_library(
+    name = "agent_security_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/agent_security",
+    proto = ":agent_security_proto",
+    deps = [
+        ":context_go_proto",
+    ],
+)
+
+go_proto_library(
     name = "api_key_go_proto",
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/api_key",
     proto = ":api_key_proto",
@@ -1148,6 +1168,7 @@ go_proto_library(
     proto = ":execution_stats_proto",
     deps = [
         ":acl_go_proto",
+        ":agent_security_go_proto",
         ":context_go_proto",
         ":invocation_status_go_proto",
         ":remote_execution_go_proto",
@@ -1543,6 +1564,7 @@ go_proto_library(
     mode = "services_only",
     proto = ":buildbuddy_service_proto",
     deps = [
+        ":agent_security_go_proto",
         ":api_key_go_proto",
         ":auditlog_go_proto",
         ":bazel_config_go_proto",
@@ -1983,6 +2005,15 @@ ts_proto_library(
 )
 
 ts_proto_library(
+    name = "agent_security_ts_proto",
+    proto = ":agent_security_proto",
+    deps = [
+        ":context_ts_proto",
+        ":timestamp_ts_proto",
+    ],
+)
+
+ts_proto_library(
     name = "api_key_ts_proto",
     proto = ":api_key_proto",
     deps = [
@@ -2035,6 +2066,7 @@ ts_proto_library(
     proto = ":execution_stats_proto",
     deps = [
         ":acl_ts_proto",
+        ":agent_security_ts_proto",
         ":context_ts_proto",
         ":duration_ts_proto",
         ":google_longrunning_ts_proto",
@@ -2517,6 +2549,7 @@ ts_proto_library(
     name = "buildbuddy_service_ts_proto",
     proto = ":buildbuddy_service_proto",
     deps = [
+        ":agent_security_ts_proto",
         ":api_key_ts_proto",
         ":auditlog_ts_proto",
         ":bazel_config_ts_proto",

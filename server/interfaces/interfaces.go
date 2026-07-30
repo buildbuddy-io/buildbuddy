@@ -448,6 +448,7 @@ type OLAPDBHandle interface {
 	FlushTestTargetStatuses(ctx context.Context, entries []*schema.TestTargetStatus) error
 	FlushUsages(ctx context.Context, entries []*schema.RawUsage) error
 	InsertAuditLog(ctx context.Context, entry *schema.AuditLog) error
+	InsertAgentSecurityEvents(ctx context.Context, entries []*schema.AgentSecurityEvent) error
 	BucketFromUsecTimestamp(fieldName string, loc *time.Location, interval string) (string, []interface{})
 }
 
@@ -1332,6 +1333,10 @@ type CommandResult struct {
 
 	// VMMetadata associated with the VM that ran the task, if applicable.
 	VMMetadata *fcpb.VMMetadata
+
+	// AgentSecurityEvents contains metadata about secrets redacted by
+	// executor-managed agent protections during this command.
+	AgentSecurityEvents *espb.AgentSecurityEvents
 }
 
 type Subscriber interface {

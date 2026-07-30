@@ -526,6 +526,16 @@ func (h *DBHandle) InsertAuditLog(ctx context.Context, entry *schema.AuditLog) e
 	return nil
 }
 
+func (h *DBHandle) InsertAgentSecurityEvents(ctx context.Context, entries []*schema.AgentSecurityEvent) error {
+	if len(entries) == 0 {
+		return nil
+	}
+	if err := h.insertWithRetrier(ctx, (&schema.AgentSecurityEvent{}).TableName(), len(entries), &entries); err != nil {
+		return status.UnavailableErrorf("failed to create agent security events: %s", err)
+	}
+	return nil
+}
+
 func recordMetricsAfterFn(db *gorm.DB) {
 	if db.DryRun || db.Statement == nil {
 		return
