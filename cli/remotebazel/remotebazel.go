@@ -778,6 +778,15 @@ func streamLogs(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, inv
 	return nil
 }
 
+// StreamLogs streams a remote runner invocation's logs to stdout, using live
+// terminal updates when interactive and stable log printing otherwise.
+func StreamLogs(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, invocationID string) error {
+	if terminal.IsTTY(os.Stdin) && terminal.IsTTY(os.Stderr) {
+		return streamLogs(ctx, bbClient, invocationID)
+	}
+	return printLogs(ctx, bbClient, invocationID)
+}
+
 // printLogs prints the logs with real-time streaming updates disabled
 func printLogs(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, invocationID string) error {
 	defer resetTerminalStyles()
@@ -1260,15 +1269,8 @@ func attemptRun(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, exe
 		}
 	}()
 
-	interactive := terminal.IsTTY(os.Stdin) && terminal.IsTTY(os.Stderr)
-	if interactive {
-		if err := streamLogs(ctx, bbClient, iid); err != nil {
-			return nil, nil, status.WrapError(err, "streaming logs")
-		}
-	} else {
-		if err := printLogs(ctx, bbClient, iid); err != nil {
-			return nil, nil, status.WrapError(err, "streaming logs")
-		}
+	if err := StreamLogs(ctx, bbClient, iid); err != nil {
+		return nil, nil, status.WrapError(err, "streaming logs")
 	}
 	isInvocationRunning = false
 

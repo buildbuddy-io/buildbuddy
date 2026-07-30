@@ -462,6 +462,9 @@ func TestGitConfig_BranchAndSha(t *testing.T) {
 		expectedBranch  string
 		expectedCommit  string
 		expectedPatches []string
+
+		detachedHead      bool
+		detachedHeadMoved bool
 	}
 
 	testCases := []testCase{
