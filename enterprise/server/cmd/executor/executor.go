@@ -62,7 +62,6 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	remote_executor "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor"
-	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	ofpb "github.com/buildbuddy-io/buildbuddy/proto/oci_fetcher"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
@@ -321,7 +320,6 @@ func GetConfiguredEnvironmentOrDie(cacheRoot string, healthChecker *healthcheck.
 	realEnv.GetHealthChecker().AddHealthCheck("grpc_app_connection", conn)
 	realEnv.SetSchedulerClient(scpb.NewSchedulerClient(conn))
 	realEnv.SetRemoteExecutionClient(repb.NewExecutionClient(conn))
-	realEnv.SetBuildBuddyServiceClient(bbspb.NewBuildBuddyServiceClient(conn))
 	realEnv.SetCommandRunner(&commandutil.CommandRunner{})
 
 	return realEnv
@@ -432,7 +430,7 @@ func main() {
 		oomKiller = k
 	}
 
-	llmProxy, err := startLLMProxy(rootContext, env)
+	llmProxy, err := startLLMProxy(rootContext)
 	if err != nil {
 		log.Fatalf("Failed to initialize LLM proxy: %s", err)
 	}

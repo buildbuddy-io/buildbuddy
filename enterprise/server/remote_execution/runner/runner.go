@@ -395,6 +395,19 @@ func (k *killableTask) String() string {
 // Run runs the task that is currently bound to the command runner.
 func (r *taskRunner) Run(ctx context.Context, ioStats *repb.IOStats) (res *interfaces.CommandResult) {
 	start := time.Now()
+	defer func() {
+		if res == nil || r.llmProxySession == nil {
+			return
+		}
+		events := r.llmProxySession.EventCollector.Events()
+		if len(events) == 0 {
+			return
+		}
+		res.AgentSecurityEvents = &espb.AgentSecurityEvents{
+			InvocationId: r.task.GetInvocationId(),
+			Events:       events,
+		}
+	}()
 	if r.p.oomKiller != nil {
 		var cancel context.CancelCauseFunc
 		ctx, cancel = context.WithCancelCause(ctx)
@@ -1354,10 +1367,7 @@ func (p *pool) newLLMProxySession(groupID string, props *platform.Properties, ta
 		secretNameSet[name] = struct{}{}
 	}
 	session := &llmproxy.Session{
-		GroupID:      groupID,
-		InvocationID: task.GetInvocationId(),
-		ExecutionID:  task.GetExecutionId(),
-		JWT:          task.GetJwt(),
+		EventCollector: llmproxy.NewEventCollector(),
 	}
 	providerSecretNames := map[string]struct{}{
 		"ANTHROPIC_API_KEY":    {},

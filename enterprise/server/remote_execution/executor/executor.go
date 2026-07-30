@@ -457,6 +457,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 			}
 		}
 	}
+	auxMetadata.AgentSecurityEvents = cmdResult.AgentSecurityEvents
 
 	// Include VFS stats, if VFS is enabled.
 	if vs := cmdResult.VfsStats; vs != nil {

@@ -13,10 +13,14 @@ import (
 	"net/url"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/redact"
 	"github.com/klauspost/compress/zstd"
+	"google.golang.org/protobuf/types/known/timestamppb"
+
+	aspb "github.com/buildbuddy-io/buildbuddy/proto/agent_security"
 )
 
 const (
@@ -25,6 +29,7 @@ const (
 
 	defaultMaxCompressedBodySize   = 16 << 20
 	defaultMaxUncompressedBodySize = 64 << 20
+	maxRecordedEventsPerExecution  = 1000
 )
 
 var hopByHopHeaders = []string{
@@ -44,15 +49,12 @@ var hopByHopHeaders = []string{
 // executor-side connection identity, never on a group or execution ID supplied
 // by the runner.
 type Session struct {
-	GroupID              string
-	InvocationID         string
-	ExecutionID          string
-	JWT                  string
 	RedactionValues      []string
 	NamedRedactionValues []NamedRedactionValue
 	AnthropicAPIKey      string
 	AnthropicAuthToken   string
 	OpenAIAPIKey         string
+	EventCollector       *EventCollector
 }
 
 type NamedRedactionValue struct {
@@ -83,27 +85,46 @@ const (
 	RequestQuery  Surface = "request_query"
 )
 
-type RedactionEvent struct {
-	SecretName      string
-	ProtectionLayer ProtectionLayer
-	Provider        Provider
-	Surface         Surface
-	EventTime       time.Time
-}
-
-// RedactionReport contains only event metadata. It intentionally cannot carry
+// EventCollector records only event metadata. It intentionally cannot carry
 // secret values or request content.
-type RedactionReport struct {
-	JWT            string
-	InvocationID   string
-	AgentSessionID string
-	Events         []RedactionEvent
+type EventCollector struct {
+	mu     sync.Mutex
+	events []*aspb.SecretRedactionEvent
 }
 
-// EventReporter must return quickly. Redaction and forwarding do not depend on
-// successful event reporting.
-type EventReporter interface {
-	Report(report *RedactionReport)
+func NewEventCollector() *EventCollector {
+	return &EventCollector{}
+}
+
+func (c *EventCollector) Record(secretName string, layer ProtectionLayer, provider Provider, surface Surface, eventTime time.Time) {
+	if c == nil || secretName == "" {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if len(c.events) >= maxRecordedEventsPerExecution {
+		return
+	}
+	c.events = append(c.events, &aspb.SecretRedactionEvent{
+		SecretName:      secretName,
+		ProtectionLayer: protectionLayerProto(layer),
+		Provider:        providerProto(provider),
+		Surface:         surfaceProto(surface),
+		EventTime:       timestamppb.New(eventTime),
+	})
+}
+
+func (c *EventCollector) Events() []*aspb.SecretRedactionEvent {
+	if c == nil {
+		return nil
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	events := make([]*aspb.SecretRedactionEvent, 0, len(c.events))
+	for _, event := range c.events {
+		events = append(events, event.CloneVT())
+	}
+	return events
 }
 
 // SessionResolver maps a proxy connection to its execution-scoped session.
@@ -113,7 +134,6 @@ type SessionResolver interface {
 
 type Options struct {
 	SessionResolver SessionResolver
-	EventReporter   EventReporter
 	HTTPClient      *http.Client
 	AnthropicURL    *url.URL
 	OpenAIURL       *url.URL
@@ -124,7 +144,6 @@ type Options struct {
 
 type Handler struct {
 	sessionResolver         SessionResolver
-	eventReporter           EventReporter
 	httpClient              *http.Client
 	anthropicURL            *url.URL
 	openAIURL               *url.URL
@@ -181,7 +200,6 @@ func NewHandler(opts Options) (*Handler, error) {
 	}
 	return &Handler{
 		sessionResolver:         opts.SessionResolver,
-		eventReporter:           opts.EventReporter,
 		httpClient:              client,
 		anthropicURL:            anthropicURL,
 		openAIURL:               openAIURL,
@@ -507,26 +525,50 @@ func providerForPath(path string) Provider {
 }
 
 func (h *Handler) reportMatches(session *Session, layer ProtectionLayer, provider Provider, surface Surface, names []string) {
-	if h.eventReporter == nil || len(names) == 0 {
+	if session.EventCollector == nil || len(names) == 0 {
 		return
 	}
 	now := time.Now()
-	events := make([]RedactionEvent, 0, len(names))
 	for _, name := range names {
-		events = append(events, RedactionEvent{
-			SecretName:      name,
-			ProtectionLayer: layer,
-			Provider:        provider,
-			Surface:         surface,
-			EventTime:       now,
-		})
+		session.EventCollector.Record(name, layer, provider, surface, now)
 	}
-	h.eventReporter.Report(&RedactionReport{
-		JWT:            session.JWT,
-		InvocationID:   session.InvocationID,
-		AgentSessionID: session.ExecutionID,
-		Events:         events,
-	})
+}
+
+func protectionLayerProto(layer ProtectionLayer) aspb.ProtectionLayer {
+	switch layer {
+	case AgentContextHook:
+		return aspb.ProtectionLayer_AGENT_CONTEXT_HOOK
+	case ModelRequestProxy:
+		return aspb.ProtectionLayer_MODEL_REQUEST_PROXY
+	default:
+		return aspb.ProtectionLayer_PROTECTION_LAYER_UNKNOWN
+	}
+}
+
+func providerProto(provider Provider) aspb.AgentProvider {
+	switch provider {
+	case Claude:
+		return aspb.AgentProvider_CLAUDE
+	case Codex:
+		return aspb.AgentProvider_CODEX
+	default:
+		return aspb.AgentProvider_AGENT_PROVIDER_UNKNOWN
+	}
+}
+
+func surfaceProto(surface Surface) aspb.RedactionSurface {
+	switch surface {
+	case ToolOutput:
+		return aspb.RedactionSurface_TOOL_OUTPUT
+	case RequestBody:
+		return aspb.RedactionSurface_REQUEST_BODY
+	case RequestHeader:
+		return aspb.RedactionSurface_REQUEST_HEADER
+	case RequestQuery:
+		return aspb.RedactionSurface_REQUEST_QUERY
+	default:
+		return aspb.RedactionSurface_REDACTION_SURFACE_UNKNOWN
+	}
 }
 
 func addStringMatches(matches map[string]struct{}, value string, namedValues []NamedRedactionValue) {

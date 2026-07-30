@@ -5,6 +5,7 @@ import "google/protobuf/timestamp.proto";
 import "google/protobuf/duration.proto";
 import "google/rpc/status.proto";
 import "proto/acl.proto";
+import "proto/agent_security.proto";
 import "proto/context.proto";
 import "proto/invocation_status.proto";
 import "proto/remote_execution.proto";
@@ -157,6 +158,15 @@ message ExecutionAuxiliaryMetadata {
 
   // Metadata containing more detail about the input fetch phase of execution.
   InputFetchMetadata input_fetch_detailed_stats = 11;
+
+  // Secret redactions detected by executor-managed agent protections. This is
+  // reported once, with the final execution operation.
+  AgentSecurityEvents agent_security_events = 12;
+}
+
+message AgentSecurityEvents {
+  string invocation_id = 1;
+  repeated agentsecurity.SecretRedactionEvent events = 2;
 }
 
 // Stats about work done after the COMPLETED operation is streamed back to the

@@ -294,9 +294,6 @@ service BuildBuddyService {
   // Audit log API.
   rpc GetAuditLogs(auditlog.GetAuditLogsRequest)
       returns (auditlog.GetAuditLogsResponse);
-  rpc RecordAgentSecurityEvents(
-      agentsecurity.RecordAgentSecurityEventsRequest)
-      returns (agentsecurity.RecordAgentSecurityEventsResponse);
   rpc GetAgentSecurityEvents(agentsecurity.GetAgentSecurityEventsRequest)
       returns (agentsecurity.GetAgentSecurityEventsResponse);
 

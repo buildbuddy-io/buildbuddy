@@ -42,7 +42,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/canary"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
-	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/schema"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
@@ -51,7 +50,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
-	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
 	"golang.org/x/sync/errgroup"
@@ -2704,66 +2702,6 @@ func (s *BuildBuddyServer) GetAuditLogs(ctx context.Context, request *alpb.GetAu
 		return nil, status.UnimplementedError("Audit logger not configured")
 	}
 	return al.GetLogs(ctx, request)
-}
-
-func (s *BuildBuddyServer) RecordAgentSecurityEvents(ctx context.Context, request *aspb.RecordAgentSecurityEventsRequest) (*aspb.RecordAgentSecurityEventsResponse, error) {
-	dbh := s.env.GetOLAPDBHandle()
-	if dbh == nil {
-		return nil, status.FailedPreconditionError("agent security events require an OLAP database")
-	}
-	identityService := s.env.GetClientIdentityService()
-	if identityService == nil {
-		return nil, status.PermissionDeniedError("executor client identity is required")
-	}
-	identity, err := identityService.IdentityFromContext(ctx)
-	if err != nil || identity.Client != interfaces.ClientIdentityExecutor {
-		return nil, status.PermissionDeniedError("agent security events can only be recorded by an executor")
-	}
-	user, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if request.GetInvocationId() == "" || request.GetAgentSessionId() == "" {
-		return nil, status.InvalidArgumentError("invocation ID and agent session ID are required")
-	}
-	if len(request.GetEvents()) == 0 || len(request.GetEvents()) > 100 {
-		return nil, status.InvalidArgumentError("between 1 and 100 agent security events are required")
-	}
-
-	now := time.Now()
-	rows := make([]*schema.AgentSecurityEvent, 0, len(request.GetEvents()))
-	for _, event := range request.GetEvents() {
-		if event.GetSecretName() == "" || len(event.GetSecretName()) > 255 {
-			return nil, status.InvalidArgumentError("secret name must be between 1 and 255 bytes")
-		}
-		if event.GetProtectionLayer() == aspb.ProtectionLayer_PROTECTION_LAYER_UNKNOWN ||
-			event.GetProvider() == aspb.AgentProvider_AGENT_PROVIDER_UNKNOWN ||
-			event.GetSurface() == aspb.RedactionSurface_REDACTION_SURFACE_UNKNOWN {
-			return nil, status.InvalidArgumentError("protection layer, provider, and surface are required")
-		}
-		eventTime := now
-		if event.GetEventTime() != nil {
-			if err := event.GetEventTime().CheckValid(); err != nil {
-				return nil, status.InvalidArgumentErrorf("invalid event time: %s", err)
-			}
-			eventTime = event.GetEventTime().AsTime()
-		}
-		rows = append(rows, &schema.AgentSecurityEvent{
-			EventID:         fmt.Sprintf("ASE%d", random.RandUint64()),
-			GroupID:         user.GetGroupID(),
-			EventTimeUsec:   eventTime.UnixMicro(),
-			InvocationID:    request.GetInvocationId(),
-			AgentSessionID:  request.GetAgentSessionId(),
-			SecretName:      event.GetSecretName(),
-			ProtectionLayer: uint8(event.GetProtectionLayer()),
-			Provider:        uint8(event.GetProvider()),
-			Surface:         uint8(event.GetSurface()),
-		})
-	}
-	if err := dbh.InsertAgentSecurityEvents(ctx, rows); err != nil {
-		return nil, err
-	}
-	return &aspb.RecordAgentSecurityEventsResponse{}, nil
 }
 
 func (s *BuildBuddyServer) GetAgentSecurityEvents(ctx context.Context, request *aspb.GetAgentSecurityEventsRequest) (*aspb.GetAgentSecurityEventsResponse, error) {

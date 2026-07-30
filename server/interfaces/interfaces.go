@@ -1333,6 +1333,10 @@ type CommandResult struct {
 
 	// VMMetadata associated with the VM that ran the task, if applicable.
 	VMMetadata *fcpb.VMMetadata
+
+	// AgentSecurityEvents contains metadata about secrets redacted by
+	// executor-managed agent protections during this command.
+	AgentSecurityEvents *espb.AgentSecurityEvents
 }
 
 type Subscriber interface {

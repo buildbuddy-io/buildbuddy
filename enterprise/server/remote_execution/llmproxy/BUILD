@@ -6,7 +6,6 @@ go_library(
     name = "llmproxy",
     srcs = [
         "proxy.go",
-        "reporter.go",
         "service.go",
         "sessions.go",
     ],
@@ -14,12 +13,9 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//proto:agent_security_go_proto",
-        "//proto:buildbuddy_service_go_proto",
-        "//server/util/authutil",
         "//server/util/log",
         "//server/util/redact",
         "@com_github_klauspost_compress//zstd",
-        "@org_golang_google_grpc//metadata",
         "@org_golang_google_protobuf//types/known/timestamppb",
     ],
 )

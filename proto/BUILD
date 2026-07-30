@@ -259,6 +259,7 @@ proto_library(
     ],
     deps = [
         ":acl_proto",
+        ":agent_security_proto",
         ":context_proto",
         ":invocation_status_proto",
         ":remote_execution_proto",
@@ -1164,6 +1165,7 @@ go_proto_library(
     proto = ":execution_stats_proto",
     deps = [
         ":acl_go_proto",
+        ":agent_security_go_proto",
         ":context_go_proto",
         ":invocation_status_go_proto",
         ":remote_execution_go_proto",
@@ -2061,6 +2063,7 @@ ts_proto_library(
     proto = ":execution_stats_proto",
     deps = [
         ":acl_ts_proto",
+        ":agent_security_ts_proto",
         ":context_ts_proto",
         ":duration_ts_proto",
         ":google_longrunning_ts_proto",

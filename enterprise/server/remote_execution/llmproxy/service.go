@@ -14,7 +14,6 @@ import (
 
 type Service struct {
 	registry *SessionRegistry
-	reporter EventReporter
 	server   *http.Server
 	listener net.Listener
 	baseURL  string
@@ -22,15 +21,10 @@ type Service struct {
 
 // NewService starts an executor-local proxy bound to listenIP. A port of zero
 // asks the kernel to select an available port.
-func NewService(listenIP string, port int, reporters ...EventReporter) (*Service, error) {
+func NewService(listenIP string, port int) (*Service, error) {
 	registry := NewSessionRegistry()
-	var reporter EventReporter
-	if len(reporters) > 0 {
-		reporter = reporters[0]
-	}
 	handler, err := NewHandler(Options{
 		SessionResolver: registry,
-		EventReporter:   reporter,
 	})
 	if err != nil {
 		return nil, err
@@ -46,7 +40,6 @@ func NewService(listenIP string, port int, reporters ...EventReporter) (*Service
 	}
 	service := &Service{
 		registry: registry,
-		reporter: reporter,
 		server:   server,
 		listener: listener,
 		baseURL:  "http://" + listener.Addr().String(),
@@ -72,13 +65,5 @@ func (s *Service) RegisterSession(sourceIP string, session *Session) (func(), er
 }
 
 func (s *Service) Shutdown(ctx context.Context) error {
-	serverErr := s.server.Shutdown(ctx)
-	if reporter, ok := s.reporter.(interface {
-		Shutdown(context.Context) error
-	}); ok {
-		if err := reporter.Shutdown(ctx); serverErr == nil {
-			serverErr = err
-		}
-	}
-	return serverErr
+	return s.server.Shutdown(ctx)
 }

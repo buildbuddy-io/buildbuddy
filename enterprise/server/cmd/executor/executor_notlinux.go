@@ -6,7 +6,6 @@ import (
 	"context"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/llmproxy"
-	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -19,7 +18,7 @@ func setupCgroups() (*Cgroups, error) {
 func setupNetworking(rootContext context.Context) {
 }
 
-func startLLMProxy(ctx context.Context, env environment.Env) (*llmproxy.Service, error) {
+func startLLMProxy(ctx context.Context) (*llmproxy.Service, error) {
 	if *llmProxyEnabled {
 		return nil, status.UnimplementedError("the executor LLM proxy requires Linux")
 	}

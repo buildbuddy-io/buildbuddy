@@ -15,7 +15,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/cgroup"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/llmproxy"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vbd"
-	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
@@ -157,7 +156,7 @@ func setupNetworking(rootContext context.Context) {
 	}
 }
 
-func startLLMProxy(ctx context.Context, env environment.Env) (*llmproxy.Service, error) {
+func startLLMProxy(ctx context.Context) (*llmproxy.Service, error) {
 	if !*llmProxyEnabled {
 		return nil, nil
 	}
@@ -165,8 +164,7 @@ func startLLMProxy(ctx context.Context, env environment.Env) (*llmproxy.Service,
 	if err != nil {
 		return nil, fmt.Errorf("determine executor IP for LLM proxy: %w", err)
 	}
-	reporter := llmproxy.NewGRPCEventReporter(env.GetBuildBuddyServiceClient())
-	service, err := llmproxy.NewService(ip.String(), *llmProxyPort, reporter)
+	service, err := llmproxy.NewService(ip.String(), *llmProxyPort)
 	if err != nil {
 		return nil, err
 	}

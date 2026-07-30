@@ -39,7 +39,6 @@ go_library(
         "//enterprise/server/scheduling/task_leaser",
         "//enterprise/server/tasksize",
         "//enterprise/server/util/cpuset",
-        "//proto:buildbuddy_service_go_proto",
         "//proto:oci_fetcher_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:scheduler_go_proto",

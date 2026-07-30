@@ -47,6 +47,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/cdc"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
+	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/schema"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
@@ -56,6 +57,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/quota"
+	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rexec"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
@@ -69,6 +71,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	executil "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/execution"
+	aspb "github.com/buildbuddy-io/buildbuddy/proto/agent_security"
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -1241,6 +1244,55 @@ func (s *ExecutionServer) getGroupIDForMetrics(ctx context.Context) string {
 	return user.GetGroupID()
 }
 
+func (s *ExecutionServer) recordAgentSecurityEvents(ctx context.Context, agentSessionID string, report *espb.AgentSecurityEvents) error {
+	if report == nil || len(report.GetEvents()) == 0 {
+		return nil
+	}
+	dbh := s.env.GetOLAPDBHandle()
+	if dbh == nil {
+		return status.FailedPreconditionError("agent security events require an OLAP database")
+	}
+	user, err := s.authenticator.AuthenticatedUser(ctx)
+	if err != nil {
+		return err
+	}
+	if report.GetInvocationId() == "" || agentSessionID == "" {
+		return status.InvalidArgumentError("invocation ID and agent session ID are required")
+	}
+
+	now := time.Now()
+	rows := make([]*schema.AgentSecurityEvent, 0, len(report.GetEvents()))
+	for _, event := range report.GetEvents() {
+		if event.GetSecretName() == "" || len(event.GetSecretName()) > 255 {
+			return status.InvalidArgumentError("secret name must be between 1 and 255 bytes")
+		}
+		if event.GetProtectionLayer() == aspb.ProtectionLayer_PROTECTION_LAYER_UNKNOWN ||
+			event.GetProvider() == aspb.AgentProvider_AGENT_PROVIDER_UNKNOWN ||
+			event.GetSurface() == aspb.RedactionSurface_REDACTION_SURFACE_UNKNOWN {
+			return status.InvalidArgumentError("protection layer, provider, and surface are required")
+		}
+		eventTime := now
+		if event.GetEventTime() != nil {
+			if err := event.GetEventTime().CheckValid(); err != nil {
+				return status.InvalidArgumentErrorf("invalid event time: %s", err)
+			}
+			eventTime = event.GetEventTime().AsTime()
+		}
+		rows = append(rows, &schema.AgentSecurityEvent{
+			EventID:         fmt.Sprintf("ASE%d", random.RandUint64()),
+			GroupID:         user.GetGroupID(),
+			EventTimeUsec:   eventTime.UnixMicro(),
+			InvocationID:    report.GetInvocationId(),
+			AgentSessionID:  agentSessionID,
+			SecretName:      event.GetSecretName(),
+			ProtectionLayer: uint8(event.GetProtectionLayer()),
+			Provider:        uint8(event.GetProvider()),
+			Surface:         uint8(event.GetSurface()),
+		})
+	}
+	return dbh.InsertAgentSecurityEvents(ctx, rows)
+}
+
 func (s *ExecutionServer) waitExecution(ctx context.Context, req *repb.WaitExecutionRequest, stream streamLike, opts waitOpts) error {
 	log.CtxInfof(ctx, "WaitExecution called for: %q", req.GetName())
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, s.authenticator)
@@ -1557,6 +1609,11 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 				log.CtxWarningf(ctx, "Failed to parse ExecutionAuxiliaryMetadata: %s", err)
 			} else if !ok {
 				log.CtxInfof(ctx, "Failed to find ExecutionAuxiliaryMetadata. Executor is probably self-hosted and not updated since 2024-12-13.")
+			}
+			if err := s.recordAgentSecurityEvents(ctx, taskID, auxMeta.GetAgentSecurityEvents()); err != nil {
+				// Security event reporting is best-effort and must not fail the
+				// execution completion path.
+				log.CtxErrorf(ctx, "Could not record agent security events from completed execution: %s", err)
 			}
 			actionCASRN, err := digest.ParseUploadResourceName(taskID)
 			if err != nil {
