@@ -164,27 +164,8 @@ func Register(env *real_environment.RealEnv) error {
 }
 
 func refreshConfiguredFlags() {
-	flags := configuredFlags()
+	flags := redact.GetConfiguredFlags()
 	configuredFlagsCache.Store(&flags)
-}
-
-// configuredFlags returns the flags this process was configured with (via
-// the command line or config file), in "--name=value" form. Flags left at
-// their default values are omitted, and the values of secret flags are
-// redacted.
-func configuredFlags() []string {
-	var flags []string
-	flag.CommandLine.VisitAll(func(flg *flag.Flag) {
-		value := flg.Value.String()
-		if value == flg.DefValue {
-			return
-		}
-		if redact.IsSecret(flg) {
-			value = "<redacted>"
-		}
-		flags = append(flags, "--"+flg.Name+"="+value)
-	})
-	return flags
 }
 
 func run(ctx context.Context, shutdownCh <-chan struct{}, env environment.Env, target, apiKey string, node *cppb.CacheProxyNode) {
