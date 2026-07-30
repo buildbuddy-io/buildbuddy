@@ -12,6 +12,27 @@
   margin-top: 32px;
 }
 
+.agent-security-events {
+  margin-top: 32px;
+}
+
+.agent-security-events .agent-security-filter {
+  margin-bottom: 16px;
+}
+
+.agent-security-events .secondary {
+  color: var(--color-text-secondary);
+  margin-top: 4px;
+}
+
+.agent-security-events code {
+  word-break: break-all;
+}
+
+.agent-security-events a {
+  word-break: break-all;
+}
+
 .audit-logs .user div,
 .audit-logs .resource div {
   margin-bottom: 8px;
@@ -58,5 +79,41 @@
 }
 
 .audit-logs .audit-log-entry > * {
+  background: var(--color-auditlog-entry-bg);
+}
+
+.agent-security-events .agent-security-table {
+  display: grid;
+  grid-template-columns:
+    minmax(150px, max-content) /* last detected */
+    minmax(220px, max-content) /* event */
+    minmax(150px, max-content) /* protection */
+    minmax(70px, max-content) /* agent */
+    minmax(180px, max-content) /* invocation */
+    minmax(180px, max-content) /* session */
+    minmax(60px, max-content) /* count */;
+  max-width: 100%;
+  overflow-x: auto;
+  border: 1px solid var(--color-auditlog-border);
+  border-radius: 8px;
+  background: var(--color-auditlog-border);
+  gap: 1px;
+}
+
+.agent-security-events :is(.agent-security-header, .agent-security-entry) {
+  display: contents;
+}
+
+.agent-security-events :is(.agent-security-header, .agent-security-entry) > * {
+  padding: 8px;
+  box-sizing: border-box;
+}
+
+.agent-security-events .agent-security-header > * {
+  background: var(--color-auditlog-header-bg);
+  white-space: nowrap;
+}
+
+.agent-security-events .agent-security-entry > * {
   background: var(--color-auditlog-entry-bg);
 }

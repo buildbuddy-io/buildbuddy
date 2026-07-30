@@ -22,6 +22,7 @@ ts_library(
         "//app/util:proto",
         "//enterprise/app/filter:date_range_picker_button",
         "//enterprise/app/filter:filter_util",
+        "//proto:agent_security_ts_proto",
         "//proto:auditlog_ts_proto",
     ],
 )
