@@ -106,6 +106,7 @@ message Group {
   // The authenticated user's capabilities within this group.
   repeated capability.Capability capabilities = 20;
 
+  // Next ID: 10
   enum GroupStatus {
     // The group status is unknown.
     UNKNOWN_GROUP_STATUS = 0;
@@ -113,11 +114,26 @@ message Group {
     // The group is on the free tier.
     FREE_TIER_GROUP_STATUS = 1;
 
+    // This group develops free and open source software.
+    FOSS_STATUS = 5;
+
+    // This is a personal group for a single user, not an organization.
+    PERSONAL_STATUS = 6;
+
+    // This is an enterprise user who is pre-trial.
+    ENTERPRISE_PROSPECT = 10;
+
     // This group is an enterprise user.
     ENTERPRISE_GROUP_STATUS = 2;
 
     // This group is an enterprise trial.
     ENTERPRISE_TRIAL_GROUP_STATUS = 3;
+
+    // This is a system group used for internal BuildBuddy operations.
+    SYSTEM_STATUS = 7;
+
+    // This is a BuildBuddy-internal group.
+    BUILDBUDDY_STATUS = 8;
 
     // The group is blocked.
     BLOCKED_GROUP_STATUS = 4;
