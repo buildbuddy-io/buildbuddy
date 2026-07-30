@@ -11,6 +11,7 @@ import (
 	"mime"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 	"time"
 
@@ -43,12 +44,66 @@ var hopByHopHeaders = []string{
 // executor-side connection identity, never on a group or execution ID supplied
 // by the runner.
 type Session struct {
-	GroupID            string
-	ExecutionID        string
-	RedactionValues    []string
-	AnthropicAPIKey    string
-	AnthropicAuthToken string
-	OpenAIAPIKey       string
+	GroupID              string
+	InvocationID         string
+	ExecutionID          string
+	JWT                  string
+	RedactionValues      []string
+	NamedRedactionValues []NamedRedactionValue
+	AnthropicAPIKey      string
+	AnthropicAuthToken   string
+	OpenAIAPIKey         string
+}
+
+type NamedRedactionValue struct {
+	Name  string
+	Value string
+}
+
+type ProtectionLayer string
+
+const (
+	AgentContextHook  ProtectionLayer = "agent_context_hook"
+	ModelRequestProxy ProtectionLayer = "model_request_proxy"
+)
+
+type Provider string
+
+const (
+	Claude Provider = "claude"
+	Codex  Provider = "codex"
+)
+
+type Surface string
+
+const (
+	ToolOutput    Surface = "tool_output"
+	RequestBody   Surface = "request_body"
+	RequestHeader Surface = "request_header"
+	RequestQuery  Surface = "request_query"
+)
+
+type RedactionEvent struct {
+	SecretName      string
+	ProtectionLayer ProtectionLayer
+	Provider        Provider
+	Surface         Surface
+	EventTime       time.Time
+}
+
+// RedactionReport contains only event metadata. It intentionally cannot carry
+// secret values or request content.
+type RedactionReport struct {
+	JWT            string
+	InvocationID   string
+	AgentSessionID string
+	Events         []RedactionEvent
+}
+
+// EventReporter must return quickly. Redaction and forwarding do not depend on
+// successful event reporting.
+type EventReporter interface {
+	Report(report *RedactionReport)
 }
 
 // SessionResolver maps a proxy connection to its execution-scoped session.
@@ -58,6 +113,7 @@ type SessionResolver interface {
 
 type Options struct {
 	SessionResolver SessionResolver
+	EventReporter   EventReporter
 	HTTPClient      *http.Client
 	AnthropicURL    *url.URL
 	OpenAIURL       *url.URL
@@ -68,6 +124,7 @@ type Options struct {
 
 type Handler struct {
 	sessionResolver         SessionResolver
+	eventReporter           EventReporter
 	httpClient              *http.Client
 	anthropicURL            *url.URL
 	openAIURL               *url.URL
@@ -124,6 +181,7 @@ func NewHandler(opts Options) (*Handler, error) {
 	}
 	return &Handler{
 		sessionResolver:         opts.SessionResolver,
+		eventReporter:           opts.EventReporter,
 		httpClient:              client,
 		anthropicURL:            anthropicURL,
 		openAIURL:               openAIURL,
@@ -149,23 +207,28 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	body, err := h.redactRequestBody(req, session.RedactionValues)
+	provider := providerForPath(req.URL.Path)
+	body, bodyMatches, err := h.redactRequestBody(req, session)
 	if err != nil {
 		http.Error(w, "invalid proxy request body", http.StatusBadRequest)
 		return
 	}
+	h.reportMatches(session, ModelRequestProxy, provider, RequestBody, bodyMatches)
 
 	target := *upstream
 	target.Path = strings.TrimRight(upstream.Path, "/") + upstreamPath
 	target.RawPath = ""
-	target.RawQuery = redactQuery(req.URL.Query(), session.RedactionValues).Encode()
+	redactedQuery, queryMatches := redactQueryWithMatches(req.URL.Query(), session)
+	target.RawQuery = redactedQuery.Encode()
+	h.reportMatches(session, ModelRequestProxy, provider, RequestQuery, queryMatches)
 
 	upstreamReq, err := http.NewRequestWithContext(req.Context(), req.Method, target.String(), bytes.NewReader(body))
 	if err != nil {
 		http.Error(w, "could not construct upstream request", http.StatusInternalServerError)
 		return
 	}
-	copyRequestHeaders(upstreamReq.Header, req.Header, session.RedactionValues)
+	headerMatches := copyRequestHeadersWithMatches(upstreamReq.Header, req.Header, session)
+	h.reportMatches(session, ModelRequestProxy, provider, RequestHeader, headerMatches)
 	upstreamReq.Header.Del("Authorization")
 	upstreamReq.Header.Del("X-Api-Key")
 	upstreamReq.Header.Del("Content-Encoding")
@@ -229,16 +292,17 @@ func (h *Handler) resolveUpstream(req *http.Request, session *Session) (*url.URL
 	}
 }
 
-func (h *Handler) redactRequestBody(req *http.Request, values []string) ([]byte, error) {
+func (h *Handler) redactRequestBody(req *http.Request, session *Session) ([]byte, []string, error) {
 	value, err := h.decodeJSONRequestBody(req)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if value == nil {
-		return nil, nil
+		return nil, nil, nil
 	}
-	value, _ = redactJSONStrings(value, values)
-	return json.Marshal(value)
+	value, _, matches := redactJSONStringsWithMatches(value, session.RedactionValues, session.NamedRedactionValues)
+	body, err := json.Marshal(value)
+	return body, matches, err
 }
 
 func (h *Handler) decodeJSONRequestBody(req *http.Request) (any, error) {
@@ -291,7 +355,8 @@ func (h *Handler) serveHook(w http.ResponseWriter, req *http.Request, session *S
 		http.Error(w, "hook event is missing tool_response", http.StatusBadRequest)
 		return
 	}
-	toolResponse, changed := redactJSONStrings(toolResponse, session.RedactionValues)
+	toolResponse, changed, matches := redactJSONStringsWithMatches(
+		toolResponse, session.RedactionValues, session.NamedRedactionValues)
 	if !changed {
 		writeJSON(w, map[string]any{})
 		return
@@ -299,6 +364,7 @@ func (h *Handler) serveHook(w http.ResponseWriter, req *http.Request, session *S
 
 	switch req.URL.Path {
 	case "/hooks/claude/post-tool-use":
+		h.reportMatches(session, AgentContextHook, Claude, ToolOutput, matches)
 		writeJSON(w, map[string]any{
 			"hookSpecificOutput": map[string]any{
 				"hookEventName":     "PostToolUse",
@@ -306,6 +372,7 @@ func (h *Handler) serveHook(w http.ResponseWriter, req *http.Request, session *S
 			},
 		})
 	case "/hooks/codex/post-tool-use":
+		h.reportMatches(session, AgentContextHook, Codex, ToolOutput, matches)
 		sanitized, err := json.Marshal(toolResponse)
 		if err != nil {
 			http.Error(w, "could not encode hook response", http.StatusInternalServerError)
@@ -365,47 +432,124 @@ func decompress(body []byte, contentEncoding string, limit int64) ([]byte, error
 }
 
 func redactJSONStrings(value any, values []string) (any, bool) {
+	redacted, changed, _ := redactJSONStringsWithMatches(value, values, nil)
+	return redacted, changed
+}
+
+func redactJSONStringsWithMatches(value any, values []string, namedValues []NamedRedactionValue) (any, bool, []string) {
 	changed := false
+	matches := make(map[string]struct{})
 	switch value := value.(type) {
 	case string:
+		addStringMatches(matches, value, namedValues)
 		redacted := redact.RedactTextWithValues(value, values)
-		return redacted, redacted != value
+		return redacted, redacted != value, sortedMatchNames(matches)
 	case map[string]any:
 		for key, child := range value {
-			redacted, childChanged := redactJSONStrings(child, values)
+			redacted, childChanged, childMatches := redactJSONStringsWithMatches(child, values, namedValues)
 			value[key] = redacted
 			changed = childChanged || changed
+			addMatchNames(matches, childMatches)
 		}
 	case []any:
 		for i, child := range value {
-			redacted, childChanged := redactJSONStrings(child, values)
+			redacted, childChanged, childMatches := redactJSONStringsWithMatches(child, values, namedValues)
 			value[i] = redacted
 			changed = childChanged || changed
+			addMatchNames(matches, childMatches)
 		}
 	}
-	return value, changed
+	return value, changed, sortedMatchNames(matches)
 }
 
 func redactQuery(query url.Values, values []string) url.Values {
-	redacted := make(url.Values, len(query))
-	for key, queryValues := range query {
-		redactedKey := redact.RedactTextWithValues(key, values)
-		for _, value := range queryValues {
-			redacted[redactedKey] = append(redacted[redactedKey], redact.RedactTextWithValues(value, values))
-		}
-	}
+	redacted, _ := redactQueryWithMatches(query, &Session{RedactionValues: values})
 	return redacted
 }
 
+func redactQueryWithMatches(query url.Values, session *Session) (url.Values, []string) {
+	redacted := make(url.Values, len(query))
+	matches := make(map[string]struct{})
+	for key, queryValues := range query {
+		addStringMatches(matches, key, session.NamedRedactionValues)
+		redactedKey := redact.RedactTextWithValues(key, session.RedactionValues)
+		for _, value := range queryValues {
+			addStringMatches(matches, value, session.NamedRedactionValues)
+			redacted[redactedKey] = append(redacted[redactedKey], redact.RedactTextWithValues(value, session.RedactionValues))
+		}
+	}
+	return redacted, sortedMatchNames(matches)
+}
+
 func copyRequestHeaders(dst, src http.Header, values []string) {
+	copyRequestHeadersWithMatches(dst, src, &Session{RedactionValues: values})
+}
+
+func copyRequestHeadersWithMatches(dst, src http.Header, session *Session) []string {
+	matches := make(map[string]struct{})
 	for key, headerValues := range src {
 		if isHopByHopHeader(key) {
 			continue
 		}
 		for _, value := range headerValues {
-			dst.Add(key, redact.RedactTextWithValues(value, values))
+			addStringMatches(matches, value, session.NamedRedactionValues)
+			dst.Add(key, redact.RedactTextWithValues(value, session.RedactionValues))
 		}
 	}
+	return sortedMatchNames(matches)
+}
+
+func providerForPath(path string) Provider {
+	if strings.HasPrefix(path, anthropicPrefix) {
+		return Claude
+	}
+	return Codex
+}
+
+func (h *Handler) reportMatches(session *Session, layer ProtectionLayer, provider Provider, surface Surface, names []string) {
+	if h.eventReporter == nil || len(names) == 0 {
+		return
+	}
+	now := time.Now()
+	events := make([]RedactionEvent, 0, len(names))
+	for _, name := range names {
+		events = append(events, RedactionEvent{
+			SecretName:      name,
+			ProtectionLayer: layer,
+			Provider:        provider,
+			Surface:         surface,
+			EventTime:       now,
+		})
+	}
+	h.eventReporter.Report(&RedactionReport{
+		JWT:            session.JWT,
+		InvocationID:   session.InvocationID,
+		AgentSessionID: session.ExecutionID,
+		Events:         events,
+	})
+}
+
+func addStringMatches(matches map[string]struct{}, value string, namedValues []NamedRedactionValue) {
+	for _, secret := range namedValues {
+		if secret.Name != "" && secret.Value != "" && strings.Contains(value, secret.Value) {
+			matches[secret.Name] = struct{}{}
+		}
+	}
+}
+
+func addMatchNames(matches map[string]struct{}, names []string) {
+	for _, name := range names {
+		matches[name] = struct{}{}
+	}
+}
+
+func sortedMatchNames(matches map[string]struct{}) []string {
+	names := make([]string, 0, len(matches))
+	for name := range matches {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
 }
 
 func copyResponseHeaders(dst, src http.Header) {

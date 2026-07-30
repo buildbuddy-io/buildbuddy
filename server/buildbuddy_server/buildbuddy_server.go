@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"path"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -41,19 +42,25 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/canary"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
+	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/schema"
+	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/git"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
+	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
+	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/time/rate"
 	"google.golang.org/protobuf/encoding/protodelim"
 	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
+	aspb "github.com/buildbuddy-io/buildbuddy/proto/agent_security"
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	alpb "github.com/buildbuddy-io/buildbuddy/proto/auditlog"
 	bzpb "github.com/buildbuddy-io/buildbuddy/proto/bazel_config"
@@ -2697,6 +2704,182 @@ func (s *BuildBuddyServer) GetAuditLogs(ctx context.Context, request *alpb.GetAu
 		return nil, status.UnimplementedError("Audit logger not configured")
 	}
 	return al.GetLogs(ctx, request)
+}
+
+func (s *BuildBuddyServer) RecordAgentSecurityEvents(ctx context.Context, request *aspb.RecordAgentSecurityEventsRequest) (*aspb.RecordAgentSecurityEventsResponse, error) {
+	dbh := s.env.GetOLAPDBHandle()
+	if dbh == nil {
+		return nil, status.FailedPreconditionError("agent security events require an OLAP database")
+	}
+	identityService := s.env.GetClientIdentityService()
+	if identityService == nil {
+		return nil, status.PermissionDeniedError("executor client identity is required")
+	}
+	identity, err := identityService.IdentityFromContext(ctx)
+	if err != nil || identity.Client != interfaces.ClientIdentityExecutor {
+		return nil, status.PermissionDeniedError("agent security events can only be recorded by an executor")
+	}
+	user, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if request.GetInvocationId() == "" || request.GetAgentSessionId() == "" {
+		return nil, status.InvalidArgumentError("invocation ID and agent session ID are required")
+	}
+	if len(request.GetEvents()) == 0 || len(request.GetEvents()) > 100 {
+		return nil, status.InvalidArgumentError("between 1 and 100 agent security events are required")
+	}
+
+	now := time.Now()
+	rows := make([]*schema.AgentSecurityEvent, 0, len(request.GetEvents()))
+	for _, event := range request.GetEvents() {
+		if event.GetSecretName() == "" || len(event.GetSecretName()) > 255 {
+			return nil, status.InvalidArgumentError("secret name must be between 1 and 255 bytes")
+		}
+		if event.GetProtectionLayer() == aspb.ProtectionLayer_PROTECTION_LAYER_UNKNOWN ||
+			event.GetProvider() == aspb.AgentProvider_AGENT_PROVIDER_UNKNOWN ||
+			event.GetSurface() == aspb.RedactionSurface_REDACTION_SURFACE_UNKNOWN {
+			return nil, status.InvalidArgumentError("protection layer, provider, and surface are required")
+		}
+		eventTime := now
+		if event.GetEventTime() != nil {
+			if err := event.GetEventTime().CheckValid(); err != nil {
+				return nil, status.InvalidArgumentErrorf("invalid event time: %s", err)
+			}
+			eventTime = event.GetEventTime().AsTime()
+		}
+		rows = append(rows, &schema.AgentSecurityEvent{
+			EventID:         fmt.Sprintf("ASE%d", random.RandUint64()),
+			GroupID:         user.GetGroupID(),
+			EventTimeUsec:   eventTime.UnixMicro(),
+			InvocationID:    request.GetInvocationId(),
+			AgentSessionID:  request.GetAgentSessionId(),
+			SecretName:      event.GetSecretName(),
+			ProtectionLayer: uint8(event.GetProtectionLayer()),
+			Provider:        uint8(event.GetProvider()),
+			Surface:         uint8(event.GetSurface()),
+		})
+	}
+	if err := dbh.InsertAgentSecurityEvents(ctx, rows); err != nil {
+		return nil, err
+	}
+	return &aspb.RecordAgentSecurityEventsResponse{}, nil
+}
+
+func (s *BuildBuddyServer) GetAgentSecurityEvents(ctx context.Context, request *aspb.GetAgentSecurityEventsRequest) (*aspb.GetAgentSecurityEventsResponse, error) {
+	dbh := s.env.GetOLAPDBHandle()
+	if dbh == nil {
+		return nil, status.FailedPreconditionError("agent security events require an OLAP database")
+	}
+	user, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	caps, err := capabilities.ForAuthenticatedUser(ctx, s.env.GetAuthenticator())
+	if err != nil {
+		return nil, err
+	}
+	if !slices.Contains(caps, cappb.Capability_ORG_ADMIN) && !slices.Contains(caps, cappb.Capability_AUDIT_LOG_READ) {
+		return nil, status.PermissionDeniedError("missing required capabilities")
+	}
+
+	pageSize := int64(request.GetPageSize())
+	if pageSize <= 0 {
+		pageSize = 50
+	}
+	if pageSize > 100 {
+		pageSize = 100
+	}
+	after := time.Now().Add(-7 * 24 * time.Hour)
+	if request.GetTimestampAfter() != nil {
+		if err := request.GetTimestampAfter().CheckValid(); err != nil {
+			return nil, status.InvalidArgumentErrorf("invalid start time: %s", err)
+		}
+		after = request.GetTimestampAfter().AsTime()
+	}
+	before := time.Now()
+	if request.GetTimestampBefore() != nil {
+		if err := request.GetTimestampBefore().CheckValid(); err != nil {
+			return nil, status.InvalidArgumentErrorf("invalid end time: %s", err)
+		}
+		before = request.GetTimestampBefore().AsTime()
+	}
+	if after.After(before) {
+		return nil, status.InvalidArgumentError("start time must not be after end time")
+	}
+
+	qb := query_builder.NewQuery(`
+		SELECT
+			secret_name,
+			protection_layer,
+			provider,
+			surface,
+			invocation_id,
+			agent_session_id,
+			min(event_time_usec) AS first_seen_usec,
+			max(event_time_usec) AS last_seen_usec,
+			count(*) AS occurrence_count
+		FROM AgentSecurityEvents
+	`)
+	qb.AddWhereClause("group_id = ?", user.GetGroupID())
+	qb.AddWhereClause("event_time_usec >= ?", after.UnixMicro())
+	qb.AddWhereClause("event_time_usec <= ?", before.UnixMicro())
+	if request.GetInvocationId() != "" {
+		qb.AddWhereClause("invocation_id = ?", request.GetInvocationId())
+	}
+	if request.GetAgentSessionId() != "" {
+		qb.AddWhereClause("agent_session_id = ?", request.GetAgentSessionId())
+	}
+	qb.SetGroupBy("secret_name, protection_layer, provider, surface, invocation_id, agent_session_id")
+	innerQuery, innerArgs := qb.Build()
+
+	outerQuery := query_builder.NewQueryWithArgs("SELECT * FROM ("+innerQuery+")", innerArgs)
+	if request.GetPageToken() != "" {
+		lastSeenUsec, err := strconv.ParseInt(request.GetPageToken(), 10, 64)
+		if err != nil {
+			return nil, status.InvalidArgumentError("invalid page token")
+		}
+		outerQuery.AddWhereClause("last_seen_usec <= ?", lastSeenUsec)
+	}
+	outerQuery.SetOrderBy("last_seen_usec", false)
+	outerQuery.SetLimit(pageSize + 1)
+	query, args := outerQuery.Build()
+
+	type eventRow struct {
+		SecretName      string
+		ProtectionLayer uint8
+		Provider        uint8
+		Surface         uint8
+		InvocationID    string
+		AgentSessionID  string
+		FirstSeenUsec   int64
+		LastSeenUsec    int64
+		OccurrenceCount int64
+	}
+	response := &aspb.GetAgentSecurityEventsResponse{}
+	rq := dbh.NewQuery(ctx, "agent_security_get_events").Raw(query, args...)
+	err = db.ScanEach(rq, func(ctx context.Context, row *eventRow) error {
+		if int64(len(response.Events)) == pageSize {
+			response.NextPageToken = strconv.FormatInt(row.LastSeenUsec, 10)
+			return nil
+		}
+		response.Events = append(response.Events, &aspb.AgentSecurityEvent{
+			SecretName:      row.SecretName,
+			ProtectionLayer: aspb.ProtectionLayer(row.ProtectionLayer),
+			Provider:        aspb.AgentProvider(row.Provider),
+			Surface:         aspb.RedactionSurface(row.Surface),
+			InvocationId:    row.InvocationID,
+			AgentSessionId:  row.AgentSessionID,
+			FirstSeen:       timestamppb.New(time.UnixMicro(row.FirstSeenUsec)),
+			LastSeen:        timestamppb.New(time.UnixMicro(row.LastSeenUsec)),
+			OccurrenceCount: row.OccurrenceCount,
+		})
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return response, nil
 }
 
 func (s *BuildBuddyServer) CreateRepo(ctx context.Context, request *rppb.CreateRepoRequest) (*rppb.CreateRepoResponse, error) {

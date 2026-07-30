@@ -1,0 +1,78 @@
+syntax = "proto3";
+
+package agentsecurity;
+
+import "proto/context.proto";
+import "google/protobuf/timestamp.proto";
+
+enum ProtectionLayer {
+  PROTECTION_LAYER_UNKNOWN = 0;
+  AGENT_CONTEXT_HOOK = 1;
+  MODEL_REQUEST_PROXY = 2;
+}
+
+enum AgentProvider {
+  AGENT_PROVIDER_UNKNOWN = 0;
+  CLAUDE = 1;
+  CODEX = 2;
+}
+
+enum RedactionSurface {
+  REDACTION_SURFACE_UNKNOWN = 0;
+  TOOL_OUTPUT = 1;
+  REQUEST_BODY = 2;
+  REQUEST_HEADER = 3;
+  REQUEST_QUERY = 4;
+}
+
+message SecretRedactionEvent {
+  string secret_name = 1;
+  ProtectionLayer protection_layer = 2;
+  AgentProvider provider = 3;
+  RedactionSurface surface = 4;
+  google.protobuf.Timestamp event_time = 5;
+}
+
+// Sent by a trusted executor when an executor-side hook or model proxy
+// redacts a named execution secret. Secret values and request content must
+// never be included in this message.
+message RecordAgentSecurityEventsRequest {
+  context.RequestContext request_context = 1;
+  string invocation_id = 2;
+  // The remote execution ID is the agent session ID for the initial version
+  // of this feature.
+  string agent_session_id = 3;
+  repeated SecretRedactionEvent events = 4;
+}
+
+message RecordAgentSecurityEventsResponse {
+  context.ResponseContext response_context = 1;
+}
+
+message AgentSecurityEvent {
+  string secret_name = 1;
+  ProtectionLayer protection_layer = 2;
+  AgentProvider provider = 3;
+  RedactionSurface surface = 4;
+  string invocation_id = 5;
+  string agent_session_id = 6;
+  google.protobuf.Timestamp first_seen = 7;
+  google.protobuf.Timestamp last_seen = 8;
+  int64 occurrence_count = 9;
+}
+
+message GetAgentSecurityEventsRequest {
+  context.RequestContext request_context = 1;
+  google.protobuf.Timestamp timestamp_after = 2;
+  google.protobuf.Timestamp timestamp_before = 3;
+  string invocation_id = 4;
+  string agent_session_id = 5;
+  string page_token = 6;
+  int32 page_size = 7;
+}
+
+message GetAgentSecurityEventsResponse {
+  context.ResponseContext response_context = 1;
+  repeated AgentSecurityEvent events = 2;
+  string next_page_token = 3;
+}

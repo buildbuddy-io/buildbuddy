@@ -448,6 +448,7 @@ type OLAPDBHandle interface {
 	FlushTestTargetStatuses(ctx context.Context, entries []*schema.TestTargetStatus) error
 	FlushUsages(ctx context.Context, entries []*schema.RawUsage) error
 	InsertAuditLog(ctx context.Context, entry *schema.AuditLog) error
+	InsertAgentSecurityEvents(ctx context.Context, entries []*schema.AgentSecurityEvent) error
 	BucketFromUsecTimestamp(fieldName string, loc *time.Location, interval string) (string, []interface{})
 }
 

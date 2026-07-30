@@ -37,6 +37,11 @@ func TestSchemaInSync(t *testing.T) {
 			primaryDBTable: nil,
 		},
 		{
+			clickhouseTable: &AgentSecurityEvent{},
+			// Not in primary DB.
+			primaryDBTable: nil,
+		},
+		{
 			clickhouseTable: &RawUsage{},
 			// Not in primary DB. There is a Usage table but it has an
 			// incompatible schema.

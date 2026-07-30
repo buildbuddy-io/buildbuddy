@@ -77,6 +77,10 @@ func (h *Handle) InsertAuditLog(ctx context.Context, entry *schema.AuditLog) err
 	return nil
 }
 
+func (h *Handle) InsertAgentSecurityEvents(ctx context.Context, entries []*schema.AgentSecurityEvent) error {
+	return nil
+}
+
 func (h *Handle) FlushExecutionStats(ctx context.Context, inv *sipb.StoredInvocation, executions []*repb.StoredExecution) error {
 	executionIDs := make([]string, 0, len(executions))
 	for _, e := range executions {

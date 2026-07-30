@@ -65,6 +65,7 @@ func getAllTables() []Table {
 		&Execution{},
 		&TestTargetStatus{},
 		&AuditLog{},
+		&AgentSecurityEvent{},
 		&RawUsage{},
 	}
 	return tbls
@@ -513,6 +514,40 @@ func (i *AuditLog) TableName() string {
 
 func (i *AuditLog) TableOptions(clickhouseVersion string) string {
 	return fmt.Sprintf("ENGINE=%s ORDER BY (group_id, event_time_usec, audit_log_id)", getEngine())
+}
+
+// AgentSecurityEvent records that an executor-side protection layer detected
+// and redacted a named execution secret. It intentionally contains no secret
+// value or request content.
+type AgentSecurityEvent struct {
+	EventID       string
+	GroupID       string
+	EventTimeUsec int64
+
+	InvocationID   string
+	AgentSessionID string
+	SecretName     string
+
+	ProtectionLayer uint8
+	Provider        uint8
+	Surface         uint8
+}
+
+func (e *AgentSecurityEvent) ExcludedFields() []string {
+	return []string{}
+}
+
+func (e *AgentSecurityEvent) AdditionalFields() []string {
+	return []string{}
+}
+
+func (e *AgentSecurityEvent) TableName() string {
+	return "AgentSecurityEvents"
+}
+
+func (e *AgentSecurityEvent) TableOptions(clickhouseVersion string) string {
+	return fmt.Sprintf("ENGINE=%s ORDER BY (group_id, event_time_usec, event_id)", getEngine()) +
+		" PARTITION BY toYYYYMM(toDateTime(intDiv(event_time_usec, 1000000), 'UTC'))"
 }
 
 // RawUsage contains usage data which may potentially contain duplicate rows.

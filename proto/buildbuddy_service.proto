@@ -1,6 +1,7 @@
 syntax = "proto3";
 
 import "proto/api_key.proto";
+import "proto/agent_security.proto";
 import "proto/auditlog.proto";
 import "proto/bazel_config.proto";
 import "proto/cache.proto";
@@ -293,6 +294,11 @@ service BuildBuddyService {
   // Audit log API.
   rpc GetAuditLogs(auditlog.GetAuditLogsRequest)
       returns (auditlog.GetAuditLogsResponse);
+  rpc RecordAgentSecurityEvents(
+      agentsecurity.RecordAgentSecurityEventsRequest)
+      returns (agentsecurity.RecordAgentSecurityEventsResponse);
+  rpc GetAgentSecurityEvents(agentsecurity.GetAgentSecurityEventsRequest)
+      returns (agentsecurity.GetAgentSecurityEventsResponse);
 
   // IP rule API.
   rpc GetIPRules(iprules.GetRulesRequest) returns (iprules.GetRulesResponse);

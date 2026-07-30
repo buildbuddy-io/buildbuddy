@@ -95,6 +95,9 @@ var (
 
 		// Audit logs.
 		buildBuddyServicePrefix + "GetAuditLogs",
+		buildBuddyServicePrefix + "GetAgentSecurityEvents",
+		// This RPC authenticates the executor client identity and task JWT.
+		buildBuddyServicePrefix + "RecordAgentSecurityEvents",
 
 		// Sending notifications requires the SEND_NOTIFICATION capability.
 		// It's checked by the RPC handler.

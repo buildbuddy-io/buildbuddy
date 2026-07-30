@@ -1354,8 +1354,10 @@ func (p *pool) newLLMProxySession(groupID string, props *platform.Properties, ta
 		secretNameSet[name] = struct{}{}
 	}
 	session := &llmproxy.Session{
-		GroupID:     groupID,
-		ExecutionID: task.GetExecutionId(),
+		GroupID:      groupID,
+		InvocationID: task.GetInvocationId(),
+		ExecutionID:  task.GetExecutionId(),
+		JWT:          task.GetJwt(),
 	}
 	providerSecretNames := map[string]struct{}{
 		"ANTHROPIC_API_KEY":    {},
@@ -1372,6 +1374,10 @@ func (p *pool) newLLMProxySession(groupID string, props *platform.Properties, ta
 		value := envVar.GetValue()
 		if value != "" {
 			session.RedactionValues = append(session.RedactionValues, value)
+			session.NamedRedactionValues = append(session.NamedRedactionValues, llmproxy.NamedRedactionValue{
+				Name:  envVar.GetName(),
+				Value: value,
+			})
 		}
 		switch envVar.GetName() {
 		case "ANTHROPIC_API_KEY":
@@ -1600,6 +1606,9 @@ func (r *taskRunner) clearLLMProxySession() {
 	if r.llmProxySession != nil {
 		for i := range r.llmProxySession.RedactionValues {
 			r.llmProxySession.RedactionValues[i] = ""
+		}
+		for i := range r.llmProxySession.NamedRedactionValues {
+			r.llmProxySession.NamedRedactionValues[i].Value = ""
 		}
 		*r.llmProxySession = llmproxy.Session{}
 		r.llmProxySession = nil

@@ -98,5 +98,6 @@ func (r *SessionRegistry) ResolveSession(ctx context.Context, req *http.Request)
 func cloneSession(session *Session) Session {
 	clone := *session
 	clone.RedactionValues = append([]string(nil), session.RedactionValues...)
+	clone.NamedRedactionValues = append([]NamedRedactionValue(nil), session.NamedRedactionValues...)
 	return clone
 }
